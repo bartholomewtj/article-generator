@@ -68,6 +68,7 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           ARTICLEGEN_PROVIDER: ${{ vars.ARTICLEGEN_PROVIDER }}
           SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
           OPENALEX_MAILTO: ${{ vars.OPENALEX_MAILTO }}
@@ -114,10 +115,20 @@ jobs:
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
+          GEMINI_SET: ${{ secrets.GEMINI_API_KEY != '' }}
+          GOOGLE_SET: ${{ secrets.GOOGLE_API_KEY != '' }}
+          ANTHROPIC_SET: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+          PROVIDER_VAR: ${{ vars.ARTICLEGEN_PROVIDER }}
         run: |
           {
             echo "⚠️ Drafting failed ([full log](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}))."
             echo "If it was a scholarly-API rate limit, commenting the same \`draft N\` again in a few minutes usually works."
+            echo ""
+            echo "**Provider config this run saw:**"
+            echo "- \`GEMINI_API_KEY\` secret present: **${GEMINI_SET}**"
+            echo "- \`GOOGLE_API_KEY\` secret present: ${GOOGLE_SET}"
+            echo "- \`ANTHROPIC_API_KEY\` secret present: ${ANTHROPIC_SET}"
+            echo "- \`ARTICLEGEN_PROVIDER\` variable: \`${PROVIDER_VAR:-（unset）}\`"
             if [ -s /tmp/run_log.txt ]; then
               echo ""
               echo "<details><summary>Error detail</summary>"

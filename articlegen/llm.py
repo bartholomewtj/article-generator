@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 
 ANTHROPIC_DEFAULT_MODEL = "claude-opus-4-8"
 GOOGLE_DEFAULT_MODEL = "gemini-2.5-flash"
@@ -58,6 +59,7 @@ def generate_json(
     Anthropic, streaming + adaptive thinking at high effort.
     """
     provider, model = resolve_provider(model)
+    print(f"[articlegen] using provider={provider} model={model}", file=sys.stderr, flush=True)
     if provider == "google":
         return _google_generate(prompt, schema, system, model, deep)
     return _anthropic_generate(prompt, schema, system, model, deep)
