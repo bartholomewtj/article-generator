@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "articlegen"
+version = "0.1.0"
+description = "Generate readable, evidence-backed single-page HTML articles from a topic."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "anthropic>=0.117",
+    "requests>=2.31",
+]
+
+[project.scripts]
+articlegen = "articlegen.cli:main"
+
+[tool.setuptools]
+packages = ["articlegen"]
