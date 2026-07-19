@@ -61,10 +61,16 @@ title ──▶ Claude plans search queries
       ──▶ rendered to drafts/<date>-<slug>.html  +  .md, listed in drafts/index.html
 ```
 
-- **Evidence-grounded.** The writer only sees real abstracts and is instructed
-  to cite them and not invent sources. Every `[n]` links to a Sources list at
-  the foot of the page, with a link back to the original paper (DOI when
-  available).
+- **Evidence-grounded, and honest about it.** The writer only sees real
+  abstracts and cites them; every `[n]` links to a Sources list with a link
+  back to the paper (DOI when available). Before writing, each source is scored
+  for how *directly* it addresses the exact topic — so the article can say when
+  direct evidence is thin instead of quietly substituting adjacent work. Every
+  draft carries a **Featured study** box (method + results of the single most
+  relevant paper), an **Evidence quality** box (how many sources are directly
+  on-topic, the date range), and a deterministic check that flags any statistic
+  not found in the source abstracts as "verify against the full text." Clinical
+  topics get a "not medical advice" disclaimer.
 - **Readable.** House style aimed at a smart general audience — a hook, short
   sections, pull quotes, a "Key takeaways" box.
 - **Self-contained.** One HTML file, inlined CSS, no external requests. Works

@@ -159,13 +159,34 @@ def _normalize_title(title: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
 
 
+def _keyword_overlap(paper: Paper, terms: set[str]) -> int:
+    if not terms:
+        return 0
+    hay = f"{paper.title} {paper.abstract}".lower()
+    return sum(1 for t in terms if t in hay)
+
+
+def _rank_score(paper: Paper, terms: set[str]) -> tuple:
+    """Blend topic-keyword overlap, citation weight, and recency — so a famous but
+    off-topic review no longer automatically outranks an on-topic study."""
+    import math
+
+    overlap = _keyword_overlap(paper, terms)
+    citation_weight = math.log10(paper.citation_count + 1)
+    recency = (paper.year or 0) / 1000.0
+    return (overlap, citation_weight + recency)
+
+
 def gather_evidence(
     queries: list[str],
     max_papers: int = 20,
     per_query: int = 10,
+    topic: str = "",
+    core_entity: str = "",
     log=lambda msg: None,
 ) -> list[Paper]:
-    """Run every query against both sources, dedupe, and return the best candidates."""
+    """Run every query against both sources, dedupe, and return the best candidates,
+    ranked by a blend of topic relevance, citations, and recency."""
     seen: set[str] = set()
     collected: list[Paper] = []
     for query in queries:
@@ -178,6 +199,9 @@ def gather_evidence(
                     continue
                 seen.add(key)
                 collected.append(paper)
-    # Favor well-cited work but keep recency in the mix: light score, stable sort.
-    collected.sort(key=lambda p: (p.citation_count, p.year or 0), reverse=True)
+
+    # Build a keyword set from the topic + core entity for a relevance signal.
+    raw = f"{topic} {core_entity}".lower()
+    terms = {w for w in re.split(r"[^a-z0-9]+", raw) if len(w) > 3}
+    collected.sort(key=lambda p: _rank_score(p, terms), reverse=True)
     return collected[:max_papers]

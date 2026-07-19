@@ -21,7 +21,8 @@ from .ideas import format_ideas_console, generate_ideas, ideas_to_markdown
 from .llm import resolve_provider
 from .render import build_index, render_article, render_markdown
 from .sources import gather_evidence
-from .writer import plan_queries, write_article
+from .verify import check_statistics
+from .writer import curate_sources, plan_queries, write_article
 
 IDEAS_DIR = "ideas"
 DRAFTS_DIR = "drafts"
@@ -75,13 +76,15 @@ def cmd_ideas(args) -> int:
 def cmd_draft(args) -> int:
     _log(f"Planning search queries for: {args.topic}")
     try:
-        queries = plan_queries(args.topic, model=args.model)
+        queries, core_entity = plan_queries(args.topic, model=args.model)
     except Exception as exc:
         return _api_error(exc)
-    _log("Queries: " + "; ".join(queries))
+    _log("Queries: " + "; ".join(queries) + (f"  (core: {core_entity})" if core_entity else ""))
 
     _log("Fetching journal articles...")
-    papers = gather_evidence(queries, max_papers=args.max_papers, log=_log)
+    papers = gather_evidence(
+        queries, max_papers=args.max_papers, topic=args.topic, core_entity=core_entity, log=_log
+    )
     if not papers:
         _log(
             "No papers with abstracts found. The scholarly APIs may be rate-limiting "
@@ -90,11 +93,22 @@ def cmd_draft(args) -> int:
         return 1
     _log(f"Collected {len(papers)} candidate papers.")
 
+    _log("Assessing source relevance...")
+    curation = curate_sources(args.topic, papers, model=args.model)
+    counts = curation.get("counts") or {}
+    if counts:
+        _log(f"  relevance: {counts.get('direct', 0)} direct / "
+             f"{counts.get('related', 0)} related / {counts.get('tangential', 0)} tangential")
+
     _log("Writing the article (this can take a few minutes)...")
     try:
-        article = write_article(args.topic, papers, model=args.model, style_note=args.style)
+        article = write_article(
+            args.topic, papers, model=args.model, style_note=args.style, curation=curation
+        )
     except Exception as exc:
         return _api_error(exc)
+
+    verification = check_statistics(article, papers)
 
     os.makedirs(DRAFTS_DIR, exist_ok=True)
     date = datetime.date.today().isoformat()
@@ -103,15 +117,27 @@ def cmd_draft(args) -> int:
     md_path = os.path.join(DRAFTS_DIR, f"{stem}.md")
 
     with open(html_path, "w", encoding="utf-8") as f:
-        f.write(render_article(article, papers, args.topic))
+        f.write(render_article(article, papers, args.topic, curation, verification))
     with open(md_path, "w", encoding="utf-8") as f:
-        f.write(render_markdown(article, papers, args.topic))
+        f.write(render_markdown(article, papers, args.topic, curation, verification))
 
     index_path = build_index(DRAFTS_DIR)
     _log(f"Draft ready ({len(article['references'])} sources cited):")
     _log(f"  HTML:     {html_path}")
     _log(f"  Markdown: {md_path}")
     _log(f"  Queue:    {index_path}")
+
+    # One-line, greppable summary for the GitHub workflow to surface in its comment.
+    direct = counts.get("direct", 0) if counts else None
+    n_unver = len(verification.get("unverified") or [])
+    summary = f"{len(article['references'])} sources cited"
+    if direct is not None:
+        summary += f"; {direct} directly on-topic"
+    if n_unver:
+        summary += f"; ⚠ {n_unver} figure(s) not found in source abstracts"
+    if counts and not direct:
+        summary += "; ⚠ no directly on-topic source found"
+    print(f"EVIDENCE_SUMMARY: {summary}")
 
     if args.open:
         _open_in_browser(html_path)

@@ -61,7 +61,111 @@ def _link_citations(escaped_text: str, valid_numbers: set[int]) -> str:
     return _CITATION_RE.sub(replace, escaped_text)
 
 
-def render_article(article: dict, papers: list[Paper], topic: str) -> str:
+_CLINICAL_HINTS = (
+    "clinician", "patient", "clinical", "therapy", "treatment", "diagnos",
+    "schizophreni", "depress", "disorder", "disease", "dose", "drug",
+    "symptom", "psychiat", "medic", "health",
+)
+
+
+def _is_clinical(topic: str, article: dict) -> bool:
+    blob = (topic + " " + article.get("title", "") + " " + article.get("standfirst", "")).lower()
+    return any(h in blob for h in _CLINICAL_HINTS)
+
+
+def _year_range(papers: list[Paper]) -> str:
+    years = [p.year for p in papers if p.year]
+    if not years:
+        return ""
+    lo, hi = min(years), max(years)
+    return str(lo) if lo == hi else f"{lo}–{hi}"
+
+
+def _paper_link_html(paper: Paper) -> str:
+    title = html.escape(paper.title)
+    if paper.link:
+        return f'<a href="{html.escape(paper.link, quote=True)}">{title}</a>'
+    return title
+
+
+def _featured_html(article: dict, papers: list[Paper], cite_map: dict[int, int]) -> str:
+    fs = article.get("featured_study") or {}
+    idx = fs.get("source_index")
+    if not (isinstance(idx, int) and 1 <= idx <= len(papers)):
+        return ""
+    paper = papers[idx - 1]
+    display = cite_map.get(idx)
+    ref = f' <a class="fs-ref" href="#ref-{display}">[{display}]</a>' if display else ""
+    rows = []
+    if fs.get("why"):
+        rows.append(f'<p class="fs-why">{html.escape(fs["why"])}</p>')
+    if fs.get("method"):
+        rows.append(f"<p><strong>Method.</strong> {html.escape(fs['method'])}</p>")
+    if fs.get("results"):
+        rows.append(f"<p><strong>Results.</strong> {html.escape(fs['results'])}</p>")
+    return (
+        '<aside class="featured">\n'
+        '<h2>Featured study</h2>\n'
+        f'<p class="fs-cite">{_paper_link_html(paper)} · '
+        f'{html.escape(paper.author_line)} ({paper.year or "n.d."})'
+        f'{(" · " + html.escape(paper.venue)) if paper.venue else ""}{ref}</p>\n'
+        + "\n".join(rows)
+        + "\n</aside>"
+    )
+
+
+def _evidence_html(cited, papers, topic, article, curation, verification) -> str:
+    counts = (curation or {}).get("counts") or {}
+    bits = [f"<strong>{len(cited)}</strong> sources cited"]
+    if counts:
+        bits.append(
+            f'<strong>{counts.get("direct", 0)}</strong> directly on-topic, '
+            f'{counts.get("related", 0)} related, {counts.get("tangential", 0)} background'
+        )
+    yr = _year_range(cited)
+    if yr:
+        bits.append(f"published {yr}")
+    items = "".join(f"<li>{b}</li>" for b in bits)
+
+    warn = ""
+    if counts and not counts.get("direct"):
+        warn += (
+            '<p class="ev-warn">⚠ No cited source directly studies this exact topic — '
+            "claims are extrapolated from adjacent work. Read the sources before relying on this.</p>"
+        )
+    unver = (verification or {}).get("unverified") or []
+    if unver:
+        shown = ", ".join(html.escape(u) for u in unver[:6])
+        warn += (
+            f'<p class="ev-warn">⚠ {len(unver)} figure(s) could not be located in the source '
+            f"abstracts ({shown}) — verify against the full text before quoting.</p>"
+        )
+    return f'<aside class="evidence"><ul class="ev-stats">{items}</ul>{warn}</aside>'
+
+
+def _disclaimer_html(topic: str, article: dict) -> str:
+    base = (
+        "Written with AI assistance from the abstracts (not full texts) of the journal "
+        "articles listed above. Follow the source links before relying on any specific claim."
+    )
+    if _is_clinical(topic, article):
+        base = (
+            "<strong>Not medical or clinical advice.</strong> This is an AI-generated "
+            "summary of journal <em>abstracts</em> (not full texts), for background only. "
+            "It is not a substitute for professional judgement, primary sources, or "
+            "clinical guidelines. Verify every claim, figure, and dose against the cited "
+            "papers before acting on it."
+        )
+    return base
+
+
+def render_article(
+    article: dict,
+    papers: list[Paper],
+    topic: str,
+    curation: dict | None = None,
+    verification: dict | None = None,
+) -> str:
     cited, cite_map = _citation_map(article, papers)
     valid_numbers = set(range(1, len(cited) + 1))
 
@@ -105,6 +209,15 @@ def render_article(article: dict, papers: list[Paper], topic: str) -> str:
             + "</li>"
         )
 
+    evidence_note = article.get("evidence_note", "")
+    note_html = (
+        f'<p class="evidence-note">{_link_citations(html.escape(_remap_citations(evidence_note, cite_map)), valid_numbers)}</p>'
+        if evidence_note
+        else ""
+    )
+    featured_html = _featured_html(article, papers, cite_map)
+    evidence_box = _evidence_html(cited, papers, topic, article, curation, verification)
+
     today = datetime.date.today().strftime("%B %-d, %Y")
     return _TEMPLATE.format(
         page_title=html.escape(article["title"]),
@@ -113,9 +226,13 @@ def render_article(article: dict, papers: list[Paper], topic: str) -> str:
         standfirst=html.escape(article["standfirst"]),
         date=today,
         n_sources=len(cited),
+        evidence_note=note_html,
+        featured=featured_html,
         sections="\n\n".join(sections_html),
         takeaways=takeaways_html,
+        evidence_box=evidence_box,
         references="\n".join(refs_html),
+        disclaimer=_disclaimer_html(topic, article),
     )
 
 
@@ -232,6 +349,47 @@ _TEMPLATE = """<!DOCTYPE html>
   }}
   aside.takeaways ul {{ margin: 0; padding-left: 1.2rem; }}
   aside.takeaways li {{ margin-bottom: 0.55rem; }}
+  p.evidence-note {{
+    font-size: 0.98rem;
+    color: var(--muted);
+    font-style: italic;
+    border-left: 3px solid var(--rule);
+    padding-left: 1rem;
+    margin: 1.5rem 0;
+  }}
+  aside.featured {{
+    margin: 2.5rem 0;
+    padding: 1.3rem 1.6rem;
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+    background: var(--accent-soft);
+  }}
+  aside.featured h2 {{
+    margin: 0 0 0.7rem;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.8rem; font-weight: 700; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--accent);
+  }}
+  aside.featured p {{ margin: 0 0 0.6rem; font-size: 1rem; line-height: 1.5; }}
+  aside.featured .fs-cite {{ font-weight: 600; }}
+  aside.featured .fs-why {{ font-style: italic; color: var(--muted); }}
+  aside.featured .fs-ref {{ color: var(--accent); text-decoration: none; }}
+  aside.featured a {{ color: var(--accent); }}
+  aside.evidence {{
+    margin: 2.5rem 0 0;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }}
+  aside.evidence ul.ev-stats {{
+    display: flex; flex-wrap: wrap; gap: 0.4rem 1.4rem;
+    list-style: none; margin: 0 0 0.6rem; padding: 0;
+    font-size: 0.85rem; color: var(--muted);
+  }}
+  aside.evidence .ev-warn {{
+    font-size: 0.9rem; line-height: 1.45; margin: 0.5rem 0 0;
+    padding: 0.7rem 0.9rem; border-radius: 8px;
+    background: #b4530022; color: var(--ink);
+    border: 1px solid #b4530055;
+  }}
   section.references {{ margin-top: 3.5rem; border-top: 1px solid var(--rule); padding-top: 1.5rem; }}
   section.references h2 {{
     font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
@@ -277,6 +435,10 @@ _TEMPLATE = """<!DOCTYPE html>
     <p class="byline">Generated {date} · Grounded in {n_sources} peer-reviewed sources</p>
   </header>
 
+  {evidence_note}
+
+  {featured}
+
   {sections}
 
   <aside class="takeaways">
@@ -286,6 +448,8 @@ _TEMPLATE = """<!DOCTYPE html>
     </ul>
   </aside>
 
+  {evidence_box}
+
   <section class="references">
     <h2>Sources</h2>
     <ol>
@@ -294,8 +458,7 @@ _TEMPLATE = """<!DOCTYPE html>
   </section>
 
   <footer class="colophon">
-    Written with AI assistance from the abstracts of the journal articles listed above.
-    Follow the source links before relying on any specific claim.
+    {disclaimer}
   </footer>
 </main>
 </body>
@@ -303,7 +466,13 @@ _TEMPLATE = """<!DOCTYPE html>
 """
 
 
-def render_markdown(article: dict, papers: list[Paper], topic: str) -> str:
+def render_markdown(
+    article: dict,
+    papers: list[Paper],
+    topic: str,
+    curation: dict | None = None,
+    verification: dict | None = None,
+) -> str:
     """Plain-Markdown version of the same article, for easy review/editing."""
     cited, cite_map = _citation_map(article, papers)
     today = datetime.date.today().strftime("%B %d, %Y")
@@ -315,6 +484,30 @@ def render_markdown(article: dict, papers: list[Paper], topic: str) -> str:
         f"> Topic: {topic} · Generated {today} · {len(cited)} sources cited",
         "",
     ]
+
+    evidence_note = article.get("evidence_note", "")
+    if evidence_note:
+        lines += [f"> **Evidence note.** {_remap_citations(evidence_note, cite_map)}", ""]
+
+    fs = article.get("featured_study") or {}
+    idx = fs.get("source_index")
+    if isinstance(idx, int) and 1 <= idx <= len(papers):
+        p = papers[idx - 1]
+        ref = f" [{cite_map[idx]}]" if idx in cite_map else ""
+        lines += [
+            "> **Featured study.** "
+            + (f"*{p.title}*" if not p.link else f"[{p.title}]({p.link})")
+            + f" — {p.author_line} ({p.year or 'n.d.'})"
+            + (f", {p.venue}" if p.venue else "") + ref,
+        ]
+        if fs.get("why"):
+            lines.append(f"> {fs['why']}")
+        if fs.get("method"):
+            lines.append(f"> *Method:* {fs['method']}")
+        if fs.get("results"):
+            lines.append(f"> *Results:* {fs['results']}")
+        lines.append("")
+
     for section in article["sections"]:
         lines.append(f"## {section['heading']}")
         lines.append("")
@@ -324,11 +517,34 @@ def render_markdown(article: dict, papers: list[Paper], topic: str) -> str:
         if section.get("pull_quote"):
             lines.append(f"> **{section['pull_quote']}**")
             lines.append("")
+
     lines.append("## Key takeaways")
     lines.append("")
     for takeaway in article.get("key_takeaways", []):
         lines.append(f"- {_remap_citations(takeaway, cite_map)}")
     lines.append("")
+
+    # Evidence quality
+    counts = (curation or {}).get("counts") or {}
+    unver = (verification or {}).get("unverified") or []
+    yr = _year_range(cited)
+    lines.append("## Evidence quality")
+    lines.append("")
+    tally = f"- {len(cited)} sources cited"
+    if counts:
+        tally += (f"; {counts.get('direct', 0)} directly on-topic, "
+                  f"{counts.get('related', 0)} related, {counts.get('tangential', 0)} background")
+    if yr:
+        tally += f"; published {yr}"
+    lines.append(tally)
+    if counts and not counts.get("direct"):
+        lines.append("- ⚠ No cited source directly studies this exact topic — claims are "
+                     "extrapolated from adjacent work.")
+    if unver:
+        lines.append(f"- ⚠ {len(unver)} figure(s) not found in the source abstracts "
+                     f"({', '.join(unver[:6])}) — verify against the full text.")
+    lines.append("")
+
     lines.append("## Sources")
     lines.append("")
     for n, paper in enumerate(cited, start=1):
@@ -341,7 +557,25 @@ def render_markdown(article: dict, papers: list[Paper], topic: str) -> str:
             + link
         )
     lines.append("")
+    lines.append("---")
+    lines.append("")
+    lines.append(_markdown_disclaimer(topic, article))
+    lines.append("")
     return "\n".join(lines)
+
+
+def _markdown_disclaimer(topic: str, article: dict) -> str:
+    if _is_clinical(topic, article):
+        return (
+            "**Not medical or clinical advice.** AI-generated summary of journal "
+            "*abstracts* (not full texts), for background only — not a substitute for "
+            "professional judgement, primary sources, or clinical guidelines. Verify "
+            "every claim, figure, and dose against the cited papers."
+        )
+    return (
+        "AI-generated from the *abstracts* (not full texts) of the cited articles. "
+        "Follow the source links before relying on any specific claim."
+    )
 
 
 _INDEX_TEMPLATE = """<!DOCTYPE html>

@@ -55,6 +55,17 @@ SAMPLE_ARTICLE = {
         "Far from switching off, the sleeping brain runs a nightly maintenance shift — "
         "filing memories and hosing out its own waste."
     ),
+    "evidence_note": (
+        "All four cited sources study sleep and the brain directly; the memory and "
+        "clearance findings are well replicated, though the clearance work [3] is "
+        "largely from animal models."
+    ),
+    "featured_study": {
+        "source_index": 3,
+        "why": "The first direct demonstration that sleep clears brain waste.",
+        "method": "Two-photon imaging and tracer injection in sleeping vs. waking mice.",
+        "results": "Interstitial space expanded ~60% in sleep, roughly doubling clearance of amyloid-beta.",
+    },
     "sections": [
         {
             "heading": "The night shift",
