@@ -72,7 +72,9 @@ jobs:
           TITLE: ${{ steps.sel.outputs.title }}
           STYLE: ${{ steps.sel.outputs.style }}
           STEM: ${{ steps.sel.outputs.stem }}
-        run: python -m articlegen draft "$TITLE" --style "$STYLE" --name "$STEM"
+        run: |
+          set -o pipefail
+          python -m articlegen draft "$TITLE" --style "$STYLE" --name "$STEM" 2>&1 | tee /tmp/run_log.txt
 
       - name: Commit the draft
         if: steps.sel.outputs.ok == 'true'
@@ -110,7 +112,19 @@ jobs:
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh issue comment ${{ github.event.issue.number }}
-          --repo ${{ github.repository }}
-          --body "⚠️ Drafting failed — check the [Actions log](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}). If it was a scholarly-API rate limit, commenting the same \`draft N\` again in a few minutes usually works."
+        run: |
+          {
+            echo "⚠️ Drafting failed ([full log](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}))."
+            echo "If it was a scholarly-API rate limit, commenting the same \`draft N\` again in a few minutes usually works."
+            if [ -s /tmp/run_log.txt ]; then
+              echo ""
+              echo "<details><summary>Error detail</summary>"
+              echo ""
+              echo '```'
+              tail -n 12 /tmp/run_log.txt
+              echo '```'
+              echo "</details>"
+            fi
+          } > /tmp/fail_comment.md
+          gh issue comment ${{ github.event.issue.number }} \
+            --repo ${{ github.repository }} --body-file /tmp/fail_comment.md

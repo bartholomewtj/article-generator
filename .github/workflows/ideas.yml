@@ -34,7 +34,10 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           THEME: ${{ github.event.issue.title }}
           GUIDANCE: ${{ github.event.issue.body }}
-        run: python -m articlegen.bot ideas --theme "$THEME" --guidance "$GUIDANCE" --out /tmp/ideas_comment.md
+        run: |
+          set -o pipefail
+          python -m articlegen.bot ideas --theme "$THEME" --guidance "$GUIDANCE" \
+            --out /tmp/ideas_comment.md 2>&1 | tee /tmp/run_log.txt
 
       - name: Post ideas as a comment
         env:
@@ -48,7 +51,18 @@ jobs:
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh issue comment ${{ github.event.issue.number }}
-          --repo ${{ github.repository }}
-          --body "⚠️ Idea generation failed — check the [Actions log](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}). Most common cause: the ANTHROPIC_API_KEY repository secret is missing or invalid."
+        run: |
+          {
+            echo "⚠️ Idea generation failed ([full log](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}))."
+            if [ -s /tmp/run_log.txt ]; then
+              echo ""
+              echo "<details><summary>Error detail</summary>"
+              echo ""
+              echo '```'
+              tail -n 12 /tmp/run_log.txt
+              echo '```'
+              echo "</details>"
+            fi
+          } > /tmp/fail_comment.md
+          gh issue comment ${{ github.event.issue.number }} \
+            --repo ${{ github.repository }} --body-file /tmp/fail_comment.md
