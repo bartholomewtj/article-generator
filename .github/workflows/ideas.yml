@@ -1,0 +1,54 @@
+name: "Ideas (open a 'theme: ...' issue)"
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  ideas:
+    # Only for issues titled "theme: ..." opened by people with write access
+    # (prevents strangers on a public repo from spending your API credits).
+    if: >-
+      startsWith(github.event.issue.title, 'theme:') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: ideas-${{ github.event.issue.number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: pip install -e .
+
+      - name: Generate ideas
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          THEME: ${{ github.event.issue.title }}
+          GUIDANCE: ${{ github.event.issue.body }}
+        run: python -m articlegen.bot ideas --theme "$THEME" --guidance "$GUIDANCE" --out /tmp/ideas_comment.md
+
+      - name: Post ideas as a comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh issue comment ${{ github.event.issue.number }}
+          --repo ${{ github.repository }}
+          --body-file /tmp/ideas_comment.md
+
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh issue comment ${{ github.event.issue.number }}
+          --repo ${{ github.repository }}
+          --body "⚠️ Idea generation failed — check the [Actions log](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}). Most common cause: the ANTHROPIC_API_KEY repository secret is missing or invalid."

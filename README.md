@@ -5,7 +5,32 @@ article: **generate ideas → research collated automatically → draft prepared
 your review** — as a self-contained single-page HTML file (plus Markdown),
 grounded in real journal articles rather than the model's memory.
 
-## The workflow
+## Use it from your phone (recommended)
+
+The whole workflow runs on GitHub Actions, driven from issues — so the
+**GitHub mobile app** is the only interface you need:
+
+1. **Generate ideas, anytime.** Open a new issue titled `theme: <your theme>`
+   (e.g. `theme: renewable energy storage`). Anything you type in the issue
+   body is treated as extra guidance. Within a minute or two a bot comment
+   arrives with a numbered shortlist of article ideas.
+2. **Pick one.** Reply to the issue with `draft 3` (any number from the list),
+   or `draft "Your own title"` for something else. Add a tone note if you
+   like: `draft 2 style: for beginners`.
+3. **Review.** The workflow researches, writes, commits the draft, and
+   comments back with a link. The Markdown version renders directly in the
+   GitHub app; the styled HTML sits next to it in `drafts/` for desktop
+   reading. Comment `draft N` again any time for another take.
+
+**One-time setup:** add your Anthropic API key as a repository secret named
+`ANTHROPIC_API_KEY` (repo → Settings → Secrets and variables → Actions).
+Optional extras: a `SEMANTIC_SCHOLAR_API_KEY` secret and an `OPENALEX_MAILTO`
+repository *variable* raise the scholarly APIs' rate limits.
+
+Only users with write access to the repo can trigger the workflows, so
+strangers can't spend your API credits on a public repo.
+
+## The same workflow, locally
 
 ```
 1. articlegen ideas "<theme>"      # generate ideas, pick one   ◀── you choose
@@ -103,5 +128,9 @@ articlegen/
   writer.py    Claude calls: plan queries, write the article (structured JSON)
   sources.py   Semantic Scholar + OpenAlex fetching, dedupe, ranking
   render.py    structured article -> styled HTML, Markdown, and drafts/ index
+  bot.py       GitHub Actions glue: ideas comment + `draft N` resolution
   demo.py      built-in sample for `articlegen demo`
+.github/workflows/
+  ideas.yml    'theme: ...' issue opened  -> ideas posted as a comment
+  draft.yml    'draft N' comment          -> draft committed + review link
 ```

@@ -5,8 +5,7 @@ build/
 dist/
 .venv/
 venv/
-# generated output
+# generated output (drafts/ is intentionally tracked — it's the review surface)
 /*.html
 !README*.html
-/drafts/
 /ideas/

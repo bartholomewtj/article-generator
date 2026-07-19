@@ -1,0 +1,116 @@
+name: "Draft (comment 'draft 3' on an ideas issue)"
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  draft:
+    # Comment must start with "draft " and come from someone with write access.
+    if: >-
+      !github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, 'draft ') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: draft-${{ github.event.issue.number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: pip install -e .
+
+      - name: Fetch issue comments
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh api --paginate
+          "repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/comments"
+          > /tmp/comments.json
+
+      - name: Resolve which article to draft
+        id: sel
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: python -m articlegen.bot resolve --body "$COMMENT_BODY" --comments /tmp/comments.json
+
+      - name: Explain if the command was unclear
+        if: steps.sel.outputs.ok != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MESSAGE: ${{ steps.sel.outputs.error }}
+        run: >-
+          gh issue comment ${{ github.event.issue.number }}
+          --repo ${{ github.repository }}
+          --body "$MESSAGE"
+
+      - name: Acknowledge
+        if: steps.sel.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: ${{ steps.sel.outputs.title }}
+        run: >-
+          gh issue comment ${{ github.event.issue.number }}
+          --repo ${{ github.repository }}
+          --body "⏳ Researching and drafting **${TITLE}** — usually a few minutes. I'll comment here when it's ready."
+
+      - name: Research and write the draft
+        if: steps.sel.outputs.ok == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
+          OPENALEX_MAILTO: ${{ vars.OPENALEX_MAILTO }}
+          TITLE: ${{ steps.sel.outputs.title }}
+          STYLE: ${{ steps.sel.outputs.style }}
+          STEM: ${{ steps.sel.outputs.stem }}
+        run: python -m articlegen draft "$TITLE" --style "$STYLE" --name "$STEM"
+
+      - name: Commit the draft
+        if: steps.sel.outputs.ok == 'true'
+        env:
+          TITLE: ${{ steps.sel.outputs.title }}
+        run: |
+          git config user.name "articlegen-bot"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add drafts/
+          git commit -m "Draft: $TITLE (#${{ github.event.issue.number }})"
+          git pull --rebase origin ${{ github.event.repository.default_branch }}
+          git push
+
+      - name: Post review links
+        if: steps.sel.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: ${{ steps.sel.outputs.title }}
+          STEM: ${{ steps.sel.outputs.stem }}
+          BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          {
+            echo "📄 Draft ready: **${TITLE}**"
+            echo ""
+            echo "- [**Review it here (Markdown)**](${{ github.server_url }}/${{ github.repository }}/blob/${BRANCH}/drafts/${STEM}.md) — renders right in the GitHub app"
+            echo "- [Styled HTML](${{ github.server_url }}/${{ github.repository }}/blob/${BRANCH}/drafts/${STEM}.html) — download and open in a browser for the designed version"
+            echo ""
+            echo "Want another take? Comment \`draft N\` again (add \`style: ...\` to change tone or audience)."
+          } > /tmp/done_comment.md
+          gh issue comment ${{ github.event.issue.number }} \
+            --repo ${{ github.repository }} \
+            --body-file /tmp/done_comment.md
+
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh issue comment ${{ github.event.issue.number }}
+          --repo ${{ github.repository }}
+          --body "⚠️ Drafting failed — check the [Actions log](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}). If it was a scholarly-API rate limit, commenting the same \`draft N\` again in a few minutes usually works."
