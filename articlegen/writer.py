@@ -1,14 +1,13 @@
-"""Claude calls: plan search queries, then write the article grounded in the evidence."""
+"""LLM calls: plan search queries, then write the article grounded in the evidence.
+
+Works with either provider via articlegen.llm (Claude by default, Gemini when a
+GEMINI_API_KEY is the available credential — see llm.resolve_provider).
+"""
 
 from __future__ import annotations
 
-import json
-
-import anthropic
-
+from .llm import generate_json
 from .sources import Paper
-
-DEFAULT_MODEL = "claude-opus-4-8"
 
 _QUERY_SCHEMA = {
     "type": "object",
@@ -82,32 +81,20 @@ inside paragraphs (key_takeaways is the place for bullets).
 """
 
 
-def _client() -> anthropic.Anthropic:
-    return anthropic.Anthropic()
-
-
-def plan_queries(topic: str, model: str = DEFAULT_MODEL) -> list[str]:
-    """Ask Claude to turn the user's topic into effective scholarly search queries."""
-    response = _client().messages.create(
+def plan_queries(topic: str, model: str | None = None) -> list[str]:
+    """Turn the user's topic into effective scholarly search queries."""
+    result = generate_json(
+        (
+            "I want to find journal articles to support a popular-science "
+            f"article about: {topic!r}\n\n"
+            "Give me 2-4 short keyword queries for scholarly search engines "
+            "(Semantic Scholar / OpenAlex). Cover distinct angles of the topic; "
+            "use terminology researchers would use, not casual phrasing."
+        ),
+        _QUERY_SCHEMA,
         model=model,
-        max_tokens=4000,
-        output_config={"format": {"type": "json_schema", "schema": _QUERY_SCHEMA}},
-        messages=[
-            {
-                "role": "user",
-                "content": (
-                    "I want to find journal articles to support a popular-science "
-                    f"article about: {topic!r}\n\n"
-                    "Give me 2-4 short keyword queries for scholarly search engines "
-                    "(Semantic Scholar / OpenAlex). Cover distinct angles of the topic; "
-                    "use terminology researchers would use, not casual phrasing."
-                ),
-            }
-        ],
     )
-    text = next(b.text for b in response.content if b.type == "text")
-    queries = json.loads(text)["queries"]
-    return queries[:4]
+    return result["queries"][:4]
 
 
 def _format_sources(papers: list[Paper]) -> str:
@@ -126,7 +113,7 @@ def _format_sources(papers: list[Paper]) -> str:
 def write_article(
     topic: str,
     papers: list[Paper],
-    model: str = DEFAULT_MODEL,
+    model: str | None = None,
     style_note: str = "",
 ) -> dict:
     """Write the article as structured JSON, grounded in the fetched abstracts."""
@@ -137,17 +124,10 @@ def write_article(
         "good article (skip irrelevant or weak ones) and write the article.\n\n"
         + _format_sources(papers)
     )
-    with _client().messages.stream(
-        model=model,
-        max_tokens=64000,
-        thinking={"type": "adaptive"},
-        output_config={
-            "effort": "high",
-            "format": {"type": "json_schema", "schema": _ARTICLE_SCHEMA},
-        },
+    return generate_json(
+        user_prompt,
+        _ARTICLE_SCHEMA,
         system=_WRITER_SYSTEM,
-        messages=[{"role": "user", "content": user_prompt}],
-    ) as stream:
-        response = stream.get_final_message()
-    text = next(b.text for b in response.content if b.type == "text")
-    return json.loads(text)
+        model=model,
+        deep=True,
+    )

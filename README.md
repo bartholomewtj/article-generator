@@ -22,8 +22,19 @@ The whole workflow runs on GitHub Actions, driven from issues — so the
    GitHub app; the styled HTML sits next to it in `drafts/` for desktop
    reading. Comment `draft N` again any time for another take.
 
-**One-time setup:** add your Anthropic API key as a repository secret named
-`ANTHROPIC_API_KEY` (repo → Settings → Secrets and variables → Actions).
+**One-time setup — pick an AI provider** (repo → Settings → Secrets and
+variables → Actions):
+
+- **Claude** (best writing quality, paid API): add an `ANTHROPIC_API_KEY`
+  secret.
+- **Gemini** (free tier, no card needed): create a key at
+  https://aistudio.google.com/ and add it as a `GEMINI_API_KEY` secret.
+
+If only one key is set, it's used automatically. If both are set, Claude wins
+by default — add a repository *variable* `ARTICLEGEN_PROVIDER` = `google` (or
+`anthropic`) to choose explicitly. Models: `claude-opus-4-8` on Anthropic,
+`gemini-2.5-flash` on Google, both overridable with `--model`.
+
 Optional extras: a `SEMANTIC_SCHOLAR_API_KEY` secret and an `OPENALEX_MAILTO`
 repository *variable* raise the scholarly APIs' rate limits.
 
@@ -63,11 +74,12 @@ title ──▶ Claude plans search queries
 pip install -r requirements.txt      # or: pip install -e .
 ```
 
-Set your Anthropic credentials (either works):
+Set credentials for either provider:
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-# or: ant auth login
+export ANTHROPIC_API_KEY=sk-ant-...   # Claude (or: ant auth login)
+# or
+export GEMINI_API_KEY=...             # Gemini — free key at aistudio.google.com
 ```
 
 The scholarly APIs need no key, but you can raise their rate limits:
@@ -124,8 +136,9 @@ Markdown, for easy editing), and refreshes `index.html` (your review queue).
 ```
 articlegen/
   cli.py       subcommands (ideas / draft / queue / demo) + orchestration
-  ideas.py     Claude call: theme -> shortlist of article ideas
-  writer.py    Claude calls: plan queries, write the article (structured JSON)
+  llm.py       provider layer: Claude or Gemini, auto-detected from keys
+  ideas.py     LLM call: theme -> shortlist of article ideas
+  writer.py    LLM calls: plan queries, write the article (structured JSON)
   sources.py   Semantic Scholar + OpenAlex fetching, dedupe, ranking
   render.py    structured article -> styled HTML, Markdown, and drafts/ index
   bot.py       GitHub Actions glue: ideas comment + `draft N` resolution

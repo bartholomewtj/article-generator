@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-import json
-
-import anthropic
-
-from .writer import DEFAULT_MODEL
+from .llm import generate_json
 
 _IDEAS_SCHEMA = {
     "type": "object",
@@ -50,26 +46,18 @@ a live debate — not a bland overview.
 """
 
 
-def generate_ideas(theme: str, n: int = 6, model: str = DEFAULT_MODEL) -> list[dict]:
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model=model,
-        max_tokens=8000,
-        output_config={"format": {"type": "json_schema", "schema": _IDEAS_SCHEMA}},
+def generate_ideas(theme: str, n: int = 6, model: str | None = None) -> list[dict]:
+    result = generate_json(
+        (
+            f"Theme: {theme!r}\n\n"
+            f"Propose {n} distinct article ideas I could research and write. "
+            "Make them concrete and varied."
+        ),
+        _IDEAS_SCHEMA,
         system=_IDEAS_SYSTEM,
-        messages=[
-            {
-                "role": "user",
-                "content": (
-                    f"Theme: {theme!r}\n\n"
-                    f"Propose {n} distinct article ideas I could research and write. "
-                    "Make them concrete and varied."
-                ),
-            }
-        ],
+        model=model,
     )
-    text = next(b.text for b in response.content if b.type == "text")
-    return json.loads(text)["ideas"][:n]
+    return result["ideas"][:n]
 
 
 def ideas_to_markdown(theme: str, ideas: list[dict]) -> str:

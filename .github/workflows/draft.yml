@@ -67,6 +67,8 @@ jobs:
         if: steps.sel.outputs.ok == 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ARTICLEGEN_PROVIDER: ${{ vars.ARTICLEGEN_PROVIDER }}
           SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
           OPENALEX_MAILTO: ${{ vars.OPENALEX_MAILTO }}
           TITLE: ${{ steps.sel.outputs.title }}

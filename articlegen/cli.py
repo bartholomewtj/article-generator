@@ -18,9 +18,10 @@ import webbrowser
 
 from . import demo
 from .ideas import format_ideas_console, generate_ideas, ideas_to_markdown
+from .llm import resolve_provider
 from .render import build_index, render_article, render_markdown
 from .sources import gather_evidence
-from .writer import DEFAULT_MODEL, plan_queries, write_article
+from .writer import plan_queries, write_article
 
 IDEAS_DIR = "ideas"
 DRAFTS_DIR = "drafts"
@@ -43,8 +44,12 @@ def _open_in_browser(path: str) -> None:
 
 
 def _api_error(exc: Exception) -> int:
-    _log(f"Could not reach the Claude API: {exc}")
-    _log("Set ANTHROPIC_API_KEY (or run `ant auth login`) and try again.")
+    provider, model = resolve_provider()
+    _log(f"The {provider} API call failed (model {model}): {exc}")
+    _log(
+        "Set ANTHROPIC_API_KEY for Claude, or GEMINI_API_KEY for Gemini "
+        "(free key at https://aistudio.google.com/), and try again."
+    )
     return 1
 
 
@@ -143,7 +148,14 @@ def build_parser() -> argparse.ArgumentParser:
             "(plus Markdown), grounded in journal-article abstracts."
         ),
     )
-    parser.add_argument("--model", default=DEFAULT_MODEL, help=f"Claude model (default: {DEFAULT_MODEL})")
+    parser.add_argument(
+        "--model", default=None,
+        help=(
+            "Model to use; the name picks the provider (claude-* / gemini-*). "
+            "Default: auto — claude-opus-4-8 with an Anthropic key, "
+            "gemini-2.5-flash with a Gemini key."
+        ),
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_ideas = sub.add_parser("ideas", help="Stage 1: turn a theme into article ideas to pick from")
