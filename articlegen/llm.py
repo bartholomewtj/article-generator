@@ -19,8 +19,12 @@ import os
 import sys
 
 ANTHROPIC_DEFAULT_MODEL = "claude-opus-4-8"
-GOOGLE_DEFAULT_MODEL = "gemini-2.5-flash"
+GOOGLE_DEFAULT_MODEL = "gemini-flash-latest"
 DEFAULT_PROVIDER = "google"
+
+# Cache the model we've confirmed this key can use, so we discover at most once
+# per process (a draft run makes two Gemini calls).
+_RESOLVED_GOOGLE_MODEL: str | None = None
 
 
 def resolve_provider(model: str | None = None) -> tuple[str, str]:
@@ -122,6 +126,51 @@ def _gemini_schema(node):
     return node
 
 
+_UNAVAILABLE_HINTS = (
+    "not_found", "not found", "no longer available",
+    "not available", "is not supported", "does not exist",
+)
+
+
+def _is_model_unavailable(exc) -> bool:
+    if getattr(exc, "code", None) == 404:
+        return True
+    text = str(getattr(exc, "message", "") or exc).lower()
+    return any(hint in text for hint in _UNAVAILABLE_HINTS)
+
+
+def _rank_google_model(name: str) -> tuple:
+    n = name.lower()
+    return ("flash" in n, "latest" in n, n)  # prefer flash, then 'latest', then newest by name
+
+
+def _discover_google_model(client) -> str | None:
+    """Pick a currently-available generateContent Gemini model for this key."""
+    global _RESOLVED_GOOGLE_MODEL
+    if _RESOLVED_GOOGLE_MODEL:
+        return _RESOLVED_GOOGLE_MODEL
+    try:
+        models = list(client.models.list())
+    except Exception:
+        return None
+
+    bad = ("embedding", "aqa", "imagen", "vision", "tts", "image-generation", "learnlm")
+    candidates = []
+    for m in models:
+        name = (getattr(m, "name", "") or "")
+        actions = [a.lower() for a in (getattr(m, "supported_actions", None) or [])]
+        low = name.lower()
+        if "gemini" not in low or any(b in low for b in bad):
+            continue
+        if actions and "generatecontent" not in actions:
+            continue
+        candidates.append(name)
+    if not candidates:
+        return None
+    _RESOLVED_GOOGLE_MODEL = max(candidates, key=_rank_google_model)
+    return _RESOLVED_GOOGLE_MODEL
+
+
 def _google_generate(prompt, schema, system, model, deep) -> dict:
     try:
         from google import genai
@@ -138,7 +187,22 @@ def _google_generate(prompt, schema, system, model, deep) -> dict:
         response_schema=_gemini_schema(schema),
         max_output_tokens=65535 if deep else 8192,
     )
-    response = client.models.generate_content(model=model, contents=prompt, config=config)
+
+    target = _RESOLVED_GOOGLE_MODEL or model
+    try:
+        response = client.models.generate_content(model=target, contents=prompt, config=config)
+    except Exception as exc:
+        if not _is_model_unavailable(exc):
+            raise
+        alt = _discover_google_model(client)
+        if not alt or alt == target:
+            raise RuntimeError(
+                f"Gemini model {target!r} is unavailable and no working alternative was "
+                f"found for this API key. Set --model / GOOGLE model explicitly. ({exc})"
+            ) from exc
+        print(f"[articlegen] model {target!r} unavailable; using {alt!r}", file=sys.stderr, flush=True)
+        response = client.models.generate_content(model=alt, contents=prompt, config=config)
+
     if not response.text:
         feedback = getattr(response, "prompt_feedback", None)
         raise RuntimeError(f"Gemini returned no text (prompt_feedback={feedback}).")
