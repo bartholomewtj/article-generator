@@ -22,18 +22,20 @@ The whole workflow runs on GitHub Actions, driven from issues — so the
    GitHub app; the styled HTML sits next to it in `drafts/` for desktop
    reading. Comment `draft N` again any time for another take.
 
-**One-time setup — pick an AI provider** (repo → Settings → Secrets and
+**One-time setup — add an AI provider key** (repo → Settings → Secrets and
 variables → Actions):
 
-- **Claude** (best writing quality, paid API): add an `ANTHROPIC_API_KEY`
-  secret.
-- **Gemini** (free tier, no card needed): create a key at
+- **Gemini** (the default; free tier, no card needed): create a key at
   https://aistudio.google.com/ and add it as a `GEMINI_API_KEY` secret.
+- **Claude** (opt-in; best writing quality, paid API): add an
+  `ANTHROPIC_API_KEY` secret.
 
-If only one key is set, it's used automatically. If both are set, Claude wins
-by default — add a repository *variable* `ARTICLEGEN_PROVIDER` = `google` (or
-`anthropic`) to choose explicitly. Models: `claude-opus-4-8` on Anthropic,
-`gemini-2.5-flash` on Google, both overridable with `--model`.
+**Gemini is used by default** — with a `GEMINI_API_KEY` set it runs
+automatically, and it takes priority even if an `ANTHROPIC_API_KEY` is also
+present. To use Claude instead, set a repository *variable*
+`ARTICLEGEN_PROVIDER` = `anthropic` (or leave only the Anthropic key set).
+Models: `gemini-2.5-flash` on Google, `claude-opus-4-8` on Anthropic, both
+overridable with `--model`.
 
 Optional extras: a `SEMANTIC_SCHOLAR_API_KEY` secret and an `OPENALEX_MAILTO`
 repository *variable* raise the scholarly APIs' rate limits.

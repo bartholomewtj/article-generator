@@ -47,8 +47,8 @@ def _api_error(exc: Exception) -> int:
     provider, model = resolve_provider()
     _log(f"The {provider} API call failed (model {model}): {exc}")
     _log(
-        "Set ANTHROPIC_API_KEY for Claude, or GEMINI_API_KEY for Gemini "
-        "(free key at https://aistudio.google.com/), and try again."
+        "Set GEMINI_API_KEY for Gemini (free key at https://aistudio.google.com/), "
+        "or ANTHROPIC_API_KEY for Claude, and try again."
     )
     return 1
 
@@ -152,8 +152,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--model", default=None,
         help=(
             "Model to use; the name picks the provider (claude-* / gemini-*). "
-            "Default: auto — claude-opus-4-8 with an Anthropic key, "
-            "gemini-2.5-flash with a Gemini key."
+            "Default: auto — gemini-2.5-flash (Gemini is the default provider), "
+            "or claude-opus-4-8 when only an Anthropic key is set."
         ),
     )
     sub = parser.add_subparsers(dest="command", required=True)

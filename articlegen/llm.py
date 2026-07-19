@@ -3,8 +3,13 @@
 Provider resolution, in priority order:
 1. The model name, when given: `claude-*` -> Anthropic, `gemini-*` -> Google.
 2. ARTICLEGEN_PROVIDER env var ("anthropic" or "google").
-3. Whichever API key is present: ANTHROPIC_API_KEY, then GEMINI_API_KEY / GOOGLE_API_KEY.
-4. Fallback: Anthropic (which can also authenticate via an `ant auth login` profile).
+3. Whichever API key is present: GEMINI_API_KEY / GOOGLE_API_KEY, then ANTHROPIC_API_KEY.
+4. Fallback: Gemini (the default provider).
+
+Gemini is the default: with only a GEMINI_API_KEY set it's used automatically,
+and it wins when both providers' keys are present. Claude is opt-in — set
+ARTICLEGEN_PROVIDER=anthropic, pass a `claude-*` --model, or run with only an
+Anthropic key.
 """
 
 from __future__ import annotations
@@ -14,6 +19,7 @@ import os
 
 ANTHROPIC_DEFAULT_MODEL = "claude-opus-4-8"
 GOOGLE_DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_PROVIDER = "google"
 
 
 def resolve_provider(model: str | None = None) -> tuple[str, str]:
@@ -27,14 +33,14 @@ def resolve_provider(model: str | None = None) -> tuple[str, str]:
     forced = os.environ.get("ARTICLEGEN_PROVIDER", "").strip().lower()
     if forced in ("anthropic", "google"):
         provider = forced
-    elif os.environ.get("ANTHROPIC_API_KEY"):
-        provider = "anthropic"
     elif os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
         provider = "google"
+    elif os.environ.get("ANTHROPIC_API_KEY"):
+        provider = "anthropic"
     else:
-        provider = "anthropic"  # may still work via an `ant auth login` profile
+        provider = DEFAULT_PROVIDER  # Gemini by default
 
-    default = ANTHROPIC_DEFAULT_MODEL if provider == "anthropic" else GOOGLE_DEFAULT_MODEL
+    default = GOOGLE_DEFAULT_MODEL if provider == "google" else ANTHROPIC_DEFAULT_MODEL
     return provider, model or default
 
 
