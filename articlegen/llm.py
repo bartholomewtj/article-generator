@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 
 ANTHROPIC_DEFAULT_MODEL = "claude-opus-4-8"
 GOOGLE_DEFAULT_MODEL = "gemini-flash-latest"
@@ -139,6 +140,41 @@ def _is_model_unavailable(exc) -> bool:
     return any(hint in text for hint in _UNAVAILABLE_HINTS)
 
 
+_TRANSIENT_HINTS = (
+    "high demand", "overloaded", "unavailable", "try again",
+    "resource_exhausted", "rate limit", "deadline",
+)
+
+
+def _is_transient(exc) -> bool:
+    if getattr(exc, "code", None) in (429, 500, 502, 503, 504):
+        return True
+    text = str(getattr(exc, "message", "") or exc).lower()
+    return any(hint in text for hint in _TRANSIENT_HINTS)
+
+
+def _generate_once(client, model, prompt, config, tries: int = 5):
+    """Call Gemini, retrying transient overload/rate-limit errors with backoff.
+    Model-unavailable errors are re-raised immediately so the caller can rediscover."""
+    delay = 4.0
+    for attempt in range(tries):
+        try:
+            return client.models.generate_content(model=model, contents=prompt, config=config)
+        except Exception as exc:
+            if _is_model_unavailable(exc):
+                raise
+            if _is_transient(exc) and attempt < tries - 1:
+                print(
+                    f"[articlegen] transient error from Gemini (attempt {attempt + 1}/{tries}), "
+                    f"retrying in {delay:.0f}s: {exc}",
+                    file=sys.stderr, flush=True,
+                )
+                time.sleep(delay)
+                delay = min(delay * 2, 30.0)
+                continue
+            raise
+
+
 def _rank_google_model(name: str) -> tuple:
     n = name.lower()
     return ("flash" in n, "latest" in n, n)  # prefer flash, then 'latest', then newest by name
@@ -190,7 +226,7 @@ def _google_generate(prompt, schema, system, model, deep) -> dict:
 
     target = _RESOLVED_GOOGLE_MODEL or model
     try:
-        response = client.models.generate_content(model=target, contents=prompt, config=config)
+        response = _generate_once(client, target, prompt, config)
     except Exception as exc:
         if not _is_model_unavailable(exc):
             raise
@@ -201,7 +237,7 @@ def _google_generate(prompt, schema, system, model, deep) -> dict:
                 f"found for this API key. Set --model / GOOGLE model explicitly. ({exc})"
             ) from exc
         print(f"[articlegen] model {target!r} unavailable; using {alt!r}", file=sys.stderr, flush=True)
-        response = client.models.generate_content(model=alt, contents=prompt, config=config)
+        response = _generate_once(client, alt, prompt, config)
 
     if not response.text:
         feedback = getattr(response, "prompt_feedback", None)
