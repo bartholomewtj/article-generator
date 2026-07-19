@@ -5,6 +5,8 @@ build/
 dist/
 .venv/
 venv/
-# generated articles
+# generated output
 /*.html
 !README*.html
+/drafts/
+/ideas/

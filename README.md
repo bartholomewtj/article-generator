@@ -1,19 +1,26 @@
 # articlegen
 
-Turn a topic or idea into a **readable, visually polished, single-page HTML
-article** — grounded in real journal articles, not just the model's memory.
+A **three-stage workflow** for going from a vague interest to a review-ready
+article: **generate ideas → research collated automatically → draft prepared for
+your review** — as a self-contained single-page HTML file (plus Markdown),
+grounded in real journal articles rather than the model's memory.
 
-Give it a subject; it finds relevant peer-reviewed papers, has Claude write an
-engaging popular-science piece that cites them, and renders everything into one
-self-contained `.html` file you can open in any browser or print to PDF.
-
-## How it works
+## The workflow
 
 ```
-topic ──▶ Claude plans search queries
-       ──▶ Semantic Scholar + OpenAlex return papers (with abstracts)
-       ──▶ Claude writes the article, citing sources inline as [1], [2, 3]…
-       ──▶ rendered into a styled, self-contained single-page HTML file
+1. articlegen ideas "<theme>"      # generate ideas, pick one   ◀── you choose
+2. articlegen draft "<title>"      # research + draft, auto      ──▶ drafts/ queue
+3. review drafts/index.html                                      ◀── you review
+```
+
+Two human gates (choose an idea, review the draft); everything in between is
+automatic. Under the hood, the `draft` stage:
+
+```
+title ──▶ Claude plans search queries
+      ──▶ Semantic Scholar + OpenAlex return papers (with abstracts)
+      ──▶ Claude writes the article, citing sources inline as [1], [2, 3]…
+      ──▶ rendered to drafts/<date>-<slug>.html  +  .md, listed in drafts/index.html
 ```
 
 - **Evidence-grounded.** The writer only sees real abstracts and is instructed
@@ -48,27 +55,35 @@ export OPENALEX_MAILTO=you@example.com  # optional, "polite pool"
 ## Use
 
 ```bash
-# Basic
-python -m articlegen "why do we dream?"
+# 1. Generate ideas from a broad theme; skim them and pick one
+python -m articlegen ideas "renewable energy storage"
 
-# Choose the output file and tune the audience
-python -m articlegen "CRISPR gene editing" -o crispr.html --style "for high-school students"
+# 2. Research + draft the idea you picked (opens it when done)
+python -m articlegen draft "Why gravity batteries could outlast lithium" --open
+
+# 3. Review everything you've drafted from one page
+python -m articlegen queue --open
 
 # Preview the visual design instantly, with no API calls or network
-python -m articlegen --demo "what your brain does while you sleep" -o demo.html
+python -m articlegen demo --open
 ```
 
-Or, after `pip install -e .`, just `articlegen "your topic"`.
+Or, after `pip install -e .`, drop the `python -m`: `articlegen ideas "..."`.
 
-### Options
+Each `draft` run writes three things into `drafts/`:
+`<date>-<slug>.html` (the styled article), `<date>-<slug>.md` (same content as
+Markdown, for easy editing), and refreshes `index.html` (your review queue).
 
-| Flag | Description |
-|------|-------------|
-| `-o, --output` | Output HTML path (default: a slug of the topic) |
-| `--style` | Free-text audience/tone note, e.g. `"skeptical, for practitioners"` |
-| `--max-papers` | Max candidate papers fed to the writer (default 20) |
-| `--model` | Claude model (default `claude-opus-4-8`) |
-| `--demo` | Render a built-in sample — no API calls, to preview the design |
+### Commands & options
+
+| Command | Key options |
+|---------|-------------|
+| `ideas <theme>` | `-n` (how many, default 6), `-o` (output .md path) |
+| `draft <title>` | `--open`, `--style "<audience/tone>"`, `--max-papers N`, `--name <stem>` |
+| `queue` | `--open` |
+| `demo` | `--open`, `-o` |
+
+`--model` (default `claude-opus-4-8`) is global: `articlegen --model … draft "…"`.
 
 ## Notes & limitations
 
@@ -83,9 +98,10 @@ Or, after `pip install -e .`, just `articlegen "your topic"`.
 
 ```
 articlegen/
-  cli.py       argument parsing + orchestration
+  cli.py       subcommands (ideas / draft / queue / demo) + orchestration
+  ideas.py     Claude call: theme -> shortlist of article ideas
   writer.py    Claude calls: plan queries, write the article (structured JSON)
   sources.py   Semantic Scholar + OpenAlex fetching, dedupe, ranking
-  render.py    structured article -> self-contained styled HTML
-  demo.py      built-in sample for --demo
+  render.py    structured article -> styled HTML, Markdown, and drafts/ index
+  demo.py      built-in sample for `articlegen demo`
 ```

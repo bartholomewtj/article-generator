@@ -1,14 +1,28 @@
-"""Render the structured article + its cited sources into a self-contained HTML page."""
+"""Render the structured article + its cited sources into a self-contained HTML page.
+
+Also builds the Markdown export and the drafts/ review-queue index page.
+"""
 
 from __future__ import annotations
 
 import datetime
+import glob
 import html
+import os
 import re
 
 from .sources import Paper
 
 _CITATION_RE = re.compile(r"\[(\d+(?:\s*,\s*\d+)*)\]")
+_TITLE_RE = re.compile(r"<title>(.*?)</title>", re.DOTALL)
+
+
+def _cited_papers(article: dict, papers: list[Paper]) -> list[Paper]:
+    cited: list[Paper] = []
+    for source_index in article.get("references", []):
+        if 1 <= source_index <= len(papers):
+            cited.append(papers[source_index - 1])
+    return cited
 
 
 def _link_citations(escaped_text: str, valid_numbers: set[int]) -> str:
@@ -26,10 +40,7 @@ def _link_citations(escaped_text: str, valid_numbers: set[int]) -> str:
 
 def render_article(article: dict, papers: list[Paper], topic: str) -> str:
     # `references` holds 1-based SOURCE indices in citation order.
-    cited: list[Paper] = []
-    for source_index in article.get("references", []):
-        if 1 <= source_index <= len(papers):
-            cited.append(papers[source_index - 1])
+    cited = _cited_papers(article, papers)
     valid_numbers = set(range(1, len(cited) + 1))
 
     sections_html = []
@@ -267,3 +278,126 @@ _TEMPLATE = """<!DOCTYPE html>
 </body>
 </html>
 """
+
+
+def render_markdown(article: dict, papers: list[Paper], topic: str) -> str:
+    """Plain-Markdown version of the same article, for easy review/editing."""
+    cited = _cited_papers(article, papers)
+    today = datetime.date.today().strftime("%B %d, %Y")
+    lines = [
+        f"# {article['title']}",
+        "",
+        f"*{article['standfirst']}*",
+        "",
+        f"> Topic: {topic} · Generated {today} · {len(cited)} sources cited",
+        "",
+    ]
+    for section in article["sections"]:
+        lines.append(f"## {section['heading']}")
+        lines.append("")
+        for para in section["paragraphs"]:
+            lines.append(para)
+            lines.append("")
+        if section.get("pull_quote"):
+            lines.append(f"> **{section['pull_quote']}**")
+            lines.append("")
+    lines.append("## Key takeaways")
+    lines.append("")
+    for takeaway in article.get("key_takeaways", []):
+        lines.append(f"- {takeaway}")
+    lines.append("")
+    lines.append("## Sources")
+    lines.append("")
+    for n, paper in enumerate(cited, start=1):
+        meta = " · ".join(b for b in (paper.venue, f"cited {paper.citation_count}×" if paper.citation_count else "") if b)
+        link = f" <{paper.link}>" if paper.link else ""
+        lines.append(
+            f"{n}. {paper.author_line} ({paper.year or 'n.d.'}). "
+            f"*{paper.title}*."
+            + (f" {meta}." if meta else "")
+            + link
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
+_INDEX_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Draft review queue</title>
+<style>
+  :root {{ --bg:#fff; --ink:#1d1f21; --muted:#6b6f76; --accent:#0b6e6a; --rule:#e4e2dd; --card:#f6f5f2; }}
+  @media (prefers-color-scheme: dark) {{
+    :root {{ --bg:#16181b; --ink:#e8e6e1; --muted:#9aa0a6; --accent:#5cc8c0; --rule:#2c2f33; --card:#1e2125; }}
+  }}
+  body {{ margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; line-height:1.5; }}
+  main {{ max-width:44rem; margin:0 auto; padding:3rem 1.25rem 5rem; }}
+  h1 {{ font-size:1.6rem; margin:0 0 0.3rem; }}
+  .sub {{ color:var(--muted); margin:0 0 2rem; font-size:0.9rem; }}
+  ul {{ list-style:none; margin:0; padding:0; }}
+  li {{ background:var(--card); border-radius:10px; padding:1rem 1.2rem; margin-bottom:0.8rem; }}
+  li a {{ color:var(--ink); text-decoration:none; font-size:1.15rem; font-weight:600; }}
+  li a:hover {{ color:var(--accent); }}
+  .meta {{ color:var(--muted); font-size:0.82rem; margin-top:0.3rem; }}
+  .meta a {{ color:var(--accent); text-decoration:none; }}
+  .empty {{ color:var(--muted); }}
+</style>
+</head>
+<body>
+<main>
+  <h1>Draft review queue</h1>
+  <p class="sub">{count} draft(s) · newest first</p>
+  <ul>
+    {items}
+  </ul>
+</main>
+</body>
+</html>
+"""
+
+
+def _draft_title(html_path: str) -> str:
+    try:
+        with open(html_path, encoding="utf-8") as f:
+            match = _TITLE_RE.search(f.read())
+        if match:
+            return html.unescape(match.group(1).strip())
+    except OSError:
+        pass
+    return os.path.basename(html_path)
+
+
+def build_index(drafts_dir: str) -> str:
+    """Scan a drafts folder and write drafts/index.html listing every draft, newest first."""
+    html_files = [
+        p for p in glob.glob(os.path.join(drafts_dir, "*.html"))
+        if os.path.basename(p) != "index.html"
+    ]
+    html_files.sort(key=os.path.getmtime, reverse=True)
+
+    items = []
+    for path in html_files:
+        name = os.path.basename(path)
+        title = html.escape(_draft_title(path))
+        mtime = datetime.datetime.fromtimestamp(os.path.getmtime(path))
+        md_name = name[:-5] + ".md"
+        md_link = (
+            f' · <a href="{html.escape(md_name, quote=True)}">markdown</a>'
+            if os.path.exists(os.path.join(drafts_dir, md_name))
+            else ""
+        )
+        items.append(
+            f'<li><a href="{html.escape(name, quote=True)}">{title}</a>'
+            f'<div class="meta">{mtime:%b %d, %Y %H:%M} · '
+            f'<a href="{html.escape(name, quote=True)}">open</a>{md_link}</div></li>'
+        )
+
+    body = "\n    ".join(items) if items else '<li class="empty">No drafts yet.</li>'
+    index_html = _INDEX_TEMPLATE.format(count=len(html_files), items=body)
+    index_path = os.path.join(drafts_dir, "index.html")
+    with open(index_path, "w", encoding="utf-8") as f:
+        f.write(index_html)
+    return index_path
