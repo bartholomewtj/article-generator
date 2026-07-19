@@ -114,8 +114,21 @@ def _featured_html(article: dict, papers: list[Paper], cite_map: dict[int, int])
     )
 
 
-def _evidence_html(cited, papers, topic, article, curation, verification) -> str:
-    counts = (curation or {}).get("counts") or {}
+def _cited_relevance_counts(cite_map: dict[int, int], curation: dict | None) -> dict:
+    """Tally direct/related/tangential over the CITED sources only (not all fetched)."""
+    relevance = (curation or {}).get("relevance") or {}
+    if not relevance:
+        return {}
+    counts = {"direct": 0, "related": 0, "tangential": 0}
+    for raw in cite_map:
+        label = relevance.get(raw)
+        if label in counts:
+            counts[label] += 1
+    return counts
+
+
+def _evidence_html(cited, papers, topic, article, curation, verification, cite_map) -> str:
+    counts = _cited_relevance_counts(cite_map, curation)
     bits = [f"<strong>{len(cited)}</strong> sources cited"]
     if counts:
         bits.append(
@@ -216,7 +229,7 @@ def render_article(
         else ""
     )
     featured_html = _featured_html(article, papers, cite_map)
-    evidence_box = _evidence_html(cited, papers, topic, article, curation, verification)
+    evidence_box = _evidence_html(cited, papers, topic, article, curation, verification, cite_map)
 
     today = datetime.date.today().strftime("%B %-d, %Y")
     return _TEMPLATE.format(
@@ -525,7 +538,7 @@ def render_markdown(
     lines.append("")
 
     # Evidence quality
-    counts = (curation or {}).get("counts") or {}
+    counts = _cited_relevance_counts(cite_map, curation)
     unver = (verification or {}).get("unverified") or []
     yr = _year_range(cited)
     lines.append("## Evidence quality")

@@ -128,14 +128,16 @@ def cmd_draft(args) -> int:
     _log(f"  Queue:    {index_path}")
 
     # One-line, greppable summary for the GitHub workflow to surface in its comment.
-    direct = counts.get("direct", 0) if counts else None
+    relevance = curation.get("relevance") or {}
+    cited_refs = {r for r in article.get("references", []) if isinstance(r, int) and 1 <= r <= len(papers)}
+    direct = sum(1 for r in cited_refs if relevance.get(r) == "direct") if relevance else None
     n_unver = len(verification.get("unverified") or [])
-    summary = f"{len(article['references'])} sources cited"
+    summary = f"{len(cited_refs)} sources cited"
     if direct is not None:
         summary += f"; {direct} directly on-topic"
     if n_unver:
         summary += f"; ⚠ {n_unver} figure(s) not found in source abstracts"
-    if counts and not direct:
+    if relevance and not direct:
         summary += "; ⚠ no directly on-topic source found"
     print(f"EVIDENCE_SUMMARY: {summary}")
 
