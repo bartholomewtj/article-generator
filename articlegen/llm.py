@@ -207,6 +207,52 @@ def _discover_google_model(client) -> str | None:
     return _RESOLVED_GOOGLE_MODEL
 
 
+def _build_google_config(types, system, schema, deep, thinking_budget):
+    # Disable thinking (budget 0) for these schema-constrained calls: on 2.5 flash,
+    # thinking under structured output can run away and truncate into invalid JSON.
+    kwargs = dict(
+        system_instruction=system,
+        response_mime_type="application/json",
+        response_schema=_gemini_schema(schema),
+        max_output_tokens=65535 if deep else 16384,
+    )
+    if thinking_budget is not None:
+        kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=thinking_budget)
+    return types.GenerateContentConfig(**kwargs)
+
+
+def _finish_reason(response) -> str:
+    try:
+        fr = response.candidates[0].finish_reason
+    except (AttributeError, IndexError, TypeError):
+        return ""
+    return getattr(fr, "name", str(fr or ""))
+
+
+def _parse_google_response(response) -> dict:
+    reason = _finish_reason(response)
+    text = (response.text or "").strip()
+    if not text:
+        feedback = getattr(response, "prompt_feedback", None)
+        raise RuntimeError(
+            f"Gemini returned no text (finish_reason={reason}, prompt_feedback={feedback})."
+        )
+    if text.startswith("```"):  # strip an accidental markdown fence
+        text = text.strip("`")
+        if text[:4].lower() == "json":
+            text = text[4:]
+        text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        if reason == "MAX_TOKENS":
+            raise RuntimeError(
+                "Gemini's reply was cut off at the output-token limit, so the JSON is "
+                "incomplete. Try again, or narrow the request."
+            ) from exc
+        raise RuntimeError(f"Gemini returned invalid JSON (finish_reason={reason}): {exc}") from exc
+
+
 def _google_generate(prompt, schema, system, model, deep) -> dict:
     try:
         from google import genai
@@ -217,29 +263,29 @@ def _google_generate(prompt, schema, system, model, deep) -> dict:
         ) from exc
 
     client = genai.Client()  # reads GEMINI_API_KEY / GOOGLE_API_KEY from the environment
-    config = types.GenerateContentConfig(
-        system_instruction=system,
-        response_mime_type="application/json",
-        response_schema=_gemini_schema(schema),
-        max_output_tokens=65535 if deep else 8192,
-    )
-
+    config = _build_google_config(types, system, schema, deep, thinking_budget=0)
     target = _RESOLVED_GOOGLE_MODEL or model
+
     try:
         response = _generate_once(client, target, prompt, config)
     except Exception as exc:
-        if not _is_model_unavailable(exc):
+        message = str(getattr(exc, "message", "") or exc).lower()
+        if _is_model_unavailable(exc):
+            alt = _discover_google_model(client)
+            if not alt or alt == target:
+                raise RuntimeError(
+                    f"Gemini model {target!r} is unavailable and no working alternative "
+                    f"was found for this API key. Set --model explicitly. ({exc})"
+                ) from exc
+            print(f"[articlegen] model {target!r} unavailable; using {alt!r}", file=sys.stderr, flush=True)
+            response = _generate_once(client, alt, prompt, config)
+        elif "thinking" in message:
+            # This model won't accept disabled thinking; retry with default thinking.
+            print("[articlegen] model rejected thinking_budget=0; retrying with default thinking",
+                  file=sys.stderr, flush=True)
+            config = _build_google_config(types, system, schema, deep, thinking_budget=None)
+            response = _generate_once(client, target, prompt, config)
+        else:
             raise
-        alt = _discover_google_model(client)
-        if not alt or alt == target:
-            raise RuntimeError(
-                f"Gemini model {target!r} is unavailable and no working alternative was "
-                f"found for this API key. Set --model / GOOGLE model explicitly. ({exc})"
-            ) from exc
-        print(f"[articlegen] model {target!r} unavailable; using {alt!r}", file=sys.stderr, flush=True)
-        response = _generate_once(client, alt, prompt, config)
 
-    if not response.text:
-        feedback = getattr(response, "prompt_feedback", None)
-        raise RuntimeError(f"Gemini returned no text (prompt_feedback={feedback}).")
-    return json.loads(response.text)
+    return _parse_google_response(response)
