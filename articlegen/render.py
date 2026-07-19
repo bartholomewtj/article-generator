@@ -17,12 +17,35 @@ _CITATION_RE = re.compile(r"\[(\d+(?:\s*,\s*\d+)*)\]")
 _TITLE_RE = re.compile(r"<title>(.*?)</title>", re.DOTALL)
 
 
+def _citation_map(article: dict, papers: list[Paper]) -> tuple[list[Paper], dict[int, int]]:
+    """Resolve `references` (raw SOURCE indices, in first-citation order) into the
+    ordered list of cited papers plus a map {raw SOURCE index -> display number 1..N}.
+
+    The writer cites papers by their fed "SOURCE N" label; we renumber those to a
+    clean 1..N sequence so the inline markers match the Sources list exactly.
+    """
+    ordered: list[int] = []
+    for raw in article.get("references", []):
+        if isinstance(raw, int) and 1 <= raw <= len(papers) and raw not in ordered:
+            ordered.append(raw)
+    cited = [papers[raw - 1] for raw in ordered]
+    mapping = {raw: position for position, raw in enumerate(ordered, start=1)}
+    return cited, mapping
+
+
+def _remap_citations(text: str, mapping: dict[int, int]) -> str:
+    """Rewrite raw SOURCE-index markers to display numbers; drop any with no source."""
+
+    def replace(match: re.Match) -> str:
+        mapped = [str(mapping[int(n)]) for n in match.group(1).split(",")
+                  if int(n.strip()) in mapping]
+        return f"[{', '.join(mapped)}]" if mapped else ""
+
+    return _CITATION_RE.sub(replace, text)
+
+
 def _cited_papers(article: dict, papers: list[Paper]) -> list[Paper]:
-    cited: list[Paper] = []
-    for source_index in article.get("references", []):
-        if 1 <= source_index <= len(papers):
-            cited.append(papers[source_index - 1])
-    return cited
+    return _citation_map(article, papers)[0]
 
 
 def _link_citations(escaped_text: str, valid_numbers: set[int]) -> str:
@@ -39,15 +62,15 @@ def _link_citations(escaped_text: str, valid_numbers: set[int]) -> str:
 
 
 def render_article(article: dict, papers: list[Paper], topic: str) -> str:
-    # `references` holds 1-based SOURCE indices in citation order.
-    cited = _cited_papers(article, papers)
+    cited, cite_map = _citation_map(article, papers)
     valid_numbers = set(range(1, len(cited) + 1))
 
     sections_html = []
     for i, section in enumerate(article["sections"]):
         paragraphs = []
         for j, para in enumerate(section["paragraphs"]):
-            text = _link_citations(html.escape(para), valid_numbers)
+            remapped = _remap_citations(para, cite_map)
+            text = _link_citations(html.escape(remapped), valid_numbers)
             css = ' class="opener"' if i == 0 and j == 0 else ""
             paragraphs.append(f"<p{css}>{text}</p>")
         pull_quote = section.get("pull_quote")
@@ -64,7 +87,7 @@ def render_article(article: dict, papers: list[Paper], topic: str) -> str:
         )
 
     takeaways_html = "\n".join(
-        f"<li>{_link_citations(html.escape(t), valid_numbers)}</li>"
+        f"<li>{_link_citations(html.escape(_remap_citations(t, cite_map)), valid_numbers)}</li>"
         for t in article.get("key_takeaways", [])
     )
 
@@ -282,7 +305,7 @@ _TEMPLATE = """<!DOCTYPE html>
 
 def render_markdown(article: dict, papers: list[Paper], topic: str) -> str:
     """Plain-Markdown version of the same article, for easy review/editing."""
-    cited = _cited_papers(article, papers)
+    cited, cite_map = _citation_map(article, papers)
     today = datetime.date.today().strftime("%B %d, %Y")
     lines = [
         f"# {article['title']}",
@@ -296,7 +319,7 @@ def render_markdown(article: dict, papers: list[Paper], topic: str) -> str:
         lines.append(f"## {section['heading']}")
         lines.append("")
         for para in section["paragraphs"]:
-            lines.append(para)
+            lines.append(_remap_citations(para, cite_map))
             lines.append("")
         if section.get("pull_quote"):
             lines.append(f"> **{section['pull_quote']}**")
@@ -304,7 +327,7 @@ def render_markdown(article: dict, papers: list[Paper], topic: str) -> str:
     lines.append("## Key takeaways")
     lines.append("")
     for takeaway in article.get("key_takeaways", []):
-        lines.append(f"- {takeaway}")
+        lines.append(f"- {_remap_citations(takeaway, cite_map)}")
     lines.append("")
     lines.append("## Sources")
     lines.append("")
