@@ -97,6 +97,13 @@ Draft pipeline (in `cli.cmd_draft`): `plan_queries` (queries + `core_entity`) �
   raise scholarly-API rate limits.
 - Workflows are gated to OWNER/MEMBER/COLLABORATOR so strangers can't spend API
   quota. Failure comments show which provider keys the run saw + the error detail.
+- **Tappable "Read the article" link.** The draft comment links each article
+  through `https://htmlpreview.github.io/?<blob-url>`, which renders the styled
+  page as a live web page in the browser (the HTML is fully self-contained —
+  inline CSS, no external assets). This needs the **repo to be public** (the
+  proxy fetches raw content anonymously); it is. No Pages/setup required. If the
+  repo ever goes private again, this link 404s — switch to GitHub Pages
+  (`Settings → Pages → Source: GitHub Actions`, publishing `drafts/`) instead.
 
 ## Conventions
 

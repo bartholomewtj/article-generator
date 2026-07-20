@@ -100,12 +100,18 @@ jobs:
           BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           EVIDENCE=$(grep -m1 '^EVIDENCE_SUMMARY:' /tmp/run_log.txt | sed 's/^EVIDENCE_SUMMARY: *//') || true
+          BLOB_HTML="${{ github.server_url }}/${{ github.repository }}/blob/${BRANCH}/drafts/${STEM}.html"
+          # htmlpreview renders a GitHub-hosted HTML file as a live web page. The articles
+          # are fully self-contained (inline CSS, no external assets) and the repo is public,
+          # so tapping this opens the designed article straight in the browser — no setup.
+          READ_URL="https://htmlpreview.github.io/?${BLOB_HTML}"
           {
             echo "📄 Draft ready: **${TITLE}**"
             echo ""
             if [ -n "$EVIDENCE" ]; then echo "Evidence: ${EVIDENCE}"; echo ""; fi
-            echo "- [**Review it here (Markdown)**](${{ github.server_url }}/${{ github.repository }}/blob/${BRANCH}/drafts/${STEM}.md) — renders right in the GitHub app"
-            echo "- [Styled HTML](${{ github.server_url }}/${{ github.repository }}/blob/${BRANCH}/drafts/${STEM}.html) — download and open in a browser for the designed version"
+            echo "- [**📖 Read the article**](${READ_URL}) — opens the styled page as a web page in your browser"
+            echo "- [Review as Markdown](${{ github.server_url }}/${{ github.repository }}/blob/${BRANCH}/drafts/${STEM}.md) — renders right in the GitHub app"
+            echo "- [HTML source](${BLOB_HTML}) — the raw self-contained file to download or host anywhere"
             echo ""
             echo "Want another take? Comment \`draft N\` again (add \`style: ...\` to change tone or audience)."
           } > /tmp/done_comment.md
