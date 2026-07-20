@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Designing for Detours</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --ink: #1d1f21;
+    --muted: #6b6f76;
+    --accent: #0b6e6a;
+    --accent-soft: #0b6e6a22;
+    --rule: #e4e2dd;
+    --card: #f6f5f2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181b;
+      --ink: #e8e6e1;
+      --muted: #9aa0a6;
+      --accent: #5cc8c0;
+      --accent-soft: #5cc8c026;
+      --rule: #2c2f33;
+      --card: #1e2125;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: Georgia, "Iowan Old Style", "Times New Roman", serif;
+    font-size: 1.125rem;
+    line-height: 1.65;
+  }
+  main { max-width: 42rem; margin: 0 auto; padding: 3rem 1.25rem 5rem; }
+  header.masthead { margin-bottom: 3rem; }
+  .kicker {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 1rem;
+  }
+  h1 {
+    font-size: clamp(2rem, 5.5vw, 2.9rem);
+    line-height: 1.12;
+    margin: 0 0 1rem;
+    letter-spacing: -0.01em;
+  }
+  .standfirst {
+    font-size: 1.3rem;
+    line-height: 1.45;
+    color: var(--muted);
+    margin: 0 0 1.5rem;
+  }
+  .byline {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.85rem;
+    color: var(--muted);
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    padding: 0.6rem 0;
+  }
+  h2 {
+    font-size: 1.45rem;
+    line-height: 1.25;
+    margin: 2.6rem 0 0.9rem;
+  }
+  p { margin: 0 0 1.15rem; }
+  p.opener::first-letter {
+    float: left;
+    font-size: 3.4em;
+    line-height: 0.85;
+    padding: 0.06em 0.08em 0 0;
+    color: var(--accent);
+  }
+  sup.cite {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.68em;
+    letter-spacing: 0.02em;
+  }
+  sup.cite a { color: var(--accent); text-decoration: none; }
+  sup.cite a:hover { text-decoration: underline; }
+  blockquote.pull {
+    margin: 2rem 0;
+    padding: 0.2rem 0 0.2rem 1.2rem;
+    border-left: 3px solid var(--accent);
+    font-size: 1.45rem;
+    line-height: 1.35;
+    font-style: italic;
+    color: var(--ink);
+  }
+  aside.takeaways {
+    margin: 3rem 0;
+    padding: 1.4rem 1.6rem;
+    background: var(--card);
+    border-radius: 10px;
+  }
+  aside.takeaways h2 {
+    margin: 0 0 0.8rem;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  aside.takeaways ul { margin: 0; padding-left: 1.2rem; }
+  aside.takeaways li { margin-bottom: 0.55rem; }
+  p.evidence-note {
+    font-size: 0.98rem;
+    color: var(--muted);
+    font-style: italic;
+    border-left: 3px solid var(--rule);
+    padding-left: 1rem;
+    margin: 1.5rem 0;
+  }
+  aside.featured {
+    margin: 2.5rem 0;
+    padding: 1.3rem 1.6rem;
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+    background: var(--accent-soft);
+  }
+  aside.featured h2 {
+    margin: 0 0 0.7rem;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.8rem; font-weight: 700; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--accent);
+  }
+  aside.featured p { margin: 0 0 0.6rem; font-size: 1rem; line-height: 1.5; }
+  aside.featured .fs-cite { font-weight: 600; }
+  aside.featured .fs-why { font-style: italic; color: var(--muted); }
+  aside.featured .fs-ref { color: var(--accent); text-decoration: none; }
+  aside.featured a { color: var(--accent); }
+  aside.evidence {
+    margin: 2.5rem 0 0;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  aside.evidence ul.ev-stats {
+    display: flex; flex-wrap: wrap; gap: 0.4rem 1.4rem;
+    list-style: none; margin: 0 0 0.6rem; padding: 0;
+    font-size: 0.85rem; color: var(--muted);
+  }
+  aside.evidence .ev-warn {
+    font-size: 0.9rem; line-height: 1.45; margin: 0.5rem 0 0;
+    padding: 0.7rem 0.9rem; border-radius: 8px;
+    background: #b4530022; color: var(--ink);
+    border: 1px solid #b4530055;
+  }
+  section.references { margin-top: 3.5rem; border-top: 1px solid var(--rule); padding-top: 1.5rem; }
+  section.references h2 {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 1rem;
+  }
+  section.references ol {
+    margin: 0;
+    padding-left: 1.4rem;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.88rem;
+    line-height: 1.5;
+    color: var(--muted);
+  }
+  section.references li { margin-bottom: 0.7rem; }
+  section.references li:target { background: var(--accent-soft); border-radius: 4px; }
+  section.references a { color: var(--accent); text-decoration: none; }
+  section.references a:hover { text-decoration: underline; }
+  .ref-authors { color: var(--ink); }
+  .ref-meta { display: block; font-size: 0.82rem; }
+  footer.colophon {
+    margin-top: 3rem;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+  @media print {
+    body { font-size: 11pt; }
+    .kicker, sup.cite a, section.references a { color: black; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header class="masthead">
+    <p class="kicker">Designing for Detours: How Rigid Funding Streams Cripple Adaptable Mental Health Responses</p>
+    <h1>Designing for Detours</h1>
+    <p class="standfirst">When bureaucratic money lines cannot bend, the most promising, cost-effective mental health innovations are left to break.</p>
+    <p class="byline">Generated July 20, 2026 · Grounded in 11 peer-reviewed sources</p>
+  </header>
+
+  <p class="evidence-note">This article is built on a strong core of direct evidence examining how rigid and segregated funding streams cripple integrated medical, crisis, and jail diversion systems. It is enriched by related evaluations of youth and community care initiatives in Australia, California, and the UK.</p>
+
+  <aside class="featured">
+<h2>Featured study</h2>
+<p class="fs-cite"><a href="https://doi.org/10.5334/ijic.icic25534">Intermediate care in mental health: a pilot model of crisis care to improve patients’ experience and opportunities for admission avoidance</a> · K. McNeely et al. (2026) · International Journal of Integrated Care <a class="fs-ref" href="#ref-3">[3]</a></p>
+<p class="fs-why">This pilot program provides a stark, real-world proof-of-concept of how a highly effective and cost-saving crisis stabilization model can be starved to death by the absence of flexible, long-term funding streams.</p>
+<p><strong>Method.</strong> Conducted in winter 2023–24, the Ealing Crisis Centre pilot in London tested an alternative crisis intervention model utilizing five reclining chairs in a pre-admission assessment space, run by a multidisciplinary team offering biopsychosocial interventions.</p>
+<p><strong>Results.</strong> Over five months, the pilot supported 130 patients approaching admission; only 18% required inpatient admission compared to traditional Emergency Department pathways, and 95% of feedback respondents rated it &#x27;excellent&#x27;—yet the program was discontinued in May 2024 due to unavailable ongoing revenue funding.</p>
+</aside>
+
+  <section>
+<h2>The Wall Between Money and Care</h2>
+<blockquote class="pull">The system is built for a straight line, but human crises are full of detours.</blockquote><p class="opener">In the design of modern healthcare, the blueprint of the balance sheet rarely matches the reality of human suffering. When a person experiences a severe mental health crisis, their needs do not neatly separate into administrative filing cabinets. Yet, the funding structures built to sustain public health do exactly that. Rather than flowing dynamically to where a patient stands, public money is poured into rigid, vertical columns—often referred to as segregated or &quot;siloed&quot; funding streams. This financial architecture forces providers to choose between treating the whole person or protecting their budgets.</p>
+<p>The consequences of this segregation are felt most acutely by those trapped at the intersections of complex needs. For people living with serious mental illness, physical illnesses are often neglected because funding for psychiatric care is kept strictly isolated from general medicine <sup class="cite">[<a href="#ref-1">1</a>]</sup>. Similarly, programs designed to divert individuals with serious mental illnesses away from jails and into treatment programs find themselves constantly fighting to weave together mental health and substance abuse services that are artificially divided by segregated funding streams <sup class="cite">[<a href="#ref-2">2</a>]</sup>. The system is built for a straight line, but human crises are full of detours.</p>
+</section>
+
+<section>
+<h2>The Anatomy of a Discontinued Triumph</h2>
+<blockquote class="pull">Despite saving money and earning unparalleled patient satisfaction, the center was forced to close because ongoing revenue funding was unavailable.</blockquote><p>To understand what happens when innovative models meet rigid financial boundaries, one needs only to look at the short, brilliant life of the Ealing Crisis Centre (ECC) in London <sup class="cite">[<a href="#ref-3">3</a>]</sup>. Launched in the winter of 2023–24, the ECC was designed alongside individuals with lived experience to solve a glaring systemic failure: psychiatric patients waiting for unacceptably long periods in loud, stressful Emergency Departments (ED) while staff searched for scarce inpatient beds <sup class="cite">[<a href="#ref-3">3</a>]</sup>.</p>
+<p>Instead of traditional hospital beds or sterile ED trolleys, the ECC offered a therapeutic, low-restriction environment equipped with five reclining chairs, designated as a pre-admission assessment space <sup class="cite">[<a href="#ref-3">3</a>]</sup>. A multidisciplinary team provided biopsychosocial interventions to help patients stabilize. The results were stunning. Over a five-month pilot, the center supported 130 patients who were all on the precipice of hospital admission <sup class="cite">[<a href="#ref-3">3</a>]</sup>. With this intermediate intervention, only 18% of those patients ended up needing to be admitted <sup class="cite">[<a href="#ref-3">3</a>]</sup>. The rest were safely transitioned back to community care, primary care, or home-hospitalization <sup class="cite">[<a href="#ref-3">3</a>]</sup>.</p>
+<p>Patients loved it. Out of those who responded to feedback, 95% rated the service as &quot;excellent,&quot; with one patient remarking that it was the first psychiatric space that made them feel like people cared <sup class="cite">[<a href="#ref-3">3</a>]</sup>. Economically, the model was a triumph: it cost approximately £500 per &quot;chair-day&quot; compared to £605 per bed-night for an inpatient admission <sup class="cite">[<a href="#ref-3">3</a>]</sup>. Yet, despite saving money, lowering admission rates, and earning unparalleled patient satisfaction, the ECC was forced to close its doors in May 2024 because ongoing, flexible revenue funding was unavailable <sup class="cite">[<a href="#ref-3">3</a>]</sup>. The pilot was brilliant, but the bureaucratic plumbing was dry.</p>
+</section>
+
+<section>
+<h2>Silos Cripple the Best Intentions</h2>
+<blockquote class="pull">Because the money cannot be blended easily, services struggle to provide the deep, comprehensive care that complex patients need.</blockquote><p>The tragedy of the ECC is not an isolated incident; it is a global pattern. Across the world, governments have attempted to launch visionary mental health programs, only to watch them struggle against the gravity of inflexible funding models. In Australia, the highly regarded &quot;headspace&quot; initiative was created to establish integrated, youth-friendly primary care centers to intervene early in mental health and substance use disorders <sup class="cite">[<a href="#ref-4">4</a>, <a href="#ref-5">5</a>]</sup>. It proved that &quot;soft entry&quot; clinics could successfully draw in vulnerable young people who traditionally avoided healthcare <sup class="cite">[<a href="#ref-4">4</a>]</sup>.</p>
+<p>Yet, evaluations show that headspace remains a work in progress, hindered by the fact that its funding is capped and lacks dedicated streams for crucial pillars like vocational training and alcohol or drug interventions <sup class="cite">[<a href="#ref-4">4</a>]</sup>. Because the money cannot be blended easily at the local level, the service struggle to maintain model fidelity and provide the deep, comprehensive care that complex patients need <sup class="cite">[<a href="#ref-4">4</a>]</sup>. The same friction is documented in regional care coordination initiatives like Partners in Recovery, where support facilitators struggle to navigate the complex, unyielding boundaries of traditional clinical case management structures <sup class="cite">[<a href="#ref-6">6</a>, <a href="#ref-7">7</a>]</sup>. If the funding streams cannot bend, the program must break.</p>
+</section>
+
+<section>
+<h2>The Toll of Inflexible Architectures</h2>
+<blockquote class="pull">Until we design funding streams that behave like the networks they support, the most promising innovations will remain temporary experiments.</blockquote><p>What makes this rigidity so frustrating is that the solutions are already well-defined. The movement to transition care to recovery-oriented systems—which focus on long-term well-being and integration rather than acute crisis management—requires flexible budgeting that allows money to follow the patient across clinical, social, and vocational services <sup class="cite">[<a href="#ref-8">8</a>]</sup>. When emergency situations or systemic shifts occur, such as the rapid transition to telehealth, systems without built-in flexible funding arrangements fail to adapt proactively, forcing reactive, inefficient scrambles <sup class="cite">[<a href="#ref-9">9</a>]</sup>.</p>
+<p>To build a mental health system capable of navigating the 21st century, policymakers must stop funding programs as static, isolated entities <sup class="cite">[<a href="#ref-10">10</a>, <a href="#ref-11">11</a>]</sup>. Successful integration requires an active dismantling of the barriers between mental and physical health budgets, and between health services and social services <sup class="cite">[<a href="#ref-1">1</a>, <a href="#ref-2">2</a>]</sup>. We must design funding streams that behave like the networks they are meant to support: dynamic, collaborative, and prepared for detours. Until then, the most promising clinical innovations will continue to be brilliant, temporary experiments, built to save lives but destined to run out of time.</p>
+</section>
+
+  <aside class="takeaways">
+    <h2>Key takeaways</h2>
+    <ul>
+      <li>Rigid and segregated funding streams act as structural barriers that prevent the integration of mental, physical, and social healthcare.</li>
+<li>The Ealing Crisis Centre pilot proved that a therapeutic, chair-based intermediate care model could reduce hospital admissions by over 80% and lower costs, yet it was shut down due to a lack of ongoing, flexible funding.</li>
+<li>Even highly successful, internationally recognized models like Australia&#x27;s headspace are constrained by capped budgets and a lack of funding streams for integrated services like substance use and vocational support.</li>
+<li>Transitioning to resilient, recovery-oriented care requires funding models that allow resources to flow dynamically with the patient&#x27;s needs rather than remaining locked in administrative silos.</li>
+    </ul>
+  </aside>
+
+  <aside class="evidence"><ul class="ev-stats"><li><strong>11</strong> sources cited</li><li><strong>3</strong> directly on-topic, 8 related, 0 background</li><li>published 1999–2026</li></ul></aside>
+
+  <section class="references">
+    <h2>Sources</h2>
+    <ol>
+      <li id="ref-1"><span class="ref-authors">Benjamin G. Druss (2007)</span> <a href="https://pubmed.ncbi.nlm.nih.gov/17539699">Improving medical care for persons with serious mental illness: challenges and solutions.</a> <span class="ref-meta">PubMed · cited 162×</span></li>
+<li id="ref-2"><span class="ref-authors">Jeffrey Draine, Phyllis Solomon (1999)</span> <a href="https://doi.org/10.1176/ps.50.1.56">Describing and Evaluating Jail Diversion Services for Persons With Serious Mental Illness</a> <span class="ref-meta">Psychiatric Services · cited 137×</span></li>
+<li id="ref-3"><span class="ref-authors">K. McNeely et al. (2026)</span> <a href="https://doi.org/10.5334/ijic.icic25534">Intermediate care in mental health: a pilot model of crisis care to improve patients’ experience and opportunities for admission avoidance</a> <span class="ref-meta">International Journal of Integrated Care</span></li>
+<li id="ref-4"><span class="ref-authors">Patrick D. McGorry, Jason Trethowan, Debra Rickwood (2019)</span> <a href="https://doi.org/10.1002/wps.20619">Creating headspace for integrated youth mental health care</a> <span class="ref-meta">World Psychiatry · cited 99×</span></li>
+<li id="ref-5"><span class="ref-authors">Debra Rickwood et al. (2018)</span> <a href="https://doi.org/10.1111/eip.12740">Australia&#x27;s innovation in youth mental health care: The headspace centre model</a> <span class="ref-meta">Early Intervention in Psychiatry · cited 244×</span></li>
+<li id="ref-6"><span class="ref-authors">Lisa Brophy et al. (2014)</span> <a href="https://doi.org/10.1071/ah13181">Impact of care coordination on Australia’s mental health service delivery system</a> <span class="ref-meta">Australian Health Review · cited 37×</span></li>
+<li id="ref-7"><span class="ref-authors">Keith Sutton et al. (2016)</span> <a href="https://doi.org/10.1071/ah15183">Roles and competencies of the Support Facilitator in Australia’s recovery-oriented mental health initiative: a qualitative study from Gippsland, Victoria</a> <span class="ref-meta">Australian Health Review · cited 20×</span></li>
+<li id="ref-8"><span class="ref-authors">Mistique Felton, Cheryl Cashin, Timothy T. Brown (2010)</span> <a href="https://doi.org/10.1007/s10597-010-9304-6">What Does It Take? California County Funding Requests for Recovery-Oriented Full Service Partnerships Under the Mental Health Services Act</a> <span class="ref-meta">Community Mental Health Journal · cited 17×</span></li>
+<li id="ref-9"><span class="ref-authors">Anthony C Smith et al. (2020)</span> <a href="https://doi.org/10.1177/1357633x20916567">Telehealth for global emergencies: Implications for coronavirus disease 2019 (COVID-19)</a> <span class="ref-meta">Journal of Telemedicine and Telecare · cited 1877×</span></li>
+<li id="ref-10"><span class="ref-authors">Patrick D. McGorry, Tony Bates, Max Birchwood (2013)</span> <a href="https://doi.org/10.1192/bjp.bp.112.119214">Designing youth mental health services for the 21st century: examples from Australia, Ireland and the UK</a> <span class="ref-meta">The British Journal of Psychiatry · cited 536×</span></li>
+<li id="ref-11"><span class="ref-authors">Sanne Oostermeijer et al. (2021)</span> <a href="https://doi.org/10.1186/s13033-021-00440-8">Implementing child and youth mental health services: early lessons from the Australian Primary Health Network Lead Site Project</a> <span class="ref-meta">International Journal of Mental Health Systems · cited 9×</span></li>
+    </ol>
+  </section>
+
+  <footer class="colophon">
+    <strong>Not medical or clinical advice.</strong> This is an AI-generated summary of journal <em>abstracts</em> (not full texts), for background only. It is not a substitute for professional judgement, primary sources, or clinical guidelines. Verify every claim, figure, and dose against the cited papers before acting on it.
+  </footer>
+</main>
+</body>
+</html>
