@@ -101,14 +101,15 @@ jobs:
         run: |
           EVIDENCE=$(grep -m1 '^EVIDENCE_SUMMARY:' /tmp/run_log.txt | sed 's/^EVIDENCE_SUMMARY: *//') || true
           BLOB_HTML="${{ github.server_url }}/${{ github.repository }}/blob/${BRANCH}/drafts/${STEM}.html"
-          # The pages.yml workflow publishes drafts/ to GitHub Pages (site root = drafts/),
-          # so each article gets a clean, tappable web-page URL once that deploy finishes.
-          PAGES_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/${STEM}.html"
+          # htmlpreview renders a GitHub-hosted HTML file as a live web page. The articles
+          # are fully self-contained (inline CSS, no external assets) and the repo is public,
+          # so tapping this opens the designed article straight in the browser — no setup.
+          READ_URL="https://htmlpreview.github.io/?${BLOB_HTML}"
           {
             echo "📄 Draft ready: **${TITLE}**"
             echo ""
             if [ -n "$EVIDENCE" ]; then echo "Evidence: ${EVIDENCE}"; echo ""; fi
-            echo "- [**📖 Read the article**](${PAGES_URL}) — the styled article as a web page (give it a minute to publish)"
+            echo "- [**📖 Read the article**](${READ_URL}) — opens the styled page as a web page in your browser"
             echo "- [Review as Markdown](${{ github.server_url }}/${{ github.repository }}/blob/${BRANCH}/drafts/${STEM}.md) — renders right in the GitHub app"
             echo "- [HTML source](${BLOB_HTML}) — the raw self-contained file to download or host anywhere"
             echo ""
