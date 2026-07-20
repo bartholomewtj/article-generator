@@ -97,6 +97,12 @@ Draft pipeline (in `cli.cmd_draft`): `plan_queries` (queries + `core_entity`) �
   raise scholarly-API rate limits.
 - Workflows are gated to OWNER/MEMBER/COLLABORATOR so strangers can't spend API
   quota. Failure comments show which provider keys the run saw + the error detail.
+- **Enable GitHub Pages** (Settings → Pages → Source: **GitHub Actions**) so
+  `pages.yml` can publish `drafts/` as a website. Each draft comment then links a
+  tappable "Read the article" web page at
+  `https://<owner>.github.io/<repo>/<stem>.html` (site root = `drafts/`, so the
+  queue `index.html` is the landing page). On the Free plan the published site is
+  public even though the repo stays private — keep that in mind for draft content.
 
 ## Conventions
 

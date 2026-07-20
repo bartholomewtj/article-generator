@@ -100,12 +100,17 @@ jobs:
           BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           EVIDENCE=$(grep -m1 '^EVIDENCE_SUMMARY:' /tmp/run_log.txt | sed 's/^EVIDENCE_SUMMARY: *//') || true
+          BLOB_HTML="${{ github.server_url }}/${{ github.repository }}/blob/${BRANCH}/drafts/${STEM}.html"
+          # The pages.yml workflow publishes drafts/ to GitHub Pages (site root = drafts/),
+          # so each article gets a clean, tappable web-page URL once that deploy finishes.
+          PAGES_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/${STEM}.html"
           {
             echo "📄 Draft ready: **${TITLE}**"
             echo ""
             if [ -n "$EVIDENCE" ]; then echo "Evidence: ${EVIDENCE}"; echo ""; fi
-            echo "- [**Review it here (Markdown)**](${{ github.server_url }}/${{ github.repository }}/blob/${BRANCH}/drafts/${STEM}.md) — renders right in the GitHub app"
-            echo "- [Styled HTML](${{ github.server_url }}/${{ github.repository }}/blob/${BRANCH}/drafts/${STEM}.html) — download and open in a browser for the designed version"
+            echo "- [**📖 Read the article**](${PAGES_URL}) — the styled article as a web page (give it a minute to publish)"
+            echo "- [Review as Markdown](${{ github.server_url }}/${{ github.repository }}/blob/${BRANCH}/drafts/${STEM}.md) — renders right in the GitHub app"
+            echo "- [HTML source](${BLOB_HTML}) — the raw self-contained file to download or host anywhere"
             echo ""
             echo "Want another take? Comment \`draft N\` again (add \`style: ...\` to change tone or audience)."
           } > /tmp/done_comment.md
