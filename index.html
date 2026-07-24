@@ -469,7 +469,7 @@
 <header class="app-header">
   <a href="#" class="logo" onclick="showView('themeView'); return false;">
     <div class="logo-icon">✨</div>
-    ArticleGen <span style="font-size:0.7rem; background:var(--accent-soft); color:var(--accent); padding:0.15rem 0.4rem; border-radius:10px; font-weight:600;">v2.1 (SecureSync)</span>
+    ArticleGen <span style="font-size:0.7rem; background:var(--accent-soft); color:var(--accent); padding:0.15rem 0.4rem; border-radius:10px; font-weight:600;">v2.2 (Instant-QR)</span>
   </a>
   <div class="header-actions">
     <button class="icon-btn" onclick="showView('galleryView'); loadGallery();" title="Article Queue">
@@ -1076,7 +1076,7 @@
     if (hash.startsWith('#p=')) {
       const pasteId = hash.replace('#p=', '');
       try {
-        const res = await fetch(`https://dpaste.org/${pasteId}/raw`);
+        const res = await fetch(`https://dpaste.com/${pasteId}.txt`);
         if (res.ok) {
           const html = await res.text();
           document.getElementById('articleIframe').srcdoc = html;
@@ -1435,10 +1435,9 @@
     try {
       const formData = new URLSearchParams();
       formData.append('content', html);
-      formData.append('format', 'url');
       formData.append('expiry_days', '30');
 
-      const res = await fetch('https://dpaste.org/api/', {
+      const res = await fetch('https://dpaste.com/api/v2/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData.toString()
@@ -1446,14 +1445,14 @@
 
       if (res.ok) {
         const pasteUrl = (await res.text()).trim();
-        const pasteId = pasteUrl.split('/').pop();
+        const pasteId = pasteUrl.split('/').filter(Boolean).pop();
         if (pasteId) {
           cachedShareUrl = window.location.origin + window.location.pathname + '#p=' + pasteId;
           return cachedShareUrl;
         }
       }
     } catch (e) {
-      console.warn("dpaste error:", e);
+      console.warn("dpaste.com error:", e);
     }
 
     const hash = encodeArticleToHash(html);
@@ -1512,7 +1511,13 @@
 
     try {
       const shareUrl = await getShareableArticleUrl();
-      wrapper.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center;"><img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(shareUrl)}" alt="QR Code" width="200" height="200"><p style="font-size:0.75rem; color:var(--muted); margin-top:0.6rem; word-break:break-all; max-width:260px;">${escapeHtml(shareUrl)}</p></div>`;
+      const displayUrl = shareUrl.length > 90 ? (shareUrl.substring(0, 80) + '... (Base64 Draft)') : shareUrl;
+      wrapper.innerHTML = `
+        <div style="display:flex; flex-direction:column; align-items:center;">
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(shareUrl)}" alt="QR Code" width="200" height="200" style="border-radius:8px; border:1px solid var(--card-border);">
+          <p style="font-size:0.75rem; color:var(--muted); margin-top:0.6rem; word-break:break-all; max-width:260px;">${escapeHtml(displayUrl)}</p>
+        </div>
+      `;
     } catch (e) {
       wrapper.innerHTML = '<p style="color:var(--danger); font-size:0.85rem;">Failed to generate QR code.</p>';
     }
