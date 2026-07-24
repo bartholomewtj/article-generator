@@ -497,8 +497,11 @@
     <button class="icon-btn" id="themeToggleBtn" onclick="cycleTheme()" title="Toggle Dark/Light Theme">
       <span id="themeToggleIcon">🌙</span>
     </button>
-    <button class="icon-btn" onclick="showView('galleryView'); loadGallery();" title="Article Queue">
+    <button class="icon-btn" onclick="showView('galleryView'); loadGallery();" title="Draft Queue">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
+    </button>
+    <button class="icon-btn" onclick="showView('publishedView'); loadPublishedLibrary();" title="Published Library">
+      <span style="font-size:1.05rem;">📚</span>
     </button>
     <button class="icon-btn" onclick="openModal('settingsModal')" title="Settings">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -615,9 +618,12 @@
 
   <!-- VIEW 4: Article Reader & Mobile Share -->
   <div id="readerView" class="view">
-    <div class="section-header">
+    <div class="section-header" style="flex-wrap:wrap; gap:0.5rem;">
       <button class="pill" onclick="showView('ideasView')">← Back to Ideas</button>
-      <span style="font-size:0.8rem; color:var(--muted);" id="articleMeta">Ready</span>
+      <div style="display:flex; align-items:center; gap:0.5rem;">
+        <button class="pill" style="background:var(--accent); color:white; border:none; font-weight:700;" onclick="saveToPublishedLibrary()">💾 Save to Published Library</button>
+        <span style="font-size:0.8rem; color:var(--muted);" id="articleMeta">Ready</span>
+      </div>
     </div>
 
     <div class="reader-frame-wrapper">
@@ -658,6 +664,29 @@
     </div>
 
     <div id="galleryList">
+      <!-- Dynamically filled -->
+    </div>
+  </div>
+
+  <!-- VIEW 6: Published Articles Library -->
+  <div id="publishedView" class="view">
+    <div class="section-header" style="flex-wrap:wrap; gap:0.5rem;">
+      <h2 class="section-title">📚 Published Library</h2>
+      <div style="display:flex; gap:0.4rem;">
+        <button class="pill" style="color:#ef4444; border-color:rgba(239,68,68,0.3);" onclick="clearPublishedLibrary()">🗑️ Clear Library</button>
+        <button class="pill" onclick="showView('themeView')">+ New Article</button>
+      </div>
+    </div>
+    <p style="font-size:0.85rem; color:var(--muted); margin-top:-0.5rem; margin-bottom:1rem;">
+      Completed and edited articles saved across your devices with permanent public sharing links.
+    </p>
+
+    <!-- Search Published Library -->
+    <div style="margin-bottom: 1rem;">
+      <input type="text" id="publishedSearchInput" class="theme-input" placeholder="🔍 Search library by title..." oninput="loadPublishedLibrary()" style="padding:0.6rem 0.9rem; font-size:0.9rem;">
+    </div>
+
+    <div id="publishedList">
       <!-- Dynamically filled -->
     </div>
   </div>
@@ -1003,15 +1032,17 @@
 
     const apiKey = localStorage.getItem('articlegen_key') || '';
     const prefs = localStorage.getItem('articlegen_prefs') || '{}';
+    const publishedLib = localStorage.getItem('articlegen_published_library') || '[]';
 
     const payload = {
-      description: "ArticleGen Cross-Device Settings & Preferences Sync",
+      description: "ArticleGen Cross-Device Settings & Published Articles Sync",
       public: false,
       files: {
         "articlegen-settings.json": {
           content: JSON.stringify({
             apiKey: obfuscateApiKey(apiKey),
             preferences: JSON.parse(prefs),
+            publishedLibrary: JSON.parse(publishedLib),
             updatedAt: new Date().toISOString()
           }, null, 2)
         }
@@ -1095,6 +1126,10 @@
       if (config.preferences) {
         localStorage.setItem('articlegen_prefs', JSON.stringify(config.preferences));
         if (typeof loadPreferences === 'function') loadPreferences();
+      }
+      if (config.publishedLibrary) {
+        localStorage.setItem('articlegen_published_library', JSON.stringify(config.publishedLibrary));
+        if (typeof loadPublishedLibrary === 'function') loadPublishedLibrary();
       }
 
       if (token) localStorage.setItem('articlegen_gh_token', token);
@@ -1914,15 +1949,149 @@
     }
   }
 
-  function openDraftFromGallery(htmlUrl, title) {
-    currentArticleUrl = htmlUrl;
-    currentTitle = title;
-    document.getElementById('articleIframe').src = htmlUrl;
-    showView('readerView');
+  async function saveToPublishedLibrary() {
+    const iframe = document.getElementById('articleIframe');
+    if (!iframe) return;
+    const doc = iframe.contentDocument || iframe.contentWindow.document;
+    const htmlContent = doc?.documentElement?.outerHTML || iframe.srcdoc || '';
+    if (!htmlContent) {
+      showToast('No article content to save.');
+      return;
+    }
+
+    showToast('Generating public link & saving...');
+    const publicUrl = await getShareableArticleUrl();
+    const title = currentTitle || doc.title || 'Untitled Article';
+
+    let publishedLib = JSON.parse(localStorage.getItem('articlegen_published_library') || '[]');
+    // Prevent duplicate saves by title
+    publishedLib = publishedLib.filter(item => item.title !== title);
+    publishedLib.unshift({
+      id: 'pub_' + Date.now(),
+      title: title,
+      date: new Date().toISOString(),
+      content: htmlContent,
+      publicUrl: publicUrl
+    });
+
+    localStorage.setItem('articlegen_published_library', JSON.stringify(publishedLib));
+    showToast('📚 Saved to Published Library!');
+
+    // Trigger auto-sync to Gist if token is present
+    const ghToken = localStorage.getItem('articlegen_gh_token');
+    if (ghToken) {
+      syncPushToGist();
+    }
   }
 
-  function escapeHtml(str) {
-    return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  function loadPublishedLibrary() {
+    const container = document.getElementById('publishedList');
+    if (!container) return;
+    const filterQuery = (document.getElementById('publishedSearchInput')?.value || '').toLowerCase().trim();
+    const publishedLib = JSON.parse(localStorage.getItem('articlegen_published_library') || '[]');
+
+    if (publishedLib.length === 0) {
+      container.innerHTML = `
+        <div style="text-align:center; padding:3rem 1rem; color:var(--muted);">
+          <span style="font-size:2.5rem; display:block; margin-bottom:0.5rem;">📚</span>
+          <p style="margin:0 0 0.5rem; font-weight:600;">Your Published Library is empty</p>
+          <p style="font-size:0.82rem; margin:0;">Open any finished article draft and click <strong>"Save to Published Library"</strong> to save it permanently with a public sharing link across your devices.</p>
+        </div>
+      `;
+      return;
+    }
+
+    const filtered = publishedLib.filter(d => !filterQuery || d.title.toLowerCase().includes(filterQuery));
+    if (filtered.length === 0) {
+      container.innerHTML = '<p style="color:var(--muted);">No matching published articles found.</p>';
+      return;
+    }
+
+    container.innerHTML = '';
+    filtered.forEach((item, index) => {
+      const card = document.createElement('div');
+      card.className = 'draft-card';
+      card.style.marginBottom = '1rem';
+
+      const shortUrl = item.publicUrl ? (item.publicUrl.length > 50 ? item.publicUrl.substring(0, 48) + '...' : item.publicUrl) : '';
+
+      card.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.5rem;">
+          <h3 class="draft-title" style="margin:0; font-size:1.1rem; flex:1;">${escapeHtml(item.title)}</h3>
+          <button type="button" class="icon-btn" style="width:30px; height:30px; color:#ef4444; border-color:rgba(239,68,68,0.3); font-size:0.85rem;" onclick="deletePublishedArticle('${item.id}')" title="Delete Published Article">🗑️</button>
+        </div>
+        <p style="font-size:0.8rem; color:var(--muted); margin:0 0 0.8rem;">Saved on ${new Date(item.date).toLocaleDateString()}</p>
+        
+        <div style="background:var(--bg); border:1px solid var(--card-border); border-radius:8px; padding:0.5rem 0.8rem; display:flex; align-items:center; justify-content:space-between; margin-bottom:0.8rem;">
+          <span style="font-size:0.78rem; color:var(--accent); font-family:monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:240px;">${escapeHtml(shortUrl)}</span>
+          <button type="button" class="pill" style="font-size:0.75rem; padding:0.2rem 0.6rem;" onclick="copyLinkDirect('${escapeHtml(item.publicUrl)}')">🔗 Copy Link</button>
+        </div>
+
+        <div style="display:flex; gap:0.5rem;">
+          <button class="btn-select" style="flex:1; margin:0;" onclick="openPublishedArticle('${item.id}')">📖 Read Article</button>
+          <button class="pill" style="padding:0.6rem 0.8rem;" onclick="showQrForUrl('${escapeHtml(item.publicUrl)}')">📱 QR</button>
+        </div>
+      `;
+      container.appendChild(card);
+    });
+  }
+
+  function openPublishedArticle(id) {
+    const publishedLib = JSON.parse(localStorage.getItem('articlegen_published_library') || '[]');
+    const item = publishedLib.find(d => d.id === id);
+    if (item) {
+      currentTitle = item.title;
+      document.getElementById('articleIframe').srcdoc = item.content;
+      cachedShareUrl = item.publicUrl;
+      showView('readerView');
+    }
+  }
+
+  function copyLinkDirect(url) {
+    if (!url) return;
+    navigator.clipboard.writeText(url).then(() => {
+      showToast('Public article link copied to clipboard!');
+    }).catch(() => {});
+  }
+
+  function showQrForUrl(url) {
+    if (!url) return;
+    const wrapper = document.getElementById('qrCanvasWrapper');
+    openModal('qrModal');
+    wrapper.innerHTML = `
+      <div style="display:flex; flex-direction:column; align-items:center;">
+        <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}" alt="QR Code" width="200" height="200" style="border-radius:8px; border:1px solid var(--card-border);">
+        <p style="font-size:0.75rem; color:var(--muted); margin-top:0.6rem; word-break:break-all; max-width:260px;">${escapeHtml(url)}</p>
+      </div>
+    `;
+  }
+
+  function deletePublishedArticle(id) {
+    let publishedLib = JSON.parse(localStorage.getItem('articlegen_published_library') || '[]');
+    const item = publishedLib.find(d => d.id === id);
+    if (item && confirm(`Are you sure you want to remove "${item.title}" from your Published Library?`)) {
+      publishedLib = publishedLib.filter(d => d.id !== id);
+      localStorage.setItem('articlegen_published_library', JSON.stringify(publishedLib));
+      showToast('Removed from Published Library');
+      loadPublishedLibrary();
+      const ghToken = localStorage.getItem('articlegen_gh_token');
+      if (ghToken) syncPushToGist();
+    }
+  }
+
+  function clearPublishedLibrary() {
+    let publishedLib = JSON.parse(localStorage.getItem('articlegen_published_library') || '[]');
+    if (publishedLib.length === 0) {
+      showToast("Library is already empty.");
+      return;
+    }
+    if (confirm(`Are you sure you want to delete all ${publishedLib.length} published articles from your Library?`)) {
+      localStorage.removeItem('articlegen_published_library');
+      showToast("Published Library cleared!");
+      loadPublishedLibrary();
+      const ghToken = localStorage.getItem('articlegen_gh_token');
+      if (ghToken) syncPushToGist();
+    }
   }
 </script>
 </body>
