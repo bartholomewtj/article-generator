@@ -469,7 +469,7 @@
 <header class="app-header">
   <a href="#" class="logo" onclick="showView('themeView'); return false;">
     <div class="logo-icon">✨</div>
-    ArticleGen <span style="font-size:0.7rem; background:var(--accent-soft); color:var(--accent); padding:0.15rem 0.4rem; border-radius:10px; font-weight:600;">v1.6 (Groq)</span>
+    ArticleGen <span style="font-size:0.7rem; background:var(--accent-soft); color:var(--accent); padding:0.15rem 0.4rem; border-radius:10px; font-weight:600;">v1.7 (Prefs)</span>
   </a>
   <div class="header-actions">
     <button class="icon-btn" onclick="showView('galleryView'); loadGallery();" title="Article Queue">
@@ -501,8 +501,60 @@
       </div>
 
       <div style="margin-top: 1rem;">
-        <label class="input-label" for="styleInput">Audience / Style (Optional)</label>
-        <input type="text" id="styleInput" class="theme-input" placeholder="e.g. for high school students, in-depth technical...">
+        <label class="input-label" for="styleInput">Audience / Target Reader (Optional)</label>
+        <input type="text" id="styleInput" class="theme-input" placeholder="e.g. for high school students, executives...">
+      </div>
+
+      <!-- Customization Preferences Accordion -->
+      <div style="margin-top: 1rem;">
+        <button type="button" class="pill" style="width:100%; justify-content:space-between; display:flex; align-items:center; background:var(--bg); border:1px solid var(--card-border); padding:0.6rem 1rem; border-radius:10px;" onclick="togglePreferences()">
+          <span>⚙️ Custom Article Preferences</span>
+          <span id="prefToggleIcon">▼</span>
+        </button>
+
+        <div id="prefContainer" style="display:none; background:var(--bg); border:1px solid var(--card-border); border-radius:12px; padding:1rem; margin-top:0.6rem;">
+          
+          <div style="margin-bottom: 0.8rem;">
+            <label class="input-label" style="font-size:0.75rem;">Target Article Length</label>
+            <select id="prefLength" class="theme-input" onchange="savePreferences()">
+              <option value="standard" selected>📄 Standard Article (~1,000 words)</option>
+              <option value="brief">⚡ Quick Read (~500 words)</option>
+              <option value="deep">📚 In-Depth Longform (~1,800+ words)</option>
+            </select>
+          </div>
+
+          <div style="margin-bottom: 0.8rem;">
+            <label class="input-label" style="font-size:0.75rem;">Tone & Writing Style</label>
+            <select id="prefTone" class="theme-input" onchange="savePreferences()">
+              <option value="journalism" selected>📰 Science Journalism (Wired / Quanta style)</option>
+              <option value="academic">🎓 Academic & Technical (Formal & Precise)</option>
+              <option value="executive">💼 Executive Briefing (Strategic Impact)</option>
+              <option value="eli5">💡 ELI5 / Beginner Friendly (Simple Analogies)</option>
+            </select>
+          </div>
+
+          <div style="margin-bottom: 0.8rem;">
+            <label class="input-label" style="font-size:0.75rem;">Evidence & Citation Depth</label>
+            <select id="prefDepth" class="theme-input" onchange="savePreferences()">
+              <option value="balanced" selected>⚖️ Balanced Overview (Key Findings)</option>
+              <option value="empirical">🔍 Strict Empirical (Focus on Methodologies & Data)</option>
+              <option value="narrative">📖 Narrative & Conceptual (Story-driven)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="input-label" style="font-size:0.75rem;">Output Language</label>
+            <select id="prefLang" class="theme-input" onchange="savePreferences()">
+              <option value="English" selected>🇺🇸 English</option>
+              <option value="Spanish">🇪🇸 Spanish (Español)</option>
+              <option value="French">🇫🇷 French (Français)</option>
+              <option value="German">🇩🇪 German (Deutsch)</option>
+              <option value="Japanese">🇯🇵 Japanese (日本語)</option>
+              <option value="Chinese">🇨🇳 Chinese (中文)</option>
+            </select>
+          </div>
+
+        </div>
       </div>
 
       <button id="ideasBtn" class="btn-primary" onclick="requestIdeas()">
@@ -752,6 +804,75 @@
     }
   }
 
+  function togglePreferences() {
+    const c = document.getElementById('prefContainer');
+    const icon = document.getElementById('prefToggleIcon');
+    if (!c) return;
+    if (c.style.display === 'none') {
+      c.style.display = 'block';
+      icon.innerText = '▲';
+    } else {
+      c.style.display = 'none';
+      icon.innerText = '▼';
+    }
+  }
+
+  function savePreferences() {
+    const prefs = {
+      length: document.getElementById('prefLength')?.value || 'standard',
+      tone: document.getElementById('prefTone')?.value || 'journalism',
+      depth: document.getElementById('prefDepth')?.value || 'balanced',
+      lang: document.getElementById('prefLang')?.value || 'English'
+    };
+    localStorage.setItem('articlegen_prefs', JSON.stringify(prefs));
+  }
+
+  function loadPreferences() {
+    try {
+      const raw = localStorage.getItem('articlegen_prefs');
+      if (raw) {
+        const prefs = JSON.parse(raw);
+        if (prefs.length && document.getElementById('prefLength')) document.getElementById('prefLength').value = prefs.length;
+        if (prefs.tone && document.getElementById('prefTone')) document.getElementById('prefTone').value = prefs.tone;
+        if (prefs.depth && document.getElementById('prefDepth')) document.getElementById('prefDepth').value = prefs.depth;
+        if (prefs.lang && document.getElementById('prefLang')) document.getElementById('prefLang').value = prefs.lang;
+      }
+    } catch(e) {}
+  }
+
+  function getPreferences() {
+    const lenVal = document.getElementById('prefLength')?.value || 'standard';
+    const toneVal = document.getElementById('prefTone')?.value || 'journalism';
+    const depthVal = document.getElementById('prefDepth')?.value || 'balanced';
+    const langVal = document.getElementById('prefLang')?.value || 'English';
+
+    const lenMap = {
+      brief: 'Quick Read (~500 words, 2 concise sections)',
+      standard: 'Standard Article (~1,000 words, 3-4 detailed sections)',
+      deep: 'In-Depth Longform (~1,800+ words, 5+ extensive sections with deep analysis)'
+    };
+    const toneMap = {
+      journalism: 'Engaging Science Journalism (Wired/Quanta style)',
+      academic: 'Formal Academic & Technical (Rigorous, precise terminology)',
+      executive: 'Executive Briefing (Strategic impact, key takeaways)',
+      eli5: 'ELI5 / Beginner Friendly (Simple analogies, highly accessible)'
+    };
+    const depthMap = {
+      balanced: 'Balanced Overview of findings',
+      empirical: 'Strict Empirical Focus (Emphasize methodology, sample sizes, and study limitations)',
+      narrative: 'Narrative Driven (Focus on storytelling and key conceptual breakthroughs)'
+    };
+
+    return {
+      lengthLabel: lenMap[lenVal] || lenMap.standard,
+      toneLabel: toneMap[toneVal] || toneMap.journalism,
+      depthLabel: depthMap[depthVal] || depthMap.balanced,
+      lang: langVal
+    };
+  }
+
+  document.addEventListener('DOMContentLoaded', loadPreferences);
+
   async function requestIdeas() {
     const theme = document.getElementById('themeInput').value.trim();
     if (!theme) {
@@ -799,8 +920,11 @@
         },
         required: ["ideas"]
       };
-      const prompt = `Theme: "${theme}"\nGuidance: "${guidance}"\nPropose 6 distinct article ideas grounded in peer-reviewed science/tech literature.`;
-      const sys = "You are an editor for a popular science publication proposing concrete, distinct, and interesting article ideas grounded in scholarly literature.";
+
+      const prefs = getPreferences();
+      const styleCombined = [guidance, `Tone: ${prefs.toneLabel}`, `Language: ${prefs.lang}`].filter(Boolean).join('. ');
+      const prompt = `Theme: "${theme}"\nGuidance: "${styleCombined}"\nPropose 6 distinct article ideas grounded in peer-reviewed science/tech literature. Return all titles, angles, and search terms in ${prefs.lang}.`;
+      const sys = `You are an editor for a popular science publication proposing article ideas. Write all response text in ${prefs.lang}.`;
       const res = await callGroqAPI(prompt, schema, sys, key);
       renderDraftCards(theme, res.ideas || []);
       showView('ideasView');
@@ -940,8 +1064,15 @@
         required: ["title", "standfirst", "evidence_note", "featured_study", "sections", "key_takeaways", "references"]
       };
 
+      const prefs = getPreferences();
       const sourcesPrompt = topPapers.map((p, idx) => `SOURCE ${idx + 1}\nTitle: ${p.title}\nAuthors: ${p.authorLine} (${p.year || 'n.d.'})\nVenue: ${p.venue}\nAbstract: ${p.abstract}`).join('\n\n');
-      const writerSys = "You are a science writer turning journal abstracts into a rigorous, readable article. Cite by [N] where N is SOURCE index. Only state numbers present in the abstracts.";
+      const writerSys = `You are a science writer turning journal abstracts into a high-quality article.\n` +
+        `CUSTOM GENERATION DIRECTIVES:\n` +
+        `1. Target Article Length: ${prefs.lengthLabel}\n` +
+        `2. Writing Tone & Style: ${prefs.toneLabel}\n` +
+        `3. Evidence & Citation Focus: ${prefs.depthLabel}\n` +
+        `4. Target Output Language: ${prefs.lang}. WRITE ALL HEADING, PARAGRAPH, AND TAKEAWAY TEXT IN ${prefs.lang.toUpperCase()}.\n` +
+        `5. Citation Rule: Cite sources inline as [N] where N is the SOURCE index. Only state facts present in the abstracts.`;
       const articleData = await callGroqAPI(`Topic: ${title}\n\nCandidate Sources:\n${sourcesPrompt}`, artSchema, writerSys, key);
 
       stepText.innerText = 'Verifying citations & formatting HTML...';
