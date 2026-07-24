@@ -666,46 +666,73 @@
     setTimeout(() => t.classList.remove('active'), 2500);
   }
 
+  let cachedGeminiModel = null;
+
+  async function discoverGeminiModel(key) {
+    if (cachedGeminiModel) return cachedGeminiModel;
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
+      if (res.ok) {
+        const data = await res.json();
+        const models = data.models || [];
+        const valid = models.filter(m => 
+          (m.name || '').includes('gemini') && 
+          !(m.name || '').includes('embedding') &&
+          !(m.name || '').includes('imagen') &&
+          !(m.name || '').includes('vision') &&
+          !(m.name || '').includes('aqa') &&
+          (m.supportedGenerationMethods || []).includes('generateContent')
+        );
+        if (valid.length > 0) {
+          const flash = valid.find(m => m.name.includes('flash'));
+          cachedGeminiModel = (flash || valid[0]).name;
+          return cachedGeminiModel;
+        }
+      }
+    } catch (e) {
+      console.warn("Model discovery failed:", e);
+    }
+    return "models/gemini-1.5-flash";
+  }
+
   async function callGeminiAPI(prompt, schema, systemInstruction, apiKey) {
     const key = apiKey || localStorage.getItem('articlegen_key') || '';
     if (!key) {
       openModal('settingsModal');
       throw new Error('Please enter your free Gemini API Key in the Settings (⚙️) menu to generate articles.');
     }
-    const models = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"];
-    let lastErr = null;
-    for (const m of models) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${key}`;
-      const payload = {
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          responseSchema: schema
-        }
-      };
-      if (systemInstruction) {
-        payload.systemInstruction = { parts: [{ text: systemInstruction }] };
+
+    const modelPath = await discoverGeminiModel(key);
+    const endpointPath = modelPath.startsWith("models/") ? modelPath : `models/${modelPath}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/${endpointPath}:generateContent?key=${key}`;
+
+    const payload = {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: schema
       }
-      try {
-        const res = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        });
-        if (!res.ok) {
-          const errText = await res.text();
-          lastErr = new Error(`Gemini API Error (${res.status}): ${errText}`);
-          continue;
-        }
-        const data = await res.json();
-        const raw = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!raw) throw new Error("Gemini returned an empty response.");
-        return JSON.parse(raw);
-      } catch (err) {
-        lastErr = err;
-      }
+    };
+    if (systemInstruction) {
+      payload.systemInstruction = { parts: [{ text: systemInstruction }] };
     }
-    throw lastErr || new Error("Failed to connect to Gemini API.");
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      cachedGeminiModel = null; // reset cached model if it fails
+      throw new Error(`Gemini API Error (${res.status}): ${errText}`);
+    }
+
+    const data = await res.json();
+    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!raw) throw new Error("Gemini returned an empty response.");
+    return JSON.parse(raw);
   }
 
   async function searchOpenAlex(query) {
