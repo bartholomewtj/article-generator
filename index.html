@@ -595,11 +595,11 @@
       <h3 class="modal-title">API Settings</h3>
       <button class="icon-btn" onclick="closeModal('settingsModal')">✕</button>
     </div>
-    <label class="input-label" for="apiKeyInput">Gemini API Key (Optional)</label>
+    <label class="input-label" for="apiKeyInput">Groq API Key (Optional)</label>
     <p style="font-size:0.8rem; color:var(--muted); margin-top:-0.2rem; margin-bottom:0.6rem;">
-      Stored safely in browser storage. Leave empty if server environment variable is configured.
+      Get a free key from <a href="https://console.groq.com/" target="_blank" style="color:var(--accent);">console.groq.com</a>. Stored safely in browser storage.
     </p>
-    <input type="password" id="apiKeyInput" class="theme-input" placeholder="AIzaSy...">
+    <input type="password" id="apiKeyInput" class="theme-input" placeholder="gsk_...">
     <button class="btn-primary" style="margin-top:1rem;" onclick="saveApiKey()">Save Settings</button>
   </div>
 </div>
@@ -669,41 +669,46 @@
     setTimeout(() => t.classList.remove('active'), 2500);
   }
 
-  async function callGeminiAPI(prompt, schema, systemInstruction, apiKey) {
+  async function callGroqAPI(prompt, schema, systemInstruction, apiKey) {
     const key = apiKey || localStorage.getItem('articlegen_key') || '';
     if (!key) {
       openModal('settingsModal');
-      throw new Error('Please enter your free Gemini API Key in the Settings (⚙️) menu to generate articles.');
+      throw new Error('Please enter your free Groq API Key in the Settings (⚙️) menu to generate articles.');
     }
 
-    const endpointPath = "models/gemini-1.5-flash";
-    const url = `https://generativelanguage.googleapis.com/v1beta/${endpointPath}:generateContent?key=${key}`;
+    const url = "https://api.groq.com/openai/v1/chat/completions";
+
+    const schemaString = JSON.stringify(schema, null, 2);
+    const finalSystemInstruction = (systemInstruction || '') + `\n\nYou MUST respond in valid JSON format. Your entire response must be a single JSON object matching this schema exactly:\n${schemaString}\nOutput ONLY raw JSON. Do not include markdown formatting or explanations.`;
 
     const payload = {
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: schema
-      }
+      model: "llama-3.3-70b-versatile",
+      messages: [
+        { role: "system", content: finalSystemInstruction },
+        { role: "user", content: prompt }
+      ],
+      response_format: { type: "json_object" }
     };
-    if (systemInstruction) {
-      payload.systemInstruction = { parts: [{ text: systemInstruction }] };
-    }
 
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${key}`
+      },
       body: JSON.stringify(payload)
     });
 
     if (!res.ok) {
       const errText = await res.text();
-      throw new Error(`Gemini API Error (${res.status}): ${errText}`);
+      throw new Error(`Groq API Error (${res.status}): ${errText}`);
     }
 
     const data = await res.json();
-    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!raw) throw new Error("Gemini returned an empty response.");
+    let raw = data.choices?.[0]?.message?.content;
+    if (!raw) throw new Error("Groq returned an empty response.");
+    
+    raw = raw.replace(/^```json/mi, '').replace(/```$/m, '').trim();
     return JSON.parse(raw);
   }
 
@@ -792,7 +797,7 @@
       };
       const prompt = `Theme: "${theme}"\nGuidance: "${guidance}"\nPropose 6 distinct article ideas grounded in peer-reviewed science/tech literature.`;
       const sys = "You are an editor for a popular science publication proposing concrete, distinct, and interesting article ideas grounded in scholarly literature.";
-      const res = await callGeminiAPI(prompt, schema, sys, key);
+      const res = await callGroqAPI(prompt, schema, sys, key);
       renderDraftCards(theme, res.ideas || []);
       showView('ideasView');
     } catch (err) {
@@ -869,7 +874,7 @@
         },
         required: ["queries", "core_entity"]
       };
-      const qRes = await callGeminiAPI(`Topic: "${title}". Give 3 scholarly search queries and the core entity.`, qSchema, "", key);
+      const qRes = await callGroqAPI(`Topic: "${title}". Give 3 scholarly search queries and the core entity.`, qSchema, "", key);
       
       stepText.innerText = 'Curating peer-reviewed evidence...';
       sCurate.classList.add('done');
@@ -933,7 +938,7 @@
 
       const sourcesPrompt = topPapers.map((p, idx) => `SOURCE ${idx + 1}\nTitle: ${p.title}\nAuthors: ${p.authorLine} (${p.year || 'n.d.'})\nVenue: ${p.venue}\nAbstract: ${p.abstract}`).join('\n\n');
       const writerSys = "You are a science writer turning journal abstracts into a rigorous, readable article. Cite by [N] where N is SOURCE index. Only state numbers present in the abstracts.";
-      const articleData = await callGeminiAPI(`Topic: ${title}\n\nCandidate Sources:\n${sourcesPrompt}`, artSchema, writerSys, key);
+      const articleData = await callGroqAPI(`Topic: ${title}\n\nCandidate Sources:\n${sourcesPrompt}`, artSchema, writerSys, key);
 
       stepText.innerText = 'Verifying citations & formatting HTML...';
       sVerify.classList.add('done');
