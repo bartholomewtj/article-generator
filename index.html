@@ -469,7 +469,7 @@
 <header class="app-header">
   <a href="#" class="logo" onclick="showView('themeView'); return false;">
     <div class="logo-icon">✨</div>
-    ArticleGen <span style="font-size:0.7rem; background:var(--accent-soft); color:var(--accent); padding:0.15rem 0.4rem; border-radius:10px; font-weight:600;">v2.2 (Instant-QR)</span>
+    ArticleGen <span style="font-size:0.7rem; background:var(--accent-soft); color:var(--accent); padding:0.15rem 0.4rem; border-radius:10px; font-weight:600;">v2.3 (SyncFix)</span>
   </a>
   <div class="header-actions">
     <button class="icon-btn" onclick="showView('galleryView'); loadGallery();" title="Article Queue">
@@ -732,7 +732,7 @@
   }
 
   function saveApiKey() {
-    const k = document.getElementById('apiKeyInput').value.trim();
+    const k = document.getElementById('apiKeyInput')?.value.trim() || '';
     const ghTok = document.getElementById('ghTokenInput')?.value.trim() || '';
     const gistId = document.getElementById('gistIdInput')?.value.trim() || '';
 
@@ -744,6 +744,8 @@
 
     if (gistId) localStorage.setItem('articlegen_gist_id', gistId);
     else localStorage.removeItem('articlegen_gist_id');
+
+    if (typeof savePreferences === 'function') savePreferences();
 
     showToast('Settings saved!');
     closeModal('settingsModal');
@@ -777,15 +779,24 @@
   }
 
   async function syncPushToGist() {
+    if (typeof savePreferences === 'function') savePreferences();
+
+    const inputApiKey = document.getElementById('apiKeyInput')?.value.trim();
+    if (inputApiKey !== undefined && inputApiKey !== '') {
+      localStorage.setItem('articlegen_key', inputApiKey);
+    }
+
     const token = document.getElementById('ghTokenInput')?.value.trim() || localStorage.getItem('articlegen_gh_token') || '';
     if (!token) {
       alert("Please enter a GitHub Personal Access Token first.");
       return;
     }
+    localStorage.setItem('articlegen_gh_token', token);
+
+    let gistId = document.getElementById('gistIdInput')?.value.trim() || localStorage.getItem('articlegen_gist_id') || '';
 
     const apiKey = localStorage.getItem('articlegen_key') || '';
     const prefs = localStorage.getItem('articlegen_prefs') || '{}';
-    let gistId = document.getElementById('gistIdInput')?.value.trim() || localStorage.getItem('articlegen_gist_id') || '';
 
     const payload = {
       description: "ArticleGen Cross-Device Settings & Preferences Sync",
