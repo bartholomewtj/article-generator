@@ -469,7 +469,7 @@
 <header class="app-header">
   <a href="#" class="logo" onclick="showView('themeView'); return false;">
     <div class="logo-icon">✨</div>
-    ArticleGen <span style="font-size:0.7rem; background:var(--accent-soft); color:var(--accent); padding:0.15rem 0.4rem; border-radius:10px; font-weight:600;">v1.4 (Stable)</span>
+    ArticleGen <span style="font-size:0.7rem; background:var(--accent-soft); color:var(--accent); padding:0.15rem 0.4rem; border-radius:10px; font-weight:600;">v1.5 (Final)</span>
   </a>
   <div class="header-actions">
     <button class="icon-btn" onclick="showView('galleryView'); loadGallery();" title="Article Queue">
@@ -669,36 +669,6 @@
     setTimeout(() => t.classList.remove('active'), 2500);
   }
 
-  let cachedGeminiModel = null;
-
-  async function discoverGeminiModel(key) {
-    if (cachedGeminiModel) return cachedGeminiModel;
-    try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
-      if (res.ok) {
-        const data = await res.json();
-        const models = data.models || [];
-        const valid = models.filter(m => 
-          (m.name || '').includes('gemini') && 
-          !(m.name || '').includes('2.5-flash') &&
-          !(m.name || '').includes('embedding') &&
-          !(m.name || '').includes('imagen') &&
-          !(m.name || '').includes('vision') &&
-          !(m.name || '').includes('aqa') &&
-          (m.supportedGenerationMethods || []).includes('generateContent')
-        );
-        if (valid.length > 0) {
-          const pref = valid.find(m => m.name.includes('1.5-flash')) || valid.find(m => m.name.includes('2.0-flash')) || valid.find(m => m.name.includes('flash')) || valid[0];
-          cachedGeminiModel = pref.name;
-          return cachedGeminiModel;
-        }
-      }
-    } catch (e) {
-      console.warn("Model discovery failed:", e);
-    }
-    return "models/gemini-1.5-flash";
-  }
-
   async function callGeminiAPI(prompt, schema, systemInstruction, apiKey) {
     const key = apiKey || localStorage.getItem('articlegen_key') || '';
     if (!key) {
@@ -706,8 +676,7 @@
       throw new Error('Please enter your free Gemini API Key in the Settings (⚙️) menu to generate articles.');
     }
 
-    const modelPath = await discoverGeminiModel(key);
-    const endpointPath = modelPath.startsWith("models/") ? modelPath : `models/${modelPath}`;
+    const endpointPath = "models/gemini-1.5-flash";
     const url = `https://generativelanguage.googleapis.com/v1beta/${endpointPath}:generateContent?key=${key}`;
 
     const payload = {
@@ -729,7 +698,6 @@
 
     if (!res.ok) {
       const errText = await res.text();
-      cachedGeminiModel = null; // reset cached model if it fails
       throw new Error(`Gemini API Error (${res.status}): ${errText}`);
     }
 
