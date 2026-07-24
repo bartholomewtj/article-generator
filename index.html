@@ -469,7 +469,7 @@
 <header class="app-header">
   <a href="#" class="logo" onclick="showView('themeView'); return false;">
     <div class="logo-icon">✨</div>
-    ArticleGen <span style="font-size:0.7rem; background:var(--accent-soft); color:var(--accent); padding:0.15rem 0.4rem; border-radius:10px; font-weight:600;">v2.0 (Ultra-QR)</span>
+    ArticleGen <span style="font-size:0.7rem; background:var(--accent-soft); color:var(--accent); padding:0.15rem 0.4rem; border-radius:10px; font-weight:600;">v2.1 (SecureSync)</span>
   </a>
   <div class="header-actions">
     <button class="icon-btn" onclick="showView('galleryView'); loadGallery();" title="Article Queue">
@@ -753,6 +753,29 @@
     }
   }
 
+  function obfuscateApiKey(key) {
+    if (!key) return '';
+    try {
+      const reversed = key.split('').reverse().join('');
+      return 'enc_v1:' + btoa(encodeURIComponent(reversed));
+    } catch(e) {
+      return key;
+    }
+  }
+
+  function deobfuscateApiKey(str) {
+    if (!str) return '';
+    if (str.startsWith('enc_v1:')) {
+      try {
+        const raw = decodeURIComponent(atob(str.replace('enc_v1:', '')));
+        return raw.split('').reverse().join('');
+      } catch(e) {
+        return str;
+      }
+    }
+    return str;
+  }
+
   async function syncPushToGist() {
     const token = document.getElementById('ghTokenInput')?.value.trim() || localStorage.getItem('articlegen_gh_token') || '';
     if (!token) {
@@ -770,7 +793,7 @@
       files: {
         "articlegen-settings.json": {
           content: JSON.stringify({
-            apiKey: apiKey,
+            apiKey: obfuscateApiKey(apiKey),
             preferences: JSON.parse(prefs),
             updatedAt: new Date().toISOString()
           }, null, 2)
@@ -848,8 +871,9 @@
       const config = JSON.parse(file.content);
 
       if (config.apiKey) {
-        localStorage.setItem('articlegen_key', config.apiKey);
-        if (document.getElementById('apiKeyInput')) document.getElementById('apiKeyInput').value = config.apiKey;
+        const realKey = deobfuscateApiKey(config.apiKey);
+        localStorage.setItem('articlegen_key', realKey);
+        if (document.getElementById('apiKeyInput')) document.getElementById('apiKeyInput').value = realKey;
       }
       if (config.preferences) {
         localStorage.setItem('articlegen_prefs', JSON.stringify(config.preferences));
