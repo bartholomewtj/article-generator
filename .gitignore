@@ -9,3 +9,4 @@ venv/
 /*.html
 !README*.html
 /ideas/
+!index.html

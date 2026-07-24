@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Article Generator — Research-Grounded Articles on Mobile</title>
+<meta name="description" content="Generate evidence-grounded science & tech articles from peer-reviewed literature right from your phone.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f1115;
+    --card-bg: #181b20;
+    --card-border: #262a33;
+    --ink: #f0f2f5;
+    --muted: #949ba6;
+    --accent: #0d9488;
+    --accent-hover: #14b8a6;
+    --accent-soft: rgba(13, 148, 136, 0.15);
+    --gold: #f59e0b;
+    --font-ui: 'Inter', -apple-system, sans-serif;
+    --font-heading: 'Outfit', sans-serif;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --card-border: #e2e8f0;
+      --ink: #0f172a;
+      --muted: #64748b;
+      --accent: #0d9488;
+      --accent-hover: #0f766e;
+      --accent-soft: rgba(13, 148, 136, 0.1);
+      --gold: #d97706;
+    }
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-ui);
+    line-height: 1.5;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Header */
+  header.app-header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(15, 17, 21, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--card-border);
+    padding: 0.85rem 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  @media (prefers-color-scheme: light) {
+    header.app-header { background: rgba(248, 250, 252, 0.85); }
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-family: var(--font-heading);
+    font-weight: 800;
+    font-size: 1.2rem;
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .logo-icon {
+    width: 28px;
+    height: 28px;
+    background: linear-gradient(135deg, var(--accent), #3b82f6);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 0.85rem;
+  }
+
+  .header-actions { display: flex; gap: 0.5rem; }
+  .icon-btn {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    color: var(--ink);
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .icon-btn:active { transform: scale(0.95); }
+
+  /* Main layout */
+  main.container {
+    max-width: 640px;
+    margin: 0 auto;
+    width: 100%;
+    padding: 1.25rem 1.25rem 5rem;
+    flex: 1;
+  }
+
+  /* View Containers */
+  .view { display: none; }
+  .view.active { display: block; animation: fadeIn 0.25s ease-out; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* Hero & Theme Input */
+  .hero-title {
+    font-family: var(--font-heading);
+    font-size: clamp(1.6rem, 5vw, 2.2rem);
+    font-weight: 800;
+    line-height: 1.2;
+    margin: 0.5rem 0 0.5rem;
+    background: linear-gradient(135deg, var(--ink), var(--muted));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .hero-subtitle {
+    color: var(--muted);
+    font-size: 0.95rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .theme-box {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 16px;
+    padding: 1.25rem;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+    margin-bottom: 1.5rem;
+  }
+
+  .input-label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    margin-bottom: 0.5rem;
+  }
+  .theme-input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--card-border);
+    color: var(--ink);
+    border-radius: 10px;
+    padding: 0.85rem 1rem;
+    font-size: 1rem;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .theme-input:focus { border-color: var(--accent); }
+
+  .pills-label {
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin: 1rem 0 0.5rem;
+  }
+  .pills-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .pill {
+    background: var(--bg);
+    border: 1px solid var(--card-border);
+    color: var(--ink);
+    font-size: 0.82rem;
+    padding: 0.4rem 0.8rem;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .pill:hover, .pill:active {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  .btn-primary {
+    width: 100%;
+    margin-top: 1.25rem;
+    background: linear-gradient(135deg, var(--accent), #0f766e);
+    color: white;
+    border: none;
+    padding: 0.95rem;
+    border-radius: 12px;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    box-shadow: 0 4px 14px var(--accent-soft);
+    transition: transform 0.15s, opacity 0.2s;
+  }
+  .btn-primary:active { transform: scale(0.98); }
+  .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  /* Draft Cards View */
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+  .section-title {
+    font-family: var(--font-heading);
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin: 0;
+  }
+
+  .draft-card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 14px;
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+    transition: all 0.2s;
+  }
+  .draft-card:hover { border-color: var(--accent); }
+  .draft-num {
+    display: inline-block;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.2rem 0.6rem;
+    border-radius: 6px;
+    margin-bottom: 0.6rem;
+  }
+  .draft-title {
+    font-family: var(--font-heading);
+    font-size: 1.15rem;
+    font-weight: 700;
+    line-height: 1.3;
+    margin: 0 0 0.5rem;
+  }
+  .draft-angle {
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin-bottom: 0.8rem;
+  }
+  .draft-terms {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 1rem;
+  }
+  .draft-term {
+    font-size: 0.75rem;
+    background: var(--bg);
+    color: var(--muted);
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    border: 1px solid var(--card-border);
+  }
+
+  .btn-select {
+    width: 100%;
+    background: var(--accent-soft);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    padding: 0.7rem;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+  }
+  .btn-select:hover, .btn-select:active {
+    background: var(--accent);
+    color: white;
+  }
+
+  /* Progress View */
+  .progress-card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 16px;
+    padding: 2rem 1.5rem;
+    text-align: center;
+  }
+  .spinner {
+    width: 48px;
+    height: 48px;
+    border: 4px solid var(--card-border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 1s infinite linear;
+    margin: 0 auto 1.5rem;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .progress-title {
+    font-family: var(--font-heading);
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin: 0 0 0.5rem;
+  }
+  .progress-step {
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin-bottom: 1.5rem;
+  }
+  .progress-steps-list {
+    text-align: left;
+    max-width: 320px;
+    margin: 0 auto;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .step-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.6rem;
+  }
+  .step-item.done { color: var(--ink); }
+  .step-icon { width: 18px; text-align: center; }
+
+  /* Reader / Article Frame */
+  .reader-frame-wrapper {
+    width: 100%;
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 16px;
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+  }
+  iframe.article-iframe {
+    width: 100%;
+    height: 70vh;
+    border: none;
+    display: block;
+  }
+
+  /* Sticky Share Action Bar */
+  .sticky-action-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(15, 17, 21, 0.92);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-top: 1px solid var(--card-border);
+    padding: 0.75rem 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    z-index: 90;
+  }
+  @media (prefers-color-scheme: light) {
+    .sticky-action-bar { background: rgba(248, 250, 252, 0.92); }
+  }
+
+  .action-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    background: none;
+    border: none;
+    color: var(--ink);
+    font-size: 0.72rem;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 0.2rem 0.6rem;
+    border-radius: 8px;
+    transition: opacity 0.2s;
+  }
+  .action-btn:active { opacity: 0.7; }
+  .action-btn svg { width: 20px; height: 20px; color: var(--accent); }
+
+  /* Settings Modal */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(4px);
+    z-index: 200;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 1.25rem;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal-card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 16px;
+    padding: 1.5rem;
+    width: 100%;
+    max-width: 440px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+  }
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+  .modal-title { font-family: var(--font-heading); font-size: 1.2rem; font-weight: 700; margin: 0; }
+
+  /* Toast Notification */
+  .toast {
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--accent);
+    color: white;
+    padding: 0.6rem 1.2rem;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.2);
+    z-index: 300;
+    display: none;
+  }
+  .toast.active { display: block; animation: popUp 0.3s ease-out; }
+  @keyframes popUp { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+  /* Gallery / Review Queue */
+  .gallery-item {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .gallery-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 0.2rem; }
+  .gallery-meta { font-size: 0.78rem; color: var(--muted); }
+  .gallery-action { color: var(--accent); text-decoration: none; font-weight: 600; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <a href="#" class="logo" onclick="showView('themeView'); return false;">
+    <div class="logo-icon">✨</div>
+    ArticleGen
+  </a>
+  <div class="header-actions">
+    <button class="icon-btn" onclick="showView('galleryView'); loadGallery();" title="Article Queue">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
+    </button>
+    <button class="icon-btn" onclick="openModal('settingsModal')" title="Settings">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main class="container">
+
+  <!-- VIEW 1: Theme Input -->
+  <div id="themeView" class="view active">
+    <h1 class="hero-title">Turn any theme into an evidence-grounded article</h1>
+    <p class="hero-subtitle">Grounded in real peer-reviewed journal abstracts. Simple, fast, and mobile-first.</p>
+
+    <div class="theme-box">
+      <label class="input-label" for="themeInput">1. Enter a Theme or Topic</label>
+      <input type="text" id="themeInput" class="theme-input" placeholder="e.g. Gravity energy storage, Deep sea ecosystems..." autocomplete="off">
+
+      <div class="pills-label">Or try a trending theme:</div>
+      <div class="pills-grid">
+        <button class="pill" onclick="setTheme('Renewable energy storage')">🔋 Renewable Storage</button>
+        <button class="pill" onclick="setTheme('Neuroscience of sleep and memory')">🧠 Sleep & Memory</button>
+        <button class="pill" onclick="setTheme('Deep sea hydrothermal vents')">🌊 Deep Sea Vents</button>
+        <button class="pill" onclick="setTheme('Quantum computing error correction')">💻 Quantum Error Correction</button>
+      </div>
+
+      <div style="margin-top: 1rem;">
+        <label class="input-label" for="styleInput">Audience / Style (Optional)</label>
+        <input type="text" id="styleInput" class="theme-input" placeholder="e.g. for high school students, in-depth technical...">
+      </div>
+
+      <button id="ideasBtn" class="btn-primary" onclick="requestIdeas()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        Generate Article Drafts
+      </button>
+    </div>
+  </div>
+
+  <!-- VIEW 2: Draft Ideas Selection -->
+  <div id="ideasView" class="view">
+    <div class="section-header">
+      <h2 class="section-title">2. Choose an Article Idea</h2>
+      <button class="pill" onclick="showView('themeView')">← Change Theme</button>
+    </div>
+    <p style="color:var(--muted); font-size:0.9rem; margin-top:-0.5rem; margin-bottom:1.25rem;" id="themeLabel"></p>
+
+    <div id="draftsList">
+      <!-- Dynamically filled with draft cards -->
+    </div>
+  </div>
+
+  <!-- VIEW 3: Research & Drafting Progress -->
+  <div id="progressView" class="view">
+    <div class="progress-card">
+      <div class="spinner"></div>
+      <h2 class="progress-title" id="progressTitle">Researching & Writing Article</h2>
+      <p class="progress-step" id="progressStepText">Planning scholarly search queries...</p>
+
+      <div class="progress-steps-list">
+        <div class="step-item done"><span class="step-icon">✓</span> <span>Theme & Angle Selected</span></div>
+        <div class="step-item" id="stepQueries"><span class="step-icon">⏳</span> <span>Searching OpenAlex & Semantic Scholar</span></div>
+        <div class="step-item" id="stepCurate"><span class="step-icon">⏳</span> <span>Curating Peer-Reviewed Evidence</span></div>
+        <div class="step-item" id="stepDraft"><span class="step-icon">⏳</span> <span>Drafting Grounded Article</span></div>
+        <div class="step-item" id="stepVerify"><span class="step-icon">⏳</span> <span>Verifying Statistics & Citations</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIEW 4: Article Reader & Mobile Share -->
+  <div id="readerView" class="view">
+    <div class="section-header">
+      <button class="pill" onclick="showView('ideasView')">← Back to Ideas</button>
+      <span style="font-size:0.8rem; color:var(--muted);" id="articleMeta">Ready</span>
+    </div>
+
+    <div class="reader-frame-wrapper">
+      <iframe id="articleIframe" class="article-iframe" title="Generated Article"></iframe>
+    </div>
+  </div>
+
+  <!-- VIEW 5: Article Gallery / Queue -->
+  <div id="galleryView" class="view">
+    <div class="section-header">
+      <h2 class="section-title">Draft Review Queue</h2>
+      <button class="pill" onclick="showView('themeView')">+ New Theme</button>
+    </div>
+    <div id="galleryList">
+      <!-- Dynamically filled -->
+    </div>
+  </div>
+
+</main>
+
+<!-- Sticky Mobile Action Bar for Reader -->
+<div id="stickyBar" class="sticky-action-bar" style="display:none;">
+  <button class="action-btn" onclick="shareCurrentArticle()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+    Share
+  </button>
+  <button class="action-btn" onclick="copyCurrentLink()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+    Copy Link
+  </button>
+  <button class="action-btn" onclick="showQrModal()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+    QR Code
+  </button>
+  <button class="action-btn" onclick="openRawMarkdown()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    Markdown
+  </button>
+</div>
+
+<!-- Settings Modal -->
+<div id="settingsModal" class="modal-overlay" onclick="closeModal('settingsModal')">
+  <div class="modal-card" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3 class="modal-title">API Settings</h3>
+      <button class="icon-btn" onclick="closeModal('settingsModal')">✕</button>
+    </div>
+    <label class="input-label" for="apiKeyInput">Gemini API Key (Optional)</label>
+    <p style="font-size:0.8rem; color:var(--muted); margin-top:-0.2rem; margin-bottom:0.6rem;">
+      Stored safely in browser storage. Leave empty if server environment variable is configured.
+    </p>
+    <input type="password" id="apiKeyInput" class="theme-input" placeholder="AIzaSy...">
+    <button class="btn-primary" style="margin-top:1rem;" onclick="saveApiKey()">Save Settings</button>
+  </div>
+</div>
+
+<!-- QR Code Modal -->
+<div id="qrModal" class="modal-overlay" onclick="closeModal('qrModal')">
+  <div class="modal-card" style="text-align:center;" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3 class="modal-title">Scan on Mobile</h3>
+      <button class="icon-btn" onclick="closeModal('qrModal')">✕</button>
+    </div>
+    <div id="qrCanvasWrapper" style="margin: 1.5rem 0; display:flex; justify-content:center;"></div>
+    <p style="font-size:0.85rem; color:var(--muted);">Scan this QR Code to open this article link on your smartphone or desktop.</p>
+  </div>
+</div>
+
+<div id="toast" class="toast">Action completed!</div>
+
+<script>
+  let currentArticleUrl = '';
+  let currentMarkdownUrl = '';
+  let currentTitle = '';
+
+  function showView(viewId) {
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.getElementById(viewId).classList.add('active');
+    const sticky = document.getElementById('stickyBar');
+    if (viewId === 'readerView') {
+      sticky.style.display = 'flex';
+    } else {
+      sticky.style.display = 'none';
+    }
+  }
+
+  function setTheme(t) {
+    document.getElementById('themeInput').value = t;
+  }
+
+  function openModal(id) {
+    document.getElementById(id).classList.add('active');
+    if (id === 'settingsModal') {
+      document.getElementById('apiKeyInput').value = localStorage.getItem('articlegen_key') || '';
+    }
+  }
+
+  function closeModal(id) {
+    document.getElementById(id).classList.remove('active');
+  }
+
+  function saveApiKey() {
+    const k = document.getElementById('apiKeyInput').value.trim();
+    if (k) {
+      localStorage.setItem('articlegen_key', k);
+      showToast('API Key saved!');
+    } else {
+      localStorage.removeItem('articlegen_key');
+      showToast('API Key cleared.');
+    }
+    closeModal('settingsModal');
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.innerText = msg;
+    t.classList.add('active');
+    setTimeout(() => t.classList.remove('active'), 2500);
+  }
+
+  async function requestIdeas() {
+    const theme = document.getElementById('themeInput').value.trim();
+    if (!theme) {
+      showToast('Please type a theme first.');
+      return;
+    }
+
+    const guidance = document.getElementById('styleInput').value.trim();
+    const btn = document.getElementById('ideasBtn');
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Generating Ideas...';
+
+    const key = localStorage.getItem('articlegen_key') || '';
+
+    try {
+      const resp = await fetch('/api/ideas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ theme, guidance, key, n: 6 })
+      });
+
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to generate ideas');
+      }
+
+      const data = await resp.json();
+      renderDraftCards(data.theme, data.ideas || []);
+      showView('ideasView');
+    } catch (err) {
+      alert('Error generating ideas: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg> Generate Article Drafts';
+    }
+  }
+
+  function renderDraftCards(theme, ideas) {
+    document.getElementById('themeLabel').innerText = 'Theme: ' + theme;
+    const container = document.getElementById('draftsList');
+    container.innerHTML = '';
+
+    ideas.forEach((idea, idx) => {
+      const card = document.createElement('div');
+      card.className = 'draft-card';
+      const termsHtml = (idea.search_terms || []).map(t => `<span class="draft-term">${t}</span>`).join(' ');
+
+      card.innerHTML = `
+        <span class="draft-num">Idea #${idx + 1}</span>
+        <h3 class="draft-title">${escapeHtml(idea.title)}</h3>
+        <p class="draft-angle">${escapeHtml(idea.angle)}</p>
+        <div class="draft-terms">${termsHtml}</div>
+        <button class="btn-select" onclick="selectDraft(${JSON.stringify(idea.title).replace(/"/g, '&quot;')})">
+          Generate Full Article →
+        </button>
+      `;
+      container.appendChild(card);
+    });
+  }
+
+  async function selectDraft(title) {
+    currentTitle = title;
+    document.getElementById('progressTitle').innerText = title;
+    showView('progressView');
+
+    const style = document.getElementById('styleInput').value.trim();
+    const key = localStorage.getItem('articlegen_key') || '';
+
+    // Animate fake progress steps for delightful UX
+    const stepText = document.getElementById('progressStepText');
+    const sQueries = document.getElementById('stepQueries');
+    const sCurate = document.getElementById('stepCurate');
+    const sDraft = document.getElementById('stepDraft');
+    const sVerify = document.getElementById('stepVerify');
+
+    stepText.innerText = 'Searching OpenAlex & Semantic Scholar databases...';
+    sQueries.classList.add('done');
+
+    setTimeout(() => {
+      stepText.innerText = 'Curating & scoring peer-reviewed evidence...';
+      sCurate.classList.add('done');
+    }, 4000);
+
+    setTimeout(() => {
+      stepText.innerText = 'Writing grounded article with inline citations...';
+      sDraft.classList.add('done');
+    }, 9000);
+
+    setTimeout(() => {
+      stepText.innerText = 'Verifying statistics against source abstracts...';
+      sVerify.classList.add('done');
+    }, 15000);
+
+    try {
+      const resp = await fetch('/api/draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: title, style, key })
+      });
+
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to write draft');
+      }
+
+      const data = await resp.json();
+      currentArticleUrl = data.html_url;
+      currentMarkdownUrl = data.md_url;
+
+      document.getElementById('articleIframe').src = data.html_url;
+      document.getElementById('articleMeta').innerText = (data.sources_count || 0) + ' Sources Cited';
+      showView('readerView');
+    } catch (err) {
+      alert('Drafting error: ' + err.message);
+      showView('ideasView');
+    }
+  }
+
+  function shareCurrentArticle() {
+    if (navigator.share && currentArticleUrl) {
+      navigator.share({
+        title: currentTitle || document.title,
+        text: currentTitle,
+        url: window.location.origin + currentArticleUrl
+      }).catch(() => {});
+    } else {
+      copyCurrentLink();
+    }
+  }
+
+  function copyCurrentLink() {
+    const fullUrl = window.location.origin + currentArticleUrl;
+    navigator.clipboard.writeText(fullUrl).then(() => {
+      showToast('Link copied to clipboard!');
+    }).catch(() => {});
+  }
+
+  function openRawMarkdown() {
+    if (currentMarkdownUrl) {
+      window.open(currentMarkdownUrl, '_blank');
+    }
+  }
+
+  function showQrModal() {
+    const fullUrl = window.location.origin + (currentArticleUrl || window.location.pathname);
+    const wrapper = document.getElementById('qrCanvasWrapper');
+    wrapper.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(fullUrl)}" alt="QR Code" width="180" height="180">`;
+    openModal('qrModal');
+  }
+
+  async function loadGallery() {
+    const container = document.getElementById('galleryList');
+    container.innerHTML = '<p style="color:var(--muted);">Loading draft queue...</p>';
+    try {
+      const resp = await fetch('/api/drafts');
+      if (!resp.ok) throw new Error();
+      const data = await resp.json();
+      if (!data.drafts || data.drafts.length === 0) {
+        container.innerHTML = '<p style="color:var(--muted);">No drafts generated yet.</p>';
+        return;
+      }
+      container.innerHTML = '';
+      data.drafts.forEach(d => {
+        const item = document.createElement('div');
+        item.className = 'gallery-item';
+        item.innerHTML = `
+          <div>
+            <div class="gallery-title">${escapeHtml(d.title)}</div>
+            <div class="gallery-meta">${new Date(d.date).toLocaleDateString()}</div>
+          </div>
+          <a class="gallery-action" href="#" onclick="openDraftFromGallery('${d.html_url}', '${escapeHtml(d.title).replace(/'/g, "\\'")}'); return false;">Read →</a>
+        `;
+        container.appendChild(item);
+      });
+    } catch (e) {
+      container.innerHTML = '<p style="color:var(--muted);">Queue unavailable or running standalone.</p>';
+    }
+  }
+
+  function openDraftFromGallery(htmlUrl, title) {
+    currentArticleUrl = htmlUrl;
+    currentTitle = title;
+    document.getElementById('articleIframe').src = htmlUrl;
+    showView('readerView');
+  }
+
+  function escapeHtml(str) {
+    return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+</script>
+</body>
+</html>
