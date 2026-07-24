@@ -469,7 +469,7 @@
 <header class="app-header">
   <a href="#" class="logo" onclick="showView('themeView'); return false;">
     <div class="logo-icon">✨</div>
-    ArticleGen <span style="font-size:0.7rem; background:var(--accent-soft); color:var(--accent); padding:0.15rem 0.4rem; border-radius:10px; font-weight:600;">v1.5 (Final)</span>
+    ArticleGen <span style="font-size:0.7rem; background:var(--accent-soft); color:var(--accent); padding:0.15rem 0.4rem; border-radius:10px; font-weight:600;">v1.6 (Groq)</span>
   </a>
   <div class="header-actions">
     <button class="icon-btn" onclick="showView('galleryView'); loadGallery();" title="Article Queue">
@@ -678,7 +678,11 @@
 
     const url = "https://api.groq.com/openai/v1/chat/completions";
 
-    const schemaString = JSON.stringify(schema, null, 2);
+    const schemaString = JSON.stringify(schema, null, 2)
+      .replace(/"OBJECT"/g, '"object"')
+      .replace(/"STRING"/g, '"string"')
+      .replace(/"ARRAY"/g, '"array"')
+      .replace(/"INTEGER"/g, '"integer"');
     const finalSystemInstruction = (systemInstruction || '') + `\n\nYou MUST respond in valid JSON format. Your entire response must be a single JSON object matching this schema exactly:\n${schemaString}\nOutput ONLY raw JSON. Do not include markdown formatting or explanations.`;
 
     const payload = {
@@ -958,6 +962,9 @@
   }
 
   function clientRenderArticle(article, papers, topic) {
+    if (!article.sections && Object.keys(article).length === 1 && typeof article[Object.keys(article)[0]] === 'object') {
+      article = article[Object.keys(article)[0]]; // Auto-unwrap if LLM nested the response
+    }
     const refs = article.references || [];
     const citedPapers = refs.map(idx => papers[idx - 1]).filter(Boolean);
     const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
