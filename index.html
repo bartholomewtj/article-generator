@@ -469,7 +469,7 @@
 <header class="app-header">
   <a href="#" class="logo" onclick="showView('themeView'); return false;">
     <div class="logo-icon">✨</div>
-    ArticleGen <span style="font-size:0.7rem; background:var(--accent-soft); color:var(--accent); padding:0.15rem 0.4rem; border-radius:10px; font-weight:600;">v1.8 (CloudSync)</span>
+    ArticleGen <span style="font-size:0.7rem; background:var(--accent-soft); color:var(--accent); padding:0.15rem 0.4rem; border-radius:10px; font-weight:600;">v1.9 (QR-Share)</span>
   </a>
   <div class="header-actions">
     <button class="icon-btn" onclick="showView('galleryView'); loadGallery();" title="Article Queue">
@@ -1024,7 +1024,41 @@
     };
   }
 
-  document.addEventListener('DOMContentLoaded', loadPreferences);
+  function encodeArticleToHash(html) {
+    try {
+      const base64 = btoa(encodeURIComponent(html).replace(/%([0-9A-F]{2})/g, (match, p1) => String.fromCharCode('0x' + p1)));
+      return '#read=' + encodeURIComponent(base64);
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function decodeArticleFromHash(hashStr) {
+    try {
+      const rawBase64 = decodeURIComponent(hashStr.replace('#read=', ''));
+      const html = decodeURIComponent(Array.from(atob(rawBase64)).map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+      return html;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function checkUrlHashForArticle() {
+    const hash = window.location.hash;
+    if (hash && hash.startsWith('#read=')) {
+      const html = decodeArticleFromHash(hash);
+      if (html) {
+        document.getElementById('articleIframe').srcdoc = html;
+        document.getElementById('articleMeta').innerText = 'Shared Article';
+        showView('readerView');
+      }
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    loadPreferences();
+    checkUrlHashForArticle();
+  });
 
   async function requestIdeas() {
     const theme = document.getElementById('themeInput').value.trim();
@@ -1237,6 +1271,13 @@
 
       saveLocalDraft(articleData.title || title, htmlOutput);
 
+      currentTitle = articleData.title || title;
+      const hash = encodeArticleToHash(htmlOutput);
+      if (hash) {
+        window.location.hash = hash;
+        currentArticleUrl = window.location.pathname + hash;
+      }
+
       document.getElementById('articleMeta').innerText = (articleData.references?.length || 0) + ' Sources Cited';
       showView('readerView');
     } catch (err) {
@@ -1378,9 +1419,9 @@
   }
 
   function showQrModal() {
-    const fullUrl = window.location.origin + (currentArticleUrl || window.location.pathname);
+    const fullUrl = currentArticleUrl ? (window.location.origin + currentArticleUrl) : window.location.href;
     const wrapper = document.getElementById('qrCanvasWrapper');
-    wrapper.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(fullUrl)}" alt="QR Code" width="180" height="180">`;
+    wrapper.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(fullUrl)}" alt="QR Code" width="250" height="250">`;
     openModal('qrModal');
   }
 
@@ -1437,6 +1478,11 @@
     if (draft) {
       currentTitle = draft.title;
       document.getElementById('articleIframe').srcdoc = draft.content;
+      const hash = encodeArticleToHash(draft.content);
+      if (hash) {
+        window.location.hash = hash;
+        currentArticleUrl = window.location.pathname + hash;
+      }
       showView('readerView');
     }
   }
