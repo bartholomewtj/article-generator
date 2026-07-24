@@ -255,41 +255,76 @@ _TEMPLATE = """<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{page_title}</title>
-<style>
-  :root {{
-    --bg: #ffffff;
-    --ink: #1d1f21;
-    --muted: #6b6f76;
-    --accent: #0b6e6a;
-    --accent-soft: #0b6e6a22;
-    --rule: #e4e2dd;
-    --card: #f6f5f2;
-  }}
-  @media (prefers-color-scheme: dark) {{
-    :root {{
-      --bg: #16181b;
-      --ink: #e8e6e1;
-      --muted: #9aa0a6;
-      --accent: #5cc8c0;
-      --accent-soft: #5cc8c026;
-      --rule: #2c2f33;
-      --card: #1e2125;
+<script>
+  (function() {{
+    var saved = localStorage.getItem('articlegen_theme') || 'system';
+    if (saved === 'dark' || saved === 'light') {{
+      document.documentElement.setAttribute('data-theme', saved);
     }}
-  }}
+  }})();
+</script>
+<style>
+  :root, html[data-theme="dark"] {
+    --bg: #0f1115;
+    --ink: #f1f5f9;
+    --muted: #cbd5e1;
+    --accent: #2dd4bf;
+    --accent-hover: #5eead4;
+    --accent-soft: rgba(45, 212, 191, 0.15);
+    --rule: #272a30;
+    --card: #181b20;
+    --warn-bg: rgba(245, 158, 11, 0.15);
+    --warn-border: rgba(245, 158, 11, 0.35);
+    --warn-ink: #fef08a;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #ffffff;
+      --ink: #111827;
+      --muted: #4b5563;
+      --accent: #0d9488;
+      --accent-hover: #0f766e;
+      --accent-soft: rgba(13, 148, 136, 0.1);
+      --rule: #e5e7eb;
+      --card: #f8fafc;
+      --warn-bg: rgba(245, 158, 11, 0.1);
+      --warn-border: rgba(245, 158, 11, 0.3);
+      --warn-ink: #92400e;
+      color-scheme: light;
+    }
+  }
+  html[data-theme="light"] {
+    --bg: #ffffff;
+    --ink: #111827;
+    --muted: #4b5563;
+    --accent: #0d9488;
+    --accent-hover: #0f766e;
+    --accent-soft: rgba(13, 148, 136, 0.1);
+    --rule: #e5e7eb;
+    --card: #f8fafc;
+    --warn-bg: rgba(245, 158, 11, 0.1);
+    --warn-border: rgba(245, 158, 11, 0.3);
+    --warn-ink: #92400e;
+    color-scheme: light;
+  }
   * {{ box-sizing: border-box; }}
   body {{
     margin: 0;
     background: var(--bg);
     color: var(--ink);
     font-family: Georgia, "Iowan Old Style", "Times New Roman", serif;
-    font-size: 1.125rem;
-    line-height: 1.65;
+    font-size: 1.15rem;
+    line-height: 1.7;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }}
   main {{ max-width: 42rem; margin: 0 auto; padding: 3rem 1.25rem 5rem; }}
   header.masthead {{ margin-bottom: 3rem; }}
   .kicker {{
     font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
-    font-size: 0.78rem;
+    font-size: 0.8rem;
     font-weight: 700;
     letter-spacing: 0.14em;
     text-transform: uppercase;
@@ -298,13 +333,14 @@ _TEMPLATE = """<!DOCTYPE html>
   }}
   h1 {{
     font-size: clamp(2rem, 5.5vw, 2.9rem);
-    line-height: 1.12;
+    line-height: 1.15;
     margin: 0 0 1rem;
     letter-spacing: -0.01em;
+    color: var(--ink);
   }}
   .standfirst {{
     font-size: 1.3rem;
-    line-height: 1.45;
+    line-height: 1.5;
     color: var(--muted);
     margin: 0 0 1.5rem;
   }}
@@ -317,11 +353,12 @@ _TEMPLATE = """<!DOCTYPE html>
     padding: 0.6rem 0;
   }}
   h2 {{
-    font-size: 1.45rem;
+    font-size: 1.5rem;
     line-height: 1.25;
     margin: 2.6rem 0 0.9rem;
+    color: var(--ink);
   }}
-  p {{ margin: 0 0 1.15rem; }}
+  p {{ margin: 0 0 1.2rem; }}
   p.opener::first-letter {{
     float: left;
     font-size: 3.4em;
@@ -331,25 +368,27 @@ _TEMPLATE = """<!DOCTYPE html>
   }}
   sup.cite {{
     font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
-    font-size: 0.68em;
+    font-size: 0.7em;
     letter-spacing: 0.02em;
+    font-weight: 600;
   }}
   sup.cite a {{ color: var(--accent); text-decoration: none; }}
   sup.cite a:hover {{ text-decoration: underline; }}
   blockquote.pull {{
     margin: 2rem 0;
-    padding: 0.2rem 0 0.2rem 1.2rem;
+    padding: 0.4rem 0 0.4rem 1.25rem;
     border-left: 3px solid var(--accent);
     font-size: 1.45rem;
-    line-height: 1.35;
+    line-height: 1.38;
     font-style: italic;
     color: var(--ink);
   }}
   aside.takeaways {{
     margin: 3rem 0;
-    padding: 1.4rem 1.6rem;
+    padding: 1.5rem 1.75rem;
     background: var(--card);
-    border-radius: 10px;
+    border: 1px solid var(--rule);
+    border-radius: 12px;
   }}
   aside.takeaways h2 {{
     margin: 0 0 0.8rem;
@@ -361,20 +400,20 @@ _TEMPLATE = """<!DOCTYPE html>
     color: var(--accent);
   }}
   aside.takeaways ul {{ margin: 0; padding-left: 1.2rem; }}
-  aside.takeaways li {{ margin-bottom: 0.55rem; }}
+  aside.takeaways li {{ margin-bottom: 0.6rem; color: var(--ink); }}
   p.evidence-note {{
     font-size: 0.98rem;
     color: var(--muted);
     font-style: italic;
-    border-left: 3px solid var(--rule);
+    border-left: 3px solid var(--accent);
     padding-left: 1rem;
     margin: 1.5rem 0;
   }}
   aside.featured {{
     margin: 2.5rem 0;
-    padding: 1.3rem 1.6rem;
+    padding: 1.4rem 1.75rem;
     border: 1px solid var(--accent);
-    border-radius: 10px;
+    border-radius: 12px;
     background: var(--accent-soft);
   }}
   aside.featured h2 {{
@@ -383,11 +422,11 @@ _TEMPLATE = """<!DOCTYPE html>
     font-size: 0.8rem; font-weight: 700; letter-spacing: 0.12em;
     text-transform: uppercase; color: var(--accent);
   }}
-  aside.featured p {{ margin: 0 0 0.6rem; font-size: 1rem; line-height: 1.5; }}
-  aside.featured .fs-cite {{ font-weight: 600; }}
-  aside.featured .fs-why {{ font-style: italic; color: var(--muted); }}
-  aside.featured .fs-ref {{ color: var(--accent); text-decoration: none; }}
-  aside.featured a {{ color: var(--accent); }}
+  aside.featured p {{ margin: 0 0 0.6rem; font-size: 1.05rem; line-height: 1.55; color: var(--ink); }}
+  aside.featured .fs-cite {{ font-weight: 600; color: var(--ink); }}
+  aside.featured .fs-why {{ font-style: italic; color: var(--ink); opacity: 0.9; }}
+  aside.featured .fs-ref {{ color: var(--accent); text-decoration: none; font-weight: 600; }}
+  aside.featured a {{ color: var(--accent); font-weight: 600; }}
   aside.evidence {{
     margin: 2.5rem 0 0;
     font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
@@ -395,13 +434,13 @@ _TEMPLATE = """<!DOCTYPE html>
   aside.evidence ul.ev-stats {{
     display: flex; flex-wrap: wrap; gap: 0.4rem 1.4rem;
     list-style: none; margin: 0 0 0.6rem; padding: 0;
-    font-size: 0.85rem; color: var(--muted);
+    font-size: 0.88rem; color: var(--muted);
   }}
   aside.evidence .ev-warn {{
-    font-size: 0.9rem; line-height: 1.45; margin: 0.5rem 0 0;
-    padding: 0.7rem 0.9rem; border-radius: 8px;
-    background: #b4530022; color: var(--ink);
-    border: 1px solid #b4530055;
+    font-size: 0.92rem; line-height: 1.5; margin: 0.75rem 0 0;
+    padding: 0.8rem 1rem; border-radius: 8px;
+    background: var(--warn-bg); color: var(--warn-ink);
+    border: 1px solid var(--warn-border);
   }}
   section.references {{ margin-top: 3.5rem; border-top: 1px solid var(--rule); padding-top: 1.5rem; }}
   section.references h2 {{
@@ -417,16 +456,16 @@ _TEMPLATE = """<!DOCTYPE html>
     margin: 0;
     padding-left: 1.4rem;
     font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
-    font-size: 0.88rem;
-    line-height: 1.5;
+    font-size: 0.9rem;
+    line-height: 1.6;
     color: var(--muted);
   }}
-  section.references li {{ margin-bottom: 0.7rem; }}
-  section.references li:target {{ background: var(--accent-soft); border-radius: 4px; }}
-  section.references a {{ color: var(--accent); text-decoration: none; }}
+  section.references li {{ margin-bottom: 0.75rem; color: var(--muted); }}
+  section.references li:target {{ background: var(--accent-soft); border-radius: 4px; padding: 0.2rem 0.4rem; }}
+  section.references a {{ color: var(--accent); text-decoration: none; font-weight: 500; }}
   section.references a:hover {{ text-decoration: underline; }}
-  .ref-authors {{ color: var(--ink); }}
-  .ref-meta {{ display: block; font-size: 0.82rem; }}
+  .ref-authors {{ color: var(--ink); font-weight: 600; }}
+  .ref-meta {{ display: block; font-size: 0.84rem; color: var(--muted); margin-top: 0.15rem; }}
   footer.colophon {{
     margin-top: 3rem;
     font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
@@ -496,6 +535,9 @@ _TEMPLATE = """<!DOCTYPE html>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
         Copy Link
       </button>
+      <button class="article-share-btn secondary" id="themeBtn" onclick="toggleArticleTheme()" title="Toggle Dark/Light Theme">
+        <span id="themeIcon">🌙</span> Theme
+      </button>
       <span id="shareToast" class="share-toast">Link copied!</span>
     </div>
   </header>
@@ -547,6 +589,24 @@ function copyArticleLink() {{
     }}
   }}).catch(function() {{}});
 }}
+function toggleArticleTheme() {{
+  var cur = document.documentElement.getAttribute('data-theme');
+  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var effective = cur || (isSysDark ? 'dark' : 'light');
+  var next = effective === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('articlegen_theme', next);
+  updateArticleThemeIcon();
+}}
+function updateArticleThemeIcon() {{
+  var icon = document.getElementById('themeIcon');
+  if (!icon) return;
+  var cur = document.documentElement.getAttribute('data-theme');
+  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var effective = cur || (isSysDark ? 'dark' : 'light');
+  icon.textContent = effective === 'dark' ? '🌙' : '☀️';
+}}
+document.addEventListener('DOMContentLoaded', updateArticleThemeIcon);
 </script>
 </body>
 </html>
@@ -671,15 +731,26 @@ _INDEX_TEMPLATE = """<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Draft review queue</title>
+<script>
+  (function() {{
+    var saved = localStorage.getItem('articlegen_theme') || 'system';
+    if (saved === 'dark' || saved === 'light') {{
+      document.documentElement.setAttribute('data-theme', saved);
+    }}
+  }})();
+</script>
 <style>
-  :root {{ --bg:#fff; --ink:#1d1f21; --muted:#6b6f76; --accent:#0b6e6a; --rule:#e4e2dd; --card:#f6f5f2; }}
+  :root, html[data-theme="light"] {{ --bg:#fff; --ink:#1d1f21; --muted:#6b6f76; --accent:#0b6e6a; --rule:#e4e2dd; --card:#f6f5f2; color-scheme: light; }}
   @media (prefers-color-scheme: dark) {{
-    :root {{ --bg:#16181b; --ink:#e8e6e1; --muted:#9aa0a6; --accent:#5cc8c0; --rule:#2c2f33; --card:#1e2125; }}
+    :root:not([data-theme="light"]) {{ --bg:#16181b; --ink:#e8e6e1; --muted:#9aa0a6; --accent:#5cc8c0; --rule:#2c2f33; --card:#1e2125; color-scheme: dark; }}
   }}
+  html[data-theme="dark"] {{ --bg:#16181b; --ink:#e8e6e1; --muted:#9aa0a6; --accent:#5cc8c0; --rule:#2c2f33; --card:#1e2125; color-scheme: dark; }}
   body {{ margin:0; background:var(--bg); color:var(--ink);
     font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; line-height:1.5; }}
   main {{ max-width:44rem; margin:0 auto; padding:3rem 1.25rem 5rem; }}
-  h1 {{ font-size:1.6rem; margin:0 0 0.3rem; }}
+  .header-row {{ display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.3rem; }}
+  h1 {{ font-size:1.6rem; margin:0; }}
+  .theme-toggle-btn {{ background: var(--card); border: 1px solid var(--rule); color: var(--ink); border-radius: 8px; padding: 0.3rem 0.6rem; cursor: pointer; font-size: 0.85rem; }}
   .sub {{ color:var(--muted); margin:0 0 2rem; font-size:0.9rem; }}
   ul {{ list-style:none; margin:0; padding:0; }}
   li {{ background:var(--card); border-radius:10px; padding:1rem 1.2rem; margin-bottom:0.8rem; }}
@@ -692,12 +763,35 @@ _INDEX_TEMPLATE = """<!DOCTYPE html>
 </head>
 <body>
 <main>
-  <h1>Draft review queue</h1>
+  <div class="header-row">
+    <h1>Draft review queue</h1>
+    <button class="theme-toggle-btn" onclick="toggleIndexTheme()"><span id="idxThemeIcon">🌙</span> Theme</button>
+  </div>
   <p class="sub">{count} draft(s) · newest first</p>
   <ul>
     {items}
   </ul>
 </main>
+<script>
+function toggleIndexTheme() {{
+  var cur = document.documentElement.getAttribute('data-theme');
+  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var effective = cur || (isSysDark ? 'dark' : 'light');
+  var next = effective === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('articlegen_theme', next);
+  updateIndexThemeIcon();
+}}
+function updateIndexThemeIcon() {{
+  var icon = document.getElementById('idxThemeIcon');
+  if (!icon) return;
+  var cur = document.documentElement.getAttribute('data-theme');
+  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var effective = cur || (isSysDark ? 'dark' : 'light');
+  icon.textContent = effective === 'dark' ? '🌙' : '☀️';
+}}
+document.addEventListener('DOMContentLoaded', updateIndexThemeIcon);
+</script>
 </body>
 </html>
 """

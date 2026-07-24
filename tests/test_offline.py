@@ -163,7 +163,7 @@ def test_demo_and_index() -> None:
     check("demo html renders featured", 'class="featured"' in h)
     check("demo markdown renders", md.startswith("# What Your Brain Does While You Sleep"))
     with tempfile.TemporaryDirectory() as d:
-        with open(os.path.join(d, "2026-01-01-x.html"), "w") as f:
+        with open(os.path.join(d, "2026-01-01-x.html"), "w", encoding="utf-8") as f:
             f.write(h)
         idx = build_index(d)
         check("index builds", os.path.exists(idx))
