@@ -623,6 +623,22 @@
     <div class="reader-frame-wrapper">
       <iframe id="articleIframe" class="article-iframe" title="Generated Article"></iframe>
     </div>
+
+    <!-- AI Refinement Section -->
+    <div id="aiRefineBox" style="background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 14px; padding: 1rem; margin-bottom: 1.5rem;">
+      <label class="input-label" style="font-size: 0.78rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem;">
+        <span>✨ Refine Article with AI Prompt</span>
+      </label>
+      <div style="display: flex; gap: 0.5rem;">
+        <input type="text" id="aiRefineInput" class="theme-input" placeholder="e.g. Make intro punchier, expand key takeaways..." autocomplete="off">
+        <button id="aiRefineBtn" class="pill" style="background: var(--accent); color: white; border: none; font-weight: 700; padding: 0 1.1rem; white-space: nowrap; cursor: pointer;" onclick="refineArticleWithAI()">✨ Refine</button>
+      </div>
+      <div style="display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.65rem;">
+        <button type="button" class="pill" style="font-size: 0.75rem; padding: 0.25rem 0.6rem;" onclick="quickRefine('Make the text more concise and punchy')">⚡ Make Concise</button>
+        <button type="button" class="pill" style="font-size: 0.75rem; padding: 0.25rem 0.6rem;" onclick="quickRefine('Expand key takeaways with more details')">📚 Expand Takeaways</button>
+        <button type="button" class="pill" style="font-size: 0.75rem; padding: 0.25rem 0.6rem;" onclick="quickRefine('Simplify technical terminology for beginner audience')">💡 Simplify Language</button>
+      </div>
+    </div>
   </div>
 
   <!-- VIEW 5: Article Gallery / Queue -->
@@ -641,6 +657,10 @@
 
 <!-- Sticky Mobile Action Bar for Reader -->
 <div id="stickyBar" class="sticky-action-bar" style="display:none;">
+  <button class="action-btn" id="editToggleBtn" onclick="toggleInPlaceEdit()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+    <span id="editToggleText">Edit Text</span>
+  </button>
   <button class="action-btn" onclick="shareCurrentArticle()">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
     Share
@@ -652,10 +672,6 @@
   <button class="action-btn" onclick="showQrModal()">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
     QR Code
-  </button>
-  <button class="action-btn" onclick="openRawMarkdown()">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-    Markdown
   </button>
 </div>
 
@@ -779,6 +795,95 @@
         }
       }
     } catch (e) {}
+  }
+
+  let isEditingInPlace = false;
+
+  function toggleInPlaceEdit() {
+    const iframe = document.getElementById('articleIframe');
+    if (!iframe) return;
+    try {
+      const doc = iframe.contentDocument || iframe.contentWindow.document;
+      if (!doc || !doc.body) return;
+
+      isEditingInPlace = !isEditingInPlace;
+      doc.body.contentEditable = isEditingInPlace ? "true" : "false";
+
+      const btnText = document.getElementById('editToggleText');
+      if (btnText) btnText.innerText = isEditingInPlace ? "Done Editing" : "Edit Text";
+
+      if (isEditingInPlace) {
+        showToast("✏️ Direct edit mode enabled — click any text in article to edit!");
+      } else {
+        showToast("✓ Text edits saved to local article preview.");
+        const htmlContent = doc.documentElement.outerHTML;
+        if (typeof saveLocalDraft === 'function') saveLocalDraft(currentTitle || 'Edited Article', htmlContent);
+        const hash = encodeArticleToHash(htmlContent);
+        if (hash) window.location.hash = hash;
+      }
+    } catch(e) {
+      alert("Editing error: " + e.message);
+    }
+  }
+
+  function quickRefine(promptText) {
+    const input = document.getElementById('aiRefineInput');
+    if (input) {
+      input.value = promptText;
+      refineArticleWithAI();
+    }
+  }
+
+  async function refineArticleWithAI() {
+    const input = document.getElementById('aiRefineInput');
+    const instruction = input?.value.trim();
+    if (!instruction) {
+      showToast("Please enter a refinement prompt first.");
+      return;
+    }
+
+    const iframe = document.getElementById('articleIframe');
+    if (!iframe) return;
+
+    const btn = document.getElementById('aiRefineBtn');
+    const origText = btn.innerText;
+    btn.innerText = "⏳ Refining...";
+    btn.disabled = true;
+
+    try {
+      const doc = iframe.contentDocument || iframe.contentWindow.document;
+      const currentHtml = doc.body.innerHTML;
+
+      const key = localStorage.getItem('articlegen_key') || '';
+      const prompt = `Current Article Body HTML:\n${currentHtml}\n\nUser Refinement Request:\n"${instruction}"\n\nReturn the revised body HTML for the article maintaining the same structural tags (h1, h2, p, blockquote, aside).`;
+      const sys = "You are a professional science editor revising an article based on user feedback. Return a JSON object with key 'revised_html' containing the refined HTML body markup.";
+
+      const schema = {
+        type: "OBJECT",
+        properties: {
+          revised_html: { type: "STRING" }
+        },
+        required: ["revised_html"]
+      };
+
+      showToast("✨ Asking AI to refine article...");
+      const res = await callGroqAPI(prompt, schema, sys, key);
+      if (res.revised_html) {
+        doc.body.innerHTML = res.revised_html;
+        syncThemeToIframe();
+        if (input) input.value = '';
+        showToast("✨ Article successfully refined with AI!");
+        const updatedFullHtml = doc.documentElement.outerHTML;
+        if (typeof saveLocalDraft === 'function') saveLocalDraft(currentTitle || 'Refined Article', updatedFullHtml);
+        const hash = encodeArticleToHash(updatedFullHtml);
+        if (hash) window.location.hash = hash;
+      }
+    } catch(err) {
+      alert("AI Refinement Error: " + err.message);
+    } finally {
+      btn.innerText = origText;
+      btn.disabled = false;
+    }
   }
 
   if (window.matchMedia) {
@@ -1537,6 +1642,9 @@
   aside.featured h3 { margin: 0 0 0.5rem; text-transform: uppercase; font-size: 0.8rem; color: var(--accent); }
   aside.featured p { color: var(--ink); margin: 0 0 0.5rem; }
   aside.featured a { color: var(--accent); font-weight: 600; }
+  [contenteditable="true"] { outline: none; transition: background 0.2s, box-shadow 0.2s; border-radius: 4px; }
+  [contenteditable="true"]:hover { box-shadow: 0 0 0 1px var(--accent); cursor: text; }
+  [contenteditable="true"]:focus { box-shadow: 0 0 0 2px var(--accent); background: rgba(45, 212, 191, 0.08); }
 </style>
 </head>
 <body>
