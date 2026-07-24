@@ -643,11 +643,20 @@
 
   <!-- VIEW 5: Article Gallery / Queue -->
   <div id="galleryView" class="view">
-    <div class="section-header">
+    <div class="section-header" style="flex-wrap:wrap; gap:0.5rem;">
       <h2 class="section-title">Draft Review Queue</h2>
-      <button class="pill" onclick="publishToGithub()">🚀 Publish to Web</button>
-      <button class="pill" onclick="showView('themeView')">+ New Theme</button>
+      <div style="display:flex; gap:0.4rem;">
+        <button class="pill" style="color:#ef4444; border-color:rgba(239,68,68,0.3);" onclick="clearAllLocalDrafts()">🗑️ Clear All</button>
+        <button class="pill" onclick="publishToGithub()">🚀 Publish to Web</button>
+        <button class="pill" onclick="showView('themeView')">+ New Theme</button>
+      </div>
     </div>
+
+    <!-- Draft Search & Filter Bar -->
+    <div style="margin-bottom: 1rem;">
+      <input type="text" id="gallerySearchInput" class="theme-input" placeholder="🔍 Search saved drafts by title..." oninput="loadGallery()" style="padding:0.6rem 0.9rem; font-size:0.9rem;">
+    </div>
+
     <div id="galleryList">
       <!-- Dynamically filled -->
     </div>
@@ -1786,6 +1795,7 @@
 
   async function loadGallery() {
     const container = document.getElementById('galleryList');
+    const filterQuery = (document.getElementById('gallerySearchInput')?.value || '').toLowerCase().trim();
     container.innerHTML = '<p style="color:var(--muted);">Loading draft queue...</p>';
     
     try {
@@ -1793,8 +1803,13 @@
       if (resp.ok) {
         const data = await resp.json();
         if (data.drafts && data.drafts.length > 0) {
+          const filtered = data.drafts.filter(d => !filterQuery || d.title.toLowerCase().includes(filterQuery));
           container.innerHTML = '';
-          data.drafts.forEach(d => {
+          if (filtered.length === 0) {
+            container.innerHTML = '<p style="color:var(--muted);">No matching drafts found.</p>';
+            return;
+          }
+          filtered.forEach(d => {
             const item = document.createElement('div');
             item.className = 'gallery-item';
             item.innerHTML = `
@@ -1813,22 +1828,75 @@
 
     const localDrafts = JSON.parse(localStorage.getItem('articlegen_local_drafts') || '[]');
     if (localDrafts.length === 0) {
-      container.innerHTML = '<p style="color:var(--muted);">No drafts generated yet.</p>';
+      container.innerHTML = '<p style="color:var(--muted); text-align:center; padding:2rem 0;">No saved article drafts yet.<br><span style="font-size:0.8rem; color:var(--muted);">Generated drafts will automatically appear here.</span></p>';
       return;
     }
+
+    const filtered = localDrafts
+      .map((d, origIndex) => ({ ...d, origIndex }))
+      .filter(d => !filterQuery || d.title.toLowerCase().includes(filterQuery));
+
+    // Sort starred/starred favorites to top
+    filtered.sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0));
+
+    if (filtered.length === 0) {
+      container.innerHTML = '<p style="color:var(--muted);">No matching drafts found.</p>';
+      return;
+    }
+
     container.innerHTML = '';
-    localDrafts.forEach((d, i) => {
+    filtered.forEach((d) => {
       const item = document.createElement('div');
       item.className = 'gallery-item';
+      item.style.gap = '0.5rem';
       item.innerHTML = `
-        <div>
-          <div class="gallery-title">${escapeHtml(d.title)}</div>
+        <button type="button" class="icon-btn" style="width:30px; height:30px; border:none; background:none; font-size:1.1rem; cursor:pointer;" onclick="toggleFavoriteDraft(${d.origIndex})" title="${d.starred ? 'Unstar' : 'Star Favorite'}">
+          ${d.starred ? '⭐' : '☆'}
+        </button>
+        <div style="flex:1; min-width:0;">
+          <div class="gallery-title" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(d.title)}</div>
           <div class="gallery-meta">${new Date(d.date).toLocaleDateString()}</div>
         </div>
-        <a class="gallery-action" href="#" onclick="openLocalDraft(${i}); return false;">Read →</a>
+        <div style="display:flex; align-items:center; gap:0.6rem;">
+          <a class="gallery-action" href="#" onclick="openLocalDraft(${d.origIndex}); return false;">Read →</a>
+          <button type="button" class="icon-btn" style="width:32px; height:32px; color:#ef4444; border-color:rgba(239,68,68,0.3); font-size:0.85rem;" onclick="deleteLocalDraft(${d.origIndex})" title="Delete Draft">🗑️</button>
+        </div>
       `;
       container.appendChild(item);
     });
+  }
+
+  function deleteLocalDraft(index) {
+    let localDrafts = JSON.parse(localStorage.getItem('articlegen_local_drafts') || '[]');
+    if (index >= 0 && index < localDrafts.length) {
+      const deletedTitle = localDrafts[index].title;
+      localDrafts.splice(index, 1);
+      localStorage.setItem('articlegen_local_drafts', JSON.stringify(localDrafts));
+      showToast(`Deleted "${deletedTitle.substring(0, 20)}..."`);
+      loadGallery();
+    }
+  }
+
+  function clearAllLocalDrafts() {
+    let localDrafts = JSON.parse(localStorage.getItem('articlegen_local_drafts') || '[]');
+    if (localDrafts.length === 0) {
+      showToast("No drafts to delete.");
+      return;
+    }
+    if (confirm(`Are you sure you want to delete all ${localDrafts.length} saved article drafts? This cannot be undone.`)) {
+      localStorage.removeItem('articlegen_local_drafts');
+      showToast("All drafts cleared!");
+      loadGallery();
+    }
+  }
+
+  function toggleFavoriteDraft(index) {
+    let localDrafts = JSON.parse(localStorage.getItem('articlegen_local_drafts') || '[]');
+    if (localDrafts[index]) {
+      localDrafts[index].starred = !localDrafts[index].starred;
+      localStorage.setItem('articlegen_local_drafts', JSON.stringify(localDrafts));
+      loadGallery();
+    }
   }
 
   function openLocalDraft(index) {
