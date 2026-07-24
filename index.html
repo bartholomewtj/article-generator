@@ -469,7 +469,7 @@
 <header class="app-header">
   <a href="#" class="logo" onclick="showView('themeView'); return false;">
     <div class="logo-icon">✨</div>
-    ArticleGen <span style="font-size:0.7rem; background:var(--accent-soft); color:var(--accent); padding:0.15rem 0.4rem; border-radius:10px; font-weight:600;">v1.2 (Auto)</span>
+    ArticleGen <span style="font-size:0.7rem; background:var(--accent-soft); color:var(--accent); padding:0.15rem 0.4rem; border-radius:10px; font-weight:600;">v1.3 (Fixed)</span>
   </a>
   <div class="header-actions">
     <button class="icon-btn" onclick="showView('galleryView'); loadGallery();" title="Article Queue">
@@ -680,6 +680,7 @@
         const models = data.models || [];
         const valid = models.filter(m => 
           (m.name || '').includes('gemini') && 
+          !(m.name || '').includes('2.5-flash') &&
           !(m.name || '').includes('embedding') &&
           !(m.name || '').includes('imagen') &&
           !(m.name || '').includes('vision') &&
@@ -687,8 +688,8 @@
           (m.supportedGenerationMethods || []).includes('generateContent')
         );
         if (valid.length > 0) {
-          const flash = valid.find(m => m.name.includes('flash'));
-          cachedGeminiModel = (flash || valid[0]).name;
+          const pref = valid.find(m => m.name.includes('1.5-flash') || m.name.includes('2.0-flash')) || valid.find(m => m.name.includes('flash')) || valid[0];
+          cachedGeminiModel = pref.name;
           return cachedGeminiModel;
         }
       }
