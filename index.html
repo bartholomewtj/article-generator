@@ -518,13 +518,11 @@
 
     <div class="theme-box">
       <label class="input-label" for="themeInput">1. Enter a Theme or Topic</label>
-      <input type="text" id="themeInput" class="theme-input" placeholder="e.g. Gravity energy storage, Deep sea ecosystems..." autocomplete="off">
-
-
+      <input type="text" id="themeInput" name="article_topic" class="theme-input" placeholder="e.g. Gravity energy storage, Deep sea ecosystems..." autocomplete="off" autocorrect="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
 
       <div style="margin-top: 1rem;">
         <label class="input-label" for="styleInput">Audience / Target Reader (Optional)</label>
-        <input type="text" id="styleInput" class="theme-input" placeholder="e.g. for high school students, executives...">
+        <input type="text" id="styleInput" name="article_audience" class="theme-input" placeholder="e.g. for high school students, executives..." autocomplete="off" autocorrect="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
       </div>
 
       <!-- Customization Preferences Accordion -->
@@ -636,7 +634,7 @@
         <span>✨ Refine Article with AI Prompt</span>
       </label>
       <div style="display: flex; gap: 0.5rem;">
-        <input type="text" id="aiRefineInput" class="theme-input" placeholder="e.g. Make intro punchier, expand key takeaways..." autocomplete="off">
+        <input type="text" id="aiRefineInput" name="article_refinement" class="theme-input" placeholder="e.g. Make intro punchier, expand key takeaways..." autocomplete="off" autocorrect="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
         <button id="aiRefineBtn" class="pill" style="background: var(--accent); color: white; border: none; font-weight: 700; padding: 0 1.1rem; white-space: nowrap; cursor: pointer;" onclick="refineArticleWithAI()">✨ Refine</button>
       </div>
       <div style="display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.65rem;">
@@ -659,7 +657,7 @@
 
     <!-- Draft Search & Filter Bar -->
     <div style="margin-bottom: 1rem;">
-      <input type="text" id="gallerySearchInput" class="theme-input" placeholder="🔍 Search saved drafts by title..." oninput="loadGallery()" style="padding:0.6rem 0.9rem; font-size:0.9rem;">
+      <input type="text" id="gallerySearchInput" name="search_drafts" class="theme-input" placeholder="🔍 Search saved drafts by title..." oninput="loadGallery()" style="padding:0.6rem 0.9rem; font-size:0.9rem;" autocomplete="off" autocorrect="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
     </div>
 
     <div id="galleryList">
@@ -683,7 +681,7 @@
 
     <!-- Search Published Library -->
     <div style="margin-bottom: 1rem;">
-      <input type="text" id="publishedSearchInput" class="theme-input" placeholder="🔍 Search library by title..." oninput="loadPublishedLibrary()" style="padding:0.6rem 0.9rem; font-size:0.9rem;">
+      <input type="text" id="publishedSearchInput" name="search_published" class="theme-input" placeholder="🔍 Search library by title..." oninput="loadPublishedLibrary()" style="padding:0.6rem 0.9rem; font-size:0.9rem;" autocomplete="off" autocorrect="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
     </div>
 
     <div id="publishedList">
@@ -716,44 +714,46 @@
 <!-- Settings Modal -->
 <div id="settingsModal" class="modal-overlay" onclick="closeModal('settingsModal')">
   <div class="modal-card" onclick="event.stopPropagation()">
-    <div class="modal-header">
-      <h3 class="modal-title">API & Cloud Sync Settings</h3>
-      <button class="icon-btn" onclick="closeModal('settingsModal')">✕</button>
-    </div>
-    
-    <div style="margin-bottom: 1.25rem;">
-      <label class="input-label" for="apiKeyInput">Groq API Key (Optional)</label>
-      <p style="font-size:0.8rem; color:var(--muted); margin-top:-0.2rem; margin-bottom:0.6rem;">
-        Get a free key from <a href="https://console.groq.com/" target="_blank" style="color:var(--accent);">console.groq.com</a>. Stored safely in browser storage.
-      </p>
-      <input type="password" id="apiKeyInput" class="theme-input" placeholder="gsk_...">
-    </div>
-
-    <!-- Cloud Sync Section -->
-    <div style="border-top: 1px solid var(--card-border); padding-top: 1rem; margin-top: 1rem;">
-      <label class="input-label">☁️ Cross-Device Cloud Sync (GitHub Gist)</label>
-      <p style="font-size:0.8rem; color:var(--muted); margin-top:-0.2rem; margin-bottom:0.6rem;">
-        Sync your API keys & preferences across your phone, tablet, and desktop using a private GitHub Gist.
-      </p>
-
-      <div style="margin-bottom: 0.6rem;">
-        <label style="font-size:0.75rem; color:var(--muted); display:block; margin-bottom:0.2rem;">GitHub Access Token (Gist Scope)</label>
-        <input type="password" id="ghTokenInput" class="theme-input" placeholder="ghp_... or github_pat_...">
-        <a href="https://github.com/settings/tokens/new?scopes=gist&description=ArticleGen+Cloud+Sync" target="_blank" style="font-size:0.75rem; color:var(--accent); display:inline-block; margin-top:0.3rem;">🔑 Create a 1-click token on GitHub</a>
+    <form autocomplete="off" onsubmit="return false;" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
+      <div class="modal-header">
+        <h3 class="modal-title">API & Cloud Sync Settings</h3>
+        <button type="button" class="icon-btn" onclick="closeModal('settingsModal')">✕</button>
+      </div>
+      
+      <div style="margin-bottom: 1.25rem;">
+        <label class="input-label" for="apiKeyInput">Groq API Key (Optional)</label>
+        <p style="font-size:0.8rem; color:var(--muted); margin-top:-0.2rem; margin-bottom:0.6rem;">
+          Get a free key from <a href="https://console.groq.com/" target="_blank" style="color:var(--accent);">console.groq.com</a>. Stored safely in browser storage.
+        </p>
+        <input type="password" id="apiKeyInput" name="groq_key_token" class="theme-input" placeholder="gsk_..." autocomplete="new-password" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
       </div>
 
-      <div style="margin-bottom: 0.6rem;">
-        <label style="font-size:0.75rem; color:var(--muted); display:block; margin-bottom:0.2rem;">Sync Gist ID (Auto-generated on push)</label>
-        <input type="text" id="gistIdInput" class="theme-input" placeholder="e.g. a1b2c3d4e5f6...">
+      <!-- Cloud Sync Section -->
+      <div style="border-top: 1px solid var(--card-border); padding-top: 1rem; margin-top: 1rem;">
+        <label class="input-label">☁️ Cross-Device Cloud Sync (GitHub Gist)</label>
+        <p style="font-size:0.8rem; color:var(--muted); margin-top:-0.2rem; margin-bottom:0.6rem;">
+          Sync your API keys & preferences across your phone, tablet, and desktop using a private GitHub Gist.
+        </p>
+
+        <div style="margin-bottom: 0.6rem;">
+          <label style="font-size:0.75rem; color:var(--muted); display:block; margin-bottom:0.2rem;">GitHub Access Token (Gist Scope)</label>
+          <input type="password" id="ghTokenInput" name="github_gist_token" class="theme-input" placeholder="ghp_... or github_pat_..." autocomplete="new-password" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
+          <a href="https://github.com/settings/tokens/new?scopes=gist&description=ArticleGen+Cloud+Sync" target="_blank" style="font-size:0.75rem; color:var(--accent); display:inline-block; margin-top:0.3rem;">🔑 Create a 1-click token on GitHub</a>
+        </div>
+
+        <div style="margin-bottom: 0.6rem;">
+          <label style="font-size:0.75rem; color:var(--muted); display:block; margin-bottom:0.2rem;">Sync Gist ID (Auto-generated on push)</label>
+          <input type="text" id="gistIdInput" name="sync_gist_id" class="theme-input" placeholder="e.g. a1b2c3d4e5f6..." autocomplete="off" autocorrect="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
+        </div>
+
+        <div style="display:flex; gap:0.5rem; margin-top:0.8rem;">
+          <button type="button" class="pill" style="flex:1; justify-content:center; padding:0.6rem;" onclick="syncPushToGist()">⬆️ Push to Cloud</button>
+          <button type="button" class="pill" style="flex:1; justify-content:center; padding:0.6rem;" onclick="syncPullFromGist()">⬇️ Pull from Cloud</button>
+        </div>
       </div>
 
-      <div style="display:flex; gap:0.5rem; margin-top:0.8rem;">
-        <button type="button" class="pill" style="flex:1; justify-content:center; padding:0.6rem;" onclick="syncPushToGist()">⬆️ Push to Cloud</button>
-        <button type="button" class="pill" style="flex:1; justify-content:center; padding:0.6rem;" onclick="syncPullFromGist()">⬇️ Pull from Cloud</button>
-      </div>
-    </div>
-
-    <button class="btn-primary" style="margin-top:1.25rem;" onclick="saveApiKey()">Save All Settings</button>
+      <button type="button" class="btn-primary" style="margin-top:1.25rem;" onclick="saveApiKey()">Save All Settings</button>
+    </form>
   </div>
 </div>
 
