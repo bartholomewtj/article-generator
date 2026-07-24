@@ -14,6 +14,7 @@ import html
 import json
 import os
 import re
+import subprocess
 import sys
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -73,6 +74,8 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
             self._handle_ideas(payload)
         elif self.path == "/api/draft":
             self._handle_draft(payload)
+        elif self.path == "/api/publish":
+            self._handle_publish(payload)
         else:
             self._send_json({"error": "Endpoint not found"}, status=404)
 
@@ -176,6 +179,29 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
                 "md_url": f"/drafts/{md_filename}",
                 "sources_count": len(article.get("references", [])),
             })
+        except Exception as exc:
+            self._send_json({"error": str(exc)}, status=500)
+
+    def _handle_publish(self, payload: dict) -> None:
+        try:
+            # Stage the drafts folder
+            subprocess.run(["git", "add", "drafts/"], check=True, capture_output=True, text=True)
+            
+            # Check if there are changes to commit
+            status_res = subprocess.run(["git", "status", "--porcelain", "drafts/"], check=True, capture_output=True, text=True)
+            if not status_res.stdout.strip():
+                self._send_json({"ok": True, "message": "No new drafts to publish."})
+                return
+
+            # Commit the changes
+            subprocess.run(["git", "commit", "-m", "publish new drafts"], check=True, capture_output=True, text=True)
+            
+            # Push to GitHub
+            push_res = subprocess.run(["git", "push"], check=True, capture_output=True, text=True)
+            
+            self._send_json({"ok": True, "message": "Successfully published to GitHub Pages."})
+        except subprocess.CalledProcessError as exc:
+            self._send_json({"error": f"Git command failed: {exc.stderr}"}, status=500)
         except Exception as exc:
             self._send_json({"error": str(exc)}, status=500)
 

@@ -555,6 +555,7 @@
   <div id="galleryView" class="view">
     <div class="section-header">
       <h2 class="section-title">Draft Review Queue</h2>
+      <button class="pill" onclick="publishToGithub()">🚀 Publish to Web</button>
       <button class="pill" onclick="showView('themeView')">+ New Theme</button>
     </div>
     <div id="galleryList">
@@ -659,9 +660,78 @@
 
   function showToast(msg) {
     const t = document.getElementById('toast');
+    if (!t) return;
     t.innerText = msg;
     t.classList.add('active');
     setTimeout(() => t.classList.remove('active'), 2500);
+  }
+
+  async function callGeminiAPI(prompt, schema, systemInstruction, apiKey) {
+    const key = apiKey || localStorage.getItem('articlegen_key') || '';
+    if (!key) {
+      openModal('settingsModal');
+      throw new Error('Please enter your free Gemini API Key in the Settings (⚙️) menu to generate articles.');
+    }
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+    const payload = {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: schema
+      }
+    };
+    if (systemInstruction) {
+      payload.systemInstruction = { parts: [{ text: systemInstruction }] };
+    }
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Gemini API Error (${res.status}): ${errText}`);
+    }
+    const data = await res.json();
+    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!raw) throw new Error("Gemini returned an empty response.");
+    return JSON.parse(raw);
+  }
+
+  async function searchOpenAlex(query) {
+    const url = `https://api.openalex.org/works?search=${encodeURIComponent(query)}&filter=has_abstract:true&per-page=10&select=id,title,publication_year,authorships,primary_location,cited_by_count,abstract_inverted_index,doi`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return (data.results || []).map(item => {
+        let abstract = "";
+        if (item.abstract_inverted_index) {
+          const pos = {};
+          for (const [word, idxs] of Object.entries(item.abstract_inverted_index)) {
+            for (const i of idxs) pos[i] = word;
+          }
+          abstract = Object.keys(pos).sort((a,b)=>a-b).map(i=>pos[i]).join(" ");
+        }
+        const authors = (item.authorships || []).map(a => a.author?.display_name || "").filter(Boolean);
+        const loc = item.primary_location || {};
+        const doi = item.doi || "";
+        return {
+          title: item.title || "",
+          abstract: abstract,
+          year: item.publication_year,
+          authors: authors,
+          authorLine: authors.length > 3 ? `${authors[0]} et al.` : (authors.join(", ") || "Unknown authors"),
+          venue: loc.source?.display_name || "",
+          citationCount: item.cited_by_count || 0,
+          doi: doi,
+          link: doi ? (doi.startsWith("http") ? doi : `https://doi.org/${doi}`) : (loc.landing_page_url || item.id || "")
+        };
+      }).filter(p => p.abstract && p.title);
+    } catch(e) {
+      console.warn("OpenAlex error:", e);
+      return [];
+    }
   }
 
   async function requestIdeas() {
@@ -684,17 +754,40 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ theme, guidance, key, n: 6 })
       });
-
-      if (!resp.ok) {
-        const errData = await resp.json().catch(() => ({}));
-        throw new Error(errData.error || 'Failed to generate ideas');
+      if (resp.ok) {
+        const data = await resp.json();
+        renderDraftCards(data.theme, data.ideas || []);
+        showView('ideasView');
+        return;
       }
+    } catch (e) {}
 
-      const data = await resp.json();
-      renderDraftCards(data.theme, data.ideas || []);
+    try {
+      const schema = {
+        type: "OBJECT",
+        properties: {
+          ideas: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                title: { type: "STRING" },
+                angle: { type: "STRING" },
+                search_terms: { type: "ARRAY", items: { type: "STRING" } }
+              },
+              required: ["title", "angle", "search_terms"]
+            }
+          }
+        },
+        required: ["ideas"]
+      };
+      const prompt = `Theme: "${theme}"\nGuidance: "${guidance}"\nPropose 6 distinct article ideas grounded in peer-reviewed science/tech literature.`;
+      const sys = "You are an editor for a popular science publication proposing concrete, distinct, and interesting article ideas grounded in scholarly literature.";
+      const res = await callGeminiAPI(prompt, schema, sys, key);
+      renderDraftCards(theme, res.ideas || []);
       showView('ideasView');
     } catch (err) {
-      alert('Error generating ideas: ' + err.message);
+      alert(err.message);
     } finally {
       btn.disabled = false;
       btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg> Generate Article Drafts';
@@ -732,30 +825,14 @@
     const style = document.getElementById('styleInput').value.trim();
     const key = localStorage.getItem('articlegen_key') || '';
 
-    // Animate fake progress steps for delightful UX
     const stepText = document.getElementById('progressStepText');
     const sQueries = document.getElementById('stepQueries');
     const sCurate = document.getElementById('stepCurate');
     const sDraft = document.getElementById('stepDraft');
     const sVerify = document.getElementById('stepVerify');
 
-    stepText.innerText = 'Searching OpenAlex & Semantic Scholar databases...';
+    stepText.innerText = 'Searching OpenAlex scholarly database...';
     sQueries.classList.add('done');
-
-    setTimeout(() => {
-      stepText.innerText = 'Curating & scoring peer-reviewed evidence...';
-      sCurate.classList.add('done');
-    }, 4000);
-
-    setTimeout(() => {
-      stepText.innerText = 'Writing grounded article with inline citations...';
-      sDraft.classList.add('done');
-    }, 9000);
-
-    setTimeout(() => {
-      stepText.innerText = 'Verifying statistics against source abstracts...';
-      sVerify.classList.add('done');
-    }, 15000);
 
     try {
       const resp = await fetch('/api/draft', {
@@ -763,23 +840,193 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ topic: title, style, key })
       });
+      if (resp.ok) {
+        const data = await resp.json();
+        currentArticleUrl = data.html_url;
+        currentMarkdownUrl = data.md_url;
+        document.getElementById('articleIframe').src = data.html_url;
+        document.getElementById('articleMeta').innerText = (data.sources_count || 0) + ' Sources Cited';
+        showView('readerView');
+        return;
+      }
+    } catch (e) {}
 
-      if (!resp.ok) {
-        const errData = await resp.json().catch(() => ({}));
-        throw new Error(errData.error || 'Failed to write draft');
+    try {
+      const qSchema = {
+        type: "OBJECT",
+        properties: {
+          queries: { type: "ARRAY", items: { type: "STRING" } },
+          core_entity: { type: "STRING" }
+        },
+        required: ["queries", "core_entity"]
+      };
+      const qRes = await callGeminiAPI(`Topic: "${title}". Give 3 scholarly search queries and the core entity.`, qSchema, "", key);
+      
+      stepText.innerText = 'Curating peer-reviewed evidence...';
+      sCurate.classList.add('done');
+
+      let allPapers = [];
+      for (const q of (qRes.queries || [title])) {
+        const res = await searchOpenAlex(q);
+        allPapers.push(...res);
+      }
+      const seen = new Set();
+      const papers = [];
+      for (const p of allPapers) {
+        const norm = p.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (norm && !seen.has(norm)) {
+          seen.add(norm);
+          papers.push(p);
+        }
+      }
+      const topPapers = papers.slice(0, 15);
+
+      if (topPapers.length === 0) {
+        throw new Error('No academic papers with abstracts found for this topic.');
       }
 
-      const data = await resp.json();
-      currentArticleUrl = data.html_url;
-      currentMarkdownUrl = data.md_url;
+      stepText.innerText = 'Writing grounded article with inline citations...';
+      sDraft.classList.add('done');
 
-      document.getElementById('articleIframe').src = data.html_url;
-      document.getElementById('articleMeta').innerText = (data.sources_count || 0) + ' Sources Cited';
+      const artSchema = {
+        type: "OBJECT",
+        properties: {
+          title: { type: "STRING" },
+          standfirst: { type: "STRING" },
+          evidence_note: { type: "STRING" },
+          featured_study: {
+            type: "OBJECT",
+            properties: {
+              source_index: { type: "INTEGER" },
+              why: { type: "STRING" },
+              method: { type: "STRING" },
+              results: { type: "STRING" }
+            },
+            required: ["source_index", "why", "method", "results"]
+          },
+          sections: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                heading: { type: "STRING" },
+                paragraphs: { type: "ARRAY", items: { type: "STRING" } },
+                pull_quote: { type: "STRING" }
+              },
+              required: ["heading", "paragraphs"]
+            }
+          },
+          key_takeaways: { type: "ARRAY", items: { type: "STRING" } },
+          references: { type: "ARRAY", items: { type: "INTEGER" } }
+        },
+        required: ["title", "standfirst", "evidence_note", "featured_study", "sections", "key_takeaways", "references"]
+      };
+
+      const sourcesPrompt = topPapers.map((p, idx) => `SOURCE ${idx + 1}\nTitle: ${p.title}\nAuthors: ${p.authorLine} (${p.year || 'n.d.'})\nVenue: ${p.venue}\nAbstract: ${p.abstract}`).join('\n\n');
+      const writerSys = "You are a science writer turning journal abstracts into a rigorous, readable article. Cite by [N] where N is SOURCE index. Only state numbers present in the abstracts.";
+      const articleData = await callGeminiAPI(`Topic: ${title}\n\nCandidate Sources:\n${sourcesPrompt}`, artSchema, writerSys, key);
+
+      stepText.innerText = 'Verifying citations & formatting HTML...';
+      sVerify.classList.add('done');
+
+      const htmlOutput = clientRenderArticle(articleData, topPapers, title);
+      const iframe = document.getElementById('articleIframe');
+      iframe.srcdoc = htmlOutput;
+
+      saveLocalDraft(articleData.title || title, htmlOutput);
+
+      document.getElementById('articleMeta').innerText = (articleData.references?.length || 0) + ' Sources Cited';
       showView('readerView');
     } catch (err) {
       alert('Drafting error: ' + err.message);
       showView('ideasView');
     }
+  }
+
+  function clientRenderArticle(article, papers, topic) {
+    const refs = article.references || [];
+    const citedPapers = refs.map(idx => papers[idx - 1]).filter(Boolean);
+    const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+    let sectionsHtml = (article.sections || []).map(sec => `
+      <section>
+        <h2>${escapeHtml(sec.heading)}</h2>
+        ${sec.pull_quote ? `<blockquote class="pull">${escapeHtml(sec.pull_quote)}</blockquote>` : ''}
+        ${(sec.paragraphs || []).map((p, i) => `<p ${i===0?'class="opener"':''}>${escapeHtml(p).replace(/\[(\d+)\]/g, '<sup class="cite">[$1]</sup>')}</p>`).join('')}
+      </section>
+    `).join('');
+
+    let fsHtml = '';
+    const fs = article.featured_study;
+    if (fs && fs.source_index && papers[fs.source_index - 1]) {
+      const fp = papers[fs.source_index - 1];
+      fsHtml = `
+        <aside class="featured" style="border:1px solid #0d9488; padding:1.2rem; border-radius:10px; margin:1.5rem 0; background:rgba(13,148,136,0.08);">
+          <h3 style="margin:0 0 0.5rem; text-transform:uppercase; font-size:0.8rem; color:#0d9488;">Featured Study</h3>
+          <p><strong><a href="${escapeHtml(fp.link)}" target="_blank">${escapeHtml(fp.title)}</a></strong> — ${escapeHtml(fp.authorLine)} (${fp.year||'n.d.'})</p>
+          <p><em>${escapeHtml(fs.why)}</em></p>
+          <p><strong>Method:</strong> ${escapeHtml(fs.method)}</p>
+          <p><strong>Results:</strong> ${escapeHtml(fs.results)}</p>
+        </aside>
+      `;
+    }
+
+    let takeawaysHtml = (article.key_takeaways || []).map(t => `<li>${escapeHtml(t).replace(/\[(\d+)\]/g, '<sup class="cite">[$1]</sup>')}</li>`).join('');
+
+    let refsHtml = citedPapers.map((p, i) => `
+      <li id="ref-${i+1}" style="margin-bottom:0.6rem;">
+        <strong>${escapeHtml(p.authorLine)} (${p.year||'n.d.'})</strong> 
+        <a href="${escapeHtml(p.link)}" target="_blank">${escapeHtml(p.title)}</a> 
+        <em>${escapeHtml(p.venue)}</em>
+      </li>
+    `).join('');
+
+    return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(article.title)}</title>
+<style>
+  body { font-family: Georgia, serif; line-height: 1.6; color: #1e293b; max-width: 680px; margin: 0 auto; padding: 2rem 1.25rem; }
+  h1 { font-size: 2.2rem; line-height: 1.2; margin-bottom: 0.5rem; }
+  .standfirst { font-size: 1.2rem; color: #64748b; margin-bottom: 1.5rem; }
+  .byline { font-family: sans-serif; font-size: 0.85rem; color: #94a3b8; border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; padding: 0.5rem 0; margin-bottom: 1.5rem; }
+  sup.cite { color: #0d9488; font-weight: bold; }
+  blockquote.pull { border-left: 3px solid #0d9488; margin: 1.5rem 0; padding-left: 1rem; font-style: italic; font-size: 1.2rem; }
+  aside.takeaways { background: #f8fafc; border-radius: 8px; padding: 1.2rem; margin: 2rem 0; }
+  aside.takeaways h3 { text-transform: uppercase; font-size: 0.8rem; color: #0d9488; margin-top: 0; }
+</style>
+</head>
+<body>
+  <p style="text-transform:uppercase; font-size:0.75rem; font-weight:bold; color:#0d9488; margin-bottom:0.2rem;">${escapeHtml(topic)}</p>
+  <h1>${escapeHtml(article.title)}</h1>
+  <p class="standfirst">${escapeHtml(article.standfirst)}</p>
+  <div class="byline">Published ${dateStr} · Grounded in ${citedPapers.length} Peer-Reviewed Sources</div>
+
+  ${fsHtml}
+
+  ${sectionsHtml}
+
+  <aside class="takeaways">
+    <h3>Key Takeaways</h3>
+    <ul>${takeawaysHtml}</ul>
+  </aside>
+
+  <h3 style="margin-top:2.5rem; font-family:sans-serif; text-transform:uppercase; font-size:0.85rem; color:#0d9488;">Sources</h3>
+  <ol>${refsHtml}</ol>
+</body>
+</html>`;
+  }
+
+  function saveLocalDraft(title, htmlContent) {
+    const list = JSON.parse(localStorage.getItem('articlegen_local_drafts') || '[]');
+    list.unshift({
+      title: title,
+      date: new Date().toISOString(),
+      content: htmlContent
+    });
+    localStorage.setItem('articlegen_local_drafts', JSON.stringify(list.slice(0, 20)));
   }
 
   function shareCurrentArticle() {
@@ -795,7 +1042,7 @@
   }
 
   function copyCurrentLink() {
-    const fullUrl = window.location.origin + currentArticleUrl;
+    const fullUrl = currentArticleUrl ? (window.location.origin + currentArticleUrl) : window.location.href;
     navigator.clipboard.writeText(fullUrl).then(() => {
       showToast('Link copied to clipboard!');
     }).catch(() => {});
@@ -804,6 +1051,24 @@
   function openRawMarkdown() {
     if (currentMarkdownUrl) {
       window.open(currentMarkdownUrl, '_blank');
+    }
+  }
+
+  async function publishToGithub() {
+    showToast('Publishing to GitHub...');
+    try {
+      const resp = await fetch('/api/publish', { method: 'POST' });
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to publish');
+      }
+      const data = await resp.json();
+      showToast(data.message || 'Successfully published!');
+      setTimeout(() => {
+        alert('Your drafts have been published to GitHub!\n\nThey will be live in ~20 seconds at:\nhttps://bartholomewtj.github.io/article-generator/');
+      }, 500);
+    } catch (err) {
+      alert('Error publishing: ' + err.message);
     }
   }
 
@@ -817,29 +1082,57 @@
   async function loadGallery() {
     const container = document.getElementById('galleryList');
     container.innerHTML = '<p style="color:var(--muted);">Loading draft queue...</p>';
+    
     try {
       const resp = await fetch('/api/drafts');
-      if (!resp.ok) throw new Error();
-      const data = await resp.json();
-      if (!data.drafts || data.drafts.length === 0) {
-        container.innerHTML = '<p style="color:var(--muted);">No drafts generated yet.</p>';
-        return;
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.drafts && data.drafts.length > 0) {
+          container.innerHTML = '';
+          data.drafts.forEach(d => {
+            const item = document.createElement('div');
+            item.className = 'gallery-item';
+            item.innerHTML = `
+              <div>
+                <div class="gallery-title">${escapeHtml(d.title)}</div>
+                <div class="gallery-meta">${new Date(d.date).toLocaleDateString()}</div>
+              </div>
+              <a class="gallery-action" href="#" onclick="openDraftFromGallery('${d.html_url}', '${escapeHtml(d.title).replace(/'/g, "\\'")}'); return false;">Read →</a>
+            `;
+            container.appendChild(item);
+          });
+          return;
+        }
       }
-      container.innerHTML = '';
-      data.drafts.forEach(d => {
-        const item = document.createElement('div');
-        item.className = 'gallery-item';
-        item.innerHTML = `
-          <div>
-            <div class="gallery-title">${escapeHtml(d.title)}</div>
-            <div class="gallery-meta">${new Date(d.date).toLocaleDateString()}</div>
-          </div>
-          <a class="gallery-action" href="#" onclick="openDraftFromGallery('${d.html_url}', '${escapeHtml(d.title).replace(/'/g, "\\'")}'); return false;">Read →</a>
-        `;
-        container.appendChild(item);
-      });
-    } catch (e) {
-      container.innerHTML = '<p style="color:var(--muted);">Queue unavailable or running standalone.</p>';
+    } catch (e) {}
+
+    const localDrafts = JSON.parse(localStorage.getItem('articlegen_local_drafts') || '[]');
+    if (localDrafts.length === 0) {
+      container.innerHTML = '<p style="color:var(--muted);">No drafts generated yet.</p>';
+      return;
+    }
+    container.innerHTML = '';
+    localDrafts.forEach((d, i) => {
+      const item = document.createElement('div');
+      item.className = 'gallery-item';
+      item.innerHTML = `
+        <div>
+          <div class="gallery-title">${escapeHtml(d.title)}</div>
+          <div class="gallery-meta">${new Date(d.date).toLocaleDateString()}</div>
+        </div>
+        <a class="gallery-action" href="#" onclick="openLocalDraft(${i}); return false;">Read →</a>
+      `;
+      container.appendChild(item);
+    });
+  }
+
+  function openLocalDraft(index) {
+    const localDrafts = JSON.parse(localStorage.getItem('articlegen_local_drafts') || '[]');
+    const draft = localDrafts[index];
+    if (draft) {
+      currentTitle = draft.title;
+      document.getElementById('articleIframe').srcdoc = draft.content;
+      showView('readerView');
     }
   }
 
