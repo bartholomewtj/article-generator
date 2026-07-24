@@ -7,20 +7,18 @@ grounded in real journal articles rather than the model's memory.
 
 ## Use it from your phone (recommended)
 
-The whole workflow runs on GitHub Actions, driven from issues — so the
-**GitHub mobile app** is the only interface you need:
+You can run the interactive **Mobile Web Site** (hosted on GitHub Pages or locally via `articlegen web`):
 
-1. **Generate ideas, anytime.** Open a new issue titled `theme: <your theme>`
-   (e.g. `theme: renewable energy storage`). Anything you type in the issue
-   body is treated as extra guidance. Within a minute or two a bot comment
-   arrives with a numbered shortlist of article ideas.
-2. **Pick one.** Reply to the issue with `draft 3` (any number from the list),
-   or `draft "Your own title"` for something else. Add a tone note if you
-   like: `draft 2 style: for beginners`.
-3. **Review.** The workflow researches, writes, commits the draft, and
-   comments back with a link. The Markdown version renders directly in the
-   GitHub app; the styled HTML sits next to it in `drafts/` for desktop
-   reading. Comment `draft N` again any time for another take.
+1. **Open the site on mobile:** Open `https://<user>.github.io/article-generator/` (or run `articlegen web --open` locally).
+2. **Type a theme:** Enter your topic (e.g. `renewable energy storage`) and optional audience/style notes.
+3. **Choose a draft:** Tap any generated **Draft Idea Card** to launch the automated evidence-grounded research pipeline.
+4. **Read & Share:** View the rendered article and tap **Share** (native mobile share sheet), **Copy Link**, or **QR Code** to easily share with others.
+
+Alternatively, you can use the **GitHub mobile app** issue workflow:
+
+1. **Generate ideas:** Open a new issue titled `theme: <your theme>`. A bot comments back with numbered draft ideas.
+2. **Pick one:** Reply with `draft 3` (or `draft "Your title"`).
+3. **Review:** The bot researches, drafts, commits, and comments back with review links.
 
 **One-time setup — add an AI provider key** (repo → Settings → Secrets and
 variables → Actions):

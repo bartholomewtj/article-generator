@@ -27,18 +27,20 @@ two ways:
 
 ```
 articlegen/
-  cli.py       subcommands + orchestration (ideas / draft / queue / demo)
+  cli.py       subcommands + orchestration (ideas / draft / queue / demo / web)
+  web.py       HTTP server + REST API for mobile web app UI
   llm.py       provider layer: ONE generate_json(); Claude or Gemini backend
   ideas.py     LLM: theme -> shortlist of article ideas
   writer.py    LLM: plan_queries -> curate_sources -> write_article
   sources.py   Semantic Scholar + OpenAlex fetch, dedupe, relevance-blended rank
   verify.py    deterministic: flag article statistics absent from source abstracts
-  render.py    structured article -> styled HTML + Markdown + drafts/ index
+  render.py    structured article -> styled HTML + Markdown + drafts/ index + mobile share toolbar
   bot.py       GitHub Actions glue: build ideas comment, parse `draft N`
   demo.py      built-in sample for `articlegen demo` (no API/network)
 .github/workflows/
   ideas.yml    'theme: …' issue opened  -> ideas posted as a comment
   draft.yml    'draft N' comment         -> draft committed + review links
+  pages.yml    deploy index.html & drafts/ to GitHub Pages
 tests/
   test_offline.py   pure-logic tests; no network/keys. `python tests/test_offline.py`
 ```

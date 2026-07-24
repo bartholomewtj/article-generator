@@ -182,11 +182,39 @@ def test_bot_parsing() -> None:
     check("ideas marker round-trips", found is not None and found["titles"] == ["T1", "T2"])
 
 
+def test_web_server() -> None:
+    import json
+    from io import BytesIO
+    from articlegen.web import ArticleGenHandler
+
+    class DummyRequest:
+        def makefile(self, *args, **kwargs):
+            return BytesIO(b"GET /api/drafts HTTP/1.1\r\nHost: localhost\r\n\r\n")
+
+    class FakeSocket:
+        def __init__(self):
+            self.rfile = BytesIO(b"GET /api/drafts HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            self.wfile = BytesIO()
+
+        def sendall(self, data):
+            self.wfile.write(data)
+
+        def makefile(self, mode, *args, **kwargs):
+            if "r" in mode:
+                return self.rfile
+            return self.wfile
+
+    sock = FakeSocket()
+    handler = ArticleGenHandler(sock, ("127.0.0.1", 8000), None)
+    output = sock.wfile.getvalue().decode("utf-8")
+    check("web handler GET /api/drafts returns 200 OK", "200 OK" in output and "application/json" in output)
+
+
 def main() -> int:
     for fn in (
         test_provider_resolution, test_gemini_schema_translation, test_model_discovery,
         test_citation_renumbering, test_statistic_verification, test_ranking,
-        test_render_blocks, test_demo_and_index, test_bot_parsing,
+        test_render_blocks, test_demo_and_index, test_bot_parsing, test_web_server,
     ):
         print(f"\n# {fn.__name__}")
         fn()

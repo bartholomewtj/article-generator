@@ -231,7 +231,7 @@ def render_article(
     featured_html = _featured_html(article, papers, cite_map)
     evidence_box = _evidence_html(cited, papers, topic, article, curation, verification, cite_map)
 
-    today = datetime.date.today().strftime("%B %-d, %Y")
+    today = datetime.date.today().strftime("%B %d, %Y").replace(" 0", " ")
     return _TEMPLATE.format(
         page_title=html.escape(article["title"]),
         kicker=html.escape(topic),
@@ -433,9 +433,49 @@ _TEMPLATE = """<!DOCTYPE html>
     font-size: 0.78rem;
     color: var(--muted);
   }}
+  .article-share-bar {{
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 1.5rem 0 2rem;
+    padding: 0.75rem 1rem;
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.85rem;
+  }}
+  .article-share-btn {{
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: var(--accent);
+    color: #ffffff;
+    border: none;
+    padding: 0.45rem 0.9rem;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    font-size: 0.85rem;
+    transition: opacity 0.2s;
+  }}
+  .article-share-btn:hover {{ opacity: 0.9; }}
+  .article-share-btn.secondary {{
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--rule);
+  }}
+  .share-toast {{
+    display: none;
+    font-size: 0.8rem;
+    color: var(--accent);
+    font-weight: 600;
+  }}
   @media print {{
     body {{ font-size: 11pt; }}
     .kicker, sup.cite a, section.references a {{ color: black; }}
+    .article-share-bar {{ display: none; }}
   }}
 </style>
 </head>
@@ -446,6 +486,18 @@ _TEMPLATE = """<!DOCTYPE html>
     <h1>{title}</h1>
     <p class="standfirst">{standfirst}</p>
     <p class="byline">Generated {date} · Grounded in {n_sources} peer-reviewed sources</p>
+    
+    <div class="article-share-bar">
+      <button class="article-share-btn" onclick="shareArticle()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+        Share
+      </button>
+      <button class="article-share-btn secondary" onclick="copyArticleLink()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        Copy Link
+      </button>
+      <span id="shareToast" class="share-toast">Link copied!</span>
+    </div>
   </header>
 
   {evidence_note}
@@ -474,6 +526,28 @@ _TEMPLATE = """<!DOCTYPE html>
     {disclaimer}
   </footer>
 </main>
+<script>
+function shareArticle() {{
+  if (navigator.share) {{
+    navigator.share({{
+      title: document.title,
+      text: '{title}',
+      url: window.location.href
+    }}).catch(function() {{}});
+  }} else {{
+    copyArticleLink();
+  }}
+}}
+function copyArticleLink() {{
+  navigator.clipboard.writeText(window.location.href).then(function() {{
+    var t = document.getElementById('shareToast');
+    if (t) {{
+      t.style.display = 'inline';
+      setTimeout(function() {{ t.style.display = 'none'; }}, 2500);
+    }}
+  }}).catch(function() {{}});
+}}
+</script>
 </body>
 </html>
 """
@@ -631,11 +705,11 @@ _INDEX_TEMPLATE = """<!DOCTYPE html>
 
 def _draft_title(html_path: str) -> str:
     try:
-        with open(html_path, encoding="utf-8") as f:
+        with open(html_path, encoding="utf-8", errors="replace") as f:
             match = _TITLE_RE.search(f.read())
         if match:
             return html.unescape(match.group(1).strip())
-    except OSError:
+    except Exception:
         pass
     return os.path.basename(html_path)
 

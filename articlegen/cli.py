@@ -167,6 +167,16 @@ def cmd_demo(args) -> int:
     return 0
 
 
+def cmd_web(args) -> int:
+    from .web import run_server
+    port = args.port
+    _log(f"Starting mobile web app server at http://localhost:{port}/")
+    if args.open:
+        _open_in_browser(f"http://localhost:{port}/")
+    run_server(port=port)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="articlegen",
@@ -209,6 +219,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_demo.add_argument("--open", action="store_true", help="Open the sample in your browser")
     p_demo.set_defaults(func=cmd_demo)
 
+    p_web = sub.add_parser("web", help="Launch local mobile web app server")
+    p_web.add_argument("-p", "--port", type=int, default=8000, help="Port to serve on (default: 8000)")
+    p_web.add_argument("--open", action="store_true", help="Open web app in your browser")
+    p_web.set_defaults(func=cmd_web)
+
     return parser
 
 
@@ -220,3 +235,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
