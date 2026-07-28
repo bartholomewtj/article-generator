@@ -143,6 +143,9 @@ def test_reference_formatting() -> None:
     check("two authors joined with an ampersand",
           _reference_authors(two) == "Diekelmann, S. & Born, J.")
     check("trailing 'et al.' collapses the list", _reference_authors(many) == "Xie, L. et al.")
+    check("author line always closes with a stop",
+          _reference_authors(Paper(title="T", abstract="a", authors=["Borelli"])) == "Borelli."
+          and _reference_authors(Paper(title="T", abstract="a", authors=[])) == "Unknown authors.")
     check("more than three authors collapses too", _reference_authors(four) == "One, A. et al.")
     check("short form for tables", _short_author(two) == "Diekelmann & Born")
     check("short form collapses many", _short_author(many) == "Xie et al.")
