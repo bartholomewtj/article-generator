@@ -53,26 +53,35 @@ Two human gates (choose an idea, review the draft); everything in between is
 automatic. Under the hood, the `draft` stage:
 
 ```
-title ──▶ Claude plans search queries
+title ──▶ the model plans search queries
       ──▶ Semantic Scholar + OpenAlex return papers (with abstracts)
-      ──▶ Claude writes the article, citing sources inline as [1], [2, 3]…
+      ──▶ each source is labelled direct / related / background
+      ──▶ the model writes the review, citing sources inline as [1], [2, 3]…
       ──▶ rendered to drafts/<date>-<slug>.html  +  .md, listed in drafts/index.html
 ```
 
+- **Formatted like a journal Review article.** Article-type label, a
+  Nature-style unstructured abstract, a Key points box, superscript Vancouver
+  citations that collapse runs (`…as reported¹,³–⁵`), numbered display items
+  (**Box 1** for the key study, **Fig. 1** for the composition of the evidence
+  base, **Table 1** for the cited records), a **Methods** statement of the actual
+  search, and standard back matter — Evidence assessment with Limitations,
+  Glossary, References, Data availability, Competing interests. The conventions
+  and where each came from are documented in
+  [`docs/journal-style.md`](docs/journal-style.md).
 - **Evidence-grounded, and honest about it.** The writer only sees real
-  abstracts and cites them; every `[n]` links to a Sources list with a link
-  back to the paper (DOI when available). Before writing, each source is scored
-  for how *directly* it addresses the exact topic — so the article can say when
-  direct evidence is thin instead of quietly substituting adjacent work. Every
-  draft carries a **Featured study** box (method + results of the single most
-  relevant paper), an **Evidence quality** box (how many sources are directly
-  on-topic, the date range), and a deterministic check that flags any statistic
-  not found in the source abstracts as "verify against the full text." Clinical
-  topics get a "not medical advice" disclaimer.
-- **Readable.** House style aimed at a smart general audience — a hook, short
-  sections, pull quotes, a "Key takeaways" box.
-- **Self-contained.** One HTML file, inlined CSS, no external requests. Works
-  offline, prints cleanly, and adapts to light or dark mode.
+  abstracts and cites them; every superscript links to a numbered reference with
+  a link back to the paper (DOI when available). Before writing, each source is
+  scored for how *directly* it addresses the exact topic — so the article can say
+  when direct evidence is thin instead of quietly substituting adjacent work. A
+  deterministic check flags any statistic absent from the source abstracts, and
+  Fig. 1 and Table 1 are built from the fetched records rather than written by
+  the model. Clinical topics get a "not medical advice" disclaimer.
+- **No fabricated apparatus.** No invented journal name, volume, DOI, received
+  dates or affiliations. The masthead says "Not peer reviewed" and the back
+  matter says a machine wrote it.
+- **Self-contained.** One HTML file, inlined CSS and SVG, no external requests.
+  Works offline, prints cleanly, and adapts to light or dark mode.
 
 ## Install
 
@@ -146,10 +155,24 @@ articlegen/
   ideas.py     LLM call: theme -> shortlist of article ideas
   writer.py    LLM calls: plan queries, write the article (structured JSON)
   sources.py   Semantic Scholar + OpenAlex fetching, dedupe, ranking
-  render.py    structured article -> styled HTML, Markdown, and drafts/ index
+  render.py    structured article -> journal-format HTML, Markdown, drafts/ index
+  verify.py    deterministic check of every figure against the abstracts
   bot.py       GitHub Actions glue: ideas comment + `draft N` resolution
   demo.py      built-in sample for `articlegen demo`
+docs/
+  journal-style.md   the journal conventions we follow, and their sources
+tests/
+  test_offline.py             pure-logic tests (no keys, no network)
+  test_journal_conformance.py the journal conventions, as assertions over
+                              rendered fixtures — run both before shipping
 .github/workflows/
   ideas.yml    'theme: ...' issue opened  -> ideas posted as a comment
   draft.yml    'draft N' comment          -> draft committed + review link
+```
+
+## Tests
+
+```bash
+python tests/test_offline.py             # provider, citations, render blocks
+python tests/test_journal_conformance.py # journal conventions over 5 fixtures
 ```

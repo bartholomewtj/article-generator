@@ -99,22 +99,80 @@ def test_citation_renumbering() -> None:
     check("remap drops unknown marker", _remap_citations("z [99] w", m) == "z  w")
 
 
+def test_journal_citation_style() -> None:
+    """Superscript markers after the punctuation, runs of 3+ collapsed to a range."""
+    from articlegen.render import (
+        _link_citations, _plain_citations, _shift_markers_after_punctuation,
+    )
+
+    check("marker moves after the full stop",
+          _shift_markers_after_punctuation("a claim [1].") == "a claim.[1]")
+    check("marker moves after a semicolon",
+          _shift_markers_after_punctuation("first [2]; second") == "first;[2] second")
+    check("marker hugs the preceding word",
+          _shift_markers_after_punctuation("evidence [3] is thin") == "evidence[3] is thin")
+
+    valid = set(range(1, 8))
+    single = _link_citations("x.[3]", valid)
+    check("single marker becomes a superscript link",
+          '<sup class="cite">' in single and 'href="#ref-3"' in single)
+    pair = _link_citations("x.[1, 3]", valid)
+    check("pair is comma-joined, not ranged", ">1</a>,<a" in pair)
+    run = _link_citations("x.[2, 3, 4]", valid)
+    check("run of three collapses to a range", ">2</a>–<a" in run and ">4</a>" in run)
+    check("unsorted markers are ordered", _link_citations("x.[5, 2]", valid).index(">2<")
+          < _link_citations("x.[5, 2]", valid).index(">5<"))
+    check("marker with no matching source is left alone",
+          _link_citations("x.[99]", valid) == "x.[99]")
+    check("markdown collapses runs too", _plain_citations("x.[2, 3, 4]") == "x.[2–4]")
+
+
+def test_reference_formatting() -> None:
+    from articlegen.render import _format_author, _reference_authors, _short_author
+    from articlegen.sources import Paper
+
+    check("author -> surname, initial", _format_author("Susanne Diekelmann") == "Diekelmann, S.")
+    check("particle stays with the surname", _format_author("Hans Van Dongen") == "Van Dongen, H.")
+    check("middle name becomes a second initial",
+          _format_author("Hans P Van Dongen") == "Van Dongen, H. P.")
+    check("mononym survives", _format_author("Aristotle") == "Aristotle")
+
+    two = Paper(title="T", abstract="a", authors=["Susanne Diekelmann", "Jan Born"])
+    many = Paper(title="T", abstract="a", authors=["Lulu Xie", "Hongyi Kang", "Qiwu Xu", "et al."])
+    four = Paper(title="T", abstract="a", authors=["A One", "B Two", "C Three", "D Four"])
+    check("two authors joined with an ampersand",
+          _reference_authors(two) == "Diekelmann, S. & Born, J.")
+    check("trailing 'et al.' collapses the list", _reference_authors(many) == "Xie, L. et al.")
+    check("more than three authors collapses too", _reference_authors(four) == "One, A. et al.")
+    check("short form for tables", _short_author(two) == "Diekelmann & Born")
+    check("short form collapses many", _short_author(many) == "Xie et al.")
+
+
 def test_statistic_verification() -> None:
     from articlegen.verify import check_statistics
     from articlegen.sources import Paper
 
     papers = [Paper(title="P1", abstract="the effect was 0.53 overall and 12% responded", year=2010)]
     article = {
-        "standfirst": "s", "evidence_note": "",
+        "abstract": "s", "evidence_note": "",
         "featured_study": {"source_index": 1, "why": "", "method": "", "results": "RR 4.91"},
-        "sections": [{"heading": "H", "paragraphs": ["fell 0.53 [1] but SMD -0.90 [1]"], "pull_quote": None}],
-        "key_takeaways": ["12% responded [1]"], "references": [1],
+        "sections": [{"heading": "H", "paragraphs": ["fell 0.53 [1] but SMD -0.90 [1]"]}],
+        "key_points": ["12% responded [1]"], "references": [1],
     }
     v = check_statistics(article, papers)
     check("flags absent figure 4.91", "4.91" in v["unverified"])
     check("flags absent figure -0.90", "-0.90" in v["unverified"])
     check("passes present figure 0.53", "0.53" not in v["unverified"])
     check("passes present figure 12%", "12%" not in v["unverified"])
+
+    legacy = {
+        "standfirst": "SMD -0.77 headline", "evidence_note": "",
+        "sections": [{"heading": "H", "paragraphs": ["x"], "pull_quote": "and 8.88 more"}],
+        "key_takeaways": ["12% responded [1]"], "references": [1],
+    }
+    v_legacy = check_statistics(legacy, papers)
+    check("pre-journal-format drafts are still checked",
+          "-0.77" in v_legacy["unverified"] and "8.88" in v_legacy["unverified"])
 
 
 def test_ranking() -> None:
@@ -126,31 +184,118 @@ def test_ranking() -> None:
     check("on-topic outranks famous off-topic", _rank_score(on_topic, terms) > _rank_score(famous, terms))
 
 
-def test_render_blocks() -> None:
-    from articlegen.render import render_article, render_markdown, _is_clinical
+def _sample_draft():
     from articlegen.sources import Paper
 
-    papers = [Paper(title=f"Study {i}", abstract="a", year=2000 + i, authors=[f"A{i}"], doi=f"10/{i}") for i in range(1, 6)]
+    papers = [
+        Paper(title=f"Study {i}", abstract="a", year=2000 + i, authors=[f"Ann A{i}"],
+              venue=f"Journal {i}", citation_count=100 * i, doi=f"10/{i}")
+        for i in range(1, 6)
+    ]
     article = {
-        "title": "Bright light therapy in schizophrenia", "standfirst": "S",
+        "title": "Bright light therapy in schizophrenia",
+        "abstract": "A summary paragraph of the evidence.",
+        "keywords": ["schizophrenia", "light therapy"],
         "evidence_note": "Only one source is directly on schizophrenia [1].",
-        "featured_study": {"source_index": 2, "why": "Best trial.", "method": "RCT, n=40.", "results": "Improved."},
-        "sections": [{"heading": "H", "paragraphs": ["Claim [1] and [2]."], "pull_quote": "pq"}],
-        "key_takeaways": ["Point [1]."], "references": [1, 2],
+        "featured_study": {"source_index": 2, "why": "Best trial.", "method": "RCT, n=40.",
+                           "results": "Improved."},
+        "sections": [
+            {"heading": "Introduction", "paragraphs": ["Claim [1] and [2]."]},
+            {"heading": "Trial evidence", "paragraphs": ["More [2]."]},
+            {"heading": "Conclusions", "paragraphs": ["Unresolved [1]."]},
+        ],
+        "key_points": ["Point [1]."],
+        "glossary": [{"term": "Lux", "definition": "A unit of illuminance."}],
+        "references": [1, 2, 3],
     }
-    curation = {"relevance": {1: "direct", 2: "related"}, "most_relevant_index": 2, "counts": {"direct": 1, "related": 1, "tangential": 0}}
+    curation = {
+        "relevance": {1: "direct", 2: "related", 3: "tangential"},
+        "most_relevant_index": 2,
+        "counts": {"direct": 1, "related": 1, "tangential": 1},
+    }
     verification = {"unverified": ["-0.90", "4.91"], "total": 5}
-    h = render_article(article, papers, "sunlight for schizophrenia", curation, verification)
-    md = render_markdown(article, papers, "sunlight for schizophrenia", curation, verification)
-    check("html featured box", 'class="featured"' in h and "Study 2" in h)
-    check("html evidence box", 'class="evidence"' in h and "directly on-topic" in h)
-    check("html flags unverified figures", "could not be located" in h and "-0.90" in h)
+    provenance = {"queries": ["light therapy schizophrenia"], "model": "test-model"}
+    return article, papers, curation, verification, provenance
+
+
+def test_render_blocks() -> None:
+    from articlegen.render import render_article, render_markdown, _is_clinical
+
+    article, papers, curation, verification, provenance = _sample_draft()
+    topic = "sunlight for schizophrenia"
+    h = render_article(article, papers, topic, curation, verification, provenance)
+    md = render_markdown(article, papers, topic, curation, verification, provenance)
+
+    check("html article-type label", "Evidence Review" in h)
+    check("html abstract run-in head", 'class="run-in-head">Abstract' in h)
+    check("html keywords printed", 'class="keywords"' in h and "schizophrenia" in h)
+    check("html key points box", 'class="key-points"' in h and "Key points" in h)
+    check("html Box 1 for the featured study", "Box 1 |" in h and "Study 2" in h)
+    check("html Table 1 of cited evidence", "Table 1 |" in h and "<table>" in h)
+    check("html Fig. 1 of the evidence base", "Fig. 1 |" in h and "<svg" in h)
+    check("html methods states the search", "Methods" in h and "light therapy schizophrenia" in h)
+    check("html names the databases", "OpenAlex" in h and "Semantic Scholar" in h)
+    check("html limitations replace warning boxes",
+          "Limitations." in h and "could not be located" in h and "-0.90" in h)
+    check("html no emoji warnings", "⚠" not in h)
+    check("html glossary", "Glossary" in h and "Lux" in h)
+    check("html back matter", "Competing interests" in h and "Data availability" in h)
+    check("html references are Vancouver-style",
+          '<span class="ref-authors">A1, A.</span>' in h
+          and ">Study 1.</a> <em>Journal 1</em> (2001)." in h)
     check("html clinical disclaimer", "Not medical or clinical advice" in h)
-    check("md featured + method", "Featured study" in md and "*Method:*" in md)
-    check("md evidence quality section", "## Evidence quality" in md)
+    check("html has no magazine furniture",
+          "pull" not in h and "kicker" not in h and "standfirst" not in h)
+
+    check("md abstract", "**Abstract.**" in md)
+    check("md key points", "## Key points" in md)
+    check("md Box 1", "**Box 1 | Key study:" in md)
+    check("md Table 1", "**Table 1 |" in md and "| Ref. | Study |" in md)
+    check("md Fig. 1", "**Fig. 1 |" in md)
+    check("md methods", "## Methods" in md and "**Search strategy.**" in md)
+    check("md evidence assessment", "## Evidence assessment" in md and "**Limitations.**" in md)
+    check("md additional information", "## Additional information" in md)
     check("md clinical disclaimer", "Not medical or clinical advice" in md)
-    check("clinical detection on", _is_clinical("sunlight for schizophrenia", article))
-    check("clinical detection off", not _is_clinical("gravity batteries", {"title": "Storage", "standfirst": "x"}))
+    check("clinical detection on", _is_clinical(topic, article))
+    check("clinical detection off",
+          not _is_clinical("gravity batteries", {"title": "Storage", "abstract": "x"}))
+
+
+def test_display_item_placement() -> None:
+    """Display items interleave with the body and every one is emitted exactly once."""
+    from articlegen.render import render_article
+
+    article, papers, curation, verification, provenance = _sample_draft()
+    h = render_article(article, papers, "sunlight for schizophrenia", curation, verification, provenance)
+    check("each display item appears once",
+          h.count("Box 1 |") == 1 and h.count("Fig. 1 |") == 1 and h.count("Table 1 |") == 1)
+    check("box precedes figure precedes table",
+          h.index("Box 1 |") < h.index("Fig. 1 |") < h.index("Table 1 |"))
+    check("table precedes the reference list", h.index("Table 1 |") < h.index("References"))
+
+    # A one-section article still gets all three, appended rather than interleaved.
+    short = dict(article, sections=[{"heading": "Introduction", "paragraphs": ["Only [1]."]}])
+    h_short = render_article(short, papers, "topic", curation, None, provenance)
+    check("short articles keep every display item",
+          all(k in h_short for k in ("Box 1 |", "Fig. 1 |", "Table 1 |")))
+
+
+def test_legacy_draft_fields() -> None:
+    """Drafts written against the pre-journal schema still render."""
+    from articlegen.render import render_article
+    from articlegen.sources import Paper
+
+    papers = [Paper(title="Old study", abstract="a", year=2011, authors=["Ann Old"])]
+    legacy = {
+        "title": "An older draft", "standfirst": "The old deck line.",
+        "evidence_note": "", "featured_study": {},
+        "sections": [{"heading": "H", "paragraphs": ["Text [1]."], "pull_quote": "quote"}],
+        "key_takeaways": ["Old point [1]."], "references": [1],
+    }
+    h = render_article(legacy, papers, "legacy topic")
+    check("standfirst is used as the abstract", "The old deck line." in h)
+    check("key_takeaways render as key points", "Old point" in h and "Key points" in h)
+    check("pull quote is dropped", "quote" not in h)
 
 
 def test_demo_and_index() -> None:
@@ -158,10 +303,16 @@ def test_demo_and_index() -> None:
     from articlegen import demo
     from articlegen.render import render_article, render_markdown, build_index
 
-    h = render_article(demo.SAMPLE_ARTICLE, demo.SAMPLE_PAPERS, "Sample topic")
-    md = render_markdown(demo.SAMPLE_ARTICLE, demo.SAMPLE_PAPERS, "Sample topic")
-    check("demo html renders featured", 'class="featured"' in h)
-    check("demo markdown renders", md.startswith("# What Your Brain Does While You Sleep"))
+    h = render_article(demo.SAMPLE_ARTICLE, demo.SAMPLE_PAPERS, "Sample topic",
+                       demo.SAMPLE_CURATION, None, demo.SAMPLE_PROVENANCE)
+    md = render_markdown(demo.SAMPLE_ARTICLE, demo.SAMPLE_PAPERS, "Sample topic",
+                         demo.SAMPLE_CURATION, None, demo.SAMPLE_PROVENANCE)
+    check("demo html renders the display items",
+          all(k in h for k in ("Box 1 |", "Fig. 1 |", "Table 1 |")))
+    check("demo markdown renders", md.startswith("**EVIDENCE REVIEW**"))
+    check("demo sections run Introduction -> Conclusions",
+          demo.SAMPLE_ARTICLE["sections"][0]["heading"] == "Introduction"
+          and demo.SAMPLE_ARTICLE["sections"][-1]["heading"].startswith("Conclusions"))
     with tempfile.TemporaryDirectory() as d:
         with open(os.path.join(d, "2026-01-01-x.html"), "w", encoding="utf-8") as f:
             f.write(h)
@@ -213,8 +364,10 @@ def test_web_server() -> None:
 def main() -> int:
     for fn in (
         test_provider_resolution, test_gemini_schema_translation, test_model_discovery,
-        test_citation_renumbering, test_statistic_verification, test_ranking,
-        test_render_blocks, test_demo_and_index, test_bot_parsing, test_web_server,
+        test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
+        test_statistic_verification, test_ranking, test_render_blocks,
+        test_display_item_placement, test_legacy_draft_fields,
+        test_demo_and_index, test_bot_parsing, test_web_server,
     ):
         print(f"\n# {fn.__name__}")
         fn()
