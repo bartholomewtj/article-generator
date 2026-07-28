@@ -151,6 +151,76 @@ def test_reference_formatting() -> None:
     check("short form collapses many", _short_author(many) == "Xie et al.")
 
 
+def test_prose_style_check() -> None:
+    """The style gate must catch magazine register and pass real journal prose."""
+    from articlegen.style import check_style, errors, revision_brief
+
+    magazine = {
+        "abstract": "Ever wondered what your brain does at night? It's incredible.",
+        "sections": [{"heading": "The night shift", "paragraphs": [
+            "The last two decades have dramatically inverted that picture.",
+            "Scientists have definitively proven that sleep matters, and in order to "
+            "understand why, we ran through the literature ourselves.",
+        ]}],
+        "key_points": ["Sleep clearly matters!"],
+    }
+    found = {i["rule"] for i in check_style(magazine)["issues"]}
+    for rule in ("rhetorical-question", "second-person", "contraction", "booster",
+                 "overclaim", "first-person", "exclamation", "wordiness"):
+        check(f"style catches {rule}", rule in found)
+
+    brief = revision_brief(check_style(magazine))
+    check("revision brief locates and quotes each offence",
+          "[abstract]" in brief and "Offending text:" in brief
+          and "Addresses the reader directly" in brief)
+
+    from articlegen import demo
+    demo_report = check_style(demo.SAMPLE_ARTICLE)
+    check("demo prose passes the style gate", not errors(demo_report))
+    check("style stats are reported",
+          demo_report["stats"]["sentences"] > 20
+          and demo_report["stats"]["hedges_per_sentence"] > 0)
+
+    # The reviewing frame journals themselves use is allowed; other first person is not.
+    allowed = {"sections": [{"heading": "H", "paragraphs": [
+        "Here we review the evidence for clearance during sleep."]}]}
+    denied = {"sections": [{"heading": "H", "paragraphs": [
+        "Our results show that clearance increases during sleep."]}]}
+    check("'here we review' is permitted",
+          not any(i["rule"] == "first-person" for i in check_style(allowed)["issues"]))
+    check("'our results' is not",
+          any(i["rule"] == "first-person" for i in check_style(denied)["issues"]))
+
+    long_sentence = {"sections": [{"heading": "H", "paragraphs": [
+        "This sentence " + "goes on and on " * 15 + "without stopping."]}]}
+    check("long sentences are flagged",
+          any(i["rule"] == "long-sentence" for i in check_style(long_sentence)["issues"]))
+
+    # Density rules need enough prose to mean anything.
+    thin = {"sections": [{"heading": "H", "paragraphs": ["A flat claim about a thing."]}]}
+    check("density rules stay quiet on short drafts",
+          not any(i["rule"] == "under-hedged" for i in check_style(thin)["issues"]))
+    # Flat, unhedged assertion at the length where density figures start to mean
+    # something (the gate needs both a sentence count and a word count).
+    flat = (
+        "The compound binds the receptor and increases the rate of clearance in "
+        "every model tested. The effect is dose dependent across the full range "
+        "studied. Uptake rises with temperature in each preparation examined. "
+        "The pathway drives waste removal from the interstitial space. Levels of "
+        "the metabolite fall after a single treatment. The response is linear "
+        "throughout the measured interval. Binding saturates at the highest dose "
+        "administered. Efflux doubles overnight in every animal studied. The "
+        "volume of the interstitial space expands during rest. Transport slows "
+        "with age in all cohorts examined. Flow returns to baseline by morning "
+        "in each experiment. The mechanism accounts for the whole of the observed "
+        "difference between the groups."
+    )
+    unhedged = {"sections": [{"heading": "H", "paragraphs": [flat] * 3}]}
+    report = check_style(unhedged)
+    check("under-hedged prose is flagged",
+          any(i["rule"] == "under-hedged" for i in report["issues"]))
+
+
 def test_statistic_verification() -> None:
     from articlegen.verify import check_statistics
     from articlegen.sources import Paper
@@ -368,6 +438,7 @@ def main() -> int:
     for fn in (
         test_provider_resolution, test_gemini_schema_translation, test_model_discovery,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
+        test_prose_style_check,
         test_statistic_verification, test_ranking, test_render_blocks,
         test_display_item_placement, test_legacy_draft_fields,
         test_demo_and_index, test_bot_parsing, test_web_server,

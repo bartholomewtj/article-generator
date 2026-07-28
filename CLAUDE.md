@@ -34,6 +34,7 @@ articlegen/
   writer.py    LLM: plan_queries -> curate_sources -> write_article
   sources.py   Semantic Scholar + OpenAlex fetch, dedupe, relevance-blended rank
   verify.py    deterministic: flag article statistics absent from source abstracts
+  style.py     deterministic: flag prose that breaks journal writing conventions
   render.py    structured article -> journal-format HTML + Markdown + drafts/ index
   bot.py       GitHub Actions glue: build ideas comment, parse `draft N`
   demo.py      built-in sample for `articlegen demo` (no API/network)
@@ -50,6 +51,7 @@ tests/
 
 Draft pipeline (in `cli.cmd_draft`): `plan_queries` (queries + `core_entity`) →
 `gather_evidence` → `curate_sources` (relevance labels) → `write_article` →
+`_enforce_style` (`check_style`, and one `revise_prose` pass if it finds errors) →
 `check_statistics` → `render_article` + `render_markdown` → commit + `build_index`.
 `cmd_draft` also passes a `provenance` dict (queries, model, date) that the
 deterministic **Methods** section is written from — keep it populated.
@@ -75,6 +77,24 @@ before changing the layout.
 - Citations render as Nature superscripts after the punctuation, with runs of
   three or more collapsed (`.¹,³–⁵`). References are Vancouver/Nature form.
 - Warnings are **prose in a Limitations paragraph**, not emoji callout boxes.
+
+## Prose style (enforced, not just prompted)
+
+`docs/journal-style.md` §13–18 records the writing conventions and their sources.
+`style.py` turns them into a deterministic check that `cmd_draft` runs after
+drafting; on any `error` it sends `revision_brief()` back through `revise_prose`
+**once**, and keeps the revision only if it reduces the error count *and* leaves
+citations and sections intact.
+
+- Errors: second person, contractions, rhetorical questions, exclamations,
+  boosters ("clearly", "striking", "unprecedented"), claims of proof
+  ("proves", "definitively"), first person outside the `here we review` frame,
+  and under-hedging (< 0.20 hedges/sentence).
+- Warnings: sentences over 45 words, high nominalisation, passive ratio > 55%.
+- Density rules only fire above 12 sentences **and** 250 words — below that the
+  figures are noise. If you add a fixture, give it real prose or the rules skip it.
+- Don't make this an LLM pass; a model asked "is this journal style?" agrees with
+  itself. Same reasoning as `verify.py`.
 - Never add fabricated journal apparatus — no invented journal name, volume,
   DOI, received/accepted dates, affiliations or ORCIDs. The masthead states
   "Not peer reviewed"; the back matter states that a machine wrote it.
@@ -118,7 +138,8 @@ before changing the layout.
 - **Offline tests (no keys/network):** `python tests/test_offline.py` — provider
   resolution, Gemini schema translation, model discovery, citation renumbering
   and superscript style, reference formatting, statistic verification, ranking,
-  render blocks, display-item placement, legacy-schema drafts, bot parsing.
+  render blocks, display-item placement, legacy-schema drafts, prose-style gate,
+  bot parsing.
 - **Format conformance:** `python tests/test_journal_conformance.py` — asserts
   every convention in `docs/journal-style.md` over five fixture articles
   (including no-direct-sources, sparse metadata, and a 40-year source range).

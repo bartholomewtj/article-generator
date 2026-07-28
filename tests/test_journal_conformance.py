@@ -18,6 +18,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from articlegen.render import render_article, render_markdown  # noqa: E402
+from articlegen.style import check_style, errors as style_errors  # noqa: E402
 from articlegen.sources import Paper  # noqa: E402
 
 FAILURES: list[str] = []
@@ -82,6 +83,9 @@ CONVENTIONS = [
      lambda h, a: not re.search(r"\b(Volume|Issue|Received|Accepted|ORCID)\b", h)),
     ("page is self-contained",
      lambda h, a: "http-equiv" not in h and not re.search(r'src="https?://', h)),
+    # The prose conventions, delegated to the same checker the draft pipeline runs.
+    ("prose passes the journal style check",
+     lambda h, a: not style_errors(check_style(a))),
 ]
 
 
@@ -113,11 +117,51 @@ def _article(title, sections, **overrides):
     return base
 
 
+# Real prose, not placeholders: the style rules measure hedging density and sentence
+# length, and a fixture of four-word stubs cannot exercise them.
 _SECTIONS = [
-    {"heading": "Introduction", "paragraphs": ["Scope and rationale [1]."]},
-    {"heading": "Mechanisms", "paragraphs": ["A mechanistic account [2].", "More detail [1, 2]."]},
-    {"heading": "Clinical evidence", "paragraphs": ["Trial evidence remains limited [2]."]},
-    {"heading": "Conclusions and outlook", "paragraphs": ["What would settle it [1]."]},
+    {
+        "heading": "Introduction",
+        "paragraphs": [
+            "The mechanism has been studied for three decades, and the balance of "
+            "evidence suggests a consistent direction of effect [1]. Whether that "
+            "effect generalises beyond the populations studied remains unresolved.",
+            "This review considers the direct evidence, the mechanistic account "
+            "offered for it, and the extent to which findings from adjacent "
+            "populations can reasonably be carried across [2].",
+        ],
+    },
+    {
+        "heading": "Mechanisms",
+        "paragraphs": [
+            "The prevailing mechanistic account attributes the effect to a single "
+            "pathway, which appears consistent with the reported dose dependence [2]. "
+            "That account rests largely on preclinical work, and the human evidence "
+            "is indirect.",
+            "An alternative explanation, in which the association is partly "
+            "confounded by exposure, has not been excluded by the studies cited "
+            "here [1, 2]. The two accounts are not mutually exclusive.",
+        ],
+    },
+    {
+        "heading": "Clinical evidence",
+        "paragraphs": [
+            "Trial evidence remains limited. The largest study reported a reduction "
+            "relative to control, though the confidence interval was wide and the "
+            "follow-up period was short [2]. Findings of this kind are typically "
+            "treated as provisional until replicated.",
+        ],
+    },
+    {
+        "heading": "Conclusions and outlook",
+        "paragraphs": [
+            "The direction of effect appears reasonably well supported, while its "
+            "magnitude does not [1]. No study reviewed here compares the intervention "
+            "against an active control, so relative effectiveness cannot be assessed.",
+            "An adequately powered trial with longer follow-up would settle most of "
+            "what is currently uncertain [2].",
+        ],
+    },
 ]
 
 
