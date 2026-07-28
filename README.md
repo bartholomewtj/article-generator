@@ -69,6 +69,14 @@ title ──▶ the model plans search queries
   Glossary, References, Data availability, Competing interests. The conventions
   and where each came from are documented in
   [`docs/journal-style.md`](docs/journal-style.md).
+- **Journal prose, checked rather than requested.** The house style is the
+  register of a Nature Reviews or Science Review piece: active voice, tense that
+  carries evidential weight (present for established knowledge, past for what one
+  study found), findings attributed to their design, and hedging at the density
+  corpus studies find in real research articles. `style.py` checks all of it
+  deterministically after drafting — second person, contractions, boosters
+  ("clearly", "striking"), claims of proof and under-hedging are errors — and any
+  failures go back to the model once for a targeted revision.
 - **Evidence-grounded, and honest about it.** The writer only sees real
   abstracts and cites them; every superscript links to a numbered reference with
   a link back to the paper (DOI when available). Before writing, each source is
@@ -157,6 +165,7 @@ articlegen/
   sources.py   Semantic Scholar + OpenAlex fetching, dedupe, ranking
   render.py    structured article -> journal-format HTML, Markdown, drafts/ index
   verify.py    deterministic check of every figure against the abstracts
+  style.py     deterministic check of the prose against journal writing conventions
   bot.py       GitHub Actions glue: ideas comment + `draft N` resolution
   demo.py      built-in sample for `articlegen demo`
 docs/

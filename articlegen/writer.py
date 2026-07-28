@@ -14,6 +14,8 @@ The pipeline is deliberately honest about evidence:
 
 from __future__ import annotations
 
+import json
+
 from .llm import generate_json
 from .sources import Paper
 
@@ -204,16 +206,56 @@ with an anecdote, a scene, a rhetorical question, or "Imagine…".
 - Plain prose paragraphs only — no markdown, HTML, bullets or sub-headings inside a \
 paragraph. 2-4 paragraphs per section.
 
-REGISTER:
-- Third person and impersonal. No "you", no "we" except in "here we review"-type \
-framing, no direct address to the reader.
-- Hedge claims to the strength of the evidence: "these data suggest", "is \
-consistent with", "remains unresolved", "has been reported in a single cohort". \
-Reserve flat assertions for findings the abstracts state outright.
-- Attribute findings to their study design where the abstract gives it \
-("a randomized trial", "a retrospective cohort", "an animal model").
-- No exclamation marks, no jokes, no scare quotes, no emoji, no second-person \
-imperatives, no "game-changer"/"revolutionary"/"stunning" hype vocabulary.
+REGISTER — this is checked automatically after you write, so follow it exactly:
+
+- VOICE. Active where the active is available: "the trial reported a reduction", \
+not "a reduction was reported by the trial". Nature and Science both ask for this. \
+The passive is fine where the actor is genuinely irrelevant ("participants were \
+randomized").
+- PERSON. Third person throughout. The ONLY permitted first person is the \
+reviewing frame journals themselves use — "here we review", "we consider", "we \
+focus on". Never "I", never "our findings", never "you".
+- TENSE. Present tense for established knowledge and for what evidence indicates \
+("GHB binds GABA-B receptors"; "these data suggest"). Past tense for what a \
+specific study did and found ("participants were randomized"; "the trial reported \
+a 40% reduction"). Present perfect for an accumulated body of work ("several \
+series have reported"). Keep the tense consistent within a paragraph.
+- HEDGING. Hedge every claim to the strength of the evidence behind it — corpus \
+studies of research articles find roughly one hedge every two to three sentences, \
+and that is the density to write at. Use "may", "appears to", "suggests", "is \
+consistent with", "remains unresolved", "in part", "typically", "has been \
+reported in a single cohort". Reserve flat assertion for what an abstract states \
+outright.
+- ATTRIBUTION. Name the study design when the abstract gives it ("a randomized \
+trial", "a retrospective cohort", "a two-patient case series", "an animal model"). \
+A finding's weight comes from its design, and the reader must be able to see it.
+- SENTENCES. Average 15-30 words; none over 45. Vary the length. Prefer verbs to \
+nominalisations: "evaluated", not "conducted an evaluation of".
+- PARAGRAPHS. Topic sentence first, then the evidence, then the qualification. \
+2-4 sentences each.
+
+BANNED OUTRIGHT: second person; contractions; rhetorical questions; exclamation \
+marks; boosters and hype ("clearly", "obviously", "dramatically", "remarkable", \
+"striking", "unprecedented", "groundbreaking", "game-changer"); claims of proof \
+("proves", "definitively", "conclusively"); "in order to"; "utilize"; scare \
+quotes; jokes; emoji.
+
+The difference this makes:
+  WRONG: "Astonishingly, scientists have now proven that sleep flushes waste from \
+the brain — and you should worry if you are not getting enough."
+  RIGHT: "Clearance of interstitial solutes increases during sleep in rodent \
+models, which has been proposed as a mechanistic link to neurodegenerative risk. \
+The human evidence remains indirect."
+"""
+
+
+_REVISE_SYSTEM = _WRITER_SYSTEM + """
+
+You are now REVISING an existing draft rather than writing a new one. Return the \
+complete article in the same JSON shape, with only the prose changed. Every \
+"[N]" citation marker must survive exactly as it is and stay attached to the same \
+claim; the section headings, the reference list and every number must be \
+unchanged. Do not add claims, sources or figures.
 """
 
 
@@ -322,6 +364,25 @@ def write_article(
         context,
         _ARTICLE_SCHEMA,
         system=_WRITER_SYSTEM,
+        model=model,
+        deep=True,
+    )
+
+
+def revise_prose(article: dict, brief: str, model: str | None = None) -> dict:
+    """Re-write a draft's prose against a list of style violations from `style.py`.
+
+    The brief names the specific conventions broken and quotes the offending text,
+    so this is a targeted edit rather than a second attempt at the whole article.
+    """
+    context = (
+        f"{brief}\n\nHere is the draft to revise, as JSON:\n\n"
+        + json.dumps(article, ensure_ascii=False, indent=1)
+    )
+    return generate_json(
+        context,
+        _ARTICLE_SCHEMA,
+        system=_REVISE_SYSTEM,
         model=model,
         deep=True,
     )

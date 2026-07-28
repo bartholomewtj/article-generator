@@ -134,6 +134,76 @@ rather than magazine teal). No drop caps, no pull quotes, no emoji.
 → The stylesheet is rebuilt on those rules. Drop caps and pull quotes are removed
 from both the schema and the renderer.
 
+## The prose itself
+
+Layout is the easy half. A page can carry every display item a journal uses and
+still read like a magazine feature. These conventions govern the sentences, and
+because each is specific enough to test, `articlegen/style.py` tests them —
+`cli.cmd_draft` runs the check after drafting and sends any failures back to the
+model for one targeted revision.
+
+| Source | What it fixes |
+| --- | --- |
+| [Nature Portfolio: how to write your paper](https://www.nature.com/nature-portfolio/for-authors/write) | Active voice preferred; the "Here we show" first-person frame |
+| [Verb tense conventions in research papers](https://casrai.org/guides/verb-tense-conventions-in-research-papers) / [when to use past and present tense](https://milnepublishing.geneseo.edu/medical-writing/chapter/2-when-to-use-the-past-and-present-tense-of-verbs/) | Present for established knowledge, past for a specific study's methods and results, present perfect for an accumulated body of work |
+| [Corpus studies of hedges and boosters](https://files.eric.ed.gov/fulltext/EJ1285159.pdf) (Hyland's epistemic-marker categories) | Hedging density: research articles hedge roughly once every two to three sentences |
+| [Nominalisation guidance](https://lifelong-learning.ox.ac.uk/nominalisation/) | Prefer verbs to abstract nouns — "evaluated", not "conducted an evaluation" |
+| [Sentence length and readability](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9955962/) | Sentence length is the single best proxy for grammatical complexity; vary it and cap it |
+
+### 13. Voice and person
+
+Active where the active is available; Nature says readers take concepts and
+results more clearly that way. The passive stays where the actor is genuinely
+irrelevant ("participants were randomized").
+
+The only first person permitted is the reviewing frame journals use themselves —
+"here we review", "we consider". Everything else ("our findings", "I") would
+imply a human author this pipeline does not have. Second person is banned
+outright: it is the clearest single marker of magazine register.
+
+→ `style.py` flags any first person outside that frame, and any second person.
+
+### 14. Tense carries evidential weight
+
+Present tense asserts that something is established; past tense reports what one
+study did. Using the present for a single recent finding claims a consensus that
+one study cannot support.
+
+→ The prompt specifies the three-way split (present / past / present perfect) and
+requires tense to stay consistent within a paragraph.
+
+### 15. Hedge to the strength of the evidence
+
+Corpus work on research articles puts hedging at roughly one marker every two to
+three sentences — more than one word in fifty. Under-hedging is not neutrality;
+it is over-claiming.
+
+→ `style.py` counts hedges from the standard epistemic-marker categories and
+raises an error below one per five sentences, once the draft is long enough for
+the density to mean anything.
+
+### 16. No boosters, no claims of proof
+
+"Clearly", "dramatically", "remarkable", "striking", "unprecedented" assert
+confidence the source abstract does not carry. "Proves", "definitively",
+"conclusively" claim something almost no review can.
+
+→ Both lists are hard errors in `style.py`.
+
+### 17. Findings are attributed to their design
+
+A claim's weight comes from the design behind it, so the design is named in the
+sentence: "a randomized trial", "a retrospective cohort", "a two-patient case
+series", "an animal model".
+
+### 18. Sentences and paragraphs
+
+15–30 words on average, none over 45, varied. Paragraphs of two to four
+sentences: topic sentence, evidence, qualification.
+
+→ `style.py` warns on any sentence over 45 words and on a high nominalisation
+rate or a passive ratio above 55%.
+
 ## What we deliberately do *not* copy
 
 - **Fabricated apparatus.** No invented journal name, volume, issue, page range,

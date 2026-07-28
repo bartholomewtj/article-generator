@@ -21,8 +21,9 @@ from .ideas import format_ideas_console, generate_ideas, ideas_to_markdown
 from .llm import resolve_provider
 from .render import build_index, render_article, render_markdown
 from .sources import gather_evidence
+from .style import check_style, errors as style_errors, format_report as format_style, revision_brief
 from .verify import check_statistics
-from .writer import curate_sources, plan_queries, write_article
+from .writer import curate_sources, plan_queries, revise_prose, write_article
 
 IDEAS_DIR = "ideas"
 DRAFTS_DIR = "drafts"
@@ -73,6 +74,43 @@ def cmd_ideas(args) -> int:
     return 0
 
 
+def _enforce_style(article: dict, model: str | None) -> tuple[dict, dict]:
+    """Check the prose against journal conventions and, if it misses, revise once.
+
+    The revision is only accepted if it actually reduces the error count and keeps
+    the draft intact — a revision that drops citations or sections is discarded.
+    """
+    report = check_style(article)
+    problems = style_errors(report)
+    if not problems:
+        _log("Prose style: clean.")
+        _log(format_style(report))
+        return article, report
+
+    _log(f"Prose style: {len(problems)} issue(s) against journal conventions; revising once...")
+    try:
+        revised = revise_prose(article, revision_brief(report), model=model)
+    except Exception as exc:
+        _log(f"  revision failed ({exc}); keeping the original draft.")
+        _log(format_style(report))
+        return article, report
+
+    intact = (
+        len(revised.get("references") or []) >= len(article.get("references") or [])
+        and len(revised.get("sections") or []) == len(article.get("sections") or [])
+    )
+    revised_report = check_style(revised)
+    if intact and len(style_errors(revised_report)) < len(problems):
+        _log(f"  revised: {len(problems)} -> {len(style_errors(revised_report))} issue(s).")
+        _log(format_style(revised_report))
+        return revised, revised_report
+
+    reason = "revision dropped citations or sections" if not intact else "revision did not improve"
+    _log(f"  {reason}; keeping the original draft.")
+    _log(format_style(report))
+    return article, report
+
+
 def cmd_draft(args) -> int:
     _log(f"Planning search queries for: {args.topic}")
     try:
@@ -107,6 +145,8 @@ def cmd_draft(args) -> int:
         )
     except Exception as exc:
         return _api_error(exc)
+
+    article, style_report = _enforce_style(article, args.model)
 
     verification = check_statistics(article, papers)
 
@@ -147,6 +187,8 @@ def cmd_draft(args) -> int:
         summary += f"; ⚠ {n_unver} figure(s) not found in source abstracts"
     if relevance and not direct:
         summary += "; ⚠ no directly on-topic source found"
+    n_style = len(style_errors(style_report))
+    summary += "; prose style clean" if not n_style else f"; ⚠ {n_style} prose-style issue(s)"
     print(f"EVIDENCE_SUMMARY: {summary}")
 
     if args.open:
