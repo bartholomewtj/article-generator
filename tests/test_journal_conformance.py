@@ -61,7 +61,7 @@ CONVENTIONS = [
     # the honest rendering, so it satisfies the convention too.
     ("reference authors are in surname-initial form",
      lambda h, a: all(
-         re.match(r"[^<]+, [A-Z]\.", author) or author == "Unknown authors"
+         re.match(r"[^<]+, [A-Z]\.", author) or author == "Unknown authors."
          for author in re.findall(r'class="ref-authors">([^<]+)<', h)
      )),
     ("Methods reports the search strategy",

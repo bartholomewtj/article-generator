@@ -194,13 +194,17 @@ def _reference_authors(paper: Paper) -> str:
     if truncated:
         authors = authors[:-1]
     if not authors:
-        return "Unknown authors"
+        return "Unknown authors."
     formatted = [_format_author(a) for a in authors]
     if truncated or len(formatted) > 3:
-        return f"{formatted[0]} et al."
-    if len(formatted) == 1:
-        return formatted[0]
-    return ", ".join(formatted[:-1]) + " & " + formatted[-1]
+        line = f"{formatted[0]} et al."
+    elif len(formatted) == 1:
+        line = formatted[0]
+    else:
+        line = ", ".join(formatted[:-1]) + " & " + formatted[-1]
+    # The author line always closes with a stop, so a mononym or a corporate name
+    # doesn't run straight into the title.
+    return line if line.endswith(".") else line + "."
 
 
 def _short_author(paper: Paper) -> str:
