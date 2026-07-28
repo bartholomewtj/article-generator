@@ -27,14 +27,19 @@ def _normalize(token: str) -> str:
 
 
 def _article_text(article: dict) -> str:
-    parts = [article.get("standfirst", ""), article.get("evidence_note", "")]
+    # `standfirst` / `key_takeaways` are the pre-journal-format field names; they are
+    # still read so drafts written against the old schema keep being checked.
+    parts = [
+        article.get("abstract", "") or article.get("standfirst", ""),
+        article.get("evidence_note", ""),
+    ]
     fs = article.get("featured_study") or {}
     parts += [fs.get("method", ""), fs.get("results", "")]
     for section in article.get("sections", []):
         parts.extend(section.get("paragraphs", []))
         if section.get("pull_quote"):
             parts.append(section["pull_quote"])
-    parts.extend(article.get("key_takeaways", []))
+    parts.extend(article.get("key_points") or article.get("key_takeaways") or [])
     return "\n".join(parts)
 
 

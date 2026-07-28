@@ -1,7 +1,8 @@
-"""A built-in sample so `articlegen --demo` can render the design without any API calls.
+"""A built-in sample so `articlegen demo` can render the design without any API calls.
 
 The prose here is illustrative and the citations map to the sample sources below;
-it exists to exercise the renderer, not as a real piece of journalism.
+it exists to exercise the renderer — the journal furniture, the display items and
+the citation machinery — not as a real piece of journalism.
 """
 
 from .sources import Paper
@@ -47,74 +48,205 @@ SAMPLE_PAPERS = [
         doi="10.1093/sleep/27.3.423",
         source="demo",
     ),
+    Paper(
+        title="Targeted memory reactivation during sleep",
+        abstract="Cueing learned material during slow-wave sleep improves later recall.",
+        year=2013,
+        authors=["Delphine Oudiette", "Ken Paller"],
+        venue="Trends in Cognitive Sciences",
+        citation_count=640,
+        doi="10.1016/j.tics.2013.01.006",
+        source="demo",
+    ),
+    Paper(
+        title="The sleep-deprived human brain",
+        abstract="Sleep loss degrades attention, emotional regulation and memory encoding.",
+        year=2017,
+        authors=["Adam Krause", "Eti Simon", "Bryce Mander", "et al."],
+        venue="Nature Reviews Neuroscience",
+        citation_count=1100,
+        doi="10.1038/nrn.2017.55",
+        source="demo",
+    ),
+    Paper(
+        title="Sleep and the price of plasticity",
+        abstract="A synaptic homeostasis account of why sleep is required for learning.",
+        year=2014,
+        authors=["Giulio Tononi", "Chiara Cirelli"],
+        venue="Neuron",
+        citation_count=2400,
+        doi="10.1016/j.neuron.2013.12.025",
+        source="demo",
+    ),
+    Paper(
+        title="Circadian regulation of glymphatic function",
+        abstract="Clearance in rodents varies with circadian phase independently of sleep state.",
+        year=2020,
+        authors=["Lauren Hablitz", "Virginia Pla", "Michael Giannetto", "et al."],
+        venue="Nature Communications",
+        citation_count=430,
+        doi="10.1038/s41467-020-18115-2",
+        source="demo",
+    ),
 ]
 
+# What `curate_sources` would return for these papers — drives Table 1 and Fig. 1.
+SAMPLE_CURATION = {
+    "relevance": {
+        1: "direct", 2: "direct", 3: "direct", 4: "related",
+        5: "related", 6: "related", 7: "tangential", 8: "tangential",
+    },
+    "most_relevant_index": 3,
+    "counts": {"direct": 3, "related": 3, "tangential": 2},
+}
+
+SAMPLE_PROVENANCE = {
+    "queries": ["sleep memory consolidation", "glymphatic clearance sleep", "sleep deprivation individual differences"],
+    "core_entity": "sleep and the brain",
+    "model": "demo build — no model call",
+}
+
 SAMPLE_ARTICLE = {
-    "title": "What Your Brain Does While You Sleep",
-    "standfirst": (
-        "Far from switching off, the sleeping brain runs a nightly maintenance shift — "
-        "filing memories and hosing out its own waste."
+    "title": "What the sleeping brain does: memory consolidation and metabolite clearance",
+    "abstract": (
+        "Sleep occupies roughly a third of human life, and its function has been "
+        "debated for as long as it has been measured. Two decades of work in rodents "
+        "and humans have converged on the view that sleep is not a passive interruption "
+        "of waking but a state in which specific physiological processes run that cannot "
+        "run efficiently during wakefulness. Here the evidence for two such processes is "
+        "reviewed: the consolidation of newly encoded memories through coordinated "
+        "hippocampal-cortical replay, and the clearance of interstitial metabolites, "
+        "including amyloid-beta, through the glymphatic system. Behavioural and imaging "
+        "studies in humans support a consolidation role, and targeted reactivation "
+        "experiments indicate that the process can be biased experimentally. Clearance "
+        "evidence remains dominated by rodent work, and recent findings suggest that "
+        "circadian phase contributes independently of sleep state. Vulnerability to sleep "
+        "loss varies substantially and heritably between individuals, which limits the "
+        "generality of population-level estimates. Taken together, the two functions "
+        "provide a mechanistic account of why sleep loss degrades cognition, and identify "
+        "the human clearance literature as the principal gap."
     ),
+    "keywords": [
+        "sleep", "memory consolidation", "glymphatic system", "amyloid-beta",
+        "slow-wave sleep", "sleep deprivation",
+    ],
     "evidence_note": (
-        "All four cited sources study sleep and the brain directly; the memory and "
-        "clearance findings are well replicated, though the clearance work [3] is "
-        "largely from animal models."
+        "Three of the eight cited sources study the review question directly; the "
+        "clearance evidence [3] is drawn almost entirely from rodent models, and its "
+        "extrapolation to humans remains unverified."
     ),
     "featured_study": {
         "source_index": 3,
-        "why": "The first direct demonstration that sleep clears brain waste.",
-        "method": "Two-photon imaging and tracer injection in sleeping vs. waking mice.",
-        "results": "Interstitial space expanded ~60% in sleep, roughly doubling clearance of amyloid-beta.",
+        "why": "The first direct demonstration that sleep increases clearance of brain metabolites.",
+        "method": "Two-photon imaging with tracer injection in sleeping versus waking mice.",
+        "results": (
+            "Interstitial space expanded during sleep, with a corresponding increase in "
+            "the clearance rate of amyloid-beta."
+        ),
     },
     "sections": [
         {
-            "heading": "The night shift",
+            "heading": "Introduction",
             "paragraphs": [
-                "For most of history sleep looked like a nuisance — hours of nothing, "
-                "a gap in the day. The last two decades of neuroscience have inverted "
-                "that picture. The sleeping brain is not idle; it is busy doing work it "
-                "cannot do while you are awake [1].",
-                "Two of those jobs stand out: locking in what you learned during the "
-                "day, and clearing away the molecular debris that accumulates while you "
-                "think [1, 3].",
+                "Sleep is conserved across species and is defended homeostatically after "
+                "loss, which implies a function that waking cannot supply [1, 2]. Two "
+                "candidate functions have accumulated the most direct evidence: the "
+                "stabilisation of newly encoded memory, and the removal of metabolic "
+                "waste from the interstitial space of the brain [1, 3].",
+                "This review considers the evidence for each, the strength of the human "
+                "data supporting them, and the extent to which findings from rodent "
+                "models can be carried across to people.",
             ],
-            "pull_quote": "The sleeping brain is not idle; it is busy.",
         },
         {
-            "heading": "Filing the day away",
+            "heading": "Consolidation of newly encoded memory",
             "paragraphs": [
-                "While you sleep, the hippocampus appears to replay the day's "
-                "experiences, gradually handing them off to the cortex for long-term "
-                "storage [1]. Behavioral studies back this up: people who sleep after "
-                "learning a task remember it markedly better than those kept awake [2].",
+                "During slow-wave sleep the hippocampus replays patterns of activity "
+                "recorded during preceding wakefulness, and this replay is coordinated "
+                "with cortical slow oscillations [1]. Behavioural studies are consistent "
+                "with a causal role: participants who sleep after learning show better "
+                "retention than those kept awake for an equivalent interval [2].",
+                "Targeted memory reactivation provides a more direct test. Cueing "
+                "specific learned material during slow-wave sleep, with an odour or a "
+                "sound paired with it at encoding, selectively improves later recall of "
+                "the cued material [5]. These data suggest that consolidation is not "
+                "merely correlated with sleep but can be biased experimentally within it.",
+                "A complementary account holds that sleep serves synaptic homeostasis, "
+                "renormalising the net potentiation accumulated during waking and thereby "
+                "restoring the capacity to encode [7]. The two accounts are not exclusive, "
+                "and the balance between them remains unresolved.",
             ],
-            "pull_quote": None,
         },
         {
-            "heading": "Taking out the trash",
+            "heading": "Clearance of interstitial metabolites",
             "paragraphs": [
-                "Memory is only half the story. During sleep the brain's glymphatic "
-                "system opens up and flushes out metabolic waste — including amyloid-"
-                "beta, the protein implicated in Alzheimer's disease [3]. It is a kind "
-                "of nightly plumbing that daytime brains are too busy to run.",
+                "Work in mice showed that the interstitial space expands during sleep and "
+                "that clearance of solutes, including amyloid-beta, increases accordingly "
+                "[3]. This has been proposed as a mechanistic link between chronic sleep "
+                "disruption and neurodegenerative risk.",
+                "The strength of this inference should not be overstated. The primary "
+                "evidence is from rodent models, and subsequent work indicates that "
+                "glymphatic function varies with circadian phase independently of sleep "
+                "state [8], which complicates the attribution of clearance to sleep as "
+                "such. Human evidence remains indirect.",
             ],
-            "pull_quote": None,
         },
         {
-            "heading": "Why some of us fare worse",
+            "heading": "Interindividual variation in vulnerability",
             "paragraphs": [
-                "Not everyone pays the same price for a bad night. People differ "
-                "reliably — and heritably — in how badly sleep loss degrades their "
-                "attention and judgment [4]. Your friend who swears they are fine on "
-                "five hours may, occasionally, be telling the truth.",
+                "The cognitive cost of sleep restriction is not uniform. Differences "
+                "between individuals in vulnerability to sleep loss are large, stable "
+                "within a person across occasions, and partly heritable [4]. Population "
+                "averages therefore understate the range of outcomes, and studies powered "
+                "on group means may obscure a substantial minority who are severely "
+                "affected.",
+                "Sleep loss degrades attention, emotional regulation and the encoding of "
+                "new material [6], and the relative sensitivity of these domains also "
+                "appears to differ between individuals.",
             ],
-            "pull_quote": None,
+        },
+        {
+            "heading": "Conclusions and outlook",
+            "paragraphs": [
+                "The evidence that sleep consolidates memory is direct, replicated in "
+                "humans, and experimentally manipulable [1, 2, 5]. The evidence that "
+                "sleep clears interstitial metabolites is mechanistically compelling but "
+                "rests on animal models [3, 8], and the human case is not yet established.",
+                "The clearest gap is a human measurement of clearance that separates the "
+                "contribution of sleep state from that of circadian phase. Until such "
+                "measurements exist, claims that sleep loss causes protein accumulation in "
+                "the human brain should be treated as a hypothesis rather than a finding.",
+            ],
         },
     ],
-    "key_takeaways": [
-        "Sleep actively consolidates memories rather than passively resting the brain [1, 2].",
-        "The glymphatic system clears brain waste, including amyloid-beta, during sleep [3].",
-        "Vulnerability to sleep deprivation varies between people and is partly genetic [4].",
+    "key_points": [
+        "Sleep supports the stabilisation of newly encoded memory through coordinated "
+        "hippocampal-cortical replay during slow-wave sleep [1, 2].",
+        "Targeted reactivation during sleep selectively improves recall of the cued "
+        "material, indicating that consolidation can be biased experimentally [5].",
+        "Clearance of interstitial metabolites, including amyloid-beta, increases during "
+        "sleep in rodent models [3]; the human evidence is indirect.",
+        "Circadian phase contributes to clearance independently of sleep state, which "
+        "complicates attributing clearance to sleep alone [8].",
+        "Vulnerability to sleep loss is large, stable within individuals and partly "
+        "heritable, so population averages understate the range of outcomes [4].",
     ],
-    "references": [1, 2, 3, 4],
+    "glossary": [
+        {
+            "term": "Glymphatic system",
+            "definition": "A proposed brain-wide route by which cerebrospinal fluid "
+            "exchanges with interstitial fluid and carries away metabolic waste.",
+        },
+        {
+            "term": "Slow-wave sleep",
+            "definition": "The deepest stage of non-REM sleep, characterised by "
+            "high-amplitude, low-frequency cortical oscillations.",
+        },
+        {
+            "term": "Targeted memory reactivation",
+            "definition": "Replaying a cue that was paired with material at learning "
+            "while a participant sleeps, in order to bias which memories are consolidated.",
+        },
+    ],
+    "references": [1, 2, 3, 5, 7, 8, 4, 6],
 }

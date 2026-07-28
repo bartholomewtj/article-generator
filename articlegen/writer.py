@@ -64,10 +64,25 @@ _CURATE_SCHEMA = {
 _ARTICLE_SCHEMA = {
     "type": "object",
     "properties": {
-        "title": {"type": "string"},
-        "standfirst": {
+        "title": {
             "type": "string",
-            "description": "One to two sentences below the title that hook the reader",
+            "description": "A declarative journal-style title: the subject and the finding, "
+            "sentence case, no puns, no questions, no colon-clickbait.",
+        },
+        "abstract": {
+            "type": "string",
+            "description": "ONE unstructured paragraph, 150-220 words, in journal-abstract "
+            "register: (1) 2-3 sentences introducing the field for any scientist, "
+            "(2) the background and why the question matters, (3) a 'here we review/here "
+            "the evidence shows' statement of the main conclusion, (4) 2-3 sentences of "
+            "wider context. No citation markers, no undefined abbreviations, no rhetorical "
+            "questions, no second person.",
+        },
+        "keywords": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "4-8 lowercase index terms a reader would search on, most "
+            "specific first. Retrieval terms, not adjectives.",
         },
         "evidence_note": {
             "type": "string",
@@ -90,18 +105,39 @@ _ARTICLE_SCHEMA = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "heading": {"type": "string"},
-                    "paragraphs": {"type": "array", "items": {"type": "string"}},
-                    "pull_quote": {
-                        "type": ["string", "null"],
-                        "description": "A short striking line worth setting large, or null",
+                    "heading": {
+                        "type": "string",
+                        "description": "A short noun-phrase heading in sentence case. The "
+                        "FIRST section must be headed 'Introduction' and the LAST "
+                        "'Conclusions' (or 'Conclusions and outlook').",
                     },
+                    "paragraphs": {"type": "array", "items": {"type": "string"}},
                 },
-                "required": ["heading", "paragraphs", "pull_quote"],
+                "required": ["heading", "paragraphs"],
                 "additionalProperties": False,
             },
         },
-        "key_takeaways": {"type": "array", "items": {"type": "string"}},
+        "key_points": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "4-6 declarative bullets carrying the article's argument, each "
+            "citing the source(s) it rests on. A reader must be able to take the whole "
+            "claim from these alone.",
+        },
+        "glossary": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "term": {"type": "string"},
+                    "definition": {"type": "string", "description": "One sentence, plain language."},
+                },
+                "required": ["term", "definition"],
+                "additionalProperties": False,
+            },
+            "description": "0-6 technical terms used in the article that a non-specialist "
+            "would not know. Omit terms you never use.",
+        },
         "references": {
             "type": "array",
             "items": {"type": "integer"},
@@ -109,8 +145,8 @@ _ARTICLE_SCHEMA = {
         },
     },
     "required": [
-        "title", "standfirst", "evidence_note", "featured_study",
-        "sections", "key_takeaways", "references",
+        "title", "abstract", "keywords", "evidence_note", "featured_study",
+        "sections", "key_points", "glossary", "references",
     ],
     "additionalProperties": False,
 }
@@ -129,34 +165,55 @@ Be strict. A famous review that never studies the specific topic is "tangential"
 "related", not "direct". Then name the single most relevant study to feature."""
 
 _WRITER_SYSTEM = """\
-You are a science writer for a smart, curious audience — the house style of Nautilus \
-or The Atlantic's science desk — turning journal abstracts into one rigorous, \
-genuinely readable article.
+You write Review articles for a leading scientific journal — the register of a \
+Nature Reviews or Science Review piece: precise, hedged, impersonal, and readable \
+by a scientist outside the field. You are NOT writing a magazine feature.
 
 You are working from ABSTRACTS ONLY — never the full papers. This constrains you:
 
 - Cite by the exact "SOURCE N" label in brackets at the sentence's end: [6], or \
-[6, 18] to combine. Never invent a source or cite a number with no SOURCE.
+[6, 18] to combine. Never invent a source or cite a number with no SOURCE. \
+(The display converts these to superscript numerals.)
 - In `references`, list every SOURCE number you cited, in first-appearance order. \
 (The display renumbers to 1, 2, 3…)
 - ONLY state a specific number (effect size, %, sample size, confidence interval, \
 p-value, risk ratio) if that exact figure appears in the abstract you are citing. \
 If the abstract doesn't give the number, describe the direction and rough magnitude \
-in words instead ("roughly halved", "a large effect") — do NOT reconstruct precise \
-statistics from memory. Invented-looking precision is the worst failure here.
+in words instead ("approximately halved", "a large effect") — do NOT reconstruct \
+precise statistics from memory. Invented-looking precision is the worst failure here.
 - HONESTY ABOUT THE EVIDENCE IS MANDATORY. You are told each source's relevance \
 (direct / related / tangential). If few or no sources are "direct", say so plainly \
 in the prose and in `evidence_note`, and explicitly label anything carried over from \
-another population or condition as extrapolation ("no studies in X were found; the \
-following is extrapolated from Y"). Never imply an evidence base that the direct \
+another population or condition as extrapolation ("no studies in X were identified; \
+the following is extrapolated from Y"). Never imply an evidence base that the direct \
 sources don't support.
 - Lead with the strongest DIRECT evidence. Use related/tangential sources only for \
 mechanism or context, and don't let them masquerade as direct findings.
 - featured_study: summarize the single most relevant study's method and results \
-FROM ITS ABSTRACT ONLY. Prefer the most-relevant source you were given.
-- Open with a hook; ~900-1400 words, 4-6 short-headed sections; plain prose \
-paragraphs (no markdown/HTML/bullets inside paragraphs); at most one pull_quote per \
-section, only when earned.
+FROM ITS ABSTRACT ONLY. Prefer the most-relevant source you were given. It is \
+printed as a boxed display item, so it must stand alone.
+
+STRUCTURE (journal Review, ~1000-1600 words of body text):
+- 5-7 sections. The first is headed "Introduction"; the last is headed \
+"Conclusions" or "Conclusions and outlook" and states what is established, what \
+remains open, and what evidence would settle it. Sections in between are short \
+noun-phrase headings in sentence case ("Mechanisms of clearance", "Interindividual \
+variation") — never questions, puns, or magazine headings.
+- The Introduction states the scope and why the question matters; it does not open \
+with an anecdote, a scene, a rhetorical question, or "Imagine…".
+- Plain prose paragraphs only — no markdown, HTML, bullets or sub-headings inside a \
+paragraph. 2-4 paragraphs per section.
+
+REGISTER:
+- Third person and impersonal. No "you", no "we" except in "here we review"-type \
+framing, no direct address to the reader.
+- Hedge claims to the strength of the evidence: "these data suggest", "is \
+consistent with", "remains unresolved", "has been reported in a single cohort". \
+Reserve flat assertions for findings the abstracts state outright.
+- Attribute findings to their study design where the abstract gives it \
+("a randomized trial", "a retrospective cohort", "an animal model").
+- No exclamation marks, no jokes, no scare quotes, no emoji, no second-person \
+imperatives, no "game-changer"/"revolutionary"/"stunning" hype vocabulary.
 """
 
 
@@ -164,7 +221,7 @@ def plan_queries(topic: str, model: str | None = None) -> tuple[list[str], str]:
     """Turn the topic into scholarly queries and identify its core on-topic entity."""
     result = generate_json(
         (
-            "I want journal articles to support a popular-science article about: "
+            "I want journal articles to support an evidence review about: "
             f"{topic!r}\n\n"
             "Give 2-4 short keyword queries for scholarly search engines (Semantic "
             "Scholar / OpenAlex). Use researcher terminology. IMPORTANT: make at least "

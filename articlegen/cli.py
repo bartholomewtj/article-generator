@@ -110,6 +110,14 @@ def cmd_draft(args) -> int:
 
     verification = check_statistics(article, papers)
 
+    # Feeds the deterministic Methods section — the search actually performed.
+    provenance = {
+        "queries": queries,
+        "core_entity": core_entity,
+        "model": resolve_provider(args.model)[1],
+        "date": datetime.date.today().strftime("%d %B %Y").lstrip("0"),
+    }
+
     os.makedirs(DRAFTS_DIR, exist_ok=True)
     date = datetime.date.today().isoformat()
     stem = args.name or f"{date}-{_slugify(args.topic)}"
@@ -117,9 +125,9 @@ def cmd_draft(args) -> int:
     md_path = os.path.join(DRAFTS_DIR, f"{stem}.md")
 
     with open(html_path, "w", encoding="utf-8") as f:
-        f.write(render_article(article, papers, args.topic, curation, verification))
+        f.write(render_article(article, papers, args.topic, curation, verification, provenance))
     with open(md_path, "w", encoding="utf-8") as f:
-        f.write(render_markdown(article, papers, args.topic, curation, verification))
+        f.write(render_markdown(article, papers, args.topic, curation, verification, provenance))
 
     index_path = build_index(DRAFTS_DIR)
     _log(f"Draft ready ({len(article['references'])} sources cited):")
@@ -160,7 +168,10 @@ def cmd_queue(args) -> int:
 def cmd_demo(args) -> int:
     output_path = args.output or "demo.html"
     with open(output_path, "w", encoding="utf-8") as f:
-        f.write(render_article(demo.SAMPLE_ARTICLE, demo.SAMPLE_PAPERS, "Sample topic"))
+        f.write(render_article(
+            demo.SAMPLE_ARTICLE, demo.SAMPLE_PAPERS, "the functions of sleep in the brain",
+            demo.SAMPLE_CURATION, None, demo.SAMPLE_PROVENANCE,
+        ))
     _log(f"Demo article written to {output_path}")
     if args.open:
         _open_in_browser(output_path)
