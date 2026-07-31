@@ -8,10 +8,8 @@ Context for a fresh session. Read this first.
 like a scientific-journal Review article** (plus a Markdown copy), grounded in
 journal-article abstracts. It runs two ways:
 
-1. **Local CLI** — `articlegen ideas` / `draft` / `queue` / `demo`.
-2. **GitHub-issue workflow (mobile-first)** — open an issue titled `theme: …`
-   → a bot comments article ideas → reply `draft N` → the draft is committed to
-   `drafts/` and linked back in a comment. Driven from the GitHub mobile app.
+1. **Mobile Web Site** — hosted on GitHub Pages or locally via `articlegen web`.
+2. **Local CLI** — `articlegen ideas` / `draft` / `queue` / `demo`.
 
 ## Repo / branch state (important)
 
@@ -36,13 +34,10 @@ articlegen/
   verify.py    deterministic: flag article statistics absent from source abstracts
   style.py     deterministic: flag prose that breaks journal writing conventions
   render.py    structured article -> journal-format HTML + Markdown + drafts/ index
-  bot.py       GitHub Actions glue: build ideas comment, parse `draft N`
   demo.py      built-in sample for `articlegen demo` (no API/network)
 docs/
   journal-style.md  the journal conventions we follow + where each came from
 .github/workflows/
-  ideas.yml    'theme: …' issue opened  -> ideas posted as a comment
-  draft.yml    'draft N' comment         -> draft committed + review links
   pages.yml    deploy index.html & drafts/ to GitHub Pages
 tests/
   test_offline.py             pure-logic tests; no network/keys
@@ -130,7 +125,7 @@ citations and sections intact.
 - **Offline tests (no keys/network):** `python tests/test_offline.py` — provider
   resolution, citation renumbering and superscript style, reference formatting,
   statistic verification, ranking, render blocks, display-item placement,
-  legacy-schema drafts, prose-style gate, bot parsing.
+  legacy-schema drafts, prose-style gate.
 - **Format conformance:** `python tests/test_journal_conformance.py` — asserts
   every convention in `docs/journal-style.md` over five fixture articles
   (including no-direct-sources, sparse metadata, and a 40-year source range).
@@ -138,24 +133,11 @@ citations and sections intact.
 - Rendered pages can be eyeballed with the preinstalled Chromium:
   `articlegen demo -o /tmp/demo.html` then screenshot it with Playwright
   (`NODE_PATH=/opt/node22/lib/node_modules`, `executablePath: '/opt/pw-browsers/chromium'`).
-- **Live end-to-end** can't be tested offline (needs a Groq key + scholarly-API
-  access from a GitHub runner). Verify by opening a `theme:` issue on GitHub and
-  watching for the ideas comment, then reply `draft N`.
 
-## One-time GitHub setup (for the workflow to run)
+## Environment setup
 
-- Add repo **secret** `GROQ_API_KEY` (free key at console.groq.com).
-- Optional: `SEMANTIC_SCHOLAR_API_KEY` secret and `OPENALEX_MAILTO` variable
-  raise scholarly-API rate limits.
-- Workflows are gated to OWNER/MEMBER/COLLABORATOR so strangers can't spend API
-  quota. Failure comments show which provider keys the run saw + the error detail.
-- **Tappable "Read the article" link.** The draft comment links each article
-  through `https://htmlpreview.github.io/?<blob-url>`, which renders the styled
-  page as a live web page in the browser (the HTML is fully self-contained —
-  inline CSS, no external assets). This needs the **repo to be public** (the
-  proxy fetches raw content anonymously); it is. No Pages/setup required. If the
-  repo ever goes private again, this link 404s — switch to GitHub Pages
-  (`Settings → Pages → Source: GitHub Actions`, publishing `drafts/`) instead.
+- Set `GROQ_API_KEY` (free key at console.groq.com) or `ANTHROPIC_API_KEY`.
+- Optional: `SEMANTIC_SCHOLAR_API_KEY` and `OPENALEX_MAILTO` raise scholarly-API rate limits.
 
 ## Conventions
 

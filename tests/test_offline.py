@@ -358,19 +358,6 @@ def test_demo_and_index() -> None:
         check("index builds", os.path.exists(idx))
 
 
-def test_bot_parsing() -> None:
-    from articlegen.bot import parse_command, build_ideas_comment, latest_ideas
-
-    check("draft number", parse_command("draft 2") == ("2", "", None))
-    check("draft quoted title", parse_command('draft "My Title" style: playful') == ("My Title", "playful", None))
-    check("draft gibberish errors", parse_command("draft looks good")[2] is not None)
-    ideas = [{"title": "T1", "angle": "a", "search_terms": ["x"]},
-             {"title": "T2", "angle": "b", "search_terms": ["y"]}]
-    comment = build_ideas_comment("theme", ideas)
-    found = latest_ideas([{"body": comment}])
-    check("ideas marker round-trips", found is not None and found["titles"] == ["T1", "T2"])
-
-
 def test_web_server() -> None:
     import json
     from io import BytesIO
@@ -406,7 +393,7 @@ def main() -> int:
         test_prose_style_check,
         test_statistic_verification, test_ranking, test_render_blocks,
         test_display_item_placement, test_legacy_draft_fields,
-        test_demo_and_index, test_bot_parsing, test_web_server,
+        test_demo_and_index, test_web_server,
     ):
         print(f"\n# {fn.__name__}")
         fn()

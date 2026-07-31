@@ -15,37 +15,25 @@ Open the working web app directly in your browser:
 
 You can run the interactive **Mobile Web Site** (hosted on GitHub Pages or locally via `articlegen web`):
 
-1. **Open the site on mobile:** Open [https://bartholomewtj.github.io/article-generator/](https://bartholomewtj.github.io/article-generator/) (or run `articlegen web --open` locally).
+1. **Open the site:** Open [https://bartholomewtj.github.io/article-generator/](https://bartholomewtj.github.io/article-generator/) (or run `articlegen web --open` locally).
 2. **Type a theme:** Enter your topic (e.g. `renewable energy storage`) and optional audience/style notes.
 3. **Choose a draft:** Tap any generated **Draft Idea Card** to launch the automated evidence-grounded research pipeline.
 4. **Read & Share:** View the rendered article and tap **Share** (native mobile share sheet), **Copy Link**, or **QR Code** to easily share with others.
 
-Alternatively, you can use the **GitHub mobile app** issue workflow:
-
-1. **Generate ideas:** Open a new issue titled `theme: <your theme>`. A bot comments back with numbered draft ideas.
-2. **Pick one:** Reply with `draft 3` (or `draft "Your title"`).
-3. **Review:** The bot researches, drafts, commits, and comments back with review links.
-
-**One-time setup — add an AI provider key** (repo → Settings → Secrets and
-variables → Actions):
+**Provider key setup:**
 
 - **Groq** (the default; free tier, fast inference): create a key at
-  https://console.groq.com/keys and add it as a `GROQ_API_KEY` secret.
-- **Claude** (opt-in; best writing quality, paid API): add an
-  `ANTHROPIC_API_KEY` secret.
+  https://console.groq.com/keys and set `GROQ_API_KEY`.
+- **Claude** (opt-in; best writing quality, paid API): set `ANTHROPIC_API_KEY`.
 
 **Groq is used by default** — with a `GROQ_API_KEY` set it runs
 automatically, and it takes priority even if an `ANTHROPIC_API_KEY` is also
-present. To use Claude instead, set a repository *variable*
-`ARTICLEGEN_PROVIDER` = `anthropic` (or leave only the Anthropic key set).
+present. To use Claude instead, set `ARTICLEGEN_PROVIDER=anthropic`.
 Models: `llama-3.3-70b-versatile` on Groq, `claude-opus-4-8` on Anthropic, both
 overridable with `--model`.
 
 Optional extras: a `SEMANTIC_SCHOLAR_API_KEY` secret and an `OPENALEX_MAILTO`
-repository *variable* raise the scholarly APIs' rate limits.
-
-Only users with write access to the repo can trigger the workflows, so
-strangers can't spend your API credits on a public repo.
+environment variable raise the scholarly APIs' rate limits.
 
 ## The same workflow, locally
 
@@ -172,7 +160,6 @@ articlegen/
   render.py    structured article -> journal-format HTML, Markdown, drafts/ index
   verify.py    deterministic check of every figure against the abstracts
   style.py     deterministic check of the prose against journal writing conventions
-  bot.py       GitHub Actions glue: ideas comment + `draft N` resolution
   demo.py      built-in sample for `articlegen demo`
 docs/
   journal-style.md   the journal conventions we follow, and their sources
@@ -180,9 +167,6 @@ tests/
   test_offline.py             pure-logic tests (no keys, no network)
   test_journal_conformance.py the journal conventions, as assertions over
                               rendered fixtures — run both before shipping
-.github/workflows/
-  ideas.yml    'theme: ...' issue opened  -> ideas posted as a comment
-  draft.yml    'draft N' comment          -> draft committed + review link
 ```
 
 ## Tests
