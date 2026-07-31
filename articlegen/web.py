@@ -118,8 +118,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
             return
 
         if api_key:
-            os.environ["GEMINI_API_KEY"] = api_key
-            os.environ["GOOGLE_API_KEY"] = api_key
+            os.environ["GROQ_API_KEY"] = api_key
 
         prompt_theme = theme
         if guidance:
@@ -141,8 +140,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
             return
 
         if api_key:
-            os.environ["GEMINI_API_KEY"] = api_key
-            os.environ["GOOGLE_API_KEY"] = api_key
+            os.environ["GROQ_API_KEY"] = api_key
 
         try:
             queries, core_entity = plan_queries(topic)

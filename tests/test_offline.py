@@ -3,7 +3,7 @@
 Run with:  python tests/test_offline.py   (exits non-zero on failure)
 
 These cover the pure logic that a fresh session can verify immediately:
-provider resolution, Gemini schema translation, citation renumbering,
+provider resolution, citation renumbering,
 statistic verification, source ranking, and the render blocks. The LLM calls
 and scholarly-API fetches are NOT exercised here (they need keys/network) —
 verify those with a live `theme:` issue on GitHub.
@@ -27,62 +27,27 @@ def check(name: str, cond: bool) -> None:
 
 
 def test_provider_resolution() -> None:
-    for var in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "ARTICLEGEN_PROVIDER"):
+    for var in ("ANTHROPIC_API_KEY", "GROQ_API_KEY", "ARTICLEGEN_PROVIDER"):
         os.environ.pop(var, None)
-    from articlegen.llm import resolve_provider, GOOGLE_DEFAULT_MODEL, ANTHROPIC_DEFAULT_MODEL
+    from articlegen.llm import resolve_provider, GROQ_DEFAULT_MODEL, ANTHROPIC_DEFAULT_MODEL
 
-    check("no keys -> gemini default", resolve_provider() == ("google", GOOGLE_DEFAULT_MODEL))
+    check("no keys -> groq default", resolve_provider() == ("groq", GROQ_DEFAULT_MODEL))
     os.environ["ANTHROPIC_API_KEY"] = "x"
     check("only anthropic -> anthropic", resolve_provider() == ("anthropic", ANTHROPIC_DEFAULT_MODEL))
-    os.environ["GEMINI_API_KEY"] = "y"
-    check("both keys -> gemini wins", resolve_provider()[0] == "google")
+    os.environ["GROQ_API_KEY"] = "y"
+    check("both keys -> groq wins", resolve_provider()[0] == "groq")
     check("claude-* model name forces anthropic", resolve_provider("claude-opus-4-8")[0] == "anthropic")
+    check("llama-* model name forces groq", resolve_provider("llama-3.3-70b-versatile")[0] == "groq")
     os.environ["ARTICLEGEN_PROVIDER"] = "anthropic"
     check("provider override respected", resolve_provider()[0] == "anthropic")
-    for var in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY", "ARTICLEGEN_PROVIDER"):
+    for var in ("ANTHROPIC_API_KEY", "GROQ_API_KEY", "ARTICLEGEN_PROVIDER"):
         os.environ.pop(var, None)
 
 
-def test_gemini_schema_translation() -> None:
-    from google.genai import types
-    from articlegen.llm import _gemini_schema
-    from articlegen.writer import _ARTICLE_SCHEMA, _CURATE_SCHEMA, _QUERY_SCHEMA
-
-    for name, schema in (("article", _ARTICLE_SCHEMA), ("curate", _CURATE_SCHEMA), ("query", _QUERY_SCHEMA)):
-        cfg = types.GenerateContentConfig(
-            response_mime_type="application/json", response_schema=_gemini_schema(schema)
-        )
-        check(f"gemini accepts {name} schema", cfg.response_schema is not None)
-    check("additionalProperties stripped", "additionalProperties" not in str(_gemini_schema(_ARTICLE_SCHEMA)))
-
-
-def test_model_discovery() -> None:
-    import articlegen.llm as llm
-    from types import SimpleNamespace as NS
-
-    class FakeClient:
-        def __init__(self, items):
-            self.models = NS(list=lambda: items)
-
-    catalog = [
-        NS(name="models/gemini-2.0-flash", supported_actions=["generateContent"]),
-        NS(name="models/gemini-flash-latest", supported_actions=["generateContent"]),
-        NS(name="models/gemini-2.5-pro", supported_actions=["generateContent"]),
-        NS(name="models/text-embedding-004", supported_actions=["embedContent"]),
-    ]
-    llm._RESOLVED_GOOGLE_MODEL = None
-    pick = llm._discover_google_model(FakeClient(catalog))
-    check("discovery prefers a flash model", pick is not None and "flash" in pick)
-    check("discovery excludes embedding", "embedding" not in (pick or ""))
-
-    class Err(Exception):
-        def __init__(self, code=None, message=""):
-            self.code, self.message = code, message
-            super().__init__(message)
-
-    check("404 -> model unavailable", llm._is_model_unavailable(Err(code=404)))
-    check("503 -> transient", llm._is_transient(Err(code=503, message="high demand")))
-    check("400 -> neither", not llm._is_transient(Err(code=400)) and not llm._is_model_unavailable(Err(code=400)))
+def test_groq_json_cleaning() -> None:
+    from articlegen.llm import _clean_json_text
+    check("clean simple fence", _clean_json_text("```json\n{\"a\": 1}\n```") == '{"a": 1}')
+    check("clean raw json", _clean_json_text('{"b": 2}') == '{"b": 2}')
 
 
 def test_citation_renumbering() -> None:
@@ -436,7 +401,7 @@ def test_web_server() -> None:
 
 def main() -> int:
     for fn in (
-        test_provider_resolution, test_gemini_schema_translation, test_model_discovery,
+        test_provider_resolution, test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
         test_prose_style_check,
         test_statistic_verification, test_ranking, test_render_blocks,

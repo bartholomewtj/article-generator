@@ -1,7 +1,7 @@
 """LLM calls: plan queries, assess source relevance, then write a grounded article.
 
-Works with either provider via articlegen.llm (Claude by default, Gemini when a
-GEMINI_API_KEY is the available credential — see llm.resolve_provider).
+Works with either provider via articlegen.llm (Groq by default, or Claude when an
+ANTHROPIC_API_KEY is the available credential — see llm.resolve_provider).
 
 The pipeline is deliberately honest about evidence:
 - `curate_sources` scores each fetched paper for how directly it addresses the

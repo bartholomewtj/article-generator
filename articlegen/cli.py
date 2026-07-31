@@ -49,7 +49,7 @@ def _api_error(exc: Exception) -> int:
     provider, model = resolve_provider()
     _log(f"The {provider} API call failed (model {model}): {exc}")
     _log(
-        "Set GEMINI_API_KEY for Gemini (free key at https://aistudio.google.com/), "
+        "Set GROQ_API_KEY for Groq (free key at https://console.groq.com/keys), "
         "or ANTHROPIC_API_KEY for Claude, and try again."
     )
     return 1
@@ -242,8 +242,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--model", default=None,
         help=(
-            "Model to use; the name picks the provider (claude-* / gemini-*). "
-            "Default: auto — gemini-2.5-flash (Gemini is the default provider), "
+            "Model to use; the name picks the provider (claude-* / llama-* / groq-*). "
+            "Default: auto — llama-3.3-70b-versatile (Groq is the default provider), "
             "or claude-opus-4-8 when only an Anthropic key is set."
         ),
     )

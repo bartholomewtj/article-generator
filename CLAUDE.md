@@ -29,7 +29,7 @@ journal-article abstracts. It runs two ways:
 articlegen/
   cli.py       subcommands + orchestration (ideas / draft / queue / demo / web)
   web.py       HTTP server + REST API for mobile web app UI
-  llm.py       provider layer: ONE generate_json(); Claude or Gemini backend
+  llm.py       provider layer: ONE generate_json(); Groq or Claude backend
   ideas.py     LLM: theme -> shortlist of article ideas
   writer.py    LLM: plan_queries -> curate_sources -> write_article
   sources.py   Semantic Scholar + OpenAlex fetch, dedupe, relevance-blended rank
@@ -101,19 +101,11 @@ citations and sections intact.
 
 ## AI providers (`llm.py`)
 
-- **Gemini is the default** (free tier). `GEMINI_API_KEY` (or `GOOGLE_API_KEY`)
-  is used automatically and wins even if `ANTHROPIC_API_KEY` is also set.
+- **Groq is the default** (free tier / fast inference). `GROQ_API_KEY` is used
+  automatically and wins even if `ANTHROPIC_API_KEY` is also set.
 - Use Claude by setting repo variable `ARTICLEGEN_PROVIDER=anthropic`, passing a
   `claude-*` `--model`, or having only an Anthropic key.
-- Default models: `gemini-flash-latest` / `claude-opus-4-8`.
-- **Gemini gotchas already handled** — don't regress these:
-  - Model auto-discovery: if the configured model 404s ("no longer available"),
-    it lists the key's models and picks a current flash-tier one (cached).
-  - Transient 503/429 retried with backoff.
-  - `thinking_budget=0` on the JSON calls (2.5-flash thinking runs away under
-    structured output and truncates into invalid JSON).
-  - Schema translation strips `additionalProperties` and converts
-    `["T","null"]` unions to nullable (Gemini rejects both).
+- Default models: `llama-3.3-70b-versatile` / `claude-opus-4-8`.
 
 ## Grounding / trust design (why the pipeline is shaped this way)
 
@@ -136,10 +128,9 @@ citations and sections intact.
 - Setup: `pip install -e .` (a SessionStart hook in `.claude/settings.json` runs
   `.claude/setup.sh` automatically in web sessions).
 - **Offline tests (no keys/network):** `python tests/test_offline.py` — provider
-  resolution, Gemini schema translation, model discovery, citation renumbering
-  and superscript style, reference formatting, statistic verification, ranking,
-  render blocks, display-item placement, legacy-schema drafts, prose-style gate,
-  bot parsing.
+  resolution, citation renumbering and superscript style, reference formatting,
+  statistic verification, ranking, render blocks, display-item placement,
+  legacy-schema drafts, prose-style gate, bot parsing.
 - **Format conformance:** `python tests/test_journal_conformance.py` — asserts
   every convention in `docs/journal-style.md` over five fixture articles
   (including no-direct-sources, sparse metadata, and a 40-year source range).
@@ -147,13 +138,13 @@ citations and sections intact.
 - Rendered pages can be eyeballed with the preinstalled Chromium:
   `articlegen demo -o /tmp/demo.html` then screenshot it with Playwright
   (`NODE_PATH=/opt/node22/lib/node_modules`, `executablePath: '/opt/pw-browsers/chromium'`).
-- **Live end-to-end** can't be tested offline (needs a Gemini key + scholarly-API
+- **Live end-to-end** can't be tested offline (needs a Groq key + scholarly-API
   access from a GitHub runner). Verify by opening a `theme:` issue on GitHub and
   watching for the ideas comment, then reply `draft N`.
 
 ## One-time GitHub setup (for the workflow to run)
 
-- Add repo **secret** `GEMINI_API_KEY` (free key at aistudio.google.com).
+- Add repo **secret** `GROQ_API_KEY` (free key at console.groq.com).
 - Optional: `SEMANTIC_SCHOLAR_API_KEY` secret and `OPENALEX_MAILTO` variable
   raise scholarly-API rate limits.
 - Workflows are gated to OWNER/MEMBER/COLLABORATOR so strangers can't spend API
@@ -170,6 +161,6 @@ citations and sections intact.
 
 - Keep all LLM calls behind `llm.generate_json`; don't call the SDKs directly
   from `writer.py` / `ideas.py`.
-- New structured-output schemas must survive `llm._gemini_schema` — avoid
+- New structured-output schemas must produce valid JSON matching the schema — avoid
   `additionalProperties` reliance and unsupported JSON-Schema constraints.
 - Add a case to `tests/test_offline.py` for any new pure-logic behavior.

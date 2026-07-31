@@ -5,11 +5,17 @@ article: **generate ideas → research collated automatically → draft prepared
 your review** — as a self-contained single-page HTML file (plus Markdown),
 grounded in real journal articles rather than the model's memory.
 
+## 🚀 Live Working Article Generator
+Open the working web app directly in your browser:
+🔗 **[Live Article Generator Web Site](https://bartholomewtj.github.io/article-generator/)**
+
+---
+
 ## Use it from your phone (recommended)
 
 You can run the interactive **Mobile Web Site** (hosted on GitHub Pages or locally via `articlegen web`):
 
-1. **Open the site on mobile:** Open `https://<user>.github.io/article-generator/` (or run `articlegen web --open` locally).
+1. **Open the site on mobile:** Open [https://bartholomewtj.github.io/article-generator/](https://bartholomewtj.github.io/article-generator/) (or run `articlegen web --open` locally).
 2. **Type a theme:** Enter your topic (e.g. `renewable energy storage`) and optional audience/style notes.
 3. **Choose a draft:** Tap any generated **Draft Idea Card** to launch the automated evidence-grounded research pipeline.
 4. **Read & Share:** View the rendered article and tap **Share** (native mobile share sheet), **Copy Link**, or **QR Code** to easily share with others.
@@ -23,16 +29,16 @@ Alternatively, you can use the **GitHub mobile app** issue workflow:
 **One-time setup — add an AI provider key** (repo → Settings → Secrets and
 variables → Actions):
 
-- **Gemini** (the default; free tier, no card needed): create a key at
-  https://aistudio.google.com/ and add it as a `GEMINI_API_KEY` secret.
+- **Groq** (the default; free tier, fast inference): create a key at
+  https://console.groq.com/keys and add it as a `GROQ_API_KEY` secret.
 - **Claude** (opt-in; best writing quality, paid API): add an
   `ANTHROPIC_API_KEY` secret.
 
-**Gemini is used by default** — with a `GEMINI_API_KEY` set it runs
+**Groq is used by default** — with a `GROQ_API_KEY` set it runs
 automatically, and it takes priority even if an `ANTHROPIC_API_KEY` is also
 present. To use Claude instead, set a repository *variable*
 `ARTICLEGEN_PROVIDER` = `anthropic` (or leave only the Anthropic key set).
-Models: `gemini-2.5-flash` on Google, `claude-opus-4-8` on Anthropic, both
+Models: `llama-3.3-70b-versatile` on Groq, `claude-opus-4-8` on Anthropic, both
 overridable with `--model`.
 
 Optional extras: a `SEMANTIC_SCHOLAR_API_KEY` secret and an `OPENALEX_MAILTO`
@@ -100,9 +106,9 @@ pip install -r requirements.txt      # or: pip install -e .
 Set credentials for either provider:
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...   # Claude (or: ant auth login)
+export GROQ_API_KEY=gsk_...           # Groq — free key at https://console.groq.com/keys
 # or
-export GEMINI_API_KEY=...             # Gemini — free key at aistudio.google.com
+export ANTHROPIC_API_KEY=sk-ant-...   # Claude (or: ant auth login)
 ```
 
 The scholarly APIs need no key, but you can raise their rate limits:
@@ -159,7 +165,7 @@ Markdown, for easy editing), and refreshes `index.html` (your review queue).
 ```
 articlegen/
   cli.py       subcommands (ideas / draft / queue / demo) + orchestration
-  llm.py       provider layer: Claude or Gemini, auto-detected from keys
+  llm.py       provider layer: Groq or Claude, auto-detected from keys
   ideas.py     LLM call: theme -> shortlist of article ideas
   writer.py    LLM calls: plan queries, write the article (structured JSON)
   sources.py   Semantic Scholar + OpenAlex fetching, dedupe, ranking
