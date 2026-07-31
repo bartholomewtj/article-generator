@@ -13,8 +13,8 @@ journal-article abstracts. It runs two ways:
 
 ## Repo / branch state (important)
 
-- GitHub repo: **`bartbtc/article-generator`** (was `Dispatch-test` — if a rename
-  hasn't happened yet, old URLs still redirect).
+- GitHub repo: **`bartholomewtj/article-generator`** (was `Dispatch-test`, under
+  the old username `bartbtc` — old URLs still redirect either way).
 - The default branch is currently the auto-generated name
   **`claude/article-generator-html-yth1u4`**. A rename to `main` was requested
   but must be done in the GitHub UI (Settings → Branches) — no API tool exposes
