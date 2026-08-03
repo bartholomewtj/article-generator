@@ -28,6 +28,43 @@ GROQ_DEFAULT_MODEL = "llama-3.3-70b-versatile"
 ANTHROPIC_DEFAULT_MODEL = "claude-opus-4-8"
 DEFAULT_PROVIDER = "groq"
 
+# Groq's free tier meters tokens per minute, and it counts the *reserved* output
+# against that budget as well as the prompt. The article call used to reserve
+# 16000 output tokens against a 12000 TPM limit, which cannot succeed no matter
+# how short the prompt is:
+#
+#   413 ... on tokens per minute (TPM): Limit 12000, Requested 20916
+#
+# So the reservation has to fit inside the limit with room for the prompt. A
+# 1600-word article in JSON runs about 2500-3000 tokens, so 5000 is generous.
+GROQ_FREE_TPM = 12000
+GROQ_DEEP_OUTPUT = 5000
+GROQ_OUTPUT = 4000
+
+# Rough English average. Used only to size a prompt before sending it, where
+# being approximately right in the safe direction is what matters.
+CHARS_PER_TOKEN = 4
+
+
+def prompt_budget_chars(model: str | None = None, api_key: str | None = None) -> int | None:
+    """How many characters of source material this provider can take, or None for no limit.
+
+    Anthropic's limits are far above anything this pipeline produces, so only
+    Groq needs trimming.
+    """
+    provider, _ = resolve_provider(model, api_key)
+    if provider != "groq":
+        return None
+    # Everything except the sources — system prompt, instructions, schema — runs
+    # to roughly 1500 tokens; leave that plus the output reservation. The margin
+    # matters because CHARS_PER_TOKEN is an estimate: technical abstracts full of
+    # long words and numbers tokenize worse than plain English, and being over
+    # the limit costs the whole run rather than a bit of quality.
+    overhead_tokens = 1500
+    safety_margin_tokens = 1500
+    spare = GROQ_FREE_TPM - GROQ_DEEP_OUTPUT - overhead_tokens - safety_margin_tokens
+    return max(spare, 1000) * CHARS_PER_TOKEN
+
 _RESOLVED_GROQ_MODEL: str | None = None
 
 
@@ -158,7 +195,7 @@ def _groq_generate(
             messages=messages,
             response_format={"type": "json_object"},
             temperature=0.2,
-            max_completion_tokens=8000 if not deep else 16000,
+            max_completion_tokens=GROQ_DEEP_OUTPUT if deep else GROQ_OUTPUT,
         )
         text_response = completion.choices[0].message.content or ""
     except ImportError:
@@ -172,7 +209,7 @@ def _groq_generate(
             "messages": messages,
             "response_format": {"type": "json_object"},
             "temperature": 0.2,
-            "max_tokens": 8000 if not deep else 16000,
+            "max_tokens": GROQ_DEEP_OUTPUT if deep else GROQ_OUTPUT,
         }
         res = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=120)
         res.raise_for_status()
