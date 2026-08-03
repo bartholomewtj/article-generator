@@ -1,11 +1,16 @@
 """Fetch candidate evidence (papers with abstracts) from open scholarly APIs.
 
-Two free, keyless sources are queried:
+Three free, keyless sources are queried:
 
-- Semantic Scholar Graph API (an optional API key raises rate limits)
+- Semantic Scholar Graph API (an optional API key raises rate limits — but
+  keys are no longer granted to free-domain emails or third-party apps, so
+  in practice the contested keyless pool is all this source has, and it
+  refuses more often than it answers)
 - OpenAlex (an optional mailto address gets you into the "polite pool")
+- Europe PMC (no key, no mailto; biomedical/life-science coverage, which
+  suits the mental-health topics this is mostly used for)
 
-Both can be flaky under shared rate limits, so each query tolerates failures —
+All can be flaky under shared rate limits, so each query tolerates failures —
 as long as one source returns results the pipeline keeps going.
 """
 
@@ -20,12 +25,14 @@ import requests
 
 SEMANTIC_SCHOLAR_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
 OPENALEX_URL = "https://api.openalex.org/works"
+EUROPE_PMC_URL = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
 
 # How each source is named in an article's Methods section. Keyed by the
 # `source` value gather_evidence records in its outcomes.
 DATABASE_NAMES = {
     "semantic_scholar": "Semantic Scholar Graph API",
     "openalex": "OpenAlex",
+    "europe_pmc": "Europe PMC",
 }
 
 # Identify ourselves rather than sending requests' default
@@ -220,6 +227,59 @@ def search_openalex(query: str, limit: int = 15) -> list[Paper]:
     return papers
 
 
+def _strip_markup(text: str) -> str:
+    """Europe PMC abstracts arrive with embedded HTML (<h4>, <i>, <p>...).
+
+    verify.py checks statistics by substring presence in these abstracts, so
+    markup left in place would hide a figure that sits next to a tag.
+    """
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", text)).strip()
+
+
+def search_europe_pmc(query: str, limit: int = 15) -> list[Paper]:
+    params = {
+        # HAS_ABSTRACT restricts server-side, like OpenAlex's has_abstract
+        # filter — otherwise most of the page is records we would discard.
+        "query": f"({query}) AND HAS_ABSTRACT:y",
+        "format": "json",
+        # "core" is the smallest result type that includes the abstract.
+        "resultType": "core",
+        "pageSize": limit,
+    }
+    resp = _get_with_retry(EUROPE_PMC_URL, params=params, headers={})
+    papers = []
+    for item in (resp.json().get("resultList") or {}).get("result") or []:
+        abstract = _strip_markup(item.get("abstractText") or "")
+        if not abstract:
+            continue
+        # pubYear is a string ("2026"); missing or malformed becomes None and
+        # ranking treats it as old.
+        try:
+            year = int(item.get("pubYear") or "")
+        except ValueError:
+            year = None
+        journal = ((item.get("journalInfo") or {}).get("journal") or {}).get("title") or ""
+        authors = [
+            a.get("fullName", "")
+            for a in (item.get("authorList") or {}).get("author") or []
+        ]
+        src, ext_id = item.get("source") or "", item.get("id") or ""
+        papers.append(
+            Paper(
+                title=_strip_markup(item.get("title") or ""),
+                abstract=abstract,
+                year=year,
+                authors=authors,
+                venue=journal,
+                citation_count=item.get("citedByCount") or 0,
+                url=f"https://europepmc.org/article/{src}/{ext_id}" if src and ext_id else "",
+                doi=item.get("doi") or "",
+                source="Europe PMC",
+            )
+        )
+    return papers
+
+
 def _normalize_title(title: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
 
@@ -298,7 +358,8 @@ def gather_evidence(
         # DATABASE_NAMES and the outcome records. The tuple is rebuilt each call
         # so the module-level names are looked up fresh.
         for name, search in (("semantic_scholar", search_semantic_scholar),
-                             ("openalex", search_openalex)):
+                             ("openalex", search_openalex),
+                             ("europe_pmc", search_europe_pmc)):
             if name in exhausted:
                 if outcomes is not None:
                     outcomes.append({"source": name, "query": query, "count": 0,

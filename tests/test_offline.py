@@ -354,29 +354,32 @@ def test_source_failures_are_distinguishable() -> None:
     from articlegen import sources
     from articlegen.pipeline import NoPapersFound
 
-    real_ss, real_oa = sources.search_semantic_scholar, sources.search_openalex
+    real = (sources.search_semantic_scholar, sources.search_openalex,
+            sources.search_europe_pmc)
+    refuse = lambda msg: lambda q, limit=15: (_ for _ in ()).throw(
+        sources.SearchFailure(msg))
     try:
-        # Both sources refuse.
-        sources.search_semantic_scholar = lambda q, limit=15: (_ for _ in ()).throw(
-            sources.SearchFailure("HTTP 429 after 3 attempts"))
-        sources.search_openalex = lambda q, limit=15: (_ for _ in ()).throw(
-            sources.SearchFailure("HTTP 403"))
+        # Every source refuses.
+        sources.search_semantic_scholar = refuse("HTTP 429 after 3 attempts")
+        sources.search_openalex = refuse("HTTP 403")
+        sources.search_europe_pmc = refuse("HTTP 503 after 3 attempts")
         outcomes: list[dict] = []
         papers = sources.gather_evidence(["x"], outcomes=outcomes)
-        check("no papers when both refuse", papers == [])
-        check("both failures recorded", len([o for o in outcomes if o["error"]]) == 2)
+        check("no papers when all refuse", papers == [])
+        check("every failure recorded", len([o for o in outcomes if o["error"]]) == 3)
         check("the reason is kept", any("429" in o["error"] for o in outcomes))
 
-        # One source down, the other fine — the run must survive.
+        # Two sources down, one fine — the run must survive.
         sources.search_openalex = lambda q, limit=15: [
             sources.Paper(title=f"P{i}", abstract="a") for i in range(3)]
         outcomes = []
         papers = sources.gather_evidence(["x"], outcomes=outcomes)
         check("one working source is enough", len(papers) == 3)
-        check("the failed source is still recorded",
+        check("the failed sources are still recorded",
               any(o["error"] for o in outcomes) and any(not o["error"] for o in outcomes))
     finally:
-        sources.search_semantic_scholar, sources.search_openalex = real_ss, real_oa
+        (sources.search_semantic_scholar, sources.search_openalex,
+         sources.search_europe_pmc) = real
 
     check("NoPapersFound carries the distinction",
           NoPapersFound("x", sources_failed=True).sources_failed is True)
@@ -426,6 +429,68 @@ def test_polite_pool_identification() -> None:
           sources._retry_delay(None, 2.0) == 2.0)
 
 
+def test_europe_pmc_parsing() -> None:
+    """Europe PMC records parse into Papers without trusting any field.
+
+    Real records have string years, absent DOIs/journals, and HTML inside the
+    abstract. The markup matters beyond cosmetics: verify.py checks statistics
+    by substring presence in the abstract, so a figure adjacent to a tag would
+    be reported unverifiable if tags were left in.
+    """
+    from articlegen import sources
+
+    payload = {"resultList": {"result": [
+        {   # the full-featured record
+            "id": "38000001", "source": "MED",
+            "title": "A <i>trial</i> of something",
+            "abstractText": "<h4>Background</h4>Depression affects 20% of adults.<h4>Results</h4>Improved.",
+            "pubYear": "2026", "citedByCount": 7, "doi": "10.1000/xyz",
+            "authorString": "A, B",
+            "authorList": {"author": [{"fullName": "Smith J"}, {"fullName": "Lee K"}]},
+            "journalInfo": {"journal": {"title": "J Affect Disord"}},
+        },
+        {   # sparse: book chapter — no journal, no doi, bad year
+            "id": "PPR000002", "source": "PPR",
+            "title": "Sparse record",
+            "abstractText": "An abstract.",
+            "pubYear": "n.d.",
+        },
+        {   # no abstract despite the filter — must be dropped, like the others do
+            "id": "38000003", "source": "MED",
+            "title": "No abstract", "pubYear": "2025",
+        },
+    ]}}
+
+    class FakeResp:
+        def json(self):
+            return payload
+
+    real = sources._get_with_retry
+    try:
+        sources._get_with_retry = lambda url, params, headers: FakeResp()
+        papers = sources.search_europe_pmc("depression", limit=3)
+    finally:
+        sources._get_with_retry = real
+
+    check("abstract-less record dropped", len(papers) == 2)
+    full, sparse = papers
+    check("markup stripped from the abstract", "<h4>" not in full.abstract)
+    check("statistics survive stripping adjacent tags",
+          "Depression affects 20% of adults." in full.abstract)
+    check("markup stripped from the title", full.title == "A trial of something")
+    check("string year becomes int", full.year == 2026)
+    check("authors come from authorList", full.authors == ["Smith J", "Lee K"])
+    check("journal title found", full.venue == "J Affect Disord")
+    check("europepmc url built from source+id", full.url.endswith("/MED/38000001"))
+    check("unparseable year becomes None", sparse.year is None)
+    check("missing doi/journal tolerated", sparse.doi == "" and sparse.venue == "")
+    check("source is named in DATABASE_NAMES", "europe_pmc" in sources.DATABASE_NAMES)
+
+    import inspect
+    check("gather_evidence queries europe_pmc",
+          '"europe_pmc"' in inspect.getsource(sources.gather_evidence))
+
+
 def test_methods_names_only_sources_that_answered() -> None:
     """The Methods section must not claim a database that returned nothing.
 
@@ -464,8 +529,9 @@ def test_methods_names_only_sources_that_answered() -> None:
 
     # A source that refuses once is not retried for the remaining queries:
     # three tries with backoff is ~10s, and the limits are per-minute.
-    real_ss, real_oa = sources.search_semantic_scholar, sources.search_openalex
-    calls = {"ss": 0, "oa": 0}
+    real = (sources.search_semantic_scholar, sources.search_openalex,
+            sources.search_europe_pmc)
+    calls = {"ss": 0, "oa": 0, "ep": 0}
     try:
         def failing_ss(q, limit=15):
             calls["ss"] += 1
@@ -475,20 +541,27 @@ def test_methods_names_only_sources_that_answered() -> None:
             calls["oa"] += 1
             return [Paper(title=f"{q}-{calls['oa']}", abstract="a", year=2024)]
 
+        def failing_ep(q, limit=15):
+            calls["ep"] += 1
+            raise sources.SearchFailure("HTTP 503 after 3 attempts")
+
         sources.search_semantic_scholar = failing_ss
         sources.search_openalex = working_oa
+        sources.search_europe_pmc = failing_ep
         outcomes: list[dict] = []
         got = sources.gather_evidence(["q1", "q2", "q3"], outcomes=outcomes)
 
-        check("the failing source is tried once, not per query", calls["ss"] == 1)
+        check("each failing source is tried once, not per query",
+              calls["ss"] == 1 and calls["ep"] == 1)
         check("the working source is still tried every query", calls["oa"] == 3)
         check("the run still succeeds on one source", len(got) == 3)
         check("skips are recorded, not silent",
-              sum(1 for o in outcomes if "skipped" in o["error"]) == 2)
+              sum(1 for o in outcomes if "skipped" in o["error"]) == 4)
         answered = {o["source"] for o in outcomes if o["count"]}
         check("only the answering source counts as answered", answered == {"openalex"})
     finally:
-        sources.search_semantic_scholar, sources.search_openalex = real_ss, real_oa
+        (sources.search_semantic_scholar, sources.search_openalex,
+         sources.search_europe_pmc) = real
 
 
 def test_groq_json_cleaning() -> None:
@@ -881,7 +954,7 @@ def main() -> int:
         test_pipeline_is_shared, test_draft_summary, test_rate_limit,
         test_keepalive_connection_reuse, test_substance_checks,
         test_groq_token_budget, test_source_failures_are_distinguishable,
-        test_polite_pool_identification,
+        test_polite_pool_identification, test_europe_pmc_parsing,
         test_methods_names_only_sources_that_answered,
         test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
