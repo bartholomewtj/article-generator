@@ -628,21 +628,6 @@
       <iframe id="articleIframe" class="article-iframe" title="Generated Article"></iframe>
     </div>
 
-    <!-- AI Refinement Section -->
-    <div id="aiRefineBox" style="background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 14px; padding: 1rem; margin-bottom: 1.5rem;">
-      <label class="input-label" style="font-size: 0.78rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem;">
-        <span>✨ Refine Article with AI Prompt</span>
-      </label>
-      <div style="display: flex; gap: 0.5rem;">
-        <input type="text" id="aiRefineInput" name="article_refinement" class="theme-input" placeholder="e.g. Make intro punchier, expand key takeaways..." autocomplete="off" autocorrect="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
-        <button id="aiRefineBtn" class="pill" style="background: var(--accent); color: white; border: none; font-weight: 700; padding: 0 1.1rem; white-space: nowrap; cursor: pointer;" onclick="refineArticleWithAI()">✨ Refine</button>
-      </div>
-      <div style="display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.65rem;">
-        <button type="button" class="pill" style="font-size: 0.75rem; padding: 0.25rem 0.6rem;" onclick="quickRefine('Make the text more concise and punchy')">⚡ Make Concise</button>
-        <button type="button" class="pill" style="font-size: 0.75rem; padding: 0.25rem 0.6rem;" onclick="quickRefine('Expand key takeaways with more details')">📚 Expand Takeaways</button>
-        <button type="button" class="pill" style="font-size: 0.75rem; padding: 0.25rem 0.6rem;" onclick="quickRefine('Simplify technical terminology for beginner audience')">💡 Simplify Language</button>
-      </div>
-    </div>
   </div>
 
   <!-- VIEW 5: Article Gallery / Queue -->
@@ -755,6 +740,44 @@
 <div id="toast" class="toast">Action completed!</div>
 
 <script>
+  // Where the Python pipeline lives.
+  //
+  // This page used to carry a second, simplified copy of the pipeline written in
+  // JavaScript, used whenever /api wasn't reachable — which on GitHub Pages was
+  // always. That copy searched only OpenAlex, skipped the relevance gate, the
+  // prose-style enforcement and the statistic verification, and rendered without
+  // Vancouver superscripts. Visitors to the hosted site were getting a strictly
+  // worse article than the CLI produces, with no sign of the difference.
+  // There is now one pipeline, on the server, and no fallback.
+  const API_BASE = (function () {
+    const override = localStorage.getItem('articlegen_api_base');
+    if (override) return override.replace(/\/$/, '');
+    // Served by `articlegen web`: the API is on this same origin.
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return '';
+    // Hosted (GitHub Pages): the API is the deployed Space.
+    return 'https://bartholomewtj-articlegen.hf.space';
+  })();
+
+  function apiUrl(path) {
+    return API_BASE + path;
+  }
+
+  /** Turn a fetch/HTTP failure into something a non-developer can act on. */
+  async function apiError(resp, netErr) {
+    if (netErr || !resp) {
+      return 'Could not reach the article generator backend. It may be waking up ' +
+             '(the free host sleeps when idle) — wait a moment and try again.';
+    }
+    let detail = '';
+    try { detail = (await resp.json()).error || ''; } catch (e) {}
+    if (resp.status === 429) return detail || 'Rate limit reached. Try again later.';
+    if (resp.status === 422) return detail || 'No papers with abstracts were found for this topic.';
+    if (resp.status >= 500 && /api key/i.test(detail)) {
+      return 'The backend could not use that API key. Check it in Settings (⚙️).';
+    }
+    return detail || ('Request failed (' + resp.status + ').');
+  }
+
   let currentArticleUrl = '';
   let currentMarkdownUrl = '';
   let currentTitle = '';
@@ -847,66 +870,6 @@
     }
   }
 
-  function quickRefine(promptText) {
-    const input = document.getElementById('aiRefineInput');
-    if (input) {
-      input.value = promptText;
-      refineArticleWithAI();
-    }
-  }
-
-  async function refineArticleWithAI() {
-    const input = document.getElementById('aiRefineInput');
-    const instruction = input?.value.trim();
-    if (!instruction) {
-      showToast("Please enter a refinement prompt first.");
-      return;
-    }
-
-    const iframe = document.getElementById('articleIframe');
-    if (!iframe) return;
-
-    const btn = document.getElementById('aiRefineBtn');
-    const origText = btn.innerText;
-    btn.innerText = "⏳ Refining...";
-    btn.disabled = true;
-
-    try {
-      const doc = iframe.contentDocument || iframe.contentWindow.document;
-      const currentHtml = doc.body.innerHTML;
-
-      const key = localStorage.getItem('articlegen_key') || '';
-      const prompt = `Current Article Body HTML:\n${currentHtml}\n\nUser Refinement Request:\n"${instruction}"\n\nReturn the revised body HTML for the article maintaining the same structural tags (h1, h2, p, blockquote, aside).`;
-      const sys = "You are a professional science editor revising an article based on user feedback. Return a JSON object with key 'revised_html' containing the refined HTML body markup.";
-
-      const schema = {
-        type: "OBJECT",
-        properties: {
-          revised_html: { type: "STRING" }
-        },
-        required: ["revised_html"]
-      };
-
-      showToast("✨ Asking AI to refine article...");
-      const res = await callGroqAPI(prompt, schema, sys, key);
-      if (res.revised_html) {
-        doc.body.innerHTML = res.revised_html;
-        syncThemeToIframe();
-        if (input) input.value = '';
-        showToast("✨ Article successfully refined with AI!");
-        const updatedFullHtml = doc.documentElement.outerHTML;
-        if (typeof saveLocalDraft === 'function') saveLocalDraft(currentTitle || 'Refined Article', updatedFullHtml);
-        const hash = encodeArticleToHash(updatedFullHtml);
-        if (hash) window.location.hash = hash;
-      }
-    } catch(err) {
-      alert("AI Refinement Error: " + err.message);
-    } finally {
-      btn.innerText = origText;
-      btn.disabled = false;
-    }
-  }
-
   if (window.matchMedia) {
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function() {
       if (currentThemeSetting === 'system') {
@@ -976,89 +939,6 @@
     setTimeout(() => t.classList.remove('active'), 2500);
   }
 
-  async function callGroqAPI(prompt, schema, systemInstruction, apiKey) {
-    const key = apiKey || localStorage.getItem('articlegen_key') || '';
-    if (!key) {
-      openModal('settingsModal');
-      throw new Error('Please enter your free Groq API Key in the Settings (⚙️) menu to generate articles.');
-    }
-
-    const url = "https://api.groq.com/openai/v1/chat/completions";
-
-    const schemaString = JSON.stringify(schema, null, 2)
-      .replace(/"OBJECT"/g, '"object"')
-      .replace(/"STRING"/g, '"string"')
-      .replace(/"ARRAY"/g, '"array"')
-      .replace(/"INTEGER"/g, '"integer"');
-    const finalSystemInstruction = (systemInstruction || '') + `\n\nYou MUST respond in valid JSON format. Your entire response must be a single JSON object matching this schema exactly:\n${schemaString}\nOutput ONLY raw JSON. Do not include markdown formatting or explanations.`;
-
-    const payload = {
-      model: "llama-3.3-70b-versatile",
-      messages: [
-        { role: "system", content: finalSystemInstruction },
-        { role: "user", content: prompt }
-      ],
-      response_format: { type: "json_object" }
-    };
-
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { 
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${key}`
-      },
-      body: JSON.stringify(payload)
-    });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`Groq API Error (${res.status}): ${errText}`);
-    }
-
-    const data = await res.json();
-    let raw = data.choices?.[0]?.message?.content;
-    if (!raw) throw new Error("Groq returned an empty response.");
-    
-    raw = raw.replace(/^```json/mi, '').replace(/```$/m, '').trim();
-    return JSON.parse(raw);
-  }
-
-  async function searchOpenAlex(query) {
-    const url = `https://api.openalex.org/works?search=${encodeURIComponent(query)}&filter=has_abstract:true&per-page=10&select=id,title,publication_year,authorships,primary_location,cited_by_count,abstract_inverted_index,doi`;
-    try {
-      const res = await fetch(url);
-      if (!res.ok) return [];
-      const data = await res.json();
-      return (data.results || []).map(item => {
-        let abstract = "";
-        if (item.abstract_inverted_index) {
-          const pos = {};
-          for (const [word, idxs] of Object.entries(item.abstract_inverted_index)) {
-            for (const i of idxs) pos[i] = word;
-          }
-          abstract = Object.keys(pos).sort((a,b)=>a-b).map(i=>pos[i]).join(" ");
-        }
-        const authors = (item.authorships || []).map(a => a.author?.display_name || "").filter(Boolean);
-        const loc = item.primary_location || {};
-        const doi = item.doi || "";
-        return {
-          title: item.title || "",
-          abstract: abstract,
-          year: item.publication_year,
-          authors: authors,
-          authorLine: authors.length > 3 ? `${authors[0]} et al.` : (authors.join(", ") || "Unknown authors"),
-          venue: loc.source?.display_name || "",
-          citationCount: item.cited_by_count || 0,
-          doi: doi,
-          link: doi ? (doi.startsWith("http") ? doi : `https://doi.org/${doi}`) : (loc.landing_page_url || item.id || "")
-        };
-      }).filter(p => p.abstract && p.title);
-    } catch(e) {
-      console.warn("OpenAlex error:", e);
-      return [];
-    }
-  }
-
   function togglePreferences() {
     const c = document.getElementById('prefContainer');
     const icon = document.getElementById('prefToggleIcon');
@@ -1093,6 +973,22 @@
         if (prefs.lang && document.getElementById('prefLang')) document.getElementById('prefLang').value = prefs.lang;
       }
     } catch(e) {}
+  }
+
+  /** Fold the reader's preferences into the free-text style note the API takes.
+   *  The old JS pipeline built its own system prompt out of these; the server
+   *  takes one `style_note`, so they travel as prose instead of as prompt
+   *  scaffolding. The server's deterministic style gate still runs afterwards,
+   *  so these shape the writing without being able to switch the checks off. */
+  function styleGuidance(extra) {
+    const p = getPreferences();
+    return [
+      extra,
+      'Length: ' + p.lengthLabel,
+      'Tone: ' + p.toneLabel,
+      'Evidence focus: ' + p.depthLabel,
+      'Language: ' + p.lang
+    ].filter(Boolean).join('. ');
   }
 
   function getPreferences() {
@@ -1194,45 +1090,20 @@
     const key = localStorage.getItem('articlegen_key') || '';
 
     try {
-      const resp = await fetch('/api/ideas', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ theme, guidance, key, n: 6 })
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        renderDraftCards(data.theme, data.ideas || []);
-        showView('ideasView');
-        return;
+      let resp;
+      try {
+        resp = await fetch(apiUrl('/api/ideas'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ theme, guidance: styleGuidance(guidance), key, n: 6 })
+        });
+      } catch (netErr) {
+        throw new Error(await apiError(null, netErr));
       }
-    } catch (e) {}
+      if (!resp.ok) throw new Error(await apiError(resp));
 
-    try {
-      const schema = {
-        type: "OBJECT",
-        properties: {
-          ideas: {
-            type: "ARRAY",
-            items: {
-              type: "OBJECT",
-              properties: {
-                title: { type: "STRING" },
-                angle: { type: "STRING" },
-                search_terms: { type: "ARRAY", items: { type: "STRING" } }
-              },
-              required: ["title", "angle", "search_terms"]
-            }
-          }
-        },
-        required: ["ideas"]
-      };
-
-      const prefs = getPreferences();
-      const styleCombined = [guidance, `Tone: ${prefs.toneLabel}`, `Language: ${prefs.lang}`].filter(Boolean).join('. ');
-      const prompt = `Theme: "${theme}"\nGuidance: "${styleCombined}"\nPropose 6 distinct article ideas grounded in peer-reviewed science/tech literature. Return all titles, angles, and search terms in ${prefs.lang}.`;
-      const sys = `You are an editor for a popular science publication proposing article ideas. Write all response text in ${prefs.lang}.`;
-      const res = await callGroqAPI(prompt, schema, sys, key);
-      renderDraftCards(theme, res.ideas || []);
+      const data = await resp.json();
+      renderDraftCards(data.theme || theme, data.ideas || []);
       showView('ideasView');
     } catch (err) {
       alert(err.message);
@@ -1274,268 +1145,78 @@
     const key = localStorage.getItem('articlegen_key') || '';
 
     const stepText = document.getElementById('progressStepText');
-    const sQueries = document.getElementById('stepQueries');
-    const sCurate = document.getElementById('stepCurate');
-    const sDraft = document.getElementById('stepDraft');
-    const sVerify = document.getElementById('stepVerify');
+    const steps = ['stepQueries', 'stepCurate', 'stepDraft', 'stepVerify']
+      .map(id => document.getElementById(id));
 
-    stepText.innerText = 'Searching OpenAlex scholarly database...';
-    sQueries.classList.add('done');
-
-    try {
-      const resp = await fetch('/api/draft', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: title, style, key })
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        currentArticleUrl = data.html_url;
-        currentMarkdownUrl = data.md_url;
-        document.getElementById('articleIframe').src = data.html_url;
-        document.getElementById('articleMeta').innerText = (data.sources_count || 0) + ' Sources Cited';
-        showView('readerView');
-        return;
-      }
-    } catch (e) {}
+    // The server runs the pipeline as a single request, so these are a rough
+    // sense of elapsed progress rather than live status, timed to the usual
+    // shape of a run. The real completion signal is the response itself.
+    steps.forEach(s => s && s.classList.remove('done'));
+    stepText.innerText = 'Planning scholarly search queries...';
+    const marks = [
+      setTimeout(function () {
+        steps[0] && steps[0].classList.add('done');
+        stepText.innerText = 'Searching Semantic Scholar and OpenAlex...';
+      }, 4000),
+      setTimeout(function () {
+        steps[1] && steps[1].classList.add('done');
+        stepText.innerText = 'Assessing how directly each source addresses the topic...';
+      }, 15000),
+      setTimeout(function () {
+        steps[2] && steps[2].classList.add('done');
+        stepText.innerText = 'Writing the review, then checking the prose and every figure...';
+      }, 30000)
+    ];
 
     try {
-      const qSchema = {
-        type: "OBJECT",
-        properties: {
-          queries: { type: "ARRAY", items: { type: "STRING" } },
-          core_entity: { type: "STRING" }
-        },
-        required: ["queries", "core_entity"]
-      };
-      const qRes = await callGroqAPI(`Topic: "${title}". Give 3 scholarly search queries and the core entity.`, qSchema, "", key);
-      
-      stepText.innerText = 'Curating peer-reviewed evidence...';
-      sCurate.classList.add('done');
-
-      let allPapers = [];
-      for (const q of (qRes.queries || [title])) {
-        const res = await searchOpenAlex(q);
-        allPapers.push(...res);
+      let resp;
+      try {
+        resp = await fetch(apiUrl('/api/draft'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic: title, style: styleGuidance(style), key })
+        });
+      } catch (netErr) {
+        throw new Error(await apiError(null, netErr));
       }
-      const seen = new Set();
-      const papers = [];
-      for (const p of allPapers) {
-        const norm = p.title.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (norm && !seen.has(norm)) {
-          seen.add(norm);
-          papers.push(p);
-        }
-      }
-      const topPapers = papers.slice(0, 15);
+      if (!resp.ok) throw new Error(await apiError(resp));
 
-      if (topPapers.length === 0) {
-        throw new Error('No academic papers with abstracts found for this topic.');
-      }
+      const data = await resp.json();
+      steps[3] && steps[3].classList.add('done');
 
-      stepText.innerText = 'Writing grounded article with inline citations...';
-      sDraft.classList.add('done');
-
-      const artSchema = {
-        type: "OBJECT",
-        properties: {
-          title: { type: "STRING" },
-          standfirst: { type: "STRING" },
-          evidence_note: { type: "STRING" },
-          featured_study: {
-            type: "OBJECT",
-            properties: {
-              source_index: { type: "INTEGER" },
-              why: { type: "STRING" },
-              method: { type: "STRING" },
-              results: { type: "STRING" }
-            },
-            required: ["source_index", "why", "method", "results"]
-          },
-          sections: {
-            type: "ARRAY",
-            items: {
-              type: "OBJECT",
-              properties: {
-                heading: { type: "STRING" },
-                paragraphs: { type: "ARRAY", items: { type: "STRING" } },
-                pull_quote: { type: "STRING" }
-              },
-              required: ["heading", "paragraphs"]
-            }
-          },
-          key_takeaways: { type: "ARRAY", items: { type: "STRING" } },
-          references: { type: "ARRAY", items: { type: "INTEGER" } }
-        },
-        required: ["title", "standfirst", "evidence_note", "featured_study", "sections", "key_takeaways", "references"]
-      };
-
-      const prefs = getPreferences();
-      const sourcesPrompt = topPapers.map((p, idx) => `SOURCE ${idx + 1}\nTitle: ${p.title}\nAuthors: ${p.authorLine} (${p.year || 'n.d.'})\nVenue: ${p.venue}\nAbstract: ${p.abstract}`).join('\n\n');
-      const writerSys = `You are a science writer turning journal abstracts into a high-quality article.\n` +
-        `CUSTOM GENERATION DIRECTIVES:\n` +
-        `1. Target Article Length: ${prefs.lengthLabel}\n` +
-        `2. Writing Tone & Style: ${prefs.toneLabel}\n` +
-        `3. Evidence & Citation Focus: ${prefs.depthLabel}\n` +
-        `4. Target Output Language: ${prefs.lang}. WRITE ALL HEADING, PARAGRAPH, AND TAKEAWAY TEXT IN ${prefs.lang.toUpperCase()}.\n` +
-        `5. Citation Rule: Cite sources inline as [N] where N is the SOURCE index. Only state facts present in the abstracts.`;
-      const articleData = await callGroqAPI(`Topic: ${title}\n\nCandidate Sources:\n${sourcesPrompt}`, artSchema, writerSys, key);
-
-      stepText.innerText = 'Verifying citations & formatting HTML...';
-      sVerify.classList.add('done');
-
-      const htmlOutput = clientRenderArticle(articleData, topPapers, title);
       const iframe = document.getElementById('articleIframe');
-      iframe.srcdoc = htmlOutput;
-
-      saveLocalDraft(articleData.title || title, htmlOutput);
-
-      cachedShareUrl = '';
-      currentTitle = articleData.title || title;
-      const hash = encodeArticleToHash(htmlOutput);
-      if (hash) {
-        window.location.hash = hash;
-        currentArticleUrl = window.location.pathname + hash;
+      if (data.html) {
+        // Stateless server: the article comes back inside the response.
+        iframe.removeAttribute('src');
+        iframe.srcdoc = data.html;
+        saveLocalDraft(data.title || title, data.html);
+        cachedShareUrl = '';
+        currentMarkdownUrl = '';
+        const hash = encodeArticleToHash(data.html);
+        if (hash) {
+          window.location.hash = hash;
+          currentArticleUrl = window.location.pathname + hash;
+        }
+      } else if (data.html_url) {
+        // Local `articlegen web`: it wrote the files, so point at them.
+        iframe.removeAttribute('srcdoc');
+        iframe.src = apiUrl(data.html_url);
+        currentArticleUrl = data.html_url;
+        currentMarkdownUrl = data.md_url || '';
+      } else {
+        throw new Error('The backend returned no article.');
       }
 
-      document.getElementById('articleMeta').innerText = (articleData.references?.length || 0) + ' Sources Cited';
+      currentTitle = data.title || title;
+      document.getElementById('articleMeta').innerText =
+        (data.sources_count || 0) + ' Sources Cited';
       showView('readerView');
     } catch (err) {
       alert('Drafting error: ' + err.message);
       showView('ideasView');
+    } finally {
+      marks.forEach(clearTimeout);
     }
-  }
-
-  function clientRenderArticle(article, papers, topic) {
-    if (!article.sections && Object.keys(article).length === 1 && typeof article[Object.keys(article)[0]] === 'object') {
-      article = article[Object.keys(article)[0]]; // Auto-unwrap if LLM nested the response
-    }
-    const refs = article.references || [];
-    const citedPapers = refs.map(idx => papers[idx - 1]).filter(Boolean);
-    const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-
-    let sectionsHtml = (article.sections || []).map(sec => `
-      <section>
-        <h2>${escapeHtml(sec.heading)}</h2>
-        ${sec.pull_quote ? `<blockquote class="pull">${escapeHtml(sec.pull_quote)}</blockquote>` : ''}
-        ${(sec.paragraphs || []).map((p, i) => `<p ${i===0?'class="opener"':''}>${escapeHtml(p).replace(/\[(\d+)\]/g, '<sup class="cite">[$1]</sup>')}</p>`).join('')}
-      </section>
-    `).join('');
-
-    let fsHtml = '';
-    const fs = article.featured_study;
-    if (fs && fs.source_index && papers[fs.source_index - 1]) {
-      const fp = papers[fs.source_index - 1];
-      fsHtml = `
-        <aside class="featured" style="border:1px solid #0d9488; padding:1.2rem; border-radius:10px; margin:1.5rem 0; background:rgba(13,148,136,0.08);">
-          <h3 style="margin:0 0 0.5rem; text-transform:uppercase; font-size:0.8rem; color:#0d9488;">Featured Study</h3>
-          <p><strong><a href="${escapeHtml(fp.link)}" target="_blank">${escapeHtml(fp.title)}</a></strong> — ${escapeHtml(fp.authorLine)} (${fp.year||'n.d.'})</p>
-          <p><em>${escapeHtml(fs.why)}</em></p>
-          <p><strong>Method:</strong> ${escapeHtml(fs.method)}</p>
-          <p><strong>Results:</strong> ${escapeHtml(fs.results)}</p>
-        </aside>
-      `;
-    }
-
-    let takeawaysHtml = (article.key_takeaways || []).map(t => `<li>${escapeHtml(t).replace(/\[(\d+)\]/g, '<sup class="cite">[$1]</sup>')}</li>`).join('');
-
-    let refsHtml = citedPapers.map((p, i) => `
-      <li id="ref-${i+1}" style="margin-bottom:0.6rem;">
-        <strong>${escapeHtml(p.authorLine)} (${p.year||'n.d.'})</strong> 
-        <a href="${escapeHtml(p.link)}" target="_blank">${escapeHtml(p.title)}</a> 
-        <em>${escapeHtml(p.venue)}</em>
-      </li>
-    `).join('');
-
-    return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(article.title)}</title>
-<style>
-  :root, html[data-theme="dark"] {
-    --bg: #0f1115;
-    --ink: #f1f5f9;
-    --muted: #cbd5e1;
-    --accent: #2dd4bf;
-    --accent-hover: #5eead4;
-    --accent-soft: rgba(45, 212, 191, 0.15);
-    --rule: #272a30;
-    --card: #181b20;
-    color-scheme: dark;
-  }
-  @media (prefers-color-scheme: light) {
-    :root:not([data-theme="dark"]) {
-      --bg: #ffffff;
-      --ink: #111827;
-      --muted: #4b5563;
-      --accent: #0d9488;
-      --accent-hover: #0f766e;
-      --accent-soft: rgba(13, 148, 136, 0.1);
-      --rule: #e5e7eb;
-      --card: #f8fafc;
-      color-scheme: light;
-    }
-  }
-  html[data-theme="light"] {
-    --bg: #ffffff;
-    --ink: #111827;
-    --muted: #4b5563;
-    --accent: #0d9488;
-    --accent-hover: #0f766e;
-    --accent-soft: rgba(13, 148, 136, 0.1);
-    --rule: #e5e7eb;
-    --card: #f8fafc;
-    color-scheme: light;
-  }
-  body { 
-    font-family: Georgia, serif; 
-    line-height: 1.6; 
-    background: var(--bg);
-    color: var(--ink); 
-    max-width: 680px; 
-    margin: 0 auto; 
-    padding: 2rem 1.25rem; 
-  }
-  p, h2, h3, section, div, li { color: var(--ink); }
-  h1 { font-size: 2.2rem; line-height: 1.2; margin-bottom: 0.5rem; color: var(--ink); }
-  h2 { font-size: 1.5rem; line-height: 1.25; margin: 2rem 0 0.8rem; color: var(--ink); }
-  .standfirst { font-size: 1.2rem; color: var(--muted); margin-bottom: 1.5rem; }
-  .byline { font-family: sans-serif; font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); padding: 0.5rem 0; margin-bottom: 1.5rem; }
-  sup.cite { color: var(--accent); font-weight: bold; }
-  blockquote.pull { border-left: 3px solid var(--accent); margin: 1.5rem 0; padding-left: 1rem; font-style: italic; font-size: 1.2rem; color: var(--ink); }
-  aside.takeaways { background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 1.2rem; margin: 2rem 0; }
-  aside.takeaways h3 { text-transform: uppercase; font-size: 0.8rem; color: var(--accent); margin-top: 0; }
-  aside.takeaways li { color: var(--ink); margin-bottom: 0.4rem; }
-  aside.featured { border: 1px solid var(--accent); padding: 1.2rem; border-radius: 10px; margin: 1.5rem 0; background: var(--accent-soft); }
-  aside.featured h3 { margin: 0 0 0.5rem; text-transform: uppercase; font-size: 0.8rem; color: var(--accent); }
-  aside.featured p { color: var(--ink); margin: 0 0 0.5rem; }
-  aside.featured a { color: var(--accent); font-weight: 600; }
-  [contenteditable="true"] { outline: none; transition: background 0.2s, box-shadow 0.2s; border-radius: 4px; }
-  [contenteditable="true"]:hover { box-shadow: 0 0 0 1px var(--accent); cursor: text; }
-  [contenteditable="true"]:focus { box-shadow: 0 0 0 2px var(--accent); background: rgba(45, 212, 191, 0.08); }
-</style>
-</head>
-<body>
-  <p style="text-transform:uppercase; font-size:0.75rem; font-weight:bold; color:#0d9488; margin-bottom:0.2rem;">${escapeHtml(topic)}</p>
-  <h1>${escapeHtml(article.title)}</h1>
-  <p class="standfirst">${escapeHtml(article.standfirst)}</p>
-  <div class="byline">Published ${dateStr} · Grounded in ${citedPapers.length} Peer-Reviewed Sources</div>
-
-  ${fsHtml}
-
-  ${sectionsHtml}
-
-  <aside class="takeaways">
-    <h3>Key Takeaways</h3>
-    <ul>${takeawaysHtml}</ul>
-  </aside>
-
-  <h3 style="margin-top:2.5rem; font-family:sans-serif; text-transform:uppercase; font-size:0.85rem; color:#0d9488;">Sources</h3>
-  <ol>${refsHtml}</ol>
-</body>
-</html>`;
   }
 
   function saveLocalDraft(title, htmlContent) {

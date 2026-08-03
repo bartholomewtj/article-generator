@@ -13,12 +13,18 @@ Open the working web app directly in your browser:
 
 ## Use it from your phone (recommended)
 
-You can run the interactive **Mobile Web Site** (hosted on GitHub Pages or locally via `articlegen web`):
+1. **Open the site:** [https://bartholomewtj.github.io/article-generator/](https://bartholomewtj.github.io/article-generator/) (or run `articlegen web --open` locally).
+2. **Add a key:** Open Settings (⚙️) and paste a free [Groq API key](https://console.groq.com/keys). It stays in your browser and is sent only with the request you make.
+3. **Type a theme:** Enter your topic (e.g. `renewable energy storage`) and optional audience/style notes.
+4. **Choose a draft:** Tap any generated **Draft Idea Card** to launch the evidence-grounded research pipeline.
+5. **Read & Share:** View the rendered article and tap **Share**, **Copy Link**, or **QR Code**.
 
-1. **Open the site:** Open [https://bartholomewtj.github.io/article-generator/](https://bartholomewtj.github.io/article-generator/) (or run `articlegen web --open` locally).
-2. **Type a theme:** Enter your topic (e.g. `renewable energy storage`) and optional audience/style notes.
-3. **Choose a draft:** Tap any generated **Draft Idea Card** to launch the automated evidence-grounded research pipeline.
-4. **Read & Share:** View the rendered article and tap **Share** (native mobile share sheet), **Copy Link**, or **QR Code** to easily share with others.
+**How it fits together.** The page is a front end only — the pipeline below is
+the same Python that the CLI runs, on a small backend the page calls. There is
+no second implementation: an article generated from your phone goes through the
+same relevance gate, prose-style enforcement and statistic verification as one
+generated from the terminal. The hosted backend keeps nothing: it renders your
+article, returns it, and forgets it. Your drafts live in your own browser.
 
 **Provider key setup:**
 
@@ -152,7 +158,9 @@ Markdown, for easy editing), and refreshes `index.html` (your review queue).
 
 ```
 articlegen/
-  cli.py       subcommands (ideas / draft / queue / demo) + orchestration
+  cli.py       subcommands (ideas / draft / queue / demo / web)
+  pipeline.py  the draft pipeline — every caller, CLI and web, runs this one
+  web.py       HTTP server + JSON API behind the web front end
   llm.py       provider layer: Groq or Claude, auto-detected from keys
   ideas.py     LLM call: theme -> shortlist of article ideas
   writer.py    LLM calls: plan queries, write the article (structured JSON)
