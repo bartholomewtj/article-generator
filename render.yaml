@@ -15,9 +15,19 @@ services:
     name: articlegen-api
     runtime: docker
     plan: free
-    # Closest free region to the Gold Coast. Oregon/Frankfurt are the
-    # alternatives if Singapore is ever unavailable.
-    region: singapore
+    # Was singapore — closest free region to the Gold Coast — until OpenAlex
+    # began returning 429 to every request from that instance while the same
+    # query answered 200 from a laptop. Free-tier instances share an outbound
+    # IP between tenants, so the throttle is inherited, not earned.
+    #
+    # Latency is not why this value matters: a draft spends 40-90s in the LLM,
+    # so a few hundred ms of extra distance is invisible. The only thing being
+    # chosen here is which pool of co-tenants we share an egress IP with.
+    # Frankfurt over Oregon because Oregon is Render's default region and so
+    # carries the most free-tier neighbours per address — that is reasoning,
+    # not measurement, and if Frankfurt is throttled too the next move is
+    # another region, not another theory.
+    region: frankfurt
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/health
     autoDeploy: true
