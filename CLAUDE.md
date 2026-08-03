@@ -94,6 +94,21 @@ citations and sections intact.
   boosters ("clearly", "striking", "unprecedented"), claims of proof
   ("proves", "definitively"), first person outside the `here we review` frame,
   and under-hedging (< 0.20 hedges/sentence).
+- **Substance errors** (`SUBSTANCE_RULES`): `too-few-sections`, `hedge-monotony`,
+  `repeated-opener`, `recycled-phrasing`. Every other rule is a *prohibition*,
+  and a model optimising only against prohibitions writes vague hedged filler —
+  asserting nothing breaks no rule. A real draft passed every check at 803 words
+  with one number in it, hedging at 0.69/sentence (three times the floor) using
+  four stock phrases. These fail a draft for saying too little.
+- **Calibrate against `demo.SAMPLE_ARTICLE`.** It must always pass. Length does
+  *not* discriminate — the good sample is 773 words, the bad draft was 803 — so
+  `under-length` is a warning, not an error. What separates them is hedge variety
+  (8 distinct hedges vs one phrase at 50%) and verbatim recycling.
+- When a substance rule fires, `revision_brief()` **inverts**: instead of "do not
+  introduce new claims or numbers" it tells the model to pull specific findings
+  from the sources, and `enforce_style` passes `papers`/`curation` into
+  `revise_prose` so it has something to pull from. Without that the revision can
+  only reshuffle what it already wrote, and a thin draft comes back thin.
 - Warnings: sentences over 45 words, high nominalisation, passive ratio > 55%.
 - Density rules only fire above 12 sentences **and** 250 words — below that the
   figures are noise. If you add a fixture, give it real prose or the rules skip it.

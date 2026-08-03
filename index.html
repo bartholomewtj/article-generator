@@ -709,9 +709,21 @@
       </div>
       
       <div style="margin-bottom: 1.25rem;">
-        <label class="input-label" for="apiKeyInput">Groq API Key (Optional)</label>
+        <label class="input-label" for="providerSelect">Writing model</label>
         <p style="font-size:0.8rem; color:var(--muted); margin-top:-0.2rem; margin-bottom:0.6rem;">
-          Get a free key from <a href="https://console.groq.com/" target="_blank" style="color:var(--accent);">console.groq.com</a>.
+          Groq is free and fast. Claude writes noticeably better articles &mdash; more
+          specific, less repetitive &mdash; but needs a paid Anthropic key.
+        </p>
+        <select id="providerSelect" class="theme-input" onchange="onProviderChange()">
+          <option value="groq">Groq &mdash; Llama 3.3 70B (free)</option>
+          <option value="anthropic">Claude (paid Anthropic key)</option>
+        </select>
+      </div>
+
+      <div style="margin-bottom: 1.25rem;">
+        <label class="input-label" for="apiKeyInput"><span id="apiKeyLabel">Groq API Key</span></label>
+        <p style="font-size:0.8rem; color:var(--muted); margin-top:-0.2rem; margin-bottom:0.6rem;" id="apiKeyHelp">
+          Get a free key from <a href="https://console.groq.com/keys" target="_blank" style="color:var(--accent);">console.groq.com</a>.
         </p>
         <input type="password" id="apiKeyInput" name="groq_key_token" class="theme-input" placeholder="gsk_..." autocomplete="new-password" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
         <p style="font-size:0.75rem; color:var(--muted); margin-top:0.5rem; line-height:1.5;">
@@ -917,7 +929,9 @@
   function openModal(id) {
     document.getElementById(id).classList.add('active');
     if (id === 'settingsModal') {
-      document.getElementById('apiKeyInput').value = localStorage.getItem('articlegen_key') || '';
+      const sel = document.getElementById('providerSelect');
+      if (sel) sel.value = currentProvider();
+      onProviderChange();
     }
   }
 
@@ -925,11 +939,63 @@
     document.getElementById(id).classList.remove('active');
   }
 
+  // Each provider keeps its own key slot, so switching between them doesn't
+  // discard the other. The model id is sent to the backend, which accepts it
+  // only if it matches one it actually supports.
+  const PROVIDERS = {
+    groq: {
+      model: 'llama-3.3-70b-versatile',
+      store: 'articlegen_key',
+      label: 'Groq API Key',
+      placeholder: 'gsk_...',
+      help: 'Get a free key from <a href="https://console.groq.com/keys" target="_blank" style="color:var(--accent);">console.groq.com</a>.'
+    },
+    anthropic: {
+      model: 'claude-opus-4-8',
+      store: 'articlegen_key_anthropic',
+      label: 'Anthropic API Key',
+      placeholder: 'sk-ant-...',
+      help: 'Create a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:var(--accent);">console.anthropic.com</a>. Usage is billed to your Anthropic account.'
+    }
+  };
+
+  function currentProvider() {
+    const p = localStorage.getItem('articlegen_provider') || 'groq';
+    return PROVIDERS[p] ? p : 'groq';
+  }
+
+  function activeKey() {
+    return localStorage.getItem(PROVIDERS[currentProvider()].store) || '';
+  }
+
+  function activeModel() {
+    return PROVIDERS[currentProvider()].model;
+  }
+
+  function onProviderChange() {
+    const chosen = document.getElementById('providerSelect')?.value || 'groq';
+    const cfg = PROVIDERS[chosen] || PROVIDERS.groq;
+    localStorage.setItem('articlegen_provider', chosen);
+
+    const label = document.getElementById('apiKeyLabel');
+    const help = document.getElementById('apiKeyHelp');
+    const input = document.getElementById('apiKeyInput');
+    if (label) label.textContent = cfg.label;
+    if (help) help.innerHTML = cfg.help;
+    if (input) {
+      input.placeholder = cfg.placeholder;
+      input.value = localStorage.getItem(cfg.store) || '';
+    }
+  }
+
   function saveApiKey() {
+    const chosen = document.getElementById('providerSelect')?.value || currentProvider();
+    const cfg = PROVIDERS[chosen] || PROVIDERS.groq;
     const k = document.getElementById('apiKeyInput')?.value.trim() || '';
 
-    if (k) localStorage.setItem('articlegen_key', k);
-    else localStorage.removeItem('articlegen_key');
+    localStorage.setItem('articlegen_provider', chosen);
+    if (k) localStorage.setItem(cfg.store, k);
+    else localStorage.removeItem(cfg.store);
 
     if (typeof savePreferences === 'function') savePreferences();
 
@@ -1093,7 +1159,7 @@
     btn.disabled = true;
     btn.innerHTML = '⏳ Generating Ideas...';
 
-    const key = localStorage.getItem('articlegen_key') || '';
+    const key = activeKey();
 
     try {
       let resp;
@@ -1101,7 +1167,7 @@
         resp = await fetch(apiUrl('/api/ideas'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ theme, guidance: styleGuidance(guidance), key, n: 6 })
+          body: JSON.stringify({ theme, guidance: styleGuidance(guidance), key, model: activeModel(), n: 6 })
         });
       } catch (netErr) {
         throw new Error(await apiError(null, netErr));
@@ -1148,7 +1214,7 @@
     showView('progressView');
 
     const style = document.getElementById('styleInput').value.trim();
-    const key = localStorage.getItem('articlegen_key') || '';
+    const key = activeKey();
 
     const stepText = document.getElementById('progressStepText');
     const steps = ['stepQueries', 'stepCurate', 'stepDraft', 'stepVerify']
@@ -1180,7 +1246,7 @@
         resp = await fetch(apiUrl('/api/draft'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ topic: title, style: styleGuidance(style), key })
+          body: JSON.stringify({ topic: title, style: styleGuidance(style), key, model: activeModel() })
         });
       } catch (netErr) {
         throw new Error(await apiError(null, netErr));

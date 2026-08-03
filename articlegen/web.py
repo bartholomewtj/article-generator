@@ -36,11 +36,19 @@ import time
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
+from . import llm
 from .ideas import generate_ideas
 from .pipeline import NoPapersFound, generate_draft
 from .render import _draft_title, build_index, render_article, render_markdown
 
 DRAFTS_DIR = "drafts"
+
+# Models a caller may ask for by name. Anything else is ignored and the provider
+# layer picks from the key it was given.
+ALLOWED_MODELS = frozenset({
+    llm.GROQ_DEFAULT_MODEL,
+    llm.ANTHROPIC_DEFAULT_MODEL,
+})
 
 # Shared hosts set this. Local runs leave it unset and keep writing to drafts/.
 STATELESS = os.environ.get("ARTICLEGEN_STATELESS", "").strip().lower() in ("1", "true", "yes")
@@ -75,6 +83,17 @@ def _rate_limited(client_ip: str) -> bool:
             for ip in [k for k, v in _rate_hits.items() if not v or now - v[-1] > RATE_LIMIT_WINDOW]:
                 _rate_hits.pop(ip, None)
     return False
+
+
+def _requested_model(payload: dict) -> str | None:
+    """The caller's model, accepted only from a known list.
+
+    The value reaches an LLM API, so it is matched against the models this
+    project actually supports rather than forwarded as given. `None` means the
+    provider layer decides from whichever key was supplied.
+    """
+    requested = (payload.get("model") or "").strip()
+    return requested if requested in ALLOWED_MODELS else None
 
 
 def _slugify(text: str) -> str:
@@ -114,8 +133,8 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         if api_key or os.environ.get("GROQ_API_KEY") or os.environ.get("ANTHROPIC_API_KEY"):
             return False
         self._send_json(
-            {"error": "No API key set. Open Settings (⚙️) and paste a free Groq API key "
-                      "from console.groq.com/keys."},
+            {"error": "No API key set. Open Settings (⚙️), choose a writing model, and "
+                      "paste its key — Groq keys are free at console.groq.com/keys."},
             status=400,
         )
         return True
@@ -253,7 +272,8 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
             prompt_theme = f"{theme} — guidance: {guidance[:300]}"
 
         try:
-            ideas = generate_ideas(prompt_theme, n=n, api_key=api_key)
+            ideas = generate_ideas(prompt_theme, n=n, api_key=api_key,
+                                   model=_requested_model(payload))
             self._send_json({"theme": theme, "ideas": ideas})
         except Exception as exc:
             self._send_json({"error": str(exc)}, status=500)
@@ -275,7 +295,8 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
 
         try:
             draft = generate_draft(
-                topic, style_note=style[:500], max_papers=20, api_key=api_key, log=self._log_stage
+                topic, style_note=style[:500], max_papers=20, api_key=api_key,
+                model=_requested_model(payload), log=self._log_stage
             )
         except NoPapersFound:
             self._send_json(
