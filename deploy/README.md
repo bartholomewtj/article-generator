@@ -1,82 +1,77 @@
 # Deploying the backend
 
 The web app at `index.html` is a front end only. The pipeline runs in Python, so
-something has to host it. This directory holds what's needed to put it on a
-[Hugging Face Space](https://huggingface.co/spaces) — free, no card, and it
-tolerates the long requests a draft takes (roughly 40–90 seconds).
+something has to host it.
 
 ```
-index.html on GitHub Pages  ──POST /api/draft──▶  this backend on a HF Space
-   (static, holds your key)                          (stateless, holds nothing)
+index.html on GitHub Pages  ──POST /api/draft──▶  this backend on Render
+   (static, holds your key)                        (stateless, holds nothing)
 ```
+
+[`render.yaml`](../render.yaml) declares the service, so setup is a few clicks
+rather than a dozen dashboard fields. Render deploys straight from GitHub —
+there's no workflow and no token for GitHub to hold.
 
 ## One-time setup
 
-**1. Create the Space.** At <https://huggingface.co/new-space>:
+**1. Sign up** at <https://render.com> with your GitHub account. No card needed
+for the free tier.
 
-- Owner: your account · Name: `articlegen`
-- SDK: **Docker** → *Blank*
-- Visibility: **Public** (private Spaces can't be called from a browser)
+**2. New → Blueprint**, pick `bartholomewtj/article-generator`, and let it read
+`render.yaml`. It'll show one web service named `articlegen-api` on the Free plan.
 
-**2. Make an access token.** <https://huggingface.co/settings/tokens> → *New
-token* → type **Write**. Copy it.
+**3. Apply.** The first build takes a few minutes — it's installing the
+dependencies into the image.
 
-**3. Give it to GitHub.** In the repo → Settings → Secrets and variables →
-Actions → *New repository secret*:
+**4. Check the name it gave you.** The URL is `https://<service-name>.onrender.com`,
+and that subdomain is global, so `articlegen-api` may already be taken. If Render
+made you pick something else, two files need to agree with it:
 
-- Name: `HF_TOKEN` · Value: the token
+- `name:` in [`render.yaml`](../render.yaml)
+- `API_BASE` in [`index.html`](../index.html)
 
-If your Space isn't `bartholomewtj/articlegen`, also add a *variable* (not a
-secret) named `HF_SPACE` with your `owner/name`.
-
-**4. Deploy.** Push to the default branch, or run the workflow by hand:
-
-```bash
-gh workflow run "Deploy backend to Hugging Face Space"
-```
-
-The first build takes a few minutes. Watch it on the Space's **Logs** tab.
-
-**5. Point the front end at it.** If your Space URL differs from the default,
-edit `API_BASE` in [`index.html`](../index.html):
-
-```js
-return 'https://<owner>-<space-name>.hf.space';
-```
-
-Note the URL form: `huggingface.co/spaces/owner/name` is the *page*, but the API
-is served from `owner-name.hf.space`.
-
-**6. Allow your origin.** The backend refuses browser calls from anywhere it
-doesn't recognise. `ARTICLEGEN_ALLOWED_ORIGINS` in the [`Dockerfile`](../Dockerfile)
-is set to `https://bartholomewtj.github.io` — change it if you serve the page
-elsewhere. It's a comma-separated list.
+**5. Optional but worth it:** in the Render dashboard, set `OPENALEX_MAILTO` to
+your email. It puts requests into OpenAlex's "polite pool", which gets better
+rate limits.
 
 ## Checking it worked
 
 ```bash
-curl https://<owner>-<space-name>.hf.space/api/health
+curl https://articlegen-api.onrender.com/api/health
 ```
 
 `{"ok": true, "stateless": true}` means it's up, and `stateless: true` confirms
-it isn't writing articles to disk.
+it isn't writing articles to disk. Allow up to a minute if it's been idle.
 
-Then open the web app, paste a Groq key into Settings, and generate one article
-end to end. That's the only test that exercises the real pipeline.
+Then open the web app, paste a Groq key into Settings, and generate one article.
+That's the only test that exercises the whole chain.
 
 ## Configuration
 
-Set these as Space *variables* (Settings → Variables and secrets) to override
-the Dockerfile defaults. **None of them should ever be an API key** — the
-backend deliberately has none of its own; visitors bring their own.
+`render.yaml` sets these; override them in the dashboard if needed. **None of
+them should ever be an LLM API key** — the backend deliberately has none of its
+own, and every visitor brings theirs.
 
 | Variable | Default | What it does |
 |---|---|---|
 | `ARTICLEGEN_STATELESS` | `1` | Render and return; never write to disk. Leave on for any shared host. |
 | `ARTICLEGEN_ALLOWED_ORIGINS` | the Pages origin | Comma-separated origins allowed to call the API from a browser. |
 | `ARTICLEGEN_RATE_LIMIT` | `20` | Requests per hour per IP. |
-| `OPENALEX_MAILTO` | unset | Your email. Puts OpenAlex requests in its "polite pool" for better rate limits. |
-| `SEMANTIC_SCHOLAR_API_KEY` | unset | Optional; raises Semantic Scholar's rate limit. Set as a *secret*, not a variable. |
+| `OPENALEX_MAILTO` | unset | Your email; OpenAlex "polite pool". |
+| `SEMANTIC_SCHOLAR_API_KEY` | unset | Optional; raises Semantic Scholar's rate limit. Set as a *secret*. |
+
+## Two things about the free tier
+
+**It sleeps after 15 minutes idle** and takes up to a minute to wake. That hurts
+less here than it normally would: the page is on GitHub Pages and loads
+instantly, and the backend is only touched when someone clicks Generate — which
+already takes 40–90 seconds behind a progress bar. A cold start extends a wait
+the visitor is already committed to. The front end says as much if a request
+can't get through.
+
+**512 MB RAM and 0.1 CPU** is enough, because the pipeline is I/O-bound. It
+spends nearly all its time waiting on Groq and the scholarly APIs rather than
+computing.
 
 ## Why stateless
 
@@ -91,21 +86,28 @@ which is what makes `articlegen queue` work.
 
 ```bash
 docker build -t articlegen .
-docker run --rm -p 7860:7860 -e ARTICLEGEN_ALLOWED_ORIGINS=http://localhost:8085 articlegen
+docker run --rm -p 8000:8000 -e ARTICLEGEN_ALLOWED_ORIGINS=http://localhost:8085 articlegen
 ```
 
 Then serve `index.html` from another origin and, in the browser console:
 
 ```js
-localStorage.setItem('articlegen_api_base', 'http://127.0.0.1:7860'); location.reload();
+localStorage.setItem('articlegen_api_base', 'http://127.0.0.1:8000'); location.reload();
 ```
 
 That reproduces the hosted setup — separate origins, CORS in play — on one machine.
 
-## Notes
+## Moving hosts later
 
-- **Free Spaces sleep** after about 48 hours idle and take a moment to wake. The
-  web app already says so when a request can't get through.
-- **The Space holds no keys.** If you ever add one to make generation work
-  without a visitor's key, it becomes a free LLM endpoint for anyone who finds
-  it. Don't, unless you also add auth and a hard spend cap.
+The Dockerfile is host-neutral: it binds whatever `PORT` the host injects. Fly,
+Cloud Run and Railway all run it unchanged. Only two things are Render-specific,
+`render.yaml` and the `API_BASE` line in `index.html`.
+
+Hugging Face Spaces was the original target and is a dead end for this. Free CPU
+Spaces need a payment method on the account; without one the Space gets created
+but stays pinned at `Quota exceeded for flavor cpu-basic (requested=1): current=0,
+limit=0` and never starts. Verifying your email doesn't lift it.
+
+Fly.io is the better free tier technically — a Sydney region and 1–3 second wake
+against Render's ~50 seconds — but its docs are explicit that "all organizations
+require a credit card on file", so it's ruled out on the same grounds.

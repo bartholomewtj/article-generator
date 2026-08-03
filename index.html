@@ -754,8 +754,9 @@
     if (override) return override.replace(/\/$/, '');
     // Served by `articlegen web`: the API is on this same origin.
     if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return '';
-    // Hosted (GitHub Pages): the API is the deployed Space.
-    return 'https://bartholomewtj-articlegen.hf.space';
+    // Hosted (GitHub Pages): the API is the deployed backend. Must match the
+    // service name in render.yaml — the subdomain is derived from it.
+    return 'https://articlegen-api.onrender.com';
   })();
 
   function apiUrl(path) {
@@ -765,8 +766,9 @@
   /** Turn a fetch/HTTP failure into something a non-developer can act on. */
   async function apiError(resp, netErr) {
     if (netErr || !resp) {
-      return 'Could not reach the article generator backend. It may be waking up ' +
-             '(the free host sleeps when idle) — wait a moment and try again.';
+      return 'Could not reach the article generator backend. The free host puts ' +
+             'it to sleep when idle and takes up to a minute to wake it — wait, ' +
+             'then try again. If it keeps failing, the backend may be down.';
     }
     let detail = '';
     try { detail = (await resp.json()).error || ''; } catch (e) {}
