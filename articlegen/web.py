@@ -40,6 +40,7 @@ from . import llm
 from .ideas import generate_ideas
 from .pipeline import NoPapersFound, generate_draft
 from .render import _draft_title, build_index, render_article, render_markdown
+from .sources import gather_evidence
 
 DRAFTS_DIR = "drafts"
 
@@ -194,6 +195,9 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         if self.path in ("/api/health", "/api/health/"):
             self._send_json({"ok": True, "stateless": STATELESS})
             return
+        if self.path in ("/api/diag", "/api/diag/"):
+            self._handle_diag()
+            return
         super().do_GET()
 
     def do_POST(self) -> None:
@@ -298,12 +302,11 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
                 topic, style_note=style[:500], max_papers=20, api_key=api_key,
                 model=_requested_model(payload), log=self._log_stage
             )
-        except NoPapersFound:
-            self._send_json(
-                {"error": "No academic papers with abstracts found for this topic. "
-                          "Please try another theme or retry in a minute."},
-                status=422,
-            )
+        except NoPapersFound as exc:
+            # 503 when the upstream APIs are the problem: it's not the caller's
+            # request that was unprocessable, and the distinction tells them
+            # whether to reword the topic or simply try again.
+            self._send_json({"error": str(exc)}, status=503 if exc.sources_failed else 422)
             return
         except Exception as exc:
             self._send_json({"error": str(exc)}, status=500)
@@ -340,6 +343,31 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
             response["md_url"] = f"/drafts/{md_name}"
 
         self._send_json(response)
+
+    def _handle_diag(self) -> None:
+        """Can this host reach the scholarly APIs at all?
+
+        Needs no API key, because it exercises only the keyless half of the
+        pipeline. Locally everything works, so when a deployment reports "no
+        papers found" the question is whether *that host* is being refused —
+        and there is no way to answer it from outside without asking the host.
+        """
+        outcomes: list[dict] = []
+        try:
+            papers = gather_evidence(
+                ["shift work sleep"], max_papers=3, per_query=3,
+                topic="shift work sleep", outcomes=outcomes,
+            )
+            count = len(papers)
+        except Exception as exc:
+            count, outcomes = 0, [{"source": "gather_evidence", "query": "",
+                                   "count": 0, "error": f"{type(exc).__name__}: {exc}"}]
+        self._send_json({
+            "papers_found": count,
+            "sources": outcomes,
+            "openalex_mailto_set": bool(os.environ.get("OPENALEX_MAILTO")),
+            "semantic_scholar_key_set": bool(os.environ.get("SEMANTIC_SCHOLAR_API_KEY")),
+        })
 
     def _log_stage(self, message: str) -> None:
         """Pipeline progress to the server log. Never carries the caller's key."""
