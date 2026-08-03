@@ -300,6 +300,50 @@ def test_substance_checks() -> None:
           "do not introduce new claims or numbers" in reg_brief)
 
 
+def test_groq_token_budget() -> None:
+    """Prompts must fit Groq's free-tier tokens-per-minute limit.
+
+    Groq counts the reserved output against TPM as well as the prompt, so
+    reserving 16000 output tokens against a 12000 limit failed every article
+    call regardless of prompt size:
+
+        413 ... on tokens per minute (TPM): Limit 12000, Requested 20916
+    """
+    from articlegen import llm
+    from articlegen.writer import _format_sources
+    from articlegen.sources import Paper
+
+    check("deep output reservation fits the free tier",
+          llm.GROQ_DEEP_OUTPUT < llm.GROQ_FREE_TPM)
+    check("standard output reservation fits too", llm.GROQ_OUTPUT < llm.GROQ_FREE_TPM)
+
+    budget = llm.prompt_budget_chars(model=llm.GROQ_DEFAULT_MODEL)
+    check("groq gets a finite prompt budget", isinstance(budget, int) and budget > 0)
+    check("anthropic is unlimited",
+          llm.prompt_budget_chars(model=llm.ANTHROPIC_DEFAULT_MODEL) is None)
+    check("reservation plus prompt stays under the limit",
+          llm.GROQ_DEEP_OUTPUT + budget / llm.CHARS_PER_TOKEN < llm.GROQ_FREE_TPM)
+
+    # 20 papers with long abstracts — the shape that produced the 413.
+    papers = [
+        Paper(title=f"Study {i}", abstract="word " * 400, year=2024, venue="Journal")
+        for i in range(1, 21)
+    ]
+    unbounded = _format_sources(papers)
+    trimmed = _format_sources(papers, None, budget)
+    check("an unbounded prompt really does exceed the budget", len(unbounded) > budget)
+    check("the trimmed prompt fits", len(trimmed) <= budget)
+    check("trimming keeps every paper rather than dropping them",
+          trimmed.count("SOURCE ") == len(papers))
+
+    # Only when shortening every abstract still cannot fit does it drop papers.
+    tiny = _format_sources(papers, None, 1500)
+    check("a tiny budget still yields something usable", 0 < tiny.count("SOURCE ") < len(papers))
+    check("a tiny budget is still respected", len(tiny) <= 1500)
+
+    check("no budget means no trimming", _format_sources(papers, None, None) == unbounded)
+
+
 def test_groq_json_cleaning() -> None:
     from articlegen.llm import _clean_json_text
     check("clean simple fence", _clean_json_text("```json\n{\"a\": 1}\n```") == '{"a": 1}')
@@ -647,6 +691,7 @@ def main() -> int:
         test_provider_resolution, test_per_request_api_key,
         test_pipeline_is_shared, test_draft_summary, test_rate_limit,
         test_keepalive_connection_reuse, test_substance_checks,
+        test_groq_token_budget,
         test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
         test_prose_style_check,

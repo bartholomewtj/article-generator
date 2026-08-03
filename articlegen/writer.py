@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 
-from .llm import generate_json
+from .llm import generate_json, prompt_budget_chars
 from .sources import Paper
 
 _QUERY_SCHEMA = {
@@ -298,18 +298,50 @@ def plan_queries(
     return result["queries"][:4], result.get("core_entity", "").strip()
 
 
-def _format_sources(papers: list[Paper], relevance: dict[int, str] | None = None) -> str:
-    blocks = []
-    for i, p in enumerate(papers, start=1):
-        tag = f" [{relevance[i]} to topic]" if relevance and i in relevance else ""
-        blocks.append(
-            f"SOURCE {i}{tag}\n"
-            f"Title: {p.title}\n"
-            f"Authors: {p.author_line} ({p.year or 'n.d.'})\n"
-            f"Venue: {p.venue or 'unknown'} | Citations: {p.citation_count}\n"
-            f"Abstract: {p.abstract}"
+def _format_sources(
+    papers: list[Paper],
+    relevance: dict[int, str] | None = None,
+    budget_chars: int | None = None,
+) -> str:
+    """Render the sources for the prompt, trimmed to `budget_chars` if given.
+
+    Trimming shortens long abstracts before it drops any paper. Breadth is what
+    stops the article restating the same few findings, so losing the tail of a
+    verbose abstract costs less than losing a whole study. Papers arrive already
+    ranked, so anything that must go is the least relevant.
+    """
+    def render(paper: Paper, index: int, abstract: str) -> str:
+        tag = f" [{relevance[index]} to topic]" if relevance and index in relevance else ""
+        return (
+            f"SOURCE {index}{tag}\n"
+            f"Title: {paper.title}\n"
+            f"Authors: {paper.author_line} ({paper.year or 'n.d.'})\n"
+            f"Venue: {paper.venue or 'unknown'} | Citations: {paper.citation_count}\n"
+            f"Abstract: {abstract}"
         )
-    return "\n\n".join(blocks)
+
+    blocks = [render(p, i, p.abstract) for i, p in enumerate(papers, start=1)]
+    if budget_chars is None or sum(len(b) for b in blocks) <= budget_chars:
+        return "\n\n".join(blocks)
+
+    # Shorten abstracts, most generous cap first, until the whole set fits.
+    for cap in (1200, 900, 700, 500, 350):
+        blocks = [
+            render(p, i, p.abstract[:cap] + ("…" if len(p.abstract) > cap else ""))
+            for i, p in enumerate(papers, start=1)
+        ]
+        if sum(len(b) for b in blocks) + 2 * len(blocks) <= budget_chars:
+            return "\n\n".join(blocks)
+
+    # Still over: drop from the bottom of the ranking.
+    kept: list[str] = []
+    used = 0
+    for block in blocks:
+        if used + len(block) + 2 > budget_chars:
+            break
+        kept.append(block)
+        used += len(block) + 2
+    return "\n\n".join(kept)
 
 
 def curate_sources(
@@ -323,7 +355,7 @@ def curate_sources(
     try:
         result = generate_json(
             f"Topic: {topic}\n\nRate each source's relevance to that exact topic.\n\n"
-            + _format_sources(papers),
+            + _format_sources(papers, budget_chars=prompt_budget_chars(model, api_key)),
             _CURATE_SCHEMA,
             system=_CURATE_SYSTEM,
             model=model,
@@ -382,7 +414,7 @@ def write_article(
     context += (
         "Here are the candidate sources with their relevance labels. Choose the ones "
         "that genuinely support the article and write it.\n\n"
-        + _format_sources(papers, relevance)
+        + _format_sources(papers, relevance, prompt_budget_chars(model, api_key))
     )
     return generate_json(
         context,
@@ -407,22 +439,28 @@ def revise_prose(
     The brief names the specific conventions broken and quotes the offending text,
     so this is a targeted edit rather than a second attempt at the whole article.
     """
+    draft_json = json.dumps(article, ensure_ascii=False, indent=1)
+
     context = f"{brief}\n\n"
     if papers:
         # Without these the model can only reshuffle what it already wrote, so a
         # draft that failed for thinness comes back thin. The sources are the
         # only material it may legitimately add.
+        #
+        # This is the tightest prompt in the pipeline — it carries the whole
+        # draft as well as the sources — so the draft's own length comes out of
+        # the source budget rather than being added on top of it.
         relevance = (curation or {}).get("relevance") or {}
+        budget = prompt_budget_chars(model, api_key)
+        if budget is not None:
+            budget = max(budget - len(draft_json), 1000)
         context += (
             "SOURCES — the abstracts this article must be grounded in. Anything you "
             "add must come from here and be cited by its SOURCE number:\n\n"
-            + _format_sources(papers, relevance)
+            + _format_sources(papers, relevance, budget)
             + "\n\n"
         )
-    context += (
-        "Here is the draft to revise, as JSON:\n\n"
-        + json.dumps(article, ensure_ascii=False, indent=1)
-    )
+    context += "Here is the draft to revise, as JSON:\n\n" + draft_json
     return generate_json(
         context,
         _ARTICLE_SCHEMA,
