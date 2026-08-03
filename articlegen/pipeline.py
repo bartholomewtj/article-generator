@@ -32,11 +32,18 @@ def _silent(message: str) -> None:
 
 
 class NoPapersFound(RuntimeError):
-    """The scholarly APIs returned nothing usable for this topic.
+    """No usable papers came back.
 
-    Distinct from an API failure: the run was fine, the literature wasn't there
-    (or the shared rate limit was). Callers report it differently.
+    `sources_failed` distinguishes the two cases that look identical from an
+    empty list: the topic genuinely has no indexed literature with abstracts,
+    or every API refused to answer. Telling a user their topic is unsearchable
+    when the real problem is a rate limit sends them off rewording a query that
+    was fine.
     """
+
+    def __init__(self, message: str, sources_failed: bool = False):
+        super().__init__(message)
+        self.sources_failed = sources_failed
 
 
 @dataclass
@@ -153,13 +160,24 @@ def generate_draft(
     log("Queries: " + "; ".join(queries) + (f"  (core: {core_entity})" if core_entity else ""))
 
     log("Fetching journal articles...")
+    outcomes: list[dict] = []
     papers = gather_evidence(
-        queries, max_papers=max_papers, topic=topic, core_entity=core_entity, log=log
+        queries, max_papers=max_papers, topic=topic, core_entity=core_entity,
+        log=log, outcomes=outcomes,
     )
     if not papers:
+        failures = [o for o in outcomes if o["error"]]
+        if len(failures) == len(outcomes) and outcomes:
+            reasons = sorted({f"{o['source']}: {o['error']}" for o in failures})
+            raise NoPapersFound(
+                "The scholarly APIs did not respond, so no evidence could be gathered. "
+                "This is not a problem with the topic. " + "; ".join(reasons),
+                sources_failed=True,
+            )
         raise NoPapersFound(
-            "No papers with abstracts found. The scholarly APIs may be rate-limiting "
-            "— wait a minute and retry, or set SEMANTIC_SCHOLAR_API_KEY / OPENALEX_MAILTO."
+            "No papers with abstracts were found for this topic. Try a broader or "
+            "differently worded topic — or wait a minute and retry, since the open "
+            "APIs throttle under load."
         )
     log(f"Collected {len(papers)} candidate papers.")
 

@@ -344,6 +344,45 @@ def test_groq_token_budget() -> None:
     check("no budget means no trimming", _format_sources(papers, None, None) == unbounded)
 
 
+def test_source_failures_are_distinguishable() -> None:
+    """An API refusing must not be reported as the topic having no literature.
+
+    Every failure used to collapse to an empty list, so a rate-limited API
+    produced "no papers found for this topic" — sending the user off to reword
+    a query that was fine.
+    """
+    from articlegen import sources
+    from articlegen.pipeline import NoPapersFound
+
+    real_ss, real_oa = sources.search_semantic_scholar, sources.search_openalex
+    try:
+        # Both sources refuse.
+        sources.search_semantic_scholar = lambda q, limit=15: (_ for _ in ()).throw(
+            sources.SearchFailure("HTTP 429 after 3 attempts"))
+        sources.search_openalex = lambda q, limit=15: (_ for _ in ()).throw(
+            sources.SearchFailure("HTTP 403"))
+        outcomes: list[dict] = []
+        papers = sources.gather_evidence(["x"], outcomes=outcomes)
+        check("no papers when both refuse", papers == [])
+        check("both failures recorded", len([o for o in outcomes if o["error"]]) == 2)
+        check("the reason is kept", any("429" in o["error"] for o in outcomes))
+
+        # One source down, the other fine — the run must survive.
+        sources.search_openalex = lambda q, limit=15: [
+            sources.Paper(title=f"P{i}", abstract="a") for i in range(3)]
+        outcomes = []
+        papers = sources.gather_evidence(["x"], outcomes=outcomes)
+        check("one working source is enough", len(papers) == 3)
+        check("the failed source is still recorded",
+              any(o["error"] for o in outcomes) and any(not o["error"] for o in outcomes))
+    finally:
+        sources.search_semantic_scholar, sources.search_openalex = real_ss, real_oa
+
+    check("NoPapersFound carries the distinction",
+          NoPapersFound("x", sources_failed=True).sources_failed is True)
+    check("and defaults to a topic problem", NoPapersFound("x").sources_failed is False)
+
+
 def test_groq_json_cleaning() -> None:
     from articlegen.llm import _clean_json_text
     check("clean simple fence", _clean_json_text("```json\n{\"a\": 1}\n```") == '{"a": 1}')
@@ -691,7 +730,7 @@ def main() -> int:
         test_provider_resolution, test_per_request_api_key,
         test_pipeline_is_shared, test_draft_summary, test_rate_limit,
         test_keepalive_connection_reuse, test_substance_checks,
-        test_groq_token_budget,
+        test_groq_token_budget, test_source_failures_are_distinguishable,
         test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
         test_prose_style_check,

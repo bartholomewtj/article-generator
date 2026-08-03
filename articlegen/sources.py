@@ -56,21 +56,36 @@ class Paper:
         return self.url
 
 
-def _get_with_retry(url: str, params: dict, headers: dict, tries: int = 3) -> requests.Response | None:
+class SearchFailure(Exception):
+    """A scholarly API did not answer. Distinct from answering with nothing.
+
+    These used to be indistinguishable: every failure collapsed to an empty
+    list, so a rate-limited or blocked API produced "no papers found for this
+    topic" — blaming the user's topic for an infrastructure problem, with
+    nothing in the message to suggest retrying.
+    """
+
+
+def _get_with_retry(url: str, params: dict, headers: dict, tries: int = 3) -> requests.Response:
+    """Return a 200 response, or raise SearchFailure explaining why not."""
     delay = 2.0
+    last = ""
     for attempt in range(tries):
         try:
             resp = requests.get(url, params=params, headers=headers, timeout=30)
-        except requests.RequestException:
+        except requests.RequestException as exc:
+            last = f"{type(exc).__name__}: {exc}"
             resp = None
-        if resp is not None and resp.status_code == 200:
-            return resp
-        if resp is not None and resp.status_code not in (429, 500, 502, 503):
-            return None  # non-retryable
+        else:
+            if resp.status_code == 200:
+                return resp
+            last = f"HTTP {resp.status_code}"
+            if resp.status_code not in (429, 500, 502, 503):
+                raise SearchFailure(last)  # non-retryable
         if attempt < tries - 1:
             time.sleep(delay)
             delay *= 2
-    return None
+    raise SearchFailure(f"{last} after {tries} attempts")
 
 
 def search_semantic_scholar(query: str, limit: int = 15) -> list[Paper]:
@@ -83,8 +98,6 @@ def search_semantic_scholar(query: str, limit: int = 15) -> list[Paper]:
         params={"query": query, "limit": limit, "fields": _SS_FIELDS},
         headers=headers,
     )
-    if resp is None:
-        return []
     papers = []
     for item in resp.json().get("data") or []:
         if not item.get("abstract"):
@@ -127,8 +140,6 @@ def search_openalex(query: str, limit: int = 15) -> list[Paper]:
     if mailto:
         params["mailto"] = mailto
     resp = _get_with_retry(OPENALEX_URL, params=params, headers={})
-    if resp is None:
-        return []
     papers = []
     for item in resp.json().get("results") or []:
         abstract = _rebuild_abstract(item.get("abstract_inverted_index"))
@@ -189,15 +200,36 @@ def gather_evidence(
     topic: str = "",
     core_entity: str = "",
     log=lambda msg: None,
+    outcomes: list[dict] | None = None,
 ) -> list[Paper]:
     """Run every query against both sources, dedupe, and return the best candidates,
-    ranked by a blend of topic relevance, citations, and recency."""
+    ranked by a blend of topic relevance, citations, and recency.
+
+    One source failing is survivable — the other may still answer — so failures
+    are recorded rather than raised. `outcomes` collects them so the caller can
+    tell "this topic has no literature" from "both APIs refused us", which look
+    identical from the returned list alone.
+    """
     seen: set[str] = set()
     collected: list[Paper] = []
     for query in queries:
         for search in (search_semantic_scholar, search_openalex):
-            results = search(query, limit=per_query)
-            log(f"  {search.__name__}({query!r}) -> {len(results)} papers")
+            try:
+                results = search(query, limit=per_query)
+                error = ""
+            except SearchFailure as exc:
+                results, error = [], str(exc)
+            except Exception as exc:  # malformed payload, etc.
+                results, error = [], f"{type(exc).__name__}: {exc}"
+
+            if outcomes is not None:
+                outcomes.append({
+                    "source": search.__name__.replace("search_", ""),
+                    "query": query, "count": len(results), "error": error,
+                })
+            log(f"  {search.__name__}({query!r}) -> "
+                + (f"{len(results)} papers" if not error else f"FAILED ({error})"))
+
             for paper in results:
                 key = _normalize_title(paper.title)
                 if not key or key in seen:
