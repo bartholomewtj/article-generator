@@ -177,14 +177,32 @@ def _keyword_overlap(paper: Paper, terms: set[str]) -> int:
     return sum(1 for t in terms if t in hay)
 
 
-def _rank_score(paper: Paper, terms: set[str]) -> tuple:
-    """Blend topic-keyword overlap, citation weight, and recency — so a famous but
-    off-topic review no longer automatically outranks an on-topic study."""
+RECENCY_WEIGHT = 3.0      # value of a brand-new paper, comparable to ~1000 citations
+RECENCY_HALF_LIFE = 12    # years over which that value decays to nothing
+
+
+def _rank_score(paper: Paper, terms: set[str], now: int | None = None) -> tuple:
+    """Blend topic-keyword overlap, citation weight, and recency.
+
+    Recency used to be `year / 1000`, which spans 0.02 across two decades while
+    the citation term spans 0 to 4 — so it was arithmetically a rounding error
+    and old, heavily-cited reviews always won. A real search returned a median
+    paper year of 2013, with 2 of 20 papers from 2020 or later. That skews an
+    article towards broad old reviews, which carry fewer specific findings than
+    recent trials and make the prose vaguer.
+
+    Recency is now on the same scale as the citation term and decays linearly
+    to zero over RECENCY_HALF_LIFE years. Citations still matter — this ranks
+    a well-cited recent paper top, not merely the newest thing indexed.
+    """
+    import datetime
     import math
 
+    now = now or datetime.date.today().year
     overlap = _keyword_overlap(paper, terms)
     citation_weight = math.log10(paper.citation_count + 1)
-    recency = (paper.year or 0) / 1000.0
+    age = max(0, now - paper.year) if paper.year else RECENCY_HALF_LIFE
+    recency = RECENCY_WEIGHT * max(0.0, 1.0 - age / RECENCY_HALF_LIFE)
     return (overlap, citation_weight + recency)
 
 
