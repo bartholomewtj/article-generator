@@ -180,7 +180,12 @@ def _rank_score(paper: Paper, terms: set[str]) -> tuple:
 def gather_evidence(
     queries: list[str],
     max_papers: int = 20,
-    per_query: int = 10,
+    # Records without a retrievable abstract are discarded, and the yield is
+    # poor: a real run of three queries against both APIs returned 10 usable
+    # papers, which is thin for a review and leaves each section restating the
+    # same few findings. Asking for more candidates costs one larger page per
+    # query, not more requests, and the ranking still keeps only max_papers.
+    per_query: int = 25,
     topic: str = "",
     core_entity: str = "",
     log=lambda msg: None,

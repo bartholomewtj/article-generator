@@ -209,6 +209,97 @@ def test_keepalive_connection_reuse() -> None:
         server.server_close()
 
 
+def test_substance_checks() -> None:
+    """Thin, repetitive prose must fail even when the register is perfect.
+
+    Every other rule in style.py is a prohibition. A model optimising only
+    against prohibitions writes vague hedged filler, because asserting nothing
+    breaks no rule — a real draft passed clean at 803 words with one number in
+    it, hedging at 0.69/sentence (three times the floor) using four stock
+    phrases. These rules fail a draft for saying too little.
+    """
+    from articlegen.style import check_style, errors, revision_brief, SUBSTANCE_RULES
+
+    def rules(article):
+        return {i["rule"] for i in errors(check_style(article))}
+
+    filler = (
+        "The evidence suggests that these effects may be significant, although the "
+        "magnitude may vary. It appears that the risk may be higher among some workers. "
+        "The evidence suggests that these strategies may be effective in some settings. "
+        "It appears that this approach may be beneficial, although the evidence may be limited. "
+    )
+    thin = {"sections": [{"heading": h, "paragraphs": [filler * 2]}
+                         for h in ("Introduction", "Effects", "Conclusions")]}
+    found = rules(thin)
+    check("too-few-sections flagged", "too-few-sections" in found)
+    check("hedge-monotony flagged", "hedge-monotony" in found)
+    check("under-length is only a warning, not an error", "under-length" not in found)
+
+    # Verbatim recycling across sections, which the register rules never noticed.
+    # Padded past MIN_SENTENCES_FOR_VARIETY, below which repetition counts are noise.
+    line = ("a range of strategies can be used to mitigate these effects including "
+            "sleep hygiene education and flexible scheduling for affected staff")
+    padding = " ".join(f"Investigators in cohort {i} recorded a distinct outcome." for i in range(8))
+    recycled = {"sections": [
+        {"heading": "Introduction", "paragraphs": [line + ". " + padding]},
+        {"heading": "Conclusions", "paragraphs": [line + ". A different closing thought here."]},
+    ]}
+    check("recycled-phrasing flagged", "recycled-phrasing" in rules(recycled))
+
+    # A varied, specific draft must stay clean. Written out rather than looped:
+    # a loop produces near-identical sections, which these rules rightly reject.
+    good = {"sections": [
+        {"heading": "Introduction", "paragraphs": [
+            "Rotating rosters are the dominant scheduling pattern in acute hospital "
+            "nursing, and their health consequences have been studied for three "
+            "decades. Whether any intervention reliably offsets those consequences "
+            "remains unresolved."]},
+        {"heading": "Mechanisms", "paragraphs": [
+            "Circadian misalignment is the account most often advanced, resting "
+            "largely on preclinical work in which light exposure was manipulated "
+            "directly. Human evidence for the pathway is indirect."]},
+        {"heading": "Interventions", "paragraphs": [
+            "A 12-week randomised trial reported a 62% reduction in insomnia "
+            "symptoms among rotating-shift nurses. A later cohort study of "
+            "fixed-night staff did not reproduce that finding, and investigators "
+            "attributed the discrepancy to how rapidly each roster rotated."]},
+        {"heading": "Populations", "paragraphs": [
+            "Across three cohorts the direction of effect held, though its "
+            "magnitude differed considerably and the confidence intervals were "
+            "wide. No controlled study has enrolled workers over 55."]},
+        {"heading": "Conclusions", "paragraphs": [
+            "Roster design plausibly matters more than any individual sleep "
+            "intervention, but no trial has compared the two directly. An "
+            "adequately powered comparison would settle most of what is uncertain."]},
+    ]}
+    check("a specific, varied draft passes", not (rules(good) & SUBSTANCE_RULES))
+
+    # The curated sample is the calibration reference: these rules must never
+    # reject it, or they are measuring the wrong thing.
+    from articlegen.demo import SAMPLE_ARTICLE
+    check("the curated demo sample still passes",
+          not (rules(SAMPLE_ARTICLE) & SUBSTANCE_RULES))
+
+    # The brief must invert when the fix requires adding material, not rewording.
+    brief = revision_brief(check_style(thin))
+    check("substance brief asks for sources", "SOURCES" in brief)
+    check("substance brief does not forbid new numbers",
+          "do not introduce new claims or numbers" not in brief)
+
+    # Register faults only — enough sections that no substance rule fires, so
+    # this tests which brief is chosen rather than how many sections there are.
+    register_only = dict(good)
+    register_only["sections"] = list(good["sections"])
+    register_only["sections"][0] = {
+        "heading": "Introduction",
+        "paragraphs": ["You should note that this clearly proves the point!"],
+    }
+    reg_brief = revision_brief(check_style(register_only))
+    check("register-only brief still forbids new numbers",
+          "do not introduce new claims or numbers" in reg_brief)
+
+
 def test_groq_json_cleaning() -> None:
     from articlegen.llm import _clean_json_text
     check("clean simple fence", _clean_json_text("```json\n{\"a\": 1}\n```") == '{"a": 1}')
@@ -555,7 +646,7 @@ def main() -> int:
     for fn in (
         test_provider_resolution, test_per_request_api_key,
         test_pipeline_is_shared, test_draft_summary, test_rate_limit,
-        test_keepalive_connection_reuse,
+        test_keepalive_connection_reuse, test_substance_checks,
         test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
         test_prose_style_check,

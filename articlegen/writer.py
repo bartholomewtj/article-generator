@@ -195,6 +195,23 @@ mechanism or context, and don't let them masquerade as direct findings.
 FROM ITS ABSTRACT ONLY. Prefer the most-relevant source you were given. It is \
 printed as a boxed display item, so it must stand alone.
 
+SUBSTANCE — what makes this a review rather than a summary of a summary:
+
+- Every section must report something specific: what a study DID (design,
+  population, size, duration) and what it FOUND. "The evidence suggests these
+  strategies may be effective" is not a finding; "a 12-week trial in rotating-shift
+  nurses reported a 62% reduction in reported insomnia [4]" is.
+- Attribute findings to their study, not to a vague body of evidence. Name the
+  design and the population in the prose.
+- Where sources disagree, say so and say how they differ. Where one is much
+  stronger than the others, say why.
+- Do not restate a point once made. If a section is running short, the answer is
+  another finding from the sources, never another sentence about the same one.
+- Hedge to the evidence in front of you, and vary how: "in a single small trial",
+  "consistently across three cohorts", "no controlled study has tested". Repeating
+  "it appears that" and "the evidence suggests" is worse than not hedging, because
+  it hides how strong each individual claim actually is.
+
 STRUCTURE (journal Review, ~1000-1600 words of body text):
 - 5-7 sections. The first is headed "Introduction"; the last is headed \
 "Conclusions" or "Conclusions and outlook" and states what is established, what \
@@ -378,15 +395,32 @@ def write_article(
 
 
 def revise_prose(
-    article: dict, brief: str, model: str | None = None, api_key: str | None = None
+    article: dict,
+    brief: str,
+    model: str | None = None,
+    api_key: str | None = None,
+    papers: list[Paper] | None = None,
+    curation: dict | None = None,
 ) -> dict:
     """Re-write a draft's prose against a list of style violations from `style.py`.
 
     The brief names the specific conventions broken and quotes the offending text,
     so this is a targeted edit rather than a second attempt at the whole article.
     """
-    context = (
-        f"{brief}\n\nHere is the draft to revise, as JSON:\n\n"
+    context = f"{brief}\n\n"
+    if papers:
+        # Without these the model can only reshuffle what it already wrote, so a
+        # draft that failed for thinness comes back thin. The sources are the
+        # only material it may legitimately add.
+        relevance = (curation or {}).get("relevance") or {}
+        context += (
+            "SOURCES — the abstracts this article must be grounded in. Anything you "
+            "add must come from here and be cited by its SOURCE number:\n\n"
+            + _format_sources(papers, relevance)
+            + "\n\n"
+        )
+    context += (
+        "Here is the draft to revise, as JSON:\n\n"
         + json.dumps(article, ensure_ascii=False, indent=1)
     )
     return generate_json(

@@ -23,6 +23,7 @@ them back to the model once for a targeted revision.
 
 from __future__ import annotations
 
+import collections
 import re
 import statistics
 
@@ -108,6 +109,24 @@ MAX_NOMINALISATION_RATE = 0.11   # nominalised nouns as a share of all words
 MAX_PASSIVE_RATIO = 0.55         # share of sentences containing a passive
 MIN_SENTENCES_FOR_DENSITY = 12   # below this, density figures are noise
 MIN_WORDS_FOR_DENSITY = 250
+
+# Substance floors.
+#
+# Every rule above this point is a prohibition — don't under-hedge, don't use
+# boosters, don't claim proof. A model optimising only against prohibitions
+# writes vague, hedged, contentless prose, because asserting nothing is the
+# safest way to break no rule. A real draft came back at 803 words across four
+# sections with exactly one number in it, having passed every check, hedging at
+# 0.69/sentence — three times the floor — using four stock phrases.
+#
+# These pull the other way: they fail a draft for saying too little. They were
+# calibrated against the curated sample in demo.py, which must keep passing.
+MIN_BODY_WORDS = 900             # informational only; see the note at the check
+MIN_SECTIONS = 5                 # the writer prompt asks for 5-7
+MAX_HEDGE_SHARE = 0.40           # no single hedge may be this much of the total
+MAX_OPENER_REPEATS = 2           # same three-word sentence opening, at most twice
+REPEATED_PHRASE_WORDS = 8        # a shared run this long is recycled text
+MIN_SENTENCES_FOR_VARIETY = 10   # below this, repetition counts are noise
 
 
 def _sentences(text: str) -> list[str]:
@@ -242,10 +261,22 @@ def check_style(article: dict) -> dict:
 
     n_sentences = len(all_sentences)
     lengths = [len(re.findall(r"[A-Za-z][\w'-]*", s)) for s in all_sentences]
+
+    # Which hedges, not just how many. The density rule alone is satisfiable by
+    # repeating one stock phrase, and that is exactly what happens.
+    body_text = " ".join(_strip_citations(t) for _, t in prose_blocks(article)).lower()
+    hedge_counts = {
+        h: len(re.findall(rf"\b{re.escape(h)}\b", body_text)) for h in _HEDGES
+    }
+    hedge_counts = {h: n for h, n in hedge_counts.items() if n}
+    top_hedge, top_hedge_n = max(hedge_counts.items(), key=lambda kv: kv[1], default=("", 0))
+
     stats = {
         "sentences": n_sentences,
         "words": total_words,
         "hedges": total_hedges,
+        "distinct_hedges": len(hedge_counts),
+        "commonest_hedge": top_hedge,
         "hedges_per_sentence": round(total_hedges / n_sentences, 3) if n_sentences else 0.0,
         "mean_sentence_words": round(statistics.mean(lengths), 1) if lengths else 0.0,
         "nominalisation_rate": round(total_nominalisations / total_words, 3) if total_words else 0.0,
@@ -270,7 +301,70 @@ def check_style(article: dict) -> dict:
                 f"{stats['passive_ratio']:.0%} of sentences are passive; Nature and Science "
                 "both ask for the active voice where it is available.")
 
+    # ---------------------------------------------------------------- substance
+    # These fail a draft for saying too little, rather than for saying it wrongly.
+
+    n_sections = len(article.get("sections") or [])
+    if n_sections and n_sections < MIN_SECTIONS:
+        add("too-few-sections", "error", "whole article",
+            f"{n_sections} sections; a Review runs {MIN_SECTIONS}-7. Add sections that "
+            "develop distinct aspects of the question rather than restating the same one.")
+
+    # Warning, not error, and deliberately so. Calibrating against the curated
+    # sample in demo.py showed length does not discriminate: the good sample runs
+    # 773 words and the thin, repetitive draft that prompted these rules ran 803.
+    # What separated them was hedge variety (8 distinct hedges vs one phrase at
+    # 50%) and verbatim recycling. Failing a draft for brevity would reject the
+    # known-good sample while passing the bad one, so length only informs.
+    if total_words and total_words < MIN_BODY_WORDS:
+        add("under-length", "warning", "whole article",
+            f"{total_words} words of body prose, against the {MIN_BODY_WORDS}-1600 a Review "
+            "typically carries. If this is thin rather than merely concise, the remedy is "
+            "more evidence reported in more detail — specific findings, designs and "
+            "populations from the sources — not more words about the same points.")
+
+    if total_hedges and top_hedge_n / total_hedges > MAX_HEDGE_SHARE and total_hedges >= 4:
+        add("hedge-monotony", "error", "whole article",
+            f"'{top_hedge}' accounts for {top_hedge_n} of {total_hedges} hedges "
+            f"({top_hedge_n / total_hedges:.0%}). Hedging should track how strong each "
+            "piece of evidence actually is — 'in a single small trial', 'consistently "
+            "across cohorts' — not repeat one stock phrase to meet a quota.")
+
+    if n_sentences >= MIN_SENTENCES_FOR_VARIETY:
+        openers = collections.Counter(
+            " ".join(s.split()[:3]).lower().strip(".,;:") for s in all_sentences
+        )
+        for opener, count in openers.items():
+            if count > MAX_OPENER_REPEATS and len(opener.split()) == 3:
+                add("repeated-opener", "error", "whole article",
+                    f"{count} sentences open '{opener}...'. Vary how sentences begin; "
+                    "identical openings read as filler.", opener)
+                break
+
+        repeat = _repeated_phrase(all_sentences)
+        if repeat:
+            add("recycled-phrasing", "error", "whole article",
+                f"The phrase '{repeat}' appears more than once verbatim. Each section "
+                "should carry information the others do not; if a point has been made, "
+                "develop it rather than restate it.", repeat)
+
     return {"issues": issues, "stats": stats}
+
+
+def _repeated_phrase(sentences: list[str]) -> str:
+    """The longest run of words that appears verbatim more than once, if any.
+
+    Catches a Conclusions section that restates an earlier one word for word —
+    which reads as padding and which none of the register rules notice.
+    """
+    seen: dict[str, int] = {}
+    for sentence in sentences:
+        words = re.findall(r"[A-Za-z][\w'-]*", sentence.lower())
+        for i in range(len(words) - REPEATED_PHRASE_WORDS + 1):
+            phrase = " ".join(words[i:i + REPEATED_PHRASE_WORDS])
+            seen[phrase] = seen.get(phrase, 0) + 1
+    repeated = [p for p, n in seen.items() if n > 1]
+    return max(repeated, key=len) if repeated else ""
 
 
 def errors(report: dict) -> list[dict]:
@@ -294,17 +388,43 @@ def format_report(report: dict) -> str:
     return "\n".join(lines)
 
 
+# Failures that can only be fixed by adding grounded material, not by rewording.
+SUBSTANCE_RULES = frozenset({
+    "under-length", "too-few-sections", "recycled-phrasing",
+    "hedge-monotony", "repeated-opener",
+})
+
+
 def revision_brief(report: dict) -> str:
     """The instruction sent back to the model when the prose misses the house style."""
     problems = errors(report) or report["issues"]
+    needs_substance = any(i["rule"] in SUBSTANCE_RULES for i in problems)
+
     lines = ["The draft breaks these journal-prose conventions. Fix each one:"]
     for issue in problems:
         lines.append(f"- [{issue['where']}] {issue['detail']}")
         if issue["excerpt"]:
             lines.append(f"  Offending text: {issue['excerpt']}")
-    lines.append(
-        "Rewrite ONLY what is needed to fix these. Keep every citation marker exactly "
-        "where it is, keep the section headings, and do not introduce new claims or "
-        "numbers."
-    )
+
+    if needs_substance:
+        # A register fix is a rewording; a thinness fix is not. Telling the model
+        # "do not introduce new claims or numbers" here would forbid the only
+        # thing that can work, so the instruction inverts — with the sources
+        # supplied alongside, so the additions stay grounded.
+        lines.append(
+            "This draft is too thin or too repetitive, which rewording alone cannot fix. "
+            "Go back to the SOURCES below and pull in specific material you left out: "
+            "what each study actually did, in whom, and what it found. Report figures "
+            "that appear in an abstract, attribute findings to their design and "
+            "population, and say where studies disagree. Every section must carry "
+            "something the others do not. Keep every existing citation marker attached "
+            "to the claim it supports, and cite any newly used source by its SOURCE "
+            "number. Do NOT state a number that appears in no abstract."
+        )
+    else:
+        lines.append(
+            "Rewrite ONLY what is needed to fix these. Keep every citation marker exactly "
+            "where it is, keep the section headings, and do not introduce new claims or "
+            "numbers."
+        )
     return "\n".join(lines)

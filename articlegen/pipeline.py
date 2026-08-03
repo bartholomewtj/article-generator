@@ -88,11 +88,17 @@ def enforce_style(
     model: str | None = None,
     api_key: str | None = None,
     log: Logger = _silent,
+    papers: list[Paper] | None = None,
+    curation: dict | None = None,
 ) -> tuple[dict, dict]:
     """Check the prose against journal conventions and, if it misses, revise once.
 
     The revision is only accepted if it actually reduces the error count and keeps
     the draft intact — a revision that drops citations or sections is discarded.
+
+    `papers` matters when the draft failed for thinness or repetition: those can
+    only be fixed by adding grounded material, and without the sources the model
+    has nothing to add but more words about the same points.
     """
     report = check_style(article)
     problems = style_errors(report)
@@ -103,7 +109,10 @@ def enforce_style(
 
     log(f"Prose style: {len(problems)} issue(s) against journal conventions; revising once...")
     try:
-        revised = revise_prose(article, revision_brief(report), model=model, api_key=api_key)
+        revised = revise_prose(
+            article, revision_brief(report), model=model, api_key=api_key,
+            papers=papers, curation=curation,
+        )
     except Exception as exc:
         log(f"  revision failed ({exc}); keeping the original draft.")
         log(format_style(report))
@@ -166,7 +175,9 @@ def generate_draft(
         topic, papers, model=model, style_note=style_note, curation=curation, api_key=api_key
     )
 
-    article, style_report = enforce_style(article, model=model, api_key=api_key, log=log)
+    article, style_report = enforce_style(
+        article, model=model, api_key=api_key, log=log, papers=papers, curation=curation
+    )
     verification = check_statistics(article, papers)
 
     # Feeds the deterministic Methods section — the search actually performed.

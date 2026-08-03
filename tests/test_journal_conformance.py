@@ -153,6 +153,20 @@ _SECTIONS = [
         ],
     },
     {
+        # Added to bring the fixture up to the 5-7 sections docs/journal-style.md
+        # specifies. It ran at four, which the substance rules correctly flag.
+        "heading": "Generalisability",
+        "paragraphs": [
+            "The cohorts studied were drawn predominantly from one age band, and "
+            "no reviewed study stratified its results by comorbidity [1]. Carrying "
+            "these estimates to older or multimorbid populations is therefore an "
+            "extrapolation rather than a reading of the evidence.",
+            "Where two cohorts did differ in composition, the reported effect "
+            "differed with them [2], which argues against treating the pooled "
+            "figure as transportable.",
+        ],
+    },
+    {
         "heading": "Conclusions and outlook",
         "paragraphs": [
             "The direction of effect appears reasonably well supported, while its "
