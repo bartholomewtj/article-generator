@@ -383,6 +383,49 @@ def test_source_failures_are_distinguishable() -> None:
     check("and defaults to a topic problem", NoPapersFound("x").sources_failed is False)
 
 
+def test_polite_pool_identification() -> None:
+    """We must identify ourselves, and respect a cool-off the server asks for.
+
+    Requests' default "python-requests/x.y" arriving from a cloud provider's
+    shared egress IP is the profile CDNs throttle first, and a fixed 2s/4s
+    backoff ignores a server that just told us exactly when to come back.
+    """
+    from articlegen import sources
+
+    real = os.environ.get("OPENALEX_MAILTO")
+    try:
+        os.environ.pop("OPENALEX_MAILTO", None)
+        ua = sources._user_agent()
+        check("user-agent names the project", "articlegen/" in ua)
+        check("and is not the requests default", "python-requests" not in ua)
+        check("no mailto when unconfigured", "mailto:" not in ua)
+
+        os.environ["OPENALEX_MAILTO"] = "you@example.com"
+        check("mailto rides in the header when set",
+              "mailto:you@example.com" in sources._user_agent())
+    finally:
+        os.environ.pop("OPENALEX_MAILTO", None)
+        if real is not None:
+            os.environ["OPENALEX_MAILTO"] = real
+
+    class FakeResp:
+        def __init__(self, retry_after=None):
+            self.headers = {} if retry_after is None else {"Retry-After": retry_after}
+
+    check("a short Retry-After wins over the backoff",
+          sources._retry_delay(FakeResp("10"), 2.0) == 10.0)
+    check("but never shortens it",
+          sources._retry_delay(FakeResp("1"), 4.0) == 4.0)
+    check("no header falls back to the backoff",
+          sources._retry_delay(FakeResp(), 2.0) == 2.0)
+    check("an HTTP-date form falls back too",
+          sources._retry_delay(FakeResp("Wed, 21 Oct 2026 07:28:00 GMT"), 2.0) == 2.0)
+    check("a cool-off past the cap gives up instead of waiting",
+          sources._retry_delay(FakeResp("600"), 2.0) is None)
+    check("a connection error has no response to read",
+          sources._retry_delay(None, 2.0) == 2.0)
+
+
 def test_methods_names_only_sources_that_answered() -> None:
     """The Methods section must not claim a database that returned nothing.
 
@@ -838,6 +881,7 @@ def main() -> int:
         test_pipeline_is_shared, test_draft_summary, test_rate_limit,
         test_keepalive_connection_reuse, test_substance_checks,
         test_groq_token_budget, test_source_failures_are_distinguishable,
+        test_polite_pool_identification,
         test_methods_names_only_sources_that_answered,
         test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,

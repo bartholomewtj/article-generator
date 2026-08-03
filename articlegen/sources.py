@@ -28,6 +28,19 @@ DATABASE_NAMES = {
     "openalex": "OpenAlex",
 }
 
+# Identify ourselves rather than sending requests' default
+# "python-requests/x.y". OpenAlex sits behind a CDN, and a stock library
+# user-agent arriving from a cloud provider's shared egress IP is the exact
+# profile that gets throttled first. OpenAlex also documents the User-Agent as
+# a way into the polite pool, so the mailto goes here as well as in the query
+# string — belt and braces, since only the header reaches Semantic Scholar.
+_UA_BASE = "articlegen/0.1.0 (+https://github.com/bartholomewtj/article-generator)"
+
+# Longest we'll honour a Retry-After. A draft has a user watching a progress
+# bar, so waiting out a 60s cool-off is worse than failing and letting the
+# other source carry the run.
+_MAX_BACKOFF = 30.0
+
 _SS_FIELDS = "title,abstract,year,authors,venue,citationCount,externalIds,url"
 _OA_FIELDS = (
     "id,title,publication_year,authorships,primary_location,"
@@ -73,8 +86,39 @@ class SearchFailure(Exception):
     """
 
 
+def _user_agent() -> str:
+    """Our User-Agent, carrying the contact address when one is configured."""
+    mailto = os.environ.get("OPENALEX_MAILTO")
+    if mailto:
+        return f"{_UA_BASE} mailto:{mailto}"
+    return _UA_BASE
+
+
+def _retry_delay(resp: requests.Response | None, fallback: float) -> float | None:
+    """How long to wait before retrying, or None to stop trying now.
+
+    A server that sends Retry-After is telling us exactly when it will answer;
+    backing off less than that just burns an attempt. Backing off *more* than
+    _MAX_BACKOFF isn't worth it either — return None and let the caller fail
+    while the other source still has time to answer.
+    """
+    if resp is None:
+        return fallback
+    header = resp.headers.get("Retry-After", "")
+    try:
+        wanted = float(header)
+    except ValueError:
+        # Retry-After may also be an HTTP date. Neither API sends that form,
+        # so fall back rather than carry a date parser for it.
+        return fallback
+    if wanted > _MAX_BACKOFF:
+        return None
+    return max(wanted, fallback)
+
+
 def _get_with_retry(url: str, params: dict, headers: dict, tries: int = 3) -> requests.Response:
     """Return a 200 response, or raise SearchFailure explaining why not."""
+    headers = {"User-Agent": _user_agent(), **headers}
     delay = 2.0
     last = ""
     for attempt in range(tries):
@@ -90,7 +134,10 @@ def _get_with_retry(url: str, params: dict, headers: dict, tries: int = 3) -> re
             if resp.status_code not in (429, 500, 502, 503):
                 raise SearchFailure(last)  # non-retryable
         if attempt < tries - 1:
-            time.sleep(delay)
+            wait = _retry_delay(resp, delay)
+            if wait is None:
+                raise SearchFailure(f"{last}, cool-off longer than {_MAX_BACKOFF:.0f}s")
+            time.sleep(wait)
             delay *= 2
     raise SearchFailure(f"{last} after {tries} attempts")
 
