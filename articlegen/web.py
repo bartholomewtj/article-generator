@@ -83,6 +83,23 @@ def _slugify(text: str) -> str:
 
 
 class ArticleGenHandler(SimpleHTTPRequestHandler):
+    # SimpleHTTPRequestHandler defaults to HTTP/1.0, which has no keep-alive:
+    # the server closes the connection after every response. Browsers and
+    # reverse proxies pool connections, so they reuse one the server has
+    # already hung up on and the request fails instantly — intermittently,
+    # depending on whether that particular request drew a pooled or a fresh
+    # connection. It looks like flaky networking and isn't: roughly every
+    # other fetch from the deployed front end failed in ~140ms.
+    #
+    # curl hides the bug completely, because each invocation opens its own
+    # connection. Only a connection-pooling client sees it.
+    #
+    # HTTP/1.1 requires an accurate Content-Length (or chunked) on every
+    # response or the client hangs waiting for a body. _send_json sets it,
+    # SimpleHTTPRequestHandler sets it for files and send_error, and
+    # do_OPTIONS sends an explicit zero below.
+    protocol_version = "HTTP/1.1"
+
     def log_message(self, format_str: str, *args) -> None:
         sys.stderr.write(f"[web] {format_str % args}\n")
 
@@ -146,6 +163,9 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
     def do_OPTIONS(self) -> None:
         self.send_response(HTTPStatus.NO_CONTENT)
         self._send_cors_headers()
+        # Explicit zero: under HTTP/1.1 a response with neither Content-Length
+        # nor chunked encoding leaves the client waiting for a body.
+        self.send_header("Content-Length", "0")
         self.end_headers()
 
     def do_GET(self) -> None:
