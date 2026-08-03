@@ -103,6 +103,10 @@ SAMPLE_CURATION = {
 SAMPLE_PROVENANCE = {
     "queries": ["sleep memory consolidation", "glymphatic clearance sleep", "sleep deprivation individual differences"],
     "core_entity": "sleep and the brain",
+    # Named so the demo shows the Methods section a real run produces. Methods
+    # names only the databases that answered and infers nothing, so leaving this
+    # out would make the sample demonstrate the unrecorded-search wording.
+    "databases": ["Semantic Scholar Graph API", "OpenAlex", "Europe PMC"],
     "model": "demo build — no model call",
 }
 

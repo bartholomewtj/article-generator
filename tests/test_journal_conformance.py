@@ -197,7 +197,14 @@ def fixtures():
     """(name, article, papers, curation, verification, provenance, topic)."""
     from articlegen import demo
 
-    provenance = {"queries": ["query one", "query two"], "model": "test-model"}
+    # `databases` records which sources actually answered. Methods names only
+    # these; with the key absent it names none, so a fixture that omitted it
+    # would be testing the unrecorded-search path rather than the normal one.
+    provenance = {
+        "queries": ["query one", "query two"],
+        "databases": ["OpenAlex", "Europe PMC"],
+        "model": "test-model",
+    }
 
     # 1. The happy path.
     yield ("demo sample", demo.SAMPLE_ARTICLE, demo.SAMPLE_PAPERS, demo.SAMPLE_CURATION,

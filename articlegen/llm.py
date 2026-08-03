@@ -25,7 +25,12 @@ import sys
 import time
 
 GROQ_DEFAULT_MODEL = "llama-3.3-70b-versatile"
-ANTHROPIC_DEFAULT_MODEL = "claude-opus-4-8"
+# Claude Opus 5 is the current Opus, at the same price as the 4.8 it replaces
+# ($5/$25 per million tokens). `claude-opus-4-8` still works if you pass it with
+# --model. Keep this in step with the Settings dropdown in index.html: the web
+# app sends a model name, and web.ALLOWED_MODELS is built from the constants
+# here, so a stale name there is quietly dropped rather than honoured.
+ANTHROPIC_DEFAULT_MODEL = "claude-opus-5"
 DEFAULT_PROVIDER = "groq"
 
 # Groq's free tier meters tokens per minute, and it counts the *reserved* output
@@ -143,12 +148,36 @@ def _anthropic_generate(prompt, schema, system, model, deep, api_key=None) -> di
         ) as stream:
             response = stream.get_final_message()
     else:
+        # `max_tokens` caps thinking *and* the reply together, and on Claude
+        # Opus 5 adaptive thinking is on whenever the parameter is omitted — so
+        # the ceiling that was ample for a bare JSON reply on Opus 4.8 can now
+        # truncate one mid-object. The curation call in particular grades twenty
+        # sources at once.
         response = client.messages.create(
-            max_tokens=8000,
+            max_tokens=16000,
             output_config={"format": {"type": "json_schema", "schema": schema}},
             **kwargs,
         )
-    text = next(b.text for b in response.content if b.type == "text")
+
+    if response.stop_reason == "refusal":
+        # A safety classifier declined. This arrives as a normal 200 with no
+        # text block, so without this check the generator below raises
+        # StopIteration and the caller reports an empty, baffling failure.
+        detail = getattr(response, "stop_details", None)
+        category = getattr(detail, "category", None) or "unspecified"
+        raise RuntimeError(
+            f"The model declined this request ({category}). Rephrase the topic, "
+            "or generate it with Groq instead."
+        )
+    if response.stop_reason == "max_tokens":
+        raise RuntimeError(
+            "The model hit its output limit before finishing the JSON. Try a "
+            "narrower topic, or --max-papers with a smaller number."
+        )
+
+    text = next((b.text for b in response.content if b.type == "text"), "")
+    if not text:
+        raise RuntimeError(f"The model returned no text (stop_reason={response.stop_reason}).")
     return json.loads(text)
 
 
