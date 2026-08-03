@@ -15,10 +15,15 @@ journal-article abstracts. It runs two ways:
 
 - GitHub repo: **`bartholomewtj/article-generator`** (was `Dispatch-test` — old
   URLs still redirect).
-- The default branch is currently the auto-generated name
-  **`claude/article-generator-html-yth1u4`**. A rename to `main` was requested
-  but must be done in the GitHub UI (Settings → Branches) — no API tool exposes
-  it. Workflows reference the default branch dynamically, so a rename is safe.
+- The default branch is still the auto-generated name
+  **`claude/article-generator-html-yth1u4`**. A rename to `main` is wanted.
+  **The old note here said no API exposes the rename; that was wrong** —
+  `gh api --method POST repos/bartholomewtj/article-generator/branches/<old>/rename
+  -f new_name=main` works (verified: it returns "Branch not found" for a
+  nonexistent branch, not "endpoint not found"). Workflows reference the default
+  branch dynamically, so a rename is safe — but **Render tracks a branch by
+  name**, so a rename means updating the service's branch setting in the same
+  sitting or deploys silently stop.
 - `drafts/` is intentionally git-tracked — it's the review surface.
 
 ## Architecture (module map)
@@ -135,6 +140,37 @@ localhost, pinned to the Pages origin in production) and `ARTICLEGEN_RATE_LIMIT`
 APIs meter against the *server's* IP — one abusive client throttles everyone.
 It is charged only after validation, so a malformed request costs no quota.
 
+`protocol_version = "HTTP/1.1"` is load-bearing. http.server defaults to
+HTTP/1.0, which closes the connection after every response; browsers and proxies
+pool connections and then fail instantly on a socket the server already hung up
+on. It presents as flaky networking — about half of all fetches failing in
+~140ms — and **curl cannot reproduce it**, because each invocation opens a fresh
+connection. Only a pooling client sees it.
+
+## Deployment
+
+```
+index.html on GitHub Pages  ──POST /api/draft──▶  backend on Render
+   (static, holds the key)                        (stateless, holds nothing)
+```
+
+- **Front end**: GitHub Pages, deployed by `.github/workflows/pages.yml` on push
+  to the default branch. `API_BASE` in `index.html` points at the backend.
+- **Backend**: Render free tier, service `articlegen-api`, declared in
+  `render.yaml` (Blueprint). Deploys from GitHub; there is no workflow and no
+  token. URL `https://articlegen-api.onrender.com` — must stay in step with
+  `name:` in `render.yaml`, since the subdomain derives from it.
+- Free tier sleeps after 15 min idle and takes ~50s to wake. That is tolerable
+  only because the page is static and the backend is touched solely by
+  *Generate*, which already runs 40-90s behind a progress bar.
+- **Hugging Face Spaces was tried and abandoned**: free CPU Spaces require a
+  payment method, and without one the Space is created but pinned at
+  `Quota exceeded for flavor cpu-basic ... limit=0` forever. Fly.io fails the
+  same no-card constraint by its own docs. Don't re-litigate either.
+- `GET /api/diag` runs one keyless search and reports what *that host* gets back
+  from the scholarly APIs. It exists because everything works locally, so a
+  deployment reporting "no papers found" is otherwise undiagnosable from outside.
+
 ## AI providers (`llm.py`)
 
 - **API keys are passed per call**, never through `os.environ`. The server is
@@ -144,7 +180,19 @@ It is charged only after validation, so a malformed request costs no quota.
   to the environment, which is what the CLI uses. Guarded by
   `test_per_request_api_key`.
 - **Groq is the default** (free tier / fast inference). `GROQ_API_KEY` is used
-  automatically and wins even if `ANTHROPIC_API_KEY` is also set.
+  automatically and wins even if `ANTHROPIC_API_KEY` is also set. The web app
+  offers Claude as an alternative in Settings, storing a key per provider.
+- **Groq's free tier is the binding constraint, and it bites twice.**
+  - **12,000 tokens/minute.** Groq counts the *reserved output* against this as
+    well as the prompt, so `max_completion_tokens` must fit inside the limit —
+    the article call once reserved 16,000 against a 12,000 ceiling, which could
+    never succeed regardless of prompt length. `llm.prompt_budget_chars()`
+    sizes the source payload; `_format_sources` shortens long abstracts before
+    dropping any paper, because breadth is what stops sections repeating.
+  - **100,000 tokens/day.** One article costs ~14-23k (more when the substance
+    rules trigger a revision), so the free tier allows roughly **4-7 articles a
+    day**, and failed attempts still spend quota. Claude has no comparable
+    ceiling and `prompt_budget_chars` returns `None` for it.
 - Use Claude by setting repo variable `ARTICLEGEN_PROVIDER=anthropic`, passing a
   `claude-*` `--model`, or having only an Anthropic key.
 - Default models: `llama-3.3-70b-versatile` / `claude-opus-4-8`.
