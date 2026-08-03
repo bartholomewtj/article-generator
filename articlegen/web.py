@@ -86,6 +86,23 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
     def log_message(self, format_str: str, *args) -> None:
         sys.stderr.write(f"[web] {format_str % args}\n")
 
+    def _missing_key(self, api_key: str | None) -> bool:
+        """Reject a keyless request in the caller's language, not the server's.
+
+        Without this the provider layer raises "GROQ_API_KEY environment variable
+        is not set", which is true and useless to someone using the web app —
+        they have no environment to set. A locally-run server with its own key
+        configured needs no key in the request, so only fail when both are absent.
+        """
+        if api_key or os.environ.get("GROQ_API_KEY") or os.environ.get("ANTHROPIC_API_KEY"):
+            return False
+        self._send_json(
+            {"error": "No API key set. Open Settings (⚙️) and paste a free Groq API key "
+                      "from console.groq.com/keys."},
+            status=400,
+        )
+        return True
+
     def _over_rate_limit(self) -> bool:
         """Charge the throttle for a request that is about to do real work.
 
@@ -208,7 +225,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         if not theme:
             self._send_json({"error": "Please provide a theme."}, status=400)
             return
-        if self._over_rate_limit():
+        if self._missing_key(api_key) or self._over_rate_limit():
             return
 
         prompt_theme = theme
@@ -233,7 +250,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         if len(topic) > 300:
             self._send_json({"error": "Topic is too long (300 characters max)."}, status=400)
             return
-        if self._over_rate_limit():
+        if self._missing_key(api_key) or self._over_rate_limit():
             return
 
         try:
