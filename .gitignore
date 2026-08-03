@@ -5,6 +5,10 @@ build/
 dist/
 .venv/
 venv/
+# local secrets — API keys and the contact address live here, never in the repo
+.env
+.env.*
+!.env.example
 # generated output (drafts/ is intentionally tracked — it's the review surface)
 /*.html
 !README*.html
