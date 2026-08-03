@@ -1,0 +1,51 @@
+# Render Blueprint — declares the backend so it can be created in one click
+# rather than a dozen dashboard fields.
+#
+# In Render: New → Blueprint → pick this repo. It reads this file, builds the
+# Dockerfile, and wires the environment up as described here.
+#
+# Deploys happen automatically on push to the default branch; there is no
+# workflow and no token for GitHub to hold.
+
+services:
+  - type: web
+    # This becomes the subdomain: <name>.onrender.com, which is global, so a
+    # plain "articlegen" is likely taken. Keep this in step with API_BASE in
+    # index.html — if Render makes you pick a different name, change both.
+    name: articlegen-api
+    runtime: docker
+    plan: free
+    # Closest free region to the Gold Coast. Oregon/Frankfurt are the
+    # alternatives if Singapore is ever unavailable.
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      # Render assigns the port and expects the app to bind it. The Dockerfile's
+      # CMD already reads ${PORT}, so this just makes the contract explicit.
+      - key: PORT
+        value: "10000"
+
+      # Never write articles to disk on a shared host: one visitor's article
+      # would be readable by every other visitor at a guessable URL.
+      - key: ARTICLEGEN_STATELESS
+        value: "1"
+
+      # Only the GitHub Pages front end may call this from a browser.
+      - key: ARTICLEGEN_ALLOWED_ORIGINS
+        value: https://bartholomewtj.github.io
+
+      # Per-IP requests/hour. Callers pay for their own LLM tokens, but the
+      # scholarly APIs meter against this server's address.
+      - key: ARTICLEGEN_RATE_LIMIT
+        value: "20"
+
+      # Identifies us to OpenAlex's "polite pool" for better rate limits.
+      # Set a real address in the Render dashboard if you want the benefit.
+      - key: OPENALEX_MAILTO
+        sync: false
+
+# Deliberately absent: any LLM API key. This service has none of its own —
+# every visitor brings their own, sent per request and never stored. Adding one
+# here would turn the deployment into a free LLM endpoint for anyone who finds it.
