@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from .llm import resolve_provider
-from .sources import Paper, gather_evidence
+from .sources import DATABASE_NAMES, Paper, gather_evidence
 from .style import check_style, errors as style_errors, format_report as format_style, revision_brief
 from .verify import check_statistics
 from .writer import curate_sources, plan_queries, revise_prose, write_article
@@ -199,9 +199,21 @@ def generate_draft(
     verification = check_statistics(article, papers)
 
     # Feeds the deterministic Methods section — the search actually performed.
+    #
+    # `databases` names only the sources that actually returned records. It used
+    # to be a hardcoded constant in render.py, so every article stated that both
+    # Semantic Scholar and OpenAlex had been searched even when one of them had
+    # refused every request. Semantic Scholar's keyless tier currently 429s on
+    # every call, which made that claim false in every article the pipeline
+    # produced. The Methods section is the one place in this project that must
+    # not overstate what was done.
+    answered = {o["source"] for o in outcomes if o["count"]}
+    databases = [name for key, name in DATABASE_NAMES.items() if key in answered]
+
     provenance = {
         "queries": queries,
         "core_entity": core_entity,
+        "databases": databases,
         "model": resolve_provider(model, api_key)[1],
         "date": datetime.date.today().strftime("%d %B %Y").lstrip("0"),
     }

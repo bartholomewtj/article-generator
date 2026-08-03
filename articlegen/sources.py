@@ -21,6 +21,13 @@ import requests
 SEMANTIC_SCHOLAR_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
 OPENALEX_URL = "https://api.openalex.org/works"
 
+# How each source is named in an article's Methods section. Keyed by the
+# `source` value gather_evidence records in its outcomes.
+DATABASE_NAMES = {
+    "semantic_scholar": "Semantic Scholar Graph API",
+    "openalex": "OpenAlex",
+}
+
 _SS_FIELDS = "title,abstract,year,authors,venue,citationCount,externalIds,url"
 _OA_FIELDS = (
     "id,title,publication_year,authorships,primary_location,"
@@ -230,22 +237,44 @@ def gather_evidence(
     """
     seen: set[str] = set()
     collected: list[Paper] = []
+    # A source that has already refused once in this run will almost certainly
+    # refuse again — the limits are per-minute and the run takes seconds. Each
+    # attempt costs three tries with backoff, about ten seconds, so retrying a
+    # dead source across every query wasted a third of the gather time.
+    # Semantic Scholar's keyless tier currently 429s on every call.
+    exhausted: set[str] = set()
+
     for query in queries:
-        for search in (search_semantic_scholar, search_openalex):
+        # Keys are explicit rather than derived from `search.__name__`: the name
+        # is not a stable identity (a replaced function reports whatever it is
+        # called, and two lambdas are both `<lambda>`), and these keys index
+        # DATABASE_NAMES and the outcome records. The tuple is rebuilt each call
+        # so the module-level names are looked up fresh.
+        for name, search in (("semantic_scholar", search_semantic_scholar),
+                             ("openalex", search_openalex)):
+            if name in exhausted:
+                if outcomes is not None:
+                    outcomes.append({"source": name, "query": query, "count": 0,
+                                     "error": "skipped (already failed this run)"})
+                log(f"  {name}({query!r}) -> skipped, already failed this run")
+                continue
+
             try:
                 results = search(query, limit=per_query)
                 error = ""
             except SearchFailure as exc:
                 results, error = [], str(exc)
+                exhausted.add(name)
             except Exception as exc:  # malformed payload, etc.
                 results, error = [], f"{type(exc).__name__}: {exc}"
+                exhausted.add(name)
 
             if outcomes is not None:
                 outcomes.append({
-                    "source": search.__name__.replace("search_", ""),
+                    "source": name,
                     "query": query, "count": len(results), "error": error,
                 })
-            log(f"  {search.__name__}({query!r}) -> "
+            log(f"  {name}({query!r}) -> "
                 + (f"{len(results)} papers" if not error else f"FAILED ({error})"))
 
             for paper in results:
