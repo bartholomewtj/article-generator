@@ -24,14 +24,7 @@ from .render import _draft_title, build_index, render_article, render_markdown
 from .sources import gather_evidence
 from .verify import check_statistics
 from .writer import curate_sources, plan_queries, write_article
-
-DRAFTS_DIR = "drafts"
-
-
-def _slugify(text: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
-    return slug[:60] or "article"
-
+from .utils import slugify, IDEAS_DIR, DRAFTS_DIR
 
 class ArticleGenHandler(SimpleHTTPRequestHandler):
     def log_message(self, format_str: str, *args) -> None:
@@ -157,7 +150,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
 
             os.makedirs(DRAFTS_DIR, exist_ok=True)
             date_str = datetime.date.today().isoformat()
-            stem = f"{date_str}-{_slugify(topic)}"
+            stem = f"{date_str}-{slugify(topic)}"
             html_filename = f"{stem}.html"
             md_filename = f"{stem}.md"
 

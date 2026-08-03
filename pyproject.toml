@@ -19,3 +19,6 @@ articlegen = "articlegen.cli:main"
 
 [tool.setuptools]
 packages = ["articlegen"]
+
+[tool.setuptools.package-data]
+articlegen = ["templates/*.html"]

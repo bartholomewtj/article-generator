@@ -23,17 +23,13 @@ import json
 import os
 import re
 import sys
+from .utils import slugify, IDEAS_DIR, DRAFTS_DIR
 
 MARKER_PREFIX = "<!-- articlegen:ideas "
 MARKER_SUFFIX = " -->"
 
 _THEME_PREFIX_RE = re.compile(r"^\s*theme\s*:\s*", re.IGNORECASE)
 _MARKER_RE = re.compile(re.escape(MARKER_PREFIX) + r"(.*?)" + re.escape(MARKER_SUFFIX), re.DOTALL)
-
-
-def _slugify(text: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
-    return slug[:60] or "article"
 
 
 def write_output(name: str, value: str) -> None:
@@ -169,7 +165,7 @@ def cmd_resolve(args) -> int:
         write_output("error", error or "Could not resolve the request.")
         return 0  # graceful: the workflow posts the error as a comment
 
-    stem = f"{datetime.date.today().isoformat()}-{_slugify(title)}"
+    stem = f"{datetime.date.today().isoformat()}-{slugify(title)}"
     write_output("ok", "true")
     write_output("title", title)
     write_output("style", style)

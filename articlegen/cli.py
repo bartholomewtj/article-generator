@@ -23,15 +23,7 @@ from .render import build_index, render_article, render_markdown
 from .sources import gather_evidence
 from .verify import check_statistics
 from .writer import curate_sources, plan_queries, write_article
-
-IDEAS_DIR = "ideas"
-DRAFTS_DIR = "drafts"
-
-
-def _slugify(text: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
-    return slug[:60] or "article"
-
+from .utils import slugify, IDEAS_DIR, DRAFTS_DIR
 
 def _log(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
@@ -62,7 +54,7 @@ def cmd_ideas(args) -> int:
         return _api_error(exc)
 
     os.makedirs(IDEAS_DIR, exist_ok=True)
-    out_path = args.output or os.path.join(IDEAS_DIR, f"{_slugify(args.theme)}.md")
+    out_path = args.output or os.path.join(IDEAS_DIR, f"{slugify(args.theme)}.md")
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(ideas_to_markdown(args.theme, ideas))
 
@@ -112,7 +104,7 @@ def cmd_draft(args) -> int:
 
     os.makedirs(DRAFTS_DIR, exist_ok=True)
     date = datetime.date.today().isoformat()
-    stem = args.name or f"{date}-{_slugify(args.topic)}"
+    stem = args.name or f"{date}-{slugify(args.topic)}"
     html_path = os.path.join(DRAFTS_DIR, f"{stem}.html")
     md_path = os.path.join(DRAFTS_DIR, f"{stem}.md")
 
