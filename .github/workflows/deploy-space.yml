@@ -32,9 +32,16 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
+          # Report the length, never the value. "Set but empty" is a distinct
+          # failure from "never set" — `gh secret set` stores an empty string if
+          # the paste doesn't register before you press enter, and the resulting
+          # skip is otherwise indistinguishable from having done nothing at all.
+          echo "HF_TOKEN length: ${#HF_TOKEN}"
           if [ -z "$HF_TOKEN" ]; then
-            echo "HF_TOKEN is not set — skipping deploy."
-            echo "See deploy/README.md for one-time setup."
+            echo "::warning::HF_TOKEN is empty or unset — skipping deploy."
+            echo "If you already ran 'gh secret set HF_TOKEN', the paste did not"
+            echo "register. Re-run it and check the value pasted before pressing enter."
+            echo "See deploy/README.md for the one-time setup."
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
