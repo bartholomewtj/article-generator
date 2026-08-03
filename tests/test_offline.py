@@ -383,6 +383,71 @@ def test_source_failures_are_distinguishable() -> None:
     check("and defaults to a topic problem", NoPapersFound("x").sources_failed is False)
 
 
+def test_methods_names_only_sources_that_answered() -> None:
+    """The Methods section must not claim a database that returned nothing.
+
+    `_DATABASES` was a hardcoded constant, so every article stated that both
+    Semantic Scholar and OpenAlex had been searched — including while Semantic
+    Scholar's keyless tier was 429ing every call. That made the claim false in
+    every article the pipeline produced, in the one section that exists to state
+    what was actually done.
+    """
+    from articlegen import sources
+    from articlegen.render import render_article
+    from articlegen.sources import DATABASE_NAMES, Paper
+
+    papers = [Paper(title="P", abstract="a", year=2024, source="OpenAlex")]
+    article = {
+        "title": "T", "abstract": "A" * 200, "keywords": [], "evidence_note": "",
+        "featured_study": {"source_index": 1, "why": "w", "method": "m", "results": "r"},
+        "sections": [{"heading": "Introduction", "paragraphs": ["Prose [1]."]},
+                     {"heading": "Conclusions", "paragraphs": ["More [1]."]}],
+        "key_points": [], "glossary": [], "references": [1],
+    }
+
+    only_openalex = render_article(article, papers, "t", None, {},
+                                   {"databases": ["OpenAlex"], "queries": ["q"]})
+    check("names the source that answered", "OpenAlex" in only_openalex)
+    check("does not name the silent source", "Semantic Scholar" not in only_openalex)
+
+    both = render_article(article, papers, "t", None, {},
+                          {"databases": list(DATABASE_NAMES.values()), "queries": ["q"]})
+    check("names both when both answered",
+          "OpenAlex" in both and "Semantic Scholar" in both)
+
+    # Drafts written before provenance carried `databases` must still render.
+    legacy = render_article(article, papers, "t", None, {}, {"queries": ["q"]})
+    check("legacy drafts without `databases` still render", "Candidate records" in legacy)
+
+    # A source that refuses once is not retried for the remaining queries:
+    # three tries with backoff is ~10s, and the limits are per-minute.
+    real_ss, real_oa = sources.search_semantic_scholar, sources.search_openalex
+    calls = {"ss": 0, "oa": 0}
+    try:
+        def failing_ss(q, limit=15):
+            calls["ss"] += 1
+            raise sources.SearchFailure("HTTP 429 after 3 attempts")
+
+        def working_oa(q, limit=15):
+            calls["oa"] += 1
+            return [Paper(title=f"{q}-{calls['oa']}", abstract="a", year=2024)]
+
+        sources.search_semantic_scholar = failing_ss
+        sources.search_openalex = working_oa
+        outcomes: list[dict] = []
+        got = sources.gather_evidence(["q1", "q2", "q3"], outcomes=outcomes)
+
+        check("the failing source is tried once, not per query", calls["ss"] == 1)
+        check("the working source is still tried every query", calls["oa"] == 3)
+        check("the run still succeeds on one source", len(got) == 3)
+        check("skips are recorded, not silent",
+              sum(1 for o in outcomes if "skipped" in o["error"]) == 2)
+        answered = {o["source"] for o in outcomes if o["count"]}
+        check("only the answering source counts as answered", answered == {"openalex"})
+    finally:
+        sources.search_semantic_scholar, sources.search_openalex = real_ss, real_oa
+
+
 def test_groq_json_cleaning() -> None:
     from articlegen.llm import _clean_json_text
     check("clean simple fence", _clean_json_text("```json\n{\"a\": 1}\n```") == '{"a": 1}')
@@ -731,6 +796,7 @@ def main() -> int:
         test_pipeline_is_shared, test_draft_summary, test_rate_limit,
         test_keepalive_connection_reuse, test_substance_checks,
         test_groq_token_budget, test_source_failures_are_distinguishable,
+        test_methods_names_only_sources_that_answered,
         test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
         test_prose_style_check,
