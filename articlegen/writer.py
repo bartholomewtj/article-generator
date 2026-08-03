@@ -259,7 +259,9 @@ unchanged. Do not add claims, sources or figures.
 """
 
 
-def plan_queries(topic: str, model: str | None = None) -> tuple[list[str], str]:
+def plan_queries(
+    topic: str, model: str | None = None, api_key: str | None = None
+) -> tuple[list[str], str]:
     """Turn the topic into scholarly queries and identify its core on-topic entity."""
     result = generate_json(
         (
@@ -274,6 +276,7 @@ def plan_queries(topic: str, model: str | None = None) -> tuple[list[str], str]:
         ),
         _QUERY_SCHEMA,
         model=model,
+        api_key=api_key,
     )
     return result["queries"][:4], result.get("core_entity", "").strip()
 
@@ -292,7 +295,9 @@ def _format_sources(papers: list[Paper], relevance: dict[int, str] | None = None
     return "\n\n".join(blocks)
 
 
-def curate_sources(topic: str, papers: list[Paper], model: str | None = None) -> dict:
+def curate_sources(
+    topic: str, papers: list[Paper], model: str | None = None, api_key: str | None = None
+) -> dict:
     """Score each paper's relevance to the exact topic. Returns:
     {relevance: {index: label}, most_relevant_index: int,
      counts: {direct, related, tangential}}. Degrades to empty on failure."""
@@ -305,6 +310,7 @@ def curate_sources(topic: str, papers: list[Paper], model: str | None = None) ->
             _CURATE_SCHEMA,
             system=_CURATE_SYSTEM,
             model=model,
+            api_key=api_key,
         )
     except Exception:
         return {"relevance": {}, "most_relevant_index": None, "counts": {}}
@@ -332,6 +338,7 @@ def write_article(
     model: str | None = None,
     style_note: str = "",
     curation: dict | None = None,
+    api_key: str | None = None,
 ) -> dict:
     """Write the article as structured JSON, grounded in the fetched abstracts."""
     curation = curation or {}
@@ -366,10 +373,13 @@ def write_article(
         system=_WRITER_SYSTEM,
         model=model,
         deep=True,
+        api_key=api_key,
     )
 
 
-def revise_prose(article: dict, brief: str, model: str | None = None) -> dict:
+def revise_prose(
+    article: dict, brief: str, model: str | None = None, api_key: str | None = None
+) -> dict:
     """Re-write a draft's prose against a list of style violations from `style.py`.
 
     The brief names the specific conventions broken and quotes the offending text,
@@ -385,4 +395,5 @@ def revise_prose(article: dict, brief: str, model: str | None = None) -> dict:
         system=_REVISE_SYSTEM,
         model=model,
         deep=True,
+        api_key=api_key,
     )

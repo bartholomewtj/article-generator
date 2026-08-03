@@ -4,6 +4,11 @@ Provides static file serving and JSON API endpoints:
 - GET  /api/drafts: list all generated article drafts
 - POST /api/ideas: generate draft ideas from theme
 - POST /api/draft: run full evidence-grounded research & draft pipeline
+
+The caller's API key arrives in the request body and is passed down the call
+chain as an argument. It is never written to `os.environ`, never logged, and
+never persisted — the environment is process-global and this server is threaded,
+so an env-var handoff would let concurrent requests pick up each other's keys.
 """
 
 from __future__ import annotations
@@ -14,7 +19,6 @@ import html
 import json
 import os
 import re
-import subprocess
 import sys
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -74,8 +78,6 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
             self._handle_ideas(payload)
         elif self.path == "/api/draft":
             self._handle_draft(payload)
-        elif self.path == "/api/publish":
-            self._handle_publish(payload)
         else:
             self._send_json({"error": "Endpoint not found"}, status=404)
 
@@ -110,22 +112,22 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
     def _handle_ideas(self, payload: dict) -> None:
         theme = (payload.get("theme") or "").strip()
         guidance = (payload.get("guidance") or "").strip()
-        api_key = (payload.get("key") or "").strip()
-        n = int(payload.get("n") or 6)
+        api_key = (payload.get("key") or "").strip() or None
+        try:
+            n = max(1, min(int(payload.get("n") or 6), 12))
+        except (TypeError, ValueError):
+            n = 6
 
         if not theme:
             self._send_json({"error": "Please provide a theme."}, status=400)
             return
-
-        if api_key:
-            os.environ["GROQ_API_KEY"] = api_key
 
         prompt_theme = theme
         if guidance:
             prompt_theme = f"{theme} — guidance: {guidance[:300]}"
 
         try:
-            ideas = generate_ideas(prompt_theme, n=n)
+            ideas = generate_ideas(prompt_theme, n=n, api_key=api_key)
             self._send_json({"theme": theme, "ideas": ideas})
         except Exception as exc:
             self._send_json({"error": str(exc)}, status=500)
@@ -133,24 +135,21 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
     def _handle_draft(self, payload: dict) -> None:
         topic = (payload.get("topic") or "").strip()
         style = (payload.get("style") or "").strip()
-        api_key = (payload.get("key") or "").strip()
+        api_key = (payload.get("key") or "").strip() or None
 
         if not topic:
             self._send_json({"error": "Please provide an article title/topic."}, status=400)
             return
 
-        if api_key:
-            os.environ["GROQ_API_KEY"] = api_key
-
         try:
-            queries, core_entity = plan_queries(topic)
+            queries, core_entity = plan_queries(topic, api_key=api_key)
             papers = gather_evidence(queries, max_papers=20, topic=topic, core_entity=core_entity)
             if not papers:
                 self._send_json({"error": "No academic papers with abstracts found for this topic. Please try another theme or retry in a minute."}, status=422)
                 return
 
-            curation = curate_sources(topic, papers)
-            article = write_article(topic, papers, style_note=style, curation=curation)
+            curation = curate_sources(topic, papers, api_key=api_key)
+            article = write_article(topic, papers, style_note=style, curation=curation, api_key=api_key)
             verification = check_statistics(article, papers)
 
             os.makedirs(DRAFTS_DIR, exist_ok=True)
@@ -179,30 +178,6 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
             })
         except Exception as exc:
             self._send_json({"error": str(exc)}, status=500)
-
-    def _handle_publish(self, payload: dict) -> None:
-        try:
-            # Stage the drafts folder
-            subprocess.run(["git", "add", "drafts/"], check=True, capture_output=True, text=True)
-            
-            # Check if there are changes to commit
-            status_res = subprocess.run(["git", "status", "--porcelain", "drafts/"], check=True, capture_output=True, text=True)
-            if not status_res.stdout.strip():
-                self._send_json({"ok": True, "message": "No new drafts to publish."})
-                return
-
-            # Commit the changes
-            subprocess.run(["git", "commit", "-m", "publish new drafts"], check=True, capture_output=True, text=True)
-            
-            # Push to GitHub
-            push_res = subprocess.run(["git", "push"], check=True, capture_output=True, text=True)
-            
-            self._send_json({"ok": True, "message": "Successfully published to GitHub Pages."})
-        except subprocess.CalledProcessError as exc:
-            self._send_json({"error": f"Git command failed: {exc.stderr}"}, status=500)
-        except Exception as exc:
-            self._send_json({"error": str(exc)}, status=500)
-
 
 def run_server(port: int = 8000, directory: str = ".") -> None:
     os.chdir(directory)

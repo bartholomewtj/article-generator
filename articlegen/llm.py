@@ -2,9 +2,16 @@
 
 Provider resolution, in priority order:
 1. The model name, when given: `claude-*` -> Anthropic, `llama*`/`mixtral*`/`groq*` -> Groq.
-2. ARTICLEGEN_PROVIDER env var ("anthropic" or "groq").
-3. Whichever API key is present: GROQ_API_KEY, then ANTHROPIC_API_KEY.
-4. Fallback: Groq (the default provider).
+2. An explicitly passed `api_key`, by its prefix: `sk-ant-` -> Anthropic, `gsk_` -> Groq.
+3. ARTICLEGEN_PROVIDER env var ("anthropic" or "groq").
+4. Whichever API key is present: GROQ_API_KEY, then ANTHROPIC_API_KEY.
+5. Fallback: Groq (the default provider).
+
+Keys are passed **per call**, never through `os.environ`. The server handles
+concurrent requests on different threads, and the environment is process-global:
+setting a caller's key there lets one request's pipeline pick up another's key
+several seconds later. `api_key=None` falls back to the environment, which is
+what the CLI wants and what a single-user local run has always done.
 
 Groq is the default provider: with GROQ_API_KEY set it's used automatically.
 Claude is opt-in — set ARTICLEGEN_PROVIDER=anthropic, pass a `claude-*` --model, or run with only an Anthropic key.
@@ -24,7 +31,7 @@ DEFAULT_PROVIDER = "groq"
 _RESOLVED_GROQ_MODEL: str | None = None
 
 
-def resolve_provider(model: str | None = None) -> tuple[str, str]:
+def resolve_provider(model: str | None = None, api_key: str | None = None) -> tuple[str, str]:
     """Return (provider, model). `model` may be empty -> use the provider's default."""
     if model:
         if model.startswith("claude"):
@@ -33,7 +40,11 @@ def resolve_provider(model: str | None = None) -> tuple[str, str]:
             return "groq", model
 
     forced = os.environ.get("ARTICLEGEN_PROVIDER", "").strip().lower()
-    if forced in ("anthropic", "groq"):
+    if api_key and api_key.startswith("sk-ant-"):
+        provider = "anthropic"
+    elif api_key and api_key.startswith("gsk_"):
+        provider = "groq"
+    elif forced in ("anthropic", "groq"):
         provider = forced
     elif os.environ.get("GROQ_API_KEY"):
         provider = "groq"
@@ -53,25 +64,29 @@ def generate_json(
     system: str | None = None,
     model: str | None = None,
     deep: bool = False,
+    api_key: str | None = None,
 ) -> dict:
     """Run one structured-output generation and return the parsed JSON object.
 
     `deep=True` is for the long article call: bigger output budget and, on
     Anthropic, streaming + adaptive thinking at high effort.
+
+    `api_key` overrides the environment for this call only — see the module
+    docstring for why the server must never route keys through `os.environ`.
     """
-    provider, model = resolve_provider(model)
+    provider, model = resolve_provider(model, api_key)
     print(f"[articlegen] using provider={provider} model={model}", file=sys.stderr, flush=True)
     if provider == "groq":
-        return _groq_generate(prompt, schema, system, model, deep)
-    return _anthropic_generate(prompt, schema, system, model, deep)
+        return _groq_generate(prompt, schema, system, model, deep, api_key)
+    return _anthropic_generate(prompt, schema, system, model, deep, api_key)
 
 
 # ---------------------------------------------------------------- anthropic
 
-def _anthropic_generate(prompt, schema, system, model, deep) -> dict:
+def _anthropic_generate(prompt, schema, system, model, deep, api_key=None) -> dict:
     import anthropic
 
-    client = anthropic.Anthropic()
+    client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
     kwargs = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
@@ -112,8 +127,10 @@ def _clean_json_text(text: str) -> str:
     return text
 
 
-def _groq_generate(prompt: str, schema: dict, system: str | None, model: str, deep: bool) -> dict:
-    api_key = os.environ.get("GROQ_API_KEY")
+def _groq_generate(
+    prompt: str, schema: dict, system: str | None, model: str, deep: bool, api_key: str | None = None
+) -> dict:
+    api_key = api_key or os.environ.get("GROQ_API_KEY")
     if not api_key:
         raise RuntimeError(
             "GROQ_API_KEY environment variable is not set. "
