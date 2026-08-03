@@ -595,6 +595,48 @@ def _sample_draft():
     return article, papers, curation, verification, provenance
 
 
+def test_recency_actually_counts() -> None:
+    """Recency must be able to outweigh citation count, within reason.
+
+    It used to be `year / 1000`, spanning 0.02 across two decades while the
+    citation term spans 0-4 — arithmetically a rounding error. A real search
+    returned a median paper year of 2013 with only 2 of 20 papers from 2020 or
+    later, which pushes the writer towards broad old reviews that carry fewer
+    specific findings than recent trials.
+    """
+    from articlegen.sources import Paper, _rank_score, RECENCY_HALF_LIFE
+
+    now = 2026
+    terms: set[str] = set()
+    old_famous = Paper(title="A", abstract="a", year=2003, citation_count=2750)
+    recent_solid = Paper(title="B", abstract="b", year=2025, citation_count=100)
+    check("a recent solid paper beats an old famous one",
+          _rank_score(recent_solid, terms, now) > _rank_score(old_famous, terms, now))
+
+    # But citations must still count — not merely "newest wins".
+    recent_ignored = Paper(title="C", abstract="c", year=2026, citation_count=0)
+    recent_cited = Paper(title="D", abstract="d", year=2026, citation_count=500)
+    check("among equally recent papers, citations still decide",
+          _rank_score(recent_cited, terms, now) > _rank_score(recent_ignored, terms, now))
+
+    # And topic relevance still dominates both — it's the primary sort key.
+    off_topic_new = Paper(title="unrelated", abstract="unrelated", year=2026, citation_count=9999)
+    on_topic_old = Paper(title="shift work sleep", abstract="shift work sleep",
+                         year=2005, citation_count=1)
+    topic_terms = {"shift", "work", "sleep"}
+    check("topic relevance still outranks recency and fame",
+          _rank_score(on_topic_old, topic_terms, now) > _rank_score(off_topic_new, topic_terms, now))
+
+    # Beyond the half-life the recency bonus is spent, not negative.
+    ancient = Paper(title="E", abstract="e", year=now - RECENCY_HALF_LIFE - 30, citation_count=10)
+    older_still = Paper(title="F", abstract="f", year=now - RECENCY_HALF_LIFE - 60, citation_count=10)
+    check("recency decays to zero rather than going negative",
+          _rank_score(ancient, terms, now) == _rank_score(older_still, terms, now))
+
+    check("a missing year does not crash or win",
+          _rank_score(Paper(title="G", abstract="g", year=None), terms, now)[1] >= 0)
+
+
 def test_render_blocks() -> None:
     from articlegen.render import render_article, render_markdown, _is_clinical
 
@@ -734,7 +776,7 @@ def main() -> int:
         test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
         test_prose_style_check,
-        test_statistic_verification, test_ranking, test_render_blocks,
+        test_statistic_verification, test_ranking, test_recency_actually_counts, test_render_blocks,
         test_display_item_placement, test_legacy_draft_fields,
         test_demo_and_index, test_web_server,
     ):
