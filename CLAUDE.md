@@ -25,8 +25,9 @@ journal-article abstracts. It runs two ways:
 
 ```
 articlegen/
-  cli.py       subcommands + orchestration (ideas / draft / queue / demo / web)
-  web.py       HTTP server + REST API for mobile web app UI
+  cli.py       subcommands (ideas / draft / queue / demo / web); file output only
+  pipeline.py  THE draft pipeline — generate_draft(); every caller goes through it
+  web.py       HTTP server + REST API for the web app UI
   llm.py       provider layer: ONE generate_json(); Groq or Claude backend
   ideas.py     LLM: theme -> shortlist of article ideas
   writer.py    LLM: plan_queries -> curate_sources -> write_article
@@ -44,12 +45,20 @@ tests/
   test_journal_conformance.py journal conventions as assertions over 5 fixtures
 ```
 
-Draft pipeline (in `cli.cmd_draft`): `plan_queries` (queries + `core_entity`) →
-`gather_evidence` → `curate_sources` (relevance labels) → `write_article` →
-`_enforce_style` (`check_style`, and one `revise_prose` pass if it finds errors) →
-`check_statistics` → `render_article` + `render_markdown` → commit + `build_index`.
-`cmd_draft` also passes a `provenance` dict (queries, model, date) that the
-deterministic **Methods** section is written from — keep it populated.
+Draft pipeline — **`pipeline.generate_draft()`, and nowhere else**: `plan_queries`
+(queries + `core_entity`) → `gather_evidence` → `curate_sources` (relevance
+labels) → `write_article` → `enforce_style` (`check_style`, and one
+`revise_prose` pass if it finds errors) → `check_statistics` → a `Draft`
+carrying the article, papers, curation, verification, style report and a
+`provenance` dict (queries, model, date) that the deterministic **Methods**
+section is written from. Keep provenance populated.
+
+Callers differ **only** in what they do with the `Draft`: `cli.cmd_draft` writes
+files into `drafts/` and rebuilds the index; `web._handle_draft` renders and
+returns it. Never re-implement a stage in a caller — the web handler used to
+have its own copy that silently skipped the style gate and provenance, which is
+how web-generated articles ended up without the enforced hedging.
+`test_pipeline_is_shared` fails if a caller starts calling stages directly.
 
 ## Article format (journal Review)
 
@@ -94,8 +103,31 @@ citations and sections intact.
   DOI, received/accepted dates, affiliations or ORCIDs. The masthead states
   "Not peer reviewed"; the back matter states that a machine wrote it.
 
+## Serving (`web.py`)
+
+Two modes, because a laptop and a shared host want opposite things:
+
+- **Local** (default, `articlegen web`): writes each draft into `drafts/` and
+  rebuilds the queue, matching the CLI.
+- **Shared** (`ARTICLEGEN_STATELESS=1`, what the public deployment sets):
+  renders and returns the article, persists nothing. A common `drafts/` on a
+  shared host would make every visitor's article readable by every other
+  visitor at a guessable URL and list their topics in the index.
+
+Other env knobs: `ARTICLEGEN_ALLOWED_ORIGINS` (comma-separated; default `*` for
+localhost, pinned to the Pages origin in production) and `ARTICLEGEN_RATE_LIMIT`
+(per-IP requests/hour, default 20). The throttle exists because the scholarly
+APIs meter against the *server's* IP — one abusive client throttles everyone.
+It is charged only after validation, so a malformed request costs no quota.
+
 ## AI providers (`llm.py`)
 
+- **API keys are passed per call**, never through `os.environ`. The server is
+  threaded and the environment is process-global, so an env-var handoff lets one
+  request's pipeline pick up another request's key mid-run and bill it to them.
+  `generate_json(..., api_key=...)` and every wrapper takes it; `None` falls back
+  to the environment, which is what the CLI uses. Guarded by
+  `test_per_request_api_key`.
 - **Groq is the default** (free tier / fast inference). `GROQ_API_KEY` is used
   automatically and wins even if `ANTHROPIC_API_KEY` is also set.
 - Use Claude by setting repo variable `ARTICLEGEN_PROVIDER=anthropic`, passing a
