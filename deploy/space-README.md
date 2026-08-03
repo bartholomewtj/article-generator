@@ -6,7 +6,7 @@ colorTo: green
 sdk: docker
 app_port: 7860
 pinned: false
-short_description: Evidence-grounded scientific review articles from real abstracts
+short_description: Scientific reviews grounded in real abstracts
 ---
 
 # ArticleGen — backend
