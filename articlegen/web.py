@@ -1,9 +1,21 @@
-"""Built-in HTTP server for local mobile web app.
+"""HTTP server and JSON API for the web app.
 
-Provides static file serving and JSON API endpoints:
-- GET  /api/drafts: list all generated article drafts
-- POST /api/ideas: generate draft ideas from theme
-- POST /api/draft: run full evidence-grounded research & draft pipeline
+Endpoints:
+- GET  /api/drafts: list drafts on disk (local mode only; empty when shared)
+- POST /api/ideas:  generate draft ideas from a theme
+- POST /api/draft:  run the full evidence-grounded research & draft pipeline
+
+Runs in two modes, because a laptop and a shared host want opposite things:
+
+**Local** (`articlegen web`) — writes each draft into `drafts/` and rebuilds the
+review queue, matching what the CLI does. This is the default.
+
+**Shared** (`ARTICLEGEN_STATELESS=1`, what the public deployment sets) — renders
+the article and returns it in the response, persisting nothing. On a shared host
+a common `drafts/` directory would make every visitor's article readable by
+every other visitor at a guessable URL, and list their topics in the queue index.
+Someone researching something they'd rather not broadcast would have no way to
+know. The browser keeps its own copies in localStorage either way.
 
 The caller's API key arrives in the request body and is passed down the call
 chain as an argument. It is never written to `os.environ`, never logged, and
@@ -15,21 +27,54 @@ from __future__ import annotations
 
 import datetime
 import glob
-import html
 import json
 import os
 import re
 import sys
+import threading
+import time
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 from .ideas import generate_ideas
+from .pipeline import NoPapersFound, generate_draft
 from .render import _draft_title, build_index, render_article, render_markdown
-from .sources import gather_evidence
-from .verify import check_statistics
-from .writer import curate_sources, plan_queries, write_article
 
 DRAFTS_DIR = "drafts"
+
+# Shared hosts set this. Local runs leave it unset and keep writing to drafts/.
+STATELESS = os.environ.get("ARTICLEGEN_STATELESS", "").strip().lower() in ("1", "true", "yes")
+
+# Comma-separated origins allowed to call the API from a browser. Default "*"
+# suits localhost; the deployment pins it to the GitHub Pages origin.
+ALLOWED_ORIGINS = [
+    o.strip() for o in os.environ.get("ARTICLEGEN_ALLOWED_ORIGINS", "*").split(",") if o.strip()
+]
+
+# Per-IP throttle. Every draft costs the caller LLM tokens but costs *us* calls
+# against the shared OpenAlex / Semantic Scholar quotas, which are attached to
+# this server's IP — one abusive client can get the whole deployment throttled.
+RATE_LIMIT_WINDOW = 3600
+RATE_LIMIT_MAX = int(os.environ.get("ARTICLEGEN_RATE_LIMIT", "20"))
+_rate_lock = threading.Lock()
+_rate_hits: dict[str, list[float]] = {}
+
+
+def _rate_limited(client_ip: str) -> bool:
+    """Sliding-window count of expensive requests from one address."""
+    now = time.time()
+    with _rate_lock:
+        hits = [t for t in _rate_hits.get(client_ip, []) if now - t < RATE_LIMIT_WINDOW]
+        if len(hits) >= RATE_LIMIT_MAX:
+            _rate_hits[client_ip] = hits
+            return True
+        hits.append(now)
+        _rate_hits[client_ip] = hits
+        # Opportunistic sweep so the dict doesn't grow without bound.
+        if len(_rate_hits) > 2048:
+            for ip in [k for k, v in _rate_hits.items() if not v or now - v[-1] > RATE_LIMIT_WINDOW]:
+                _rate_hits.pop(ip, None)
+    return False
 
 
 def _slugify(text: str) -> str:
@@ -41,36 +86,78 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
     def log_message(self, format_str: str, *args) -> None:
         sys.stderr.write(f"[web] {format_str % args}\n")
 
+    def _over_rate_limit(self) -> bool:
+        """Charge the throttle for a request that is about to do real work.
+
+        Checked after validation, not before: a malformed request costs nothing
+        upstream, and locking someone out for a typo in the form is a worse
+        failure than the flood it would prevent.
+        """
+        if not _rate_limited(self.client_address[0]):
+            return False
+        self._send_json(
+            {"error": f"Rate limit reached ({RATE_LIMIT_MAX} requests/hour). Try again later."},
+            status=429,
+        )
+        return True
+
+    def _cors_origin(self) -> str | None:
+        """Echo the caller's origin when it's allowed. None means: send no header."""
+        if ALLOWED_ORIGINS == ["*"]:
+            return "*"
+        origin = self.headers.get("Origin")
+        return origin if origin in ALLOWED_ORIGINS else None
+
+    def _send_cors_headers(self) -> None:
+        origin = self._cors_origin()
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            if origin != "*":
+                self.send_header("Vary", "Origin")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+
     def _send_json(self, data: dict, status: int = 200) -> None:
         body = json.dumps(data).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self._send_cors_headers()
         self.end_headers()
         self.wfile.write(body)
 
     def do_OPTIONS(self) -> None:
         self.send_response(HTTPStatus.NO_CONTENT)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self._send_cors_headers()
         self.end_headers()
 
     def do_GET(self) -> None:
-        if self.path == "/api/drafts" or self.path == "/api/drafts/":
+        if self.path in ("/api/drafts", "/api/drafts/"):
             self._handle_get_drafts()
+            return
+        if self.path in ("/api/health", "/api/health/"):
+            self._send_json({"ok": True, "stateless": STATELESS})
             return
         super().do_GET()
 
     def do_POST(self) -> None:
-        content_length = int(self.headers.get("Content-Length", 0))
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+        except (TypeError, ValueError):
+            self._send_json({"error": "Invalid Content-Length"}, status=400)
+            return
+        # A topic and a key are small; anything larger is not a real request.
+        if content_length > 64 * 1024:
+            self._send_json({"error": "Request body too large."}, status=413)
+            return
+
         post_data = self.rfile.read(content_length) if content_length > 0 else b"{}"
         try:
             payload = json.loads(post_data.decode("utf-8")) if post_data else {}
         except Exception:
+            self._send_json({"error": "Invalid JSON payload"}, status=400)
+            return
+        if not isinstance(payload, dict):
             self._send_json({"error": "Invalid JSON payload"}, status=400)
             return
 
@@ -121,6 +208,8 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         if not theme:
             self._send_json({"error": "Please provide a theme."}, status=400)
             return
+        if self._over_rate_limit():
+            return
 
         prompt_theme = theme
         if guidance:
@@ -141,49 +230,72 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
             self._send_json({"error": "Please provide an article title/topic."}, status=400)
             return
 
+        if len(topic) > 300:
+            self._send_json({"error": "Topic is too long (300 characters max)."}, status=400)
+            return
+        if self._over_rate_limit():
+            return
+
         try:
-            queries, core_entity = plan_queries(topic, api_key=api_key)
-            papers = gather_evidence(queries, max_papers=20, topic=topic, core_entity=core_entity)
-            if not papers:
-                self._send_json({"error": "No academic papers with abstracts found for this topic. Please try another theme or retry in a minute."}, status=422)
-                return
-
-            curation = curate_sources(topic, papers, api_key=api_key)
-            article = write_article(topic, papers, style_note=style, curation=curation, api_key=api_key)
-            verification = check_statistics(article, papers)
-
-            os.makedirs(DRAFTS_DIR, exist_ok=True)
-            date_str = datetime.date.today().isoformat()
-            stem = f"{date_str}-{_slugify(topic)}"
-            html_filename = f"{stem}.html"
-            md_filename = f"{stem}.md"
-
-            html_path = os.path.join(DRAFTS_DIR, html_filename)
-            md_path = os.path.join(DRAFTS_DIR, md_filename)
-
-            with open(html_path, "w", encoding="utf-8") as f:
-                f.write(render_article(article, papers, topic, curation, verification))
-            with open(md_path, "w", encoding="utf-8") as f:
-                f.write(render_markdown(article, papers, topic, curation, verification))
-
-            build_index(DRAFTS_DIR)
-
-            self._send_json({
-                "ok": True,
-                "title": article.get("title", topic),
-                "stem": stem,
-                "html_url": f"/drafts/{html_filename}",
-                "md_url": f"/drafts/{md_filename}",
-                "sources_count": len(article.get("references", [])),
-            })
+            draft = generate_draft(
+                topic, style_note=style[:500], max_papers=20, api_key=api_key, log=self._log_stage
+            )
+        except NoPapersFound:
+            self._send_json(
+                {"error": "No academic papers with abstracts found for this topic. "
+                          "Please try another theme or retry in a minute."},
+                status=422,
+            )
+            return
         except Exception as exc:
             self._send_json({"error": str(exc)}, status=500)
+            return
+
+        render_args = (
+            draft.article, draft.papers, draft.topic,
+            draft.curation, draft.verification, draft.provenance,
+        )
+        article_html = render_article(*render_args)
+        article_md = render_markdown(*render_args)
+
+        response = {
+            "ok": True,
+            "title": draft.article.get("title", topic),
+            "stem": f"{datetime.date.today().isoformat()}-{_slugify(topic)}",
+            "sources_count": len(draft.cited_refs),
+            "summary": draft.summary(),
+            "html": article_html,
+            "markdown": article_md,
+        }
+
+        if not STATELESS:
+            # Local mode: mirror the CLI so `articlegen queue` sees the same drafts.
+            os.makedirs(DRAFTS_DIR, exist_ok=True)
+            html_name = f"{response['stem']}.html"
+            md_name = f"{response['stem']}.md"
+            with open(os.path.join(DRAFTS_DIR, html_name), "w", encoding="utf-8") as f:
+                f.write(article_html)
+            with open(os.path.join(DRAFTS_DIR, md_name), "w", encoding="utf-8") as f:
+                f.write(article_md)
+            build_index(DRAFTS_DIR)
+            response["html_url"] = f"/drafts/{html_name}"
+            response["md_url"] = f"/drafts/{md_name}"
+
+        self._send_json(response)
+
+    def _log_stage(self, message: str) -> None:
+        """Pipeline progress to the server log. Never carries the caller's key."""
+        sys.stderr.write(f"[draft] {message}\n")
+
 
 def run_server(port: int = 8000, directory: str = ".") -> None:
     os.chdir(directory)
     handler = ArticleGenHandler
     server = ThreadingHTTPServer(("0.0.0.0", port), handler)
-    print(f"🚀 Article Generator Mobile Web App running at http://localhost:{port}/")
+    mode = "stateless (nothing written to disk)" if STATELESS else f"local (writing to {DRAFTS_DIR}/)"
+    print(f"🚀 Article Generator running at http://localhost:{port}/  — {mode}")
+    if ALLOWED_ORIGINS != ["*"]:
+        print(f"   CORS restricted to: {', '.join(ALLOWED_ORIGINS)}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -77,6 +77,81 @@ def test_per_request_api_key() -> None:
           "os.environ.get(\"GROQ_API_KEY\")" in inspect.getsource(llm._groq_generate))
 
 
+def test_pipeline_is_shared() -> None:
+    """Both entry points must run the same pipeline.
+
+    The web handler used to have its own copy that skipped the prose-style gate
+    and never built provenance, so web-generated articles came out without the
+    enforced hedging and with an incomplete Methods section.
+    """
+    import inspect
+    from articlegen import cli, pipeline, web
+
+    cmd_draft_src = inspect.getsource(cli.cmd_draft)
+    handler_src = inspect.getsource(web.ArticleGenHandler._handle_draft)
+
+    for name, src in (("cli.cmd_draft", cmd_draft_src), ("web._handle_draft", handler_src)):
+        check(f"{name} calls generate_draft", "generate_draft(" in src)
+        for stage in ("plan_queries(", "curate_sources(", "write_article("):
+            check(f"{name} does not re-run {stage[:-1]}", stage not in src)
+
+    check("pipeline enforces style", "enforce_style(" in inspect.getsource(pipeline.generate_draft))
+    check("pipeline builds provenance", '"queries": queries' in inspect.getsource(pipeline.generate_draft))
+
+
+def test_draft_summary() -> None:
+    from articlegen.pipeline import Draft
+    from articlegen.sources import Paper
+
+    papers = [Paper(title=f"P{i}", abstract="a", year=2020) for i in range(1, 6)]
+    clean = Draft(
+        topic="t",
+        article={"references": [1, 2, 3]},
+        papers=papers,
+        curation={"relevance": {1: "direct", 2: "direct", 3: "related"}},
+        verification={"unverified": []},
+        style_report={"issues": [], "stats": {}},
+    )
+    check("counts cited sources", clean.summary().startswith("3 sources cited"))
+    check("counts direct sources", "2 directly on-topic" in clean.summary())
+    check("clean prose reported", "prose style clean" in clean.summary())
+
+    messy = Draft(
+        topic="t",
+        article={"references": [1, 2]},
+        papers=papers,
+        curation={"relevance": {1: "related", 2: "tangential"}},
+        verification={"unverified": ["42%"]},
+        style_report={
+            "issues": [{"severity": "error", "rule": "boosters", "detail": "clearly"}],
+            "stats": {},
+        },
+    )
+    summary = messy.summary()
+    check("unverified figures flagged", "1 figure(s) not found" in summary)
+    check("no direct source flagged", "no directly on-topic source found" in summary)
+    check("style issues flagged", "prose-style issue(s)" in summary)
+
+    out_of_range = Draft(topic="t", article={"references": [1, 99, "x"]}, papers=papers)
+    check("ignores out-of-range references", out_of_range.summary().startswith("1 sources cited"))
+
+
+def test_rate_limit() -> None:
+    from articlegen import web
+
+    original_max = web.RATE_LIMIT_MAX
+    web.RATE_LIMIT_MAX = 3
+    web._rate_hits.clear()
+    try:
+        allowed = [not web._rate_limited("10.0.0.1") for _ in range(4)]
+        check("first N requests allowed", allowed[:3] == [True, True, True])
+        check("request over the limit is blocked", allowed[3] is False)
+        check("a different address is unaffected", not web._rate_limited("10.0.0.2"))
+    finally:
+        web.RATE_LIMIT_MAX = original_max
+        web._rate_hits.clear()
+
+
 def test_groq_json_cleaning() -> None:
     from articlegen.llm import _clean_json_text
     check("clean simple fence", _clean_json_text("```json\n{\"a\": 1}\n```") == '{"a": 1}')
@@ -421,7 +496,9 @@ def test_web_server() -> None:
 
 def main() -> int:
     for fn in (
-        test_provider_resolution, test_per_request_api_key, test_groq_json_cleaning,
+        test_provider_resolution, test_per_request_api_key,
+        test_pipeline_is_shared, test_draft_summary, test_rate_limit,
+        test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
         test_prose_style_check,
         test_statistic_verification, test_ranking, test_render_blocks,

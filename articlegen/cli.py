@@ -19,11 +19,8 @@ import webbrowser
 from . import demo
 from .ideas import format_ideas_console, generate_ideas, ideas_to_markdown
 from .llm import resolve_provider
+from .pipeline import NoPapersFound, generate_draft
 from .render import build_index, render_article, render_markdown
-from .sources import gather_evidence
-from .style import check_style, errors as style_errors, format_report as format_style, revision_brief
-from .verify import check_statistics
-from .writer import curate_sources, plan_queries, revise_prose, write_article
 
 IDEAS_DIR = "ideas"
 DRAFTS_DIR = "drafts"
@@ -74,89 +71,20 @@ def cmd_ideas(args) -> int:
     return 0
 
 
-def _enforce_style(article: dict, model: str | None) -> tuple[dict, dict]:
-    """Check the prose against journal conventions and, if it misses, revise once.
-
-    The revision is only accepted if it actually reduces the error count and keeps
-    the draft intact — a revision that drops citations or sections is discarded.
-    """
-    report = check_style(article)
-    problems = style_errors(report)
-    if not problems:
-        _log("Prose style: clean.")
-        _log(format_style(report))
-        return article, report
-
-    _log(f"Prose style: {len(problems)} issue(s) against journal conventions; revising once...")
-    try:
-        revised = revise_prose(article, revision_brief(report), model=model)
-    except Exception as exc:
-        _log(f"  revision failed ({exc}); keeping the original draft.")
-        _log(format_style(report))
-        return article, report
-
-    intact = (
-        len(revised.get("references") or []) >= len(article.get("references") or [])
-        and len(revised.get("sections") or []) == len(article.get("sections") or [])
-    )
-    revised_report = check_style(revised)
-    if intact and len(style_errors(revised_report)) < len(problems):
-        _log(f"  revised: {len(problems)} -> {len(style_errors(revised_report))} issue(s).")
-        _log(format_style(revised_report))
-        return revised, revised_report
-
-    reason = "revision dropped citations or sections" if not intact else "revision did not improve"
-    _log(f"  {reason}; keeping the original draft.")
-    _log(format_style(report))
-    return article, report
-
-
 def cmd_draft(args) -> int:
-    _log(f"Planning search queries for: {args.topic}")
     try:
-        queries, core_entity = plan_queries(args.topic, model=args.model)
-    except Exception as exc:
-        return _api_error(exc)
-    _log("Queries: " + "; ".join(queries) + (f"  (core: {core_entity})" if core_entity else ""))
-
-    _log("Fetching journal articles...")
-    papers = gather_evidence(
-        queries, max_papers=args.max_papers, topic=args.topic, core_entity=core_entity, log=_log
-    )
-    if not papers:
-        _log(
-            "No papers with abstracts found. The scholarly APIs may be rate-limiting "
-            "— wait a minute and retry, or set SEMANTIC_SCHOLAR_API_KEY / OPENALEX_MAILTO."
+        draft = generate_draft(
+            args.topic,
+            style_note=args.style,
+            max_papers=args.max_papers,
+            model=args.model,
+            log=_log,
         )
+    except NoPapersFound as exc:
+        _log(str(exc))
         return 1
-    _log(f"Collected {len(papers)} candidate papers.")
-
-    _log("Assessing source relevance...")
-    curation = curate_sources(args.topic, papers, model=args.model)
-    counts = curation.get("counts") or {}
-    if counts:
-        _log(f"  relevance: {counts.get('direct', 0)} direct / "
-             f"{counts.get('related', 0)} related / {counts.get('tangential', 0)} tangential")
-
-    _log("Writing the article (this can take a few minutes)...")
-    try:
-        article = write_article(
-            args.topic, papers, model=args.model, style_note=args.style, curation=curation
-        )
     except Exception as exc:
         return _api_error(exc)
-
-    article, style_report = _enforce_style(article, args.model)
-
-    verification = check_statistics(article, papers)
-
-    # Feeds the deterministic Methods section — the search actually performed.
-    provenance = {
-        "queries": queries,
-        "core_entity": core_entity,
-        "model": resolve_provider(args.model)[1],
-        "date": datetime.date.today().strftime("%d %B %Y").lstrip("0"),
-    }
 
     os.makedirs(DRAFTS_DIR, exist_ok=True)
     date = datetime.date.today().isoformat()
@@ -164,32 +92,23 @@ def cmd_draft(args) -> int:
     html_path = os.path.join(DRAFTS_DIR, f"{stem}.html")
     md_path = os.path.join(DRAFTS_DIR, f"{stem}.md")
 
+    render_args = (
+        draft.article, draft.papers, draft.topic,
+        draft.curation, draft.verification, draft.provenance,
+    )
     with open(html_path, "w", encoding="utf-8") as f:
-        f.write(render_article(article, papers, args.topic, curation, verification, provenance))
+        f.write(render_article(*render_args))
     with open(md_path, "w", encoding="utf-8") as f:
-        f.write(render_markdown(article, papers, args.topic, curation, verification, provenance))
+        f.write(render_markdown(*render_args))
 
     index_path = build_index(DRAFTS_DIR)
-    _log(f"Draft ready ({len(article['references'])} sources cited):")
+    _log(f"Draft ready ({len(draft.article['references'])} sources cited):")
     _log(f"  HTML:     {html_path}")
     _log(f"  Markdown: {md_path}")
     _log(f"  Queue:    {index_path}")
 
     # One-line, greppable summary for the GitHub workflow to surface in its comment.
-    relevance = curation.get("relevance") or {}
-    cited_refs = {r for r in article.get("references", []) if isinstance(r, int) and 1 <= r <= len(papers)}
-    direct = sum(1 for r in cited_refs if relevance.get(r) == "direct") if relevance else None
-    n_unver = len(verification.get("unverified") or [])
-    summary = f"{len(cited_refs)} sources cited"
-    if direct is not None:
-        summary += f"; {direct} directly on-topic"
-    if n_unver:
-        summary += f"; ⚠ {n_unver} figure(s) not found in source abstracts"
-    if relevance and not direct:
-        summary += "; ⚠ no directly on-topic source found"
-    n_style = len(style_errors(style_report))
-    summary += "; prose style clean" if not n_style else f"; ⚠ {n_style} prose-style issue(s)"
-    print(f"EVIDENCE_SUMMARY: {summary}")
+    print(f"EVIDENCE_SUMMARY: {draft.summary()}")
 
     if args.open:
         _open_in_browser(html_path)
@@ -280,7 +199,23 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _make_output_unicode_safe() -> None:
+    """Stop non-ASCII output from crashing the run on a legacy Windows console.
+
+    The Windows default console encoding is cp1252, which can't encode the ⚠ in
+    the evidence summary or the emoji in the server banner — so `draft` and `web`
+    both died with UnicodeEncodeError partway through, after doing all the work.
+    Replacing unencodable characters loses a glyph; raising loses the article.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass  # already fine, or not a real stream (captured in tests)
+
+
 def main(argv: list[str] | None = None) -> int:
+    _make_output_unicode_safe()
     parser = build_parser()
     args = parser.parse_args(argv)
     return args.func(args)
