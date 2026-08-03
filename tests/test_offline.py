@@ -152,6 +152,63 @@ def test_rate_limit() -> None:
         web._rate_hits.clear()
 
 
+def test_keepalive_connection_reuse() -> None:
+    """Several requests must survive on ONE connection.
+
+    The server ran on http.server's default HTTP/1.0 for a while, which closes
+    the connection after every response. Browsers and reverse proxies pool
+    connections, so they kept reusing sockets the server had already hung up on
+    and roughly every other request to the deployed backend failed in ~140ms.
+    curl never caught it — each invocation opens a fresh connection, so only a
+    pooling client reproduces it.
+    """
+    import http.client
+    import threading
+    from http.server import ThreadingHTTPServer
+    from articlegen.web import ArticleGenHandler
+
+    check("handler speaks HTTP/1.1", ArticleGenHandler.protocol_version == "HTTP/1.1")
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), ArticleGenHandler)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        statuses, closes = [], []
+        for _ in range(3):
+            conn.request("GET", "/api/health")
+            resp = conn.getresponse()
+            resp.read()
+            statuses.append(resp.status)
+            # will_close is the assertion that matters. Python's http.client
+            # transparently reconnects when the server hangs up, so simply
+            # issuing three requests passes under HTTP/1.0 too and proves
+            # nothing — a browser's connection pool is what breaks. This asks
+            # the server directly whether it intends to keep the socket open.
+            closes.append(resp.will_close)
+        conn.close()
+        check("three requests succeed", statuses == [200, 200, 200])
+        check("server keeps the connection open", closes == [False, False, False])
+
+        # OPTIONS must not strand a pooling client waiting for a body.
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.request("OPTIONS", "/api/draft")
+        resp = conn.getresponse()
+        resp.read()
+        opt_status, opt_len = resp.status, resp.getheader("Content-Length")
+        conn.request("GET", "/api/health")
+        follow = conn.getresponse()
+        follow.read()
+        check("OPTIONS returns 204", opt_status == 204)
+        check("OPTIONS declares Content-Length: 0", opt_len == "0")
+        check("connection still usable after OPTIONS", follow.status == 200)
+        conn.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_groq_json_cleaning() -> None:
     from articlegen.llm import _clean_json_text
     check("clean simple fence", _clean_json_text("```json\n{\"a\": 1}\n```") == '{"a": 1}')
@@ -498,6 +555,7 @@ def main() -> int:
     for fn in (
         test_provider_resolution, test_per_request_api_key,
         test_pipeline_is_shared, test_draft_summary, test_rate_limit,
+        test_keepalive_connection_reuse,
         test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
         test_prose_style_check,
