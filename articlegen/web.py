@@ -351,12 +351,21 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         pipeline. Locally everything works, so when a deployment reports "no
         papers found" the question is whether *that host* is being refused —
         and there is no way to answer it from outside without asking the host.
+
+        Two consequences of that follow. It bypasses the search cache, because a
+        cached answer cannot tell you what the sources are doing right now. And
+        it is therefore throttled like any other expensive endpoint: each call
+        spends real requests against the same shared quota drafting depends on,
+        and an unmetered probe is a way for anyone who finds the URL to exhaust
+        the very quota the throttle exists to protect.
         """
+        if self._over_rate_limit():
+            return
         outcomes: list[dict] = []
         try:
             papers = gather_evidence(
                 ["shift work sleep"], max_papers=3, per_query=3,
-                topic="shift work sleep", outcomes=outcomes,
+                topic="shift work sleep", outcomes=outcomes, use_cache=False,
             )
             count = len(papers)
         except Exception as exc:

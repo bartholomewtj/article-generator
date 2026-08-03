@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 
@@ -46,7 +47,38 @@ _UA_BASE = "articlegen/0.1.0 (+https://github.com/bartholomewtj/article-generato
 # Longest we'll honour a Retry-After. A draft has a user watching a progress
 # bar, so waiting out a 60s cool-off is worse than failing and letting the
 # other source carry the run.
+#
+# Note what this means in combination with the `exhausted` set below: a source
+# that asks for a longer cool-off fails *immediately*, without retrying, and is
+# then skipped for the rest of the run. One long Retry-After therefore removes
+# a source entirely rather than slowing it down. That is deliberate — but it
+# means the pipeline routinely runs on fewer sources than it appears to offer,
+# so measure live behaviour with `/api/diag` rather than assuming all three
+# answered. OpenAlex sends exactly this kind of long cool-off from shared cloud
+# egress IPs.
 _MAX_BACKOFF = 30.0
+
+# How long a search result stays usable. The literature for a topic does not
+# change hour to hour, but the free tiers of these APIs refuse constantly — so
+# the same query re-run an hour later is far more likely to fail than to return
+# something new. Caching turns "unreliable" into "unreliable once per topic".
+#
+# Set ARTICLEGEN_SEARCH_CACHE_TTL=0 to disable (used by the tests, which need to
+# observe every call).
+_CACHE_TTL = float(os.environ.get("ARTICLEGEN_SEARCH_CACHE_TTL", 24 * 3600))
+
+# A refusal is cached too, but only briefly. Without this, a rate-limited source
+# is re-attempted — three tries with backoff, about ten seconds — by every
+# request that arrives while the limit is still in force, which both stalls the
+# caller and deepens the throttle that caused it.
+_CACHE_FAILURE_TTL = 120.0
+
+_CACHE_MAX_ENTRIES = 256
+
+_cache_lock = threading.Lock()
+# (source, query, limit) -> (expires_at, papers, error). A non-empty error means
+# the entry records a refusal rather than a result.
+_search_cache: dict[tuple[str, str, int], tuple[float, list["Paper"], str]] = {}
 
 _SS_FIELDS = "title,abstract,year,authors,venue,citationCount,externalIds,url"
 _OA_FIELDS = (
@@ -320,6 +352,65 @@ def _rank_score(paper: Paper, terms: set[str], now: int | None = None) -> tuple:
     return (overlap, citation_weight + recency)
 
 
+def clear_search_cache() -> None:
+    """Forget every cached search. For tests, and for forcing a fresh look."""
+    with _cache_lock:
+        _search_cache.clear()
+
+
+def _cache_get(key: tuple[str, str, int]) -> tuple[list[Paper], str] | None:
+    """The cached (papers, error) for this key, or None if absent or stale."""
+    if _CACHE_TTL <= 0:
+        return None
+    now = time.time()
+    with _cache_lock:
+        entry = _search_cache.get(key)
+        if entry is None:
+            return None
+        expires_at, papers, error = entry
+        if expires_at <= now:
+            del _search_cache[key]
+            return None
+    # Hand back a copy of the list: callers collect into their own lists and a
+    # shared one would accumulate across runs.
+    return list(papers), error
+
+
+def _cache_put(key: tuple[str, str, int], papers: list[Paper], error: str) -> None:
+    if _CACHE_TTL <= 0:
+        return
+    ttl = _CACHE_FAILURE_TTL if error else _CACHE_TTL
+    with _cache_lock:
+        _search_cache[key] = (time.time() + ttl, list(papers), error)
+        if len(_search_cache) <= _CACHE_MAX_ENTRIES:
+            return
+        now = time.time()
+        for stale in [k for k, (exp, _, _) in _search_cache.items() if exp <= now]:
+            del _search_cache[stale]
+        while len(_search_cache) > _CACHE_MAX_ENTRIES:
+            soonest = min(_search_cache, key=lambda k: _search_cache[k][0])
+            del _search_cache[soonest]
+
+
+def _search_once(name: str, search, query: str, limit: int) -> tuple[list[Paper], str, bool]:
+    """One source, one query, live. Returns (papers, error, cached=False).
+
+    Failures are returned rather than raised so the caller can record them
+    alongside successes; a source failing is survivable as long as another
+    answers. The result is written to the cache either way.
+    """
+    key = (name, query, limit)
+    try:
+        papers, error = search(query, limit=limit), ""
+    except SearchFailure as exc:
+        papers, error = [], str(exc)
+    except Exception as exc:  # malformed payload, etc.
+        papers, error = [], f"{type(exc).__name__}: {exc}"
+
+    _cache_put(key, papers, error)
+    return papers, error, False
+
+
 def gather_evidence(
     queries: list[str],
     max_papers: int = 20,
@@ -333,14 +424,20 @@ def gather_evidence(
     core_entity: str = "",
     log=lambda msg: None,
     outcomes: list[dict] | None = None,
+    use_cache: bool = True,
 ) -> list[Paper]:
-    """Run every query against both sources, dedupe, and return the best candidates,
+    """Run every query against every source, dedupe, and return the best candidates,
     ranked by a blend of topic relevance, citations, and recency.
 
-    One source failing is survivable — the other may still answer — so failures
+    One source failing is survivable — another may still answer — so failures
     are recorded rather than raised. `outcomes` collects them so the caller can
-    tell "this topic has no literature" from "both APIs refused us", which look
-    identical from the returned list alone.
+    tell "this topic has no literature" from "every API refused us", which look
+    identical from the returned list alone. Each outcome carries `cached`, so a
+    caller can see whether a result reflects the sources' behaviour just now.
+
+    `use_cache=False` forces a live probe of every source. Only the diagnostic
+    endpoint wants this — it exists to answer "can this host reach its sources
+    *right now*", which a cached answer cannot. Drafting always leaves it on.
     """
     seen: set[str] = set()
     collected: list[Paper] = []
@@ -360,30 +457,35 @@ def gather_evidence(
         for name, search in (("semantic_scholar", search_semantic_scholar),
                              ("openalex", search_openalex),
                              ("europe_pmc", search_europe_pmc)):
-            if name in exhausted:
+            # The cache is consulted before the exhausted set, not after: a hit
+            # costs nothing and carries no risk of deepening a throttle, so a
+            # source that has already refused this run can still contribute
+            # results an earlier run stored for a different query.
+            hit = _cache_get((name, query, per_query)) if use_cache else None
+            if hit is None and name in exhausted:
                 if outcomes is not None:
                     outcomes.append({"source": name, "query": query, "count": 0,
-                                     "error": "skipped (already failed this run)"})
+                                     "error": "skipped (already failed this run)",
+                                     "cached": False})
                 log(f"  {name}({query!r}) -> skipped, already failed this run")
                 continue
 
-            try:
-                results = search(query, limit=per_query)
-                error = ""
-            except SearchFailure as exc:
-                results, error = [], str(exc)
-                exhausted.add(name)
-            except Exception as exc:  # malformed payload, etc.
-                results, error = [], f"{type(exc).__name__}: {exc}"
-                exhausted.add(name)
+            if hit is not None:
+                results, error, cached = hit[0], hit[1], True
+            else:
+                results, error, cached = _search_once(name, search, query, per_query)
+                if error:
+                    exhausted.add(name)
 
             if outcomes is not None:
                 outcomes.append({
-                    "source": name,
-                    "query": query, "count": len(results), "error": error,
+                    "source": name, "query": query,
+                    "count": len(results), "error": error, "cached": cached,
                 })
+            suffix = " (cached)" if cached else ""
             log(f"  {name}({query!r}) -> "
-                + (f"{len(results)} papers" if not error else f"FAILED ({error})"))
+                + (f"{len(results)} papers{suffix}" if not error
+                   else f"FAILED ({error}){suffix}"))
 
             for paper in results:
                 key = _normalize_title(paper.title)

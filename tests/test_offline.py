@@ -36,7 +36,9 @@ def test_provider_resolution() -> None:
     check("only anthropic -> anthropic", resolve_provider() == ("anthropic", ANTHROPIC_DEFAULT_MODEL))
     os.environ["GROQ_API_KEY"] = "y"
     check("both keys -> groq wins", resolve_provider()[0] == "groq")
-    check("claude-* model name forces anthropic", resolve_provider("claude-opus-4-8")[0] == "anthropic")
+    check("claude-* model name forces anthropic", resolve_provider("claude-opus-5")[0] == "anthropic")
+    check("superseded claude-* names still route",
+          resolve_provider("claude-opus-4-8")[0] == "anthropic")
     check("llama-* model name forces groq", resolve_provider("llama-3.3-70b-versatile")[0] == "groq")
     os.environ["ARTICLEGEN_PROVIDER"] = "anthropic"
     check("provider override respected", resolve_provider()[0] == "anthropic")
@@ -58,7 +60,7 @@ def test_per_request_api_key() -> None:
     check("sk-ant- key -> anthropic", resolve_provider(None, "sk-ant-abc")[0] == "anthropic")
     check(
         "explicit model still beats the key prefix",
-        resolve_provider("claude-opus-4-8", "gsk_abc")[0] == "anthropic",
+        resolve_provider("claude-opus-5", "gsk_abc")[0] == "anthropic",
     )
 
     # The whole point: a passed key must not leak into the environment.
@@ -150,6 +152,18 @@ def test_rate_limit() -> None:
     finally:
         web.RATE_LIMIT_MAX = original_max
         web._rate_hits.clear()
+
+    # /api/diag deliberately bypasses the search cache so it reports what the
+    # sources are doing right now, which makes every call spend real quota. It
+    # therefore has to be metered like drafting is: unmetered, it was a way for
+    # anyone with the URL to exhaust the quota the limiter exists to protect.
+    import inspect
+
+    source = inspect.getsource(web.ArticleGenHandler._handle_diag)
+    check("/api/diag is charged against the rate limit",
+          "_over_rate_limit" in source)
+    check("/api/diag probes live rather than serving a cached answer",
+          "use_cache=False" in source)
 
 
 def test_keepalive_connection_reuse() -> None:
@@ -359,7 +373,10 @@ def test_source_failures_are_distinguishable() -> None:
     refuse = lambda msg: lambda q, limit=15: (_ for _ in ()).throw(
         sources.SearchFailure(msg))
     try:
-        # Every source refuses.
+        # Every source refuses. The cache is cleared between phases because both
+        # use the same query, and a cached refusal would otherwise answer for
+        # the source the second phase is trying to prove works.
+        sources.clear_search_cache()
         sources.search_semantic_scholar = refuse("HTTP 429 after 3 attempts")
         sources.search_openalex = refuse("HTTP 403")
         sources.search_europe_pmc = refuse("HTTP 503 after 3 attempts")
@@ -370,6 +387,7 @@ def test_source_failures_are_distinguishable() -> None:
         check("the reason is kept", any("429" in o["error"] for o in outcomes))
 
         # Two sources down, one fine — the run must survive.
+        sources.clear_search_cache()
         sources.search_openalex = lambda q, limit=15: [
             sources.Paper(title=f"P{i}", abstract="a") for i in range(3)]
         outcomes = []
@@ -378,12 +396,96 @@ def test_source_failures_are_distinguishable() -> None:
         check("the failed sources are still recorded",
               any(o["error"] for o in outcomes) and any(not o["error"] for o in outcomes))
     finally:
+        sources.clear_search_cache()
         (sources.search_semantic_scholar, sources.search_openalex,
          sources.search_europe_pmc) = real
 
     check("NoPapersFound carries the distinction",
           NoPapersFound("x", sources_failed=True).sources_failed is True)
     check("and defaults to a topic problem", NoPapersFound("x").sources_failed is False)
+
+
+def test_front_end_models_match_the_allowlist() -> None:
+    """Every model the Settings dropdown offers must be one the server accepts.
+
+    The model ids live in two places — `llm.py` and the PROVIDERS map in
+    index.html — and nothing links them. `web._requested_model` silently drops a
+    name that isn't on the allowlist, so a stale front end doesn't error: it just
+    quietly stops honouring the provider the user picked. This catches the drift
+    instead of leaving it to be noticed in a bill.
+    """
+    import re
+
+    from articlegen.web import ALLOWED_MODELS
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(root, "index.html"), encoding="utf-8") as f:
+        page = f.read()
+
+    offered = re.findall(r"^\s*model: '([^']+)'", page, re.MULTILINE)
+    check("the front end offers a model at all", len(offered) >= 2)
+    for model in offered:
+        check(f"index.html offers {model}, which the server accepts",
+              model in ALLOWED_MODELS)
+
+
+def test_search_cache() -> None:
+    """A repeated query must not cost a second call against the shared quota.
+
+    The scholarly APIs meter against this server's IP and refuse constantly, so
+    the same topic searched twice in a day is far likelier to fail the second
+    time than to return anything new. Caching is what makes a demo repeatable.
+    """
+    from articlegen import sources
+
+    real = (sources.search_semantic_scholar, sources.search_openalex,
+            sources.search_europe_pmc)
+    calls = {"n": 0, "fail": 0}
+    try:
+        sources.clear_search_cache()
+
+        def counting(q, limit=15):
+            calls["n"] += 1
+            return [sources.Paper(title=f"{q}-paper", abstract="a", year=2024)]
+
+        def failing(q, limit=15):
+            calls["fail"] += 1
+            raise sources.SearchFailure("HTTP 429 after 3 attempts")
+
+        sources.search_semantic_scholar = counting
+        sources.search_openalex = failing
+        sources.search_europe_pmc = failing
+
+        first: list[dict] = []
+        got_first = sources.gather_evidence(["topic a"], outcomes=first)
+        second: list[dict] = []
+        got_second = sources.gather_evidence(["topic a"], outcomes=second)
+
+        check("the same query is fetched once, not twice", calls["n"] == 1)
+        check("the cached run returns the same papers", got_first == got_second)
+        check("the first run is not marked cached",
+              all(not o["cached"] for o in first))
+        check("the second run is served from cache",
+              all(o["cached"] for o in second))
+
+        # A refusal is cached too, so a rate-limited source is not re-attempted
+        # by every request that arrives while the limit is still in force.
+        check("a refusal is cached, not retried", calls["fail"] == 2)
+        check("and is still reported as a failure",
+              sum(1 for o in second if o["error"]) == 2)
+
+        # A different query is a different key — the cache must not answer for
+        # a topic nobody searched.
+        sources.gather_evidence(["topic b"], outcomes=[])
+        check("a new query still fetches", calls["n"] == 2)
+
+        sources.clear_search_cache()
+        sources.gather_evidence(["topic a"], outcomes=[])
+        check("clearing the cache forces a fresh fetch", calls["n"] == 3)
+    finally:
+        sources.clear_search_cache()
+        (sources.search_semantic_scholar, sources.search_openalex,
+         sources.search_europe_pmc) = real
 
 
 def test_polite_pool_identification() -> None:
@@ -495,13 +597,15 @@ def test_methods_names_only_sources_that_answered() -> None:
     """The Methods section must not claim a database that returned nothing.
 
     `_DATABASES` was a hardcoded constant, so every article stated that both
-    Semantic Scholar and OpenAlex had been searched — including while Semantic
-    Scholar's keyless tier was 429ing every call. That made the claim false in
-    every article the pipeline produced, in the one section that exists to state
-    what was actually done.
+    Semantic Scholar and OpenAlex had been searched — including while one of
+    them was 429ing every call. That made the claim false in every article the
+    pipeline produced, in the one section that exists to state what was actually
+    done. It survived the first fix as a fallback for drafts whose provenance
+    carried no `databases`, which reintroduced exactly the same false claim on
+    that path, so there is now no fallback at all: an unrecorded search says so.
     """
     from articlegen import sources
-    from articlegen.render import render_article
+    from articlegen.render import render_article, render_markdown
     from articlegen.sources import DATABASE_NAMES, Paper
 
     papers = [Paper(title="P", abstract="a", year=2024, source="OpenAlex")]
@@ -518,14 +622,37 @@ def test_methods_names_only_sources_that_answered() -> None:
     check("names the source that answered", "OpenAlex" in only_openalex)
     check("does not name the silent source", "Semantic Scholar" not in only_openalex)
 
+    # Three databases must read "A, B and C", not "A and B and C" — the join
+    # was only ever exercised with two until Europe PMC was added.
+    from articlegen.render import _join_list
+    check("one name joins to itself", _join_list(["A"]) == "A")
+    check("two names join with 'and'", _join_list(["A", "B"]) == "A and B")
+    check("three names join as a list", _join_list(["A", "B", "C"]) == "A, B and C")
+
+    three = render_article(article, papers, "t", None, {},
+                           {"databases": ["A", "B", "C"], "queries": ["q"]})
+    check("Methods lists three databases grammatically",
+          "from A, B and C" in three and "A and B and C" not in three)
+
     both = render_article(article, papers, "t", None, {},
                           {"databases": list(DATABASE_NAMES.values()), "queries": ["q"]})
     check("names both when both answered",
           "OpenAlex" in both and "Semantic Scholar" in both)
 
-    # Drafts written before provenance carried `databases` must still render.
+    # Drafts written before provenance carried `databases` must still render —
+    # and must name no database at all rather than guessing at a plausible pair.
     legacy = render_article(article, papers, "t", None, {}, {"queries": ["q"]})
     check("legacy drafts without `databases` still render", "Candidate records" in legacy)
+    check("an unrecorded search names no database",
+          "OpenAlex" not in legacy and "Semantic Scholar" not in legacy
+          and "Europe PMC" not in legacy)
+    check("and says so instead of guessing",
+          "databases searched were not recorded" in legacy)
+
+    legacy_md = render_markdown(article, papers, "t", None, {}, {"queries": ["q"]})
+    check("markdown makes the same admission",
+          "databases searched were not recorded" in legacy_md
+          and "OpenAlex" not in legacy_md)
 
     # A source that refuses once is not retried for the remaining queries:
     # three tries with backoff is ~10s, and the limits are per-minute.
@@ -533,6 +660,8 @@ def test_methods_names_only_sources_that_answered() -> None:
             sources.search_europe_pmc)
     calls = {"ss": 0, "oa": 0, "ep": 0}
     try:
+        sources.clear_search_cache()
+
         def failing_ss(q, limit=15):
             calls["ss"] += 1
             raise sources.SearchFailure("HTTP 429 after 3 attempts")
@@ -560,6 +689,7 @@ def test_methods_names_only_sources_that_answered() -> None:
         answered = {o["source"] for o in outcomes if o["count"]}
         check("only the answering source counts as answered", answered == {"openalex"})
     finally:
+        sources.clear_search_cache()
         (sources.search_semantic_scholar, sources.search_openalex,
          sources.search_europe_pmc) = real
 
@@ -772,7 +902,14 @@ def _sample_draft():
         "counts": {"direct": 1, "related": 1, "tangential": 1},
     }
     verification = {"unverified": ["-0.90", "4.91"], "total": 5}
-    provenance = {"queries": ["light therapy schizophrenia"], "model": "test-model"}
+    # `databases` names the sources that actually answered. A real run always
+    # records it; nothing is inferred when it is absent (see
+    # test_methods_names_only_sources_that_answered).
+    provenance = {
+        "queries": ["light therapy schizophrenia"],
+        "databases": ["Semantic Scholar Graph API", "OpenAlex"],
+        "model": "test-model",
+    }
     return article, papers, curation, verification, provenance
 
 
@@ -954,6 +1091,7 @@ def main() -> int:
         test_pipeline_is_shared, test_draft_summary, test_rate_limit,
         test_keepalive_connection_reuse, test_substance_checks,
         test_groq_token_budget, test_source_failures_are_distinguishable,
+        test_search_cache, test_front_end_models_match_the_allowlist,
         test_polite_pool_identification, test_europe_pmc_parsing,
         test_methods_names_only_sources_that_answered,
         test_groq_json_cleaning,

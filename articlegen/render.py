@@ -30,7 +30,6 @@ _SPACE_BEFORE_MARKER_RE = re.compile(r"[ \t]+(\[\d+(?:\s*,\s*\d+)*\])")
 _TITLE_RE = re.compile(r"<title>(.*?)</title>", re.DOTALL)
 
 RELEVANCE_LABELS = {"direct": "Direct", "related": "Related", "tangential": "Background"}
-_DATABASES = ("Semantic Scholar Graph API", "OpenAlex")
 
 
 # --------------------------------------------------------------------------
@@ -499,29 +498,55 @@ def _figure_html(cited: list[Paper], labels: dict[int, str]) -> str:
 # article furniture
 # --------------------------------------------------------------------------
 
-def _methods_html(provenance: dict | None, screened: int, n_cited: int, topic: str) -> str:
+def _join_list(items: list[str]) -> str:
+    """'A', 'A and B', 'A, B and C' — plain English, not 'A and B and C'.
+
+    A two-source join read correctly by accident while there were only ever two
+    databases to name; adding a third made the Methods sentence ungrammatical.
+    """
+    if len(items) <= 1:
+        return "".join(items)
+    return f"{', '.join(items[:-1])} and {items[-1]}"
+
+
+def _methods_paragraphs(
+    provenance: dict | None, screened: int, n_cited: int, topic: str, esc=lambda s: s
+) -> dict[str, str]:
+    """The three Methods paragraphs as sentences, before any markup.
+
+    Both renderers build this section from the same text and differ only in how
+    they label and wrap the paragraphs. `esc` escapes the values that come from
+    outside the module — the topic, the queries, the model and database names;
+    the HTML renderer passes `html.escape`, Markdown passes them through.
+
+    Methods is the one section whose whole purpose is stating what was actually
+    done, so nothing here may be guessed. In particular, the databases are named
+    only when provenance records which ones answered — this used to fall back to
+    a hardcoded pair, which made every article claim a search it had not run.
+    """
     provenance = provenance or {}
     queries = [q for q in (provenance.get("queries") or []) if q]
-    databases = provenance.get("databases") or _DATABASES
+    databases = [d for d in (provenance.get("databases") or []) if d]
     date = provenance.get("date") or datetime.date.today().strftime("%d %B %Y").lstrip("0")
+    model = provenance.get("model")
 
-    search = (
-        f"Candidate records were retrieved on {html.escape(date)} from "
-        f"{html.escape(' and '.join(databases))}"
-    )
+    search = f"Candidate records were retrieved on {esc(date)}"
+    if databases:
+        search += " from " + _join_list([esc(d) for d in databases])
     if queries:
-        listed = "; ".join(f"‘{html.escape(q)}’" for q in queries)
-        search += f", using the search strings {listed}"
+        search += ", using the search strings " + "; ".join(f"‘{esc(q)}’" for q in queries)
     search += ". "
+    if not databases:
+        search += "The databases searched were not recorded for this draft. "
     if screened:
         search += (
             f"Records without a retrievable abstract were discarded, leaving {screened} "
             "for screening. "
         )
     search += (
-        f"Each remaining record was assessed for how directly it addresses "
-        f"{html.escape(topic)} and labelled direct, related or background; "
-        f"{n_cited} were cited here and are listed in Table 1."
+        f"Each remaining record was assessed for how directly it addresses {esc(topic)} "
+        f"and labelled direct, related or background; {n_cited} were cited here and are "
+        "listed in Table 1."
     )
 
     handling = (
@@ -531,52 +556,49 @@ def _methods_html(provenance: dict | None, screened: int, n_cited: int, topic: s
         "and any figure that could not be located is flagged under Limitations."
     )
 
-    model = provenance.get("model")
     generation = (
         "Search planning, source curation and drafting were performed by a large language "
-        f"model ({html.escape(model)})." if model else
-        "Search planning, source curation and drafting were performed by a large language model."
-    )
-    generation += (
-        " Source retrieval, relevance tabulation, citation numbering, Table 1, Fig. 1 and "
+        + (f"model ({esc(model)})." if model else "model.")
+        + " Source retrieval, relevance tabulation, citation numbering, Table 1, Fig. 1 and "
         "the statistical check are deterministic and were not model-generated."
     )
+    return {"search": search, "handling": handling, "generation": generation}
 
+
+def _methods_html(provenance: dict | None, screened: int, n_cited: int, topic: str) -> str:
+    parts = _methods_paragraphs(provenance, screened, n_cited, topic, html.escape)
     return (
         '<section class="back-section">\n<h2>Methods</h2>\n'
-        f'<p><span class="run-in">Search strategy.</span> {search}</p>\n'
-        f'<p><span class="run-in">Evidence handling.</span> {handling}</p>\n'
-        f'<p><span class="run-in">Generation.</span> {generation}</p>\n</section>'
+        f'<p><span class="run-in">Search strategy.</span> {parts["search"]}</p>\n'
+        f'<p><span class="run-in">Evidence handling.</span> {parts["handling"]}</p>\n'
+        f'<p><span class="run-in">Generation.</span> {parts["generation"]}</p>\n</section>'
     )
 
 
-def _assessment_html(
+def _assessment_paragraphs(
     cited: list[Paper],
     counts: dict,
-    evidence_note: str,
     verification: dict | None,
-    cite_map: dict[int, int],
-    valid_numbers: set[int],
-) -> str:
-    """Evidence assessment + Limitations — the journal-register replacement for the
-    warning boxes: the same facts, stated in prose, in the back matter."""
-    sentences = []
+    esc=lambda s: s,
+) -> dict:
+    """The Evidence assessment opening and its Limitations, before any markup.
+
+    Shared by both renderers; `evidence_note` is deliberately not built here
+    because it carries citation markers, which the two formats render
+    differently (linked superscripts vs. plain numerals).
+    """
     if counts:
-        sentences.append(
+        opening = (
             f"Of the {len(cited)} sources cited, {counts.get('direct', 0)} address the "
             f"review question directly, {counts.get('related', 0)} are related and "
             f"{counts.get('tangential', 0)} provide background only"
         )
     else:
-        sentences.append(f"This review cites {len(cited)} sources")
+        opening = f"This review cites {len(cited)} sources"
     span = _year_range(cited)
     if span:
-        sentences[-1] += f"; they were published in {span}"
-    sentences[-1] += ". The composition of the evidence base is shown in Fig. 1."
-    body = ["<p>" + "".join(sentences) + "</p>"]
-
-    if evidence_note:
-        body.append(f"<p>{_prose(evidence_note, cite_map, valid_numbers)}</p>")
+        opening += f"; they were published in {span}"
+    opening += ". The composition of the evidence base is shown in Fig. 1."
 
     limitations = [
         "This synthesis was prepared from abstracts alone. Effect estimates, "
@@ -592,9 +614,26 @@ def _assessment_html(
         )
     unverified = (verification or {}).get("unverified") or []
     if unverified:
-        limitations.append(_unverified_sentence([html.escape(u) for u in unverified]))
+        limitations.append(_unverified_sentence([esc(u) for u in unverified]))
+    return {"opening": opening, "limitations": limitations}
+
+
+def _assessment_html(
+    cited: list[Paper],
+    counts: dict,
+    evidence_note: str,
+    verification: dict | None,
+    cite_map: dict[int, int],
+    valid_numbers: set[int],
+) -> str:
+    """Evidence assessment + Limitations — the journal-register replacement for the
+    warning boxes: the same facts, stated in prose, in the back matter."""
+    parts = _assessment_paragraphs(cited, counts, verification, html.escape)
+    body = ["<p>" + parts["opening"] + "</p>"]
+    if evidence_note:
+        body.append(f"<p>{_prose(evidence_note, cite_map, valid_numbers)}</p>")
     body.append(
-        '<p><span class="run-in">Limitations.</span> ' + " ".join(limitations) + "</p>"
+        '<p><span class="run-in">Limitations.</span> ' + " ".join(parts["limitations"]) + "</p>"
     )
     return '<section class="back-section">\n<h2>Evidence assessment</h2>\n' + "\n".join(body) + "\n</section>"
 
@@ -1265,79 +1304,25 @@ def _figure_markdown(cited: list[Paper], labels: dict[int, str]) -> str:
 
 
 def _methods_markdown(provenance: dict | None, screened: int, n_cited: int, topic: str) -> list[str]:
-    provenance = provenance or {}
-    queries = [q for q in (provenance.get("queries") or []) if q]
-    databases = provenance.get("databases") or _DATABASES
-    date = provenance.get("date") or datetime.date.today().strftime("%d %B %Y").lstrip("0")
-    model = provenance.get("model")
-
-    search = f"Candidate records were retrieved on {date} from {' and '.join(databases)}"
-    if queries:
-        search += ", using the search strings " + "; ".join(f"‘{q}’" for q in queries)
-    search += ". "
-    if screened:
-        search += (
-            f"Records without a retrievable abstract were discarded, leaving {screened} "
-            "for screening. "
-        )
-    search += (
-        f"Each remaining record was assessed for how directly it addresses {topic} and "
-        f"labelled direct, related or background; {n_cited} were cited here and are "
-        "listed in Table 1."
-    )
+    parts = _methods_paragraphs(provenance, screened, n_cited, topic)
     return [
         "## Methods",
         "",
-        f"**Search strategy.** {search}",
+        f"**Search strategy.** {parts['search']}",
         "",
-        "**Evidence handling.** Only titles and abstracts were read; full texts were not "
-        "retrieved, so no claim in this review rests on data reported beyond an abstract. "
-        "Every numerical value in the text was checked automatically against the abstracts "
-        "of the cited sources, and any figure that could not be located is flagged under "
-        "Limitations.",
+        f"**Evidence handling.** {parts['handling']}",
         "",
-        "**Generation.** Search planning, source curation and drafting were performed by a "
-        + (f"large language model ({model})." if model else "large language model.")
-        + " Source retrieval, relevance tabulation, citation numbering, Table 1, Fig. 1 and "
-        "the statistical check are deterministic and were not model-generated.",
+        f"**Generation.** {parts['generation']}",
         "",
     ]
 
 
 def _assessment_markdown(cited, counts, evidence_note, verification, prose) -> list[str]:
-    if counts:
-        opening = (
-            f"Of the {len(cited)} sources cited, {counts.get('direct', 0)} address the "
-            f"review question directly, {counts.get('related', 0)} are related and "
-            f"{counts.get('tangential', 0)} provide background only"
-        )
-    else:
-        opening = f"This review cites {len(cited)} sources"
-    span = _year_range(cited)
-    if span:
-        opening += f"; they were published in {span}"
-    opening += ". The composition of the evidence base is shown in Fig. 1."
-
-    lines = ["## Evidence assessment", "", opening, ""]
+    parts = _assessment_paragraphs(cited, counts, verification)
+    lines = ["## Evidence assessment", "", parts["opening"], ""]
     if evidence_note:
         lines += [prose(evidence_note), ""]
-
-    limitations = [
-        "This synthesis was prepared from abstracts alone. Effect estimates, "
-        "methodological detail, and the limitations that authors report only in a full "
-        "text were unavailable, so the strength of individual studies could not be "
-        "appraised here."
-    ]
-    if counts and not counts.get("direct"):
-        limitations.append(
-            "No cited source studies the review question directly. The claims made above "
-            "are extrapolated from adjacent populations or mechanisms and should be "
-            "treated as provisional until directly relevant work is identified."
-        )
-    unverified = (verification or {}).get("unverified") or []
-    if unverified:
-        limitations.append(_unverified_sentence(unverified))
-    lines += ["**Limitations.** " + " ".join(limitations), ""]
+    lines += ["**Limitations.** " + " ".join(parts["limitations"]), ""]
     return lines
 
 

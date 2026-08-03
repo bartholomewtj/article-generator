@@ -36,7 +36,8 @@ articlegen/
   llm.py       provider layer: ONE generate_json(); Groq or Claude backend
   ideas.py     LLM: theme -> shortlist of article ideas
   writer.py    LLM: plan_queries -> curate_sources -> write_article
-  sources.py   Semantic Scholar + OpenAlex fetch, dedupe, relevance-blended rank
+  sources.py   Semantic Scholar + OpenAlex + Europe PMC fetch, 24h result cache,
+               dedupe, relevance-blended rank
   verify.py    deterministic: flag article statistics absent from source abstracts
   style.py     deterministic: flag prose that breaks journal writing conventions
   render.py    structured article -> journal-format HTML + Markdown + drafts/ index
@@ -170,6 +171,26 @@ index.html on GitHub Pages  ──POST /api/draft──▶  backend on Render
 - `GET /api/diag` runs one keyless search and reports what *that host* gets back
   from the scholarly APIs. It exists because everything works locally, so a
   deployment reporting "no papers found" is otherwise undiagnosable from outside.
+  It bypasses the search cache (a cached answer can't tell you what the sources
+  are doing now) and is therefore rate-limited like drafting: each call spends
+  real quota. Its per-source `cached` flag is always `false`; in `/api/draft`
+  logs it may be `true`.
+
+### The scholarly APIs are the actual constraint — measure, don't assume
+
+Both open sources refuse constantly from Render's shared egress IP, and **which
+one is failing changes**. Do not write down "X is the working source": in a
+four-call sample on 4 Aug 2026, OpenAlex 429'd every time with a cool-off longer
+than 30s, while Semantic Scholar — which earlier notes and issue #32 recorded as
+never working — answered once. Earlier notes had it exactly the other way round.
+Run `/api/diag` and read the result rather than trusting any claim here.
+
+`OPENALEX_MAILTO` **is** set on the deployment, and joining the polite pool did
+not fix OpenAlex. The constraint is the shared cloud IP, not the contact
+address. This is also why moving region is not a fix — a different Render region
+is a different shared IP with the same problem — and why Europe PMC (no key, no
+contested keyless pool, biomedical coverage that suits the mental-health topics
+this gets used for) is the durable answer rather than more header tuning.
 
 ## AI providers (`llm.py`)
 
@@ -195,7 +216,20 @@ index.html on GitHub Pages  ──POST /api/draft──▶  backend on Render
     ceiling and `prompt_budget_chars` returns `None` for it.
 - Use Claude by setting repo variable `ARTICLEGEN_PROVIDER=anthropic`, passing a
   `claude-*` `--model`, or having only an Anthropic key.
-- Default models: `llama-3.3-70b-versatile` / `claude-opus-4-8`.
+- Default models: `llama-3.3-70b-versatile` / `claude-opus-5`. Model ids live in
+  **two** places — `llm.py` and the `PROVIDERS` map in `index.html`. Nothing
+  links them, and `web._requested_model` silently drops an unrecognised name
+  rather than erroring, so a stale front end quietly stops honouring the
+  provider the user picked. `test_front_end_models_match_the_allowlist` catches
+  the drift; change both together.
+- **On Claude Opus 5, thinking is on unless you say otherwise**, and `max_tokens`
+  caps thinking *plus* the reply. The shallow (`deep=False`) call was sized for
+  Opus 4.8, which did not think by default, so its ceiling was raised to 16,000
+  — the curation call grades twenty sources in one response and a truncated
+  reply is invalid JSON, not a short one. `_anthropic_generate` also handles
+  `stop_reason` of `refusal` and `max_tokens` explicitly: a refusal returns a
+  normal 200 with no text block, which otherwise surfaced as a bare
+  `StopIteration`.
 
 ## Grounding / trust design (why the pipeline is shaped this way)
 
@@ -214,11 +248,16 @@ index.html on GitHub Pages  ──POST /api/draft──▶  backend on Render
   stats. Clinical topics get a "not medical advice" disclaimer (`_is_clinical`).
 - **Methods must name only databases that actually answered.** It used to read
   them from a constant in `render.py`, so every article claimed both Semantic
-  Scholar and OpenAlex had been searched — while Semantic Scholar's keyless tier
-  was 429ing every request. That made the claim false in every article produced,
-  in the one section whose purpose is to state what was done. `provenance
-  ["databases"]` is now derived from sources that returned records. If you add a
-  source, add it to `sources.DATABASE_NAMES`; never hardcode the list again.
+  Scholar and OpenAlex had been searched while one of them was 429ing every
+  request. That made the claim false in every article produced, in the one
+  section whose purpose is to state what was done. `provenance["databases"]` is
+  derived from sources that returned records. If you add a source, add it to
+  `sources.DATABASE_NAMES`; never hardcode the list again — including **as a
+  fallback**, which is how it came back the first time: the constant survived as
+  `provenance.get("databases") or _DATABASES` and went on making the same false
+  claim for every draft whose provenance lacked the key. There is now no
+  fallback. An unrecorded search says "the databases searched were not recorded
+  for this draft" and names nothing.
 - **Ranking**: topic overlap is the primary key, then `citation_weight +
   recency`. Recency was once `year / 1000` — spanning 0.02 across two decades
   against a citation term spanning 0-4, so it was a rounding error and old
@@ -233,6 +272,20 @@ index.html on GitHub Pages  ──POST /api/draft──▶  backend on Render
   retrying a dead source across every query cost more than half the gather time.
   Live: 31.1s before, ~14s after. Source keys are explicit, never derived from
   `search.__name__` — that is not a stable identity and two lambdas collide.
+  Note the interaction with `_MAX_BACKOFF`: a source asking for a cool-off
+  longer than 30s fails *immediately, without retrying*, and is then exhausted —
+  so one long `Retry-After` removes a source from the whole run rather than
+  slowing it down. Assume you are running on fewer sources than the code lists.
+- **Searches are cached** (`sources._search_cache`, 24h; refusals 2 min). The
+  literature for a topic does not change hour to hour, but these free tiers
+  refuse constantly, so re-running the same query is likelier to fail than to
+  return anything new. This is what makes a demo repeatable and what stops a
+  retry storm deepening a throttle. `clear_search_cache()` for tests;
+  `ARTICLEGEN_SEARCH_CACHE_TTL=0` disables it. The cache is consulted *before*
+  the `exhausted` set, so an already-refused source can still contribute stored
+  results. `/api/diag` passes `use_cache=False` — it exists to report what the
+  sources are doing right now, which a cached answer cannot do, and it is
+  rate-limited precisely because that makes each call cost real quota.
 
 ## Setup / testing
 
@@ -241,7 +294,8 @@ index.html on GitHub Pages  ──POST /api/draft──▶  backend on Render
 - **Offline tests (no keys/network):** `python tests/test_offline.py` — provider
   resolution, citation renumbering and superscript style, reference formatting,
   statistic verification, ranking, render blocks, display-item placement,
-  legacy-schema drafts, prose-style gate.
+  legacy-schema drafts, prose-style gate, the search cache, and the front
+  end/server model allowlist agreeing.
 - **Format conformance:** `python tests/test_journal_conformance.py` — asserts
   every convention in `docs/journal-style.md` over five fixture articles
   (including no-direct-sources, sparse metadata, and a 40-year source range).

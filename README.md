@@ -36,8 +36,12 @@ See [`deploy/`](deploy/README.md) to host the backend yourself.
 **Groq is used by default** — with a `GROQ_API_KEY` set it runs
 automatically, and it takes priority even if an `ANTHROPIC_API_KEY` is also
 present. To use Claude instead, set `ARTICLEGEN_PROVIDER=anthropic`.
-Models: `llama-3.3-70b-versatile` on Groq, `claude-opus-4-8` on Anthropic, both
+Models: `llama-3.3-70b-versatile` on Groq, `claude-opus-5` on Anthropic, both
 overridable with `--model`.
+
+**Groq's free tier allows roughly 4–7 articles a day** (100,000 tokens/day; one
+article costs 14–23k, and failed attempts still count). It's the right choice
+for trying this out. For regular use, Claude has no comparable daily cap.
 
 Optional extras: a `SEMANTIC_SCHOLAR_API_KEY` secret and an `OPENALEX_MAILTO`
 environment variable raise the scholarly APIs' rate limits.
@@ -144,13 +148,17 @@ Markdown, for easy editing), and refreshes `index.html` (your review queue).
 | `queue` | `--open` |
 | `demo` | `--open`, `-o` |
 
-`--model` (default `claude-opus-4-8`) is global: `articlegen --model … draft "…"`.
+`--model` (default `claude-opus-5`) is global: `articlegen --model … draft "…"`.
 
 ## Notes & limitations
 
 - Coverage depends on what the open scholarly APIs return; niche or very recent
   topics may surface fewer papers. Under heavy shared rate limits a run can come
   back empty — wait a minute and retry, or add the optional keys above.
+- Search results are cached for 24 hours, so re-running the same topic is
+  instant and costs nothing against those shared limits. This matters more than
+  it sounds: the free tiers refuse often enough that a second attempt at the
+  same query is likelier to fail than to find anything new.
 - The article is AI-written from **abstracts**, not full texts. Treat it as a
   well-sourced starting point: follow the source links before relying on any
   specific claim.

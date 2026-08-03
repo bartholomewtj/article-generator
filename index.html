@@ -793,6 +793,16 @@
     if (resp.status >= 500 && /api key/i.test(detail)) {
       return 'The backend could not use that API key. Check it in Settings (⚙️).';
     }
+    // Groq's free tier is 100,000 tokens/day and one article costs 14-23k, so
+    // this is the failure a new user is most likely to hit — and its raw form
+    // ("rate_limit_exceeded ... TPD") reads like a bug rather than a quota.
+    if (/rate.?limit|quota|tokens per day|TPD|429/i.test(detail)) {
+      return currentProvider() === 'groq'
+        ? 'Your Groq free-tier allowance is used up — it allows roughly 4-7 articles ' +
+          'a day and resets every 24 hours. Wait, or switch to Claude in Settings (⚙️), ' +
+          'which has no daily article cap.'
+        : 'The writing model is rate-limited right now. Wait a moment and try again.';
+    }
     return detail || ('Request failed (' + resp.status + ').');
   }
 
@@ -948,14 +958,19 @@
       store: 'articlegen_key',
       label: 'Groq API Key',
       placeholder: 'gsk_...',
-      help: 'Get a free key from <a href="https://console.groq.com/keys" target="_blank" style="color:var(--accent);">console.groq.com</a>.'
+      help: 'Free, and fine for trying this out — but the free tier allows roughly ' +
+            '<strong>4&ndash;7 articles a day</strong> and failed attempts still count. ' +
+            'Get a key from <a href="https://console.groq.com/keys" target="_blank" style="color:var(--accent);">console.groq.com</a>. ' +
+            'If you hit the daily limit, switch to Claude above.'
     },
     anthropic: {
-      model: 'claude-opus-4-8',
+      model: 'claude-opus-5',
       store: 'articlegen_key_anthropic',
       label: 'Anthropic API Key',
       placeholder: 'sk-ant-...',
-      help: 'Create a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:var(--accent);">console.anthropic.com</a>. Usage is billed to your Anthropic account.'
+      help: 'Recommended for regular use: better writing and no daily article cap. ' +
+            'Create a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:var(--accent);">console.anthropic.com</a>. ' +
+            'Usage is billed to your Anthropic account (a few cents per article).'
     }
   };
 
