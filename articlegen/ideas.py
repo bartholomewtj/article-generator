@@ -46,7 +46,9 @@ a live debate — not a bland overview.
 """
 
 
-def generate_ideas(theme: str, n: int = 6, model: str | None = None) -> list[dict]:
+def generate_ideas(
+    theme: str, n: int = 6, model: str | None = None, api_key: str | None = None
+) -> list[dict]:
     result = generate_json(
         (
             f"Theme: {theme!r}\n\n"
@@ -56,6 +58,7 @@ def generate_ideas(theme: str, n: int = 6, model: str | None = None) -> list[dic
         _IDEAS_SCHEMA,
         system=_IDEAS_SYSTEM,
         model=model,
+        api_key=api_key,
     )
     return result["ideas"][:n]
 

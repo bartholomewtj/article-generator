@@ -670,7 +670,6 @@
     <div class="section-header" style="flex-wrap:wrap; gap:0.5rem;">
       <h2 class="section-title">📚 Published Library</h2>
       <div style="display:flex; gap:0.4rem;">
-        <button class="pill" onclick="syncPullFromGist()" title="Sync latest articles from Cloud Gist">🔄 Sync / Pull</button>
         <button class="pill" style="color:#ef4444; border-color:rgba(239,68,68,0.3);" onclick="clearPublishedLibrary()">🗑️ Clear Library</button>
         <button class="pill" onclick="showView('themeView')">+ New Article</button>
       </div>
@@ -716,43 +715,27 @@
   <div class="modal-card" onclick="event.stopPropagation()">
     <form autocomplete="off" onsubmit="return false;" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
       <div class="modal-header">
-        <h3 class="modal-title">API & Cloud Sync Settings</h3>
+        <h3 class="modal-title">API Settings</h3>
         <button type="button" class="icon-btn" onclick="closeModal('settingsModal')">✕</button>
       </div>
       
       <div style="margin-bottom: 1.25rem;">
         <label class="input-label" for="apiKeyInput">Groq API Key (Optional)</label>
         <p style="font-size:0.8rem; color:var(--muted); margin-top:-0.2rem; margin-bottom:0.6rem;">
-          Get a free key from <a href="https://console.groq.com/" target="_blank" style="color:var(--accent);">console.groq.com</a>. Stored safely in browser storage.
+          Get a free key from <a href="https://console.groq.com/" target="_blank" style="color:var(--accent);">console.groq.com</a>.
         </p>
         <input type="password" id="apiKeyInput" name="groq_key_token" class="theme-input" placeholder="gsk_..." autocomplete="new-password" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
-      </div>
-
-      <!-- Cloud Sync Section -->
-      <div style="border-top: 1px solid var(--card-border); padding-top: 1rem; margin-top: 1rem;">
-        <label class="input-label">☁️ Cross-Device Cloud Sync (GitHub Gist)</label>
-        <p style="font-size:0.8rem; color:var(--muted); margin-top:-0.2rem; margin-bottom:0.6rem;">
-          Sync your API keys & preferences across your phone, tablet, and desktop using a private GitHub Gist.
+        <p style="font-size:0.75rem; color:var(--muted); margin-top:0.5rem; line-height:1.5;">
+          Your key stays in this browser's local storage and is sent only to the
+          article generator backend for the request you asked for. It is never
+          stored on the server and never shared with anyone else. Anyone with
+          access to this device can read it &mdash; revoke it at
+          <a href="https://console.groq.com/keys" target="_blank" style="color:var(--accent);">console.groq.com/keys</a>
+          if you use a shared computer.
         </p>
-
-        <div style="margin-bottom: 0.6rem;">
-          <label style="font-size:0.75rem; color:var(--muted); display:block; margin-bottom:0.2rem;">GitHub Access Token (Gist Scope)</label>
-          <input type="password" id="ghTokenInput" name="github_gist_token" class="theme-input" placeholder="ghp_... or github_pat_..." autocomplete="new-password" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
-          <a href="https://github.com/settings/tokens/new?scopes=gist&description=ArticleGen+Cloud+Sync" target="_blank" style="font-size:0.75rem; color:var(--accent); display:inline-block; margin-top:0.3rem;">🔑 Create a 1-click token on GitHub</a>
-        </div>
-
-        <div style="margin-bottom: 0.6rem;">
-          <label style="font-size:0.75rem; color:var(--muted); display:block; margin-bottom:0.2rem;">Sync Gist ID (Auto-generated on push)</label>
-          <input type="text" id="gistIdInput" name="sync_gist_id" class="theme-input" placeholder="e.g. a1b2c3d4e5f6..." autocomplete="off" autocorrect="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
-        </div>
-
-        <div style="display:flex; gap:0.5rem; margin-top:0.8rem;">
-          <button type="button" class="pill" style="flex:1; justify-content:center; padding:0.6rem;" onclick="syncPushToGist()">⬆️ Push to Cloud</button>
-          <button type="button" class="pill" style="flex:1; justify-content:center; padding:0.6rem;" onclick="syncPullFromGist()">⬇️ Pull from Cloud</button>
-        </div>
       </div>
 
-      <button type="button" class="btn-primary" style="margin-top:1.25rem;" onclick="saveApiKey()">Save All Settings</button>
+      <button type="button" class="btn-primary" style="margin-top:1.25rem;" onclick="saveApiKey()">Save Settings</button>
     </form>
   </div>
 </div>
@@ -932,7 +915,16 @@
     });
   }
 
+  // One-time cleanup: earlier builds stored a GitHub personal access token in
+  // localStorage to sync settings through a gist. That feature is gone; this
+  // clears any token left behind on devices that used it. Safe to delete once
+  // enough time has passed that no browser still holds one.
+  function purgeLegacyGistCredentials() {
+    ['articlegen_gh_token', 'articlegen_gist_id'].forEach(k => localStorage.removeItem(k));
+  }
+
   document.addEventListener('DOMContentLoaded', function() {
+    purgeLegacyGistCredentials();
     updateThemeIcon();
     const iframe = document.getElementById('articleIframe');
     if (iframe) {
@@ -957,8 +949,6 @@
     document.getElementById(id).classList.add('active');
     if (id === 'settingsModal') {
       document.getElementById('apiKeyInput').value = localStorage.getItem('articlegen_key') || '';
-      if (document.getElementById('ghTokenInput')) document.getElementById('ghTokenInput').value = localStorage.getItem('articlegen_gh_token') || '';
-      if (document.getElementById('gistIdInput')) document.getElementById('gistIdInput').value = localStorage.getItem('articlegen_gist_id') || '';
     }
   }
 
@@ -968,178 +958,14 @@
 
   function saveApiKey() {
     const k = document.getElementById('apiKeyInput')?.value.trim() || '';
-    const ghTok = document.getElementById('ghTokenInput')?.value.trim() || '';
-    const gistId = document.getElementById('gistIdInput')?.value.trim() || '';
 
     if (k) localStorage.setItem('articlegen_key', k);
     else localStorage.removeItem('articlegen_key');
-
-    if (ghTok) localStorage.setItem('articlegen_gh_token', ghTok);
-    else localStorage.removeItem('articlegen_gh_token');
-
-    if (gistId) localStorage.setItem('articlegen_gist_id', gistId);
-    else localStorage.removeItem('articlegen_gist_id');
 
     if (typeof savePreferences === 'function') savePreferences();
 
     showToast('Settings saved!');
     closeModal('settingsModal');
-
-    if (ghTok) {
-      syncPushToGist();
-    }
-  }
-
-  function obfuscateApiKey(key) {
-    if (!key) return '';
-    try {
-      const reversed = key.split('').reverse().join('');
-      return 'enc_v1:' + btoa(encodeURIComponent(reversed));
-    } catch(e) {
-      return key;
-    }
-  }
-
-  function deobfuscateApiKey(str) {
-    if (!str) return '';
-    if (str.startsWith('enc_v1:')) {
-      try {
-        const raw = decodeURIComponent(atob(str.replace('enc_v1:', '')));
-        return raw.split('').reverse().join('');
-      } catch(e) {
-        return str;
-      }
-    }
-    return str;
-  }
-
-  async function syncPushToGist() {
-    if (typeof savePreferences === 'function') savePreferences();
-
-    const inputApiKey = document.getElementById('apiKeyInput')?.value.trim();
-    if (inputApiKey !== undefined && inputApiKey !== '') {
-      localStorage.setItem('articlegen_key', inputApiKey);
-    }
-
-    const token = document.getElementById('ghTokenInput')?.value.trim() || localStorage.getItem('articlegen_gh_token') || '';
-    if (!token) {
-      alert("Please enter a GitHub Personal Access Token first.");
-      return;
-    }
-    localStorage.setItem('articlegen_gh_token', token);
-
-    let gistId = document.getElementById('gistIdInput')?.value.trim() || localStorage.getItem('articlegen_gist_id') || '';
-
-    const apiKey = localStorage.getItem('articlegen_key') || '';
-    const prefs = localStorage.getItem('articlegen_prefs') || '{}';
-    const publishedLib = localStorage.getItem('articlegen_published_library') || '[]';
-
-    const payload = {
-      description: "ArticleGen Cross-Device Settings & Published Articles Sync",
-      public: false,
-      files: {
-        "articlegen-settings.json": {
-          content: JSON.stringify({
-            apiKey: obfuscateApiKey(apiKey),
-            preferences: JSON.parse(prefs),
-            publishedLibrary: JSON.parse(publishedLib),
-            updatedAt: new Date().toISOString()
-          }, null, 2)
-        }
-      }
-    };
-
-    try {
-      showToast("Syncing to Cloud...");
-      let res;
-      if (gistId) {
-        res = await fetch(`https://api.github.com/gists/${gistId}`, {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `token ${token}`,
-            'Accept': 'application/vnd.github.v3+json',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(payload)
-        });
-      } else {
-        res = await fetch(`https://api.github.com/gists`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `token ${token}`,
-            'Accept': 'application/vnd.github.v3+json',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(payload)
-        });
-      }
-
-      if (!res.ok) {
-        const err = await res.text();
-        throw new Error(`GitHub API Error (${res.status}): ${err}`);
-      }
-
-      const data = await res.json();
-      gistId = data.id;
-      localStorage.setItem('articlegen_gh_token', token);
-      localStorage.setItem('articlegen_gist_id', gistId);
-      if (document.getElementById('gistIdInput')) document.getElementById('gistIdInput').value = gistId;
-
-      showToast("☁️ Settings pushed to Cloud!");
-    } catch (e) {
-      alert("Cloud Push Error: " + e.message);
-    }
-  }
-
-  async function syncPullFromGist() {
-    const token = document.getElementById('ghTokenInput')?.value.trim() || localStorage.getItem('articlegen_gh_token') || '';
-    let gistId = document.getElementById('gistIdInput')?.value.trim() || localStorage.getItem('articlegen_gist_id');
-
-    if (!gistId) {
-      alert("Please enter a Sync Gist ID to pull settings from.");
-      return;
-    }
-
-    try {
-      showToast("Pulling from Cloud...");
-      const headers = { 'Accept': 'application/vnd.github.v3+json' };
-      if (token) headers['Authorization'] = `token ${token}`;
-
-      const res = await fetch(`https://api.github.com/gists/${gistId}`, { headers });
-      if (!res.ok) {
-        throw new Error(`Failed to fetch Gist (${res.status}). Verify your Gist ID.`);
-      }
-
-      const data = await res.json();
-      const file = data.files?.['articlegen-settings.json'];
-      if (!file || !file.content) {
-        throw new Error("Invalid Gist content: missing articlegen-settings.json");
-      }
-
-      const config = JSON.parse(file.content);
-
-      if (config.apiKey) {
-        const realKey = deobfuscateApiKey(config.apiKey);
-        localStorage.setItem('articlegen_key', realKey);
-        if (document.getElementById('apiKeyInput')) document.getElementById('apiKeyInput').value = realKey;
-      }
-      if (config.preferences) {
-        localStorage.setItem('articlegen_prefs', JSON.stringify(config.preferences));
-        if (typeof loadPreferences === 'function') loadPreferences();
-      }
-      if (config.publishedLibrary) {
-        localStorage.setItem('articlegen_published_library', JSON.stringify(config.publishedLibrary));
-        if (typeof loadPublishedLibrary === 'function') loadPublishedLibrary();
-      }
-
-      if (token) localStorage.setItem('articlegen_gh_token', token);
-      localStorage.setItem('articlegen_gist_id', gistId);
-      if (document.getElementById('gistIdInput')) document.getElementById('gistIdInput').value = gistId;
-
-      showToast("☁️ Settings restored from Cloud!");
-    } catch (e) {
-      alert("Cloud Pull Error: " + e.message);
-    }
   }
 
   function showToast(msg) {
@@ -1976,12 +1802,6 @@
 
     localStorage.setItem('articlegen_published_library', JSON.stringify(publishedLib));
     showToast('📚 Saved to Published Library!');
-
-    // Trigger auto-sync to Gist if token is present
-    const ghToken = localStorage.getItem('articlegen_gh_token');
-    if (ghToken) {
-      syncPushToGist();
-    }
   }
 
   function loadPublishedLibrary() {
@@ -2074,8 +1894,6 @@
       localStorage.setItem('articlegen_published_library', JSON.stringify(publishedLib));
       showToast('Removed from Published Library');
       loadPublishedLibrary();
-      const ghToken = localStorage.getItem('articlegen_gh_token');
-      if (ghToken) syncPushToGist();
     }
   }
 
@@ -2089,8 +1907,6 @@
       localStorage.removeItem('articlegen_published_library');
       showToast("Published Library cleared!");
       loadPublishedLibrary();
-      const ghToken = localStorage.getItem('articlegen_gh_token');
-      if (ghToken) syncPushToGist();
     }
   }
 

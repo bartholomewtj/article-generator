@@ -44,6 +44,39 @@ def test_provider_resolution() -> None:
         os.environ.pop(var, None)
 
 
+def test_per_request_api_key() -> None:
+    """Keys must travel as arguments, never through the process environment.
+
+    The web server is threaded; an env-var handoff lets one request's pipeline
+    pick up another request's key several seconds later, and bill it.
+    """
+    for var in ("ANTHROPIC_API_KEY", "GROQ_API_KEY", "ARTICLEGEN_PROVIDER"):
+        os.environ.pop(var, None)
+    from articlegen.llm import resolve_provider
+
+    check("gsk_ key -> groq", resolve_provider(None, "gsk_abc")[0] == "groq")
+    check("sk-ant- key -> anthropic", resolve_provider(None, "sk-ant-abc")[0] == "anthropic")
+    check(
+        "explicit model still beats the key prefix",
+        resolve_provider("claude-opus-4-8", "gsk_abc")[0] == "anthropic",
+    )
+
+    # The whole point: a passed key must not leak into the environment.
+    import inspect
+    from articlegen import ideas, llm, web, writer
+
+    for fn in (
+        llm.generate_json, ideas.generate_ideas, writer.plan_queries,
+        writer.curate_sources, writer.write_article, writer.revise_prose,
+    ):
+        check(f"{fn.__name__} accepts api_key", "api_key" in inspect.signature(fn).parameters)
+
+    src = inspect.getsource(llm) + inspect.getsource(web)
+    check("no module assigns into os.environ", 'os.environ["GROQ_API_KEY"] =' not in src)
+    check("groq key still falls back to the environment",
+          "os.environ.get(\"GROQ_API_KEY\")" in inspect.getsource(llm._groq_generate))
+
+
 def test_groq_json_cleaning() -> None:
     from articlegen.llm import _clean_json_text
     check("clean simple fence", _clean_json_text("```json\n{\"a\": 1}\n```") == '{"a": 1}')
@@ -388,7 +421,7 @@ def test_web_server() -> None:
 
 def main() -> int:
     for fn in (
-        test_provider_resolution, test_groq_json_cleaning,
+        test_provider_resolution, test_per_request_api_key, test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
         test_prose_style_check,
         test_statistic_verification, test_ranking, test_render_blocks,
