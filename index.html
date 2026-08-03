@@ -685,11 +685,15 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
     Share
   </button>
-  <button class="action-btn" onclick="copyCurrentLink()">
+  <button class="action-btn" onclick="copyCurrentLink()" title="Copies a link with the article inside it. Nothing is uploaded.">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
     Copy Link
   </button>
-  <button class="action-btn" onclick="showQrModal()">
+  <button class="action-btn" onclick="copyPublicLink()" title="Uploads the article to a public pastebin and copies a short link. Anyone with the link can read it.">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+    Publish public link
+  </button>
+  <button class="action-btn" onclick="showQrModal()" title="Needs a public link, so this uploads the article too.">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
     QR Code
   </button>
@@ -1231,20 +1235,51 @@
     localStorage.setItem('articlegen_local_drafts', JSON.stringify(list.slice(0, 20)));
   }
 
-  async function getShareableArticleUrl() {
+  // Two kinds of link, and the difference matters:
+  //
+  //   #read=  the whole article encoded into the URL. Nothing is uploaded and
+  //           nothing leaves the browser. The link is enormous, so it travels
+  //           badly and can't become a QR code.
+  //
+  //   #p=     a dpaste.com paste ID. Short and tidy, but it means uploading the
+  //           full article to a public third-party pastebin where anyone with
+  //           the link can read it.
+  //
+  // The second used to happen silently behind a button labelled "Share". A
+  // clinician generating something sensitive had no way to know their article
+  // was being published to someone else's server. Uploading is now its own
+  // action, named for what it does, and it asks first.
+
+  /** Self-contained link. Never uploads; never leaves this browser. */
+  function getLocalShareUrl() {
+    if (currentArticleUrl && !currentArticleUrl.includes('#read=') && !currentArticleUrl.includes('#p=')) {
+      return window.location.origin + currentArticleUrl;
+    }
+    const html = document.getElementById('articleIframe').srcdoc || '';
+    if (!html) return window.location.origin + window.location.pathname;
+    const hash = encodeArticleToHash(html);
+    return hash ? window.location.origin + window.location.pathname + hash
+                : window.location.origin + window.location.pathname;
+  }
+
+  /** Upload to the public pastebin and return a short link. Asks first. */
+  async function publishPublicLink() {
     if (cachedShareUrl) return cachedShareUrl;
 
-    if (currentArticleUrl && !currentArticleUrl.includes('#read=') && !currentArticleUrl.includes('#p=')) {
-      cachedShareUrl = window.location.origin + currentArticleUrl;
-      return cachedShareUrl;
-    }
-
-    const iframe = document.getElementById('articleIframe');
-    const html = iframe.srcdoc || '';
-
+    const html = document.getElementById('articleIframe').srcdoc || '';
     if (!html) {
-      return window.location.origin + window.location.pathname;
+      showToast('Generate an article first.');
+      return null;
     }
+
+    const ok = confirm(
+      'Publish a public link?\n\n' +
+      'This uploads the full article to dpaste.com, a public pastebin. ' +
+      'Anyone with the link will be able to read it, and it stays there for 30 days. ' +
+      'It is not private and cannot be deleted from here.\n\n' +
+      'To share without uploading anything, cancel and use "Copy Link" instead.'
+    );
+    if (!ok) return null;
 
     try {
       const formData = new URLSearchParams();
@@ -1258,24 +1293,21 @@
       });
 
       if (res.ok) {
-        const pasteUrl = (await res.text()).trim();
-        const pasteId = pasteUrl.split('/').filter(Boolean).pop();
+        const pasteId = (await res.text()).trim().split('/').filter(Boolean).pop();
         if (pasteId) {
           cachedShareUrl = window.location.origin + window.location.pathname + '#p=' + pasteId;
           return cachedShareUrl;
         }
       }
+      throw new Error('pastebin returned ' + res.status);
     } catch (e) {
-      console.warn("dpaste.com error:", e);
+      alert('Could not publish the link: ' + e.message);
+      return null;
     }
-
-    const hash = encodeArticleToHash(html);
-    cachedShareUrl = window.location.origin + window.location.pathname + hash;
-    return cachedShareUrl;
   }
 
   async function shareCurrentArticle() {
-    const shareUrl = await getShareableArticleUrl();
+    const shareUrl = getLocalShareUrl();
     if (navigator.share) {
       navigator.share({
         title: currentTitle || document.title,
@@ -1288,9 +1320,21 @@
   }
 
   async function copyCurrentLink() {
-    const shareUrl = await getShareableArticleUrl();
+    const shareUrl = getLocalShareUrl();
     navigator.clipboard.writeText(shareUrl).then(() => {
-      showToast('Article link copied to clipboard!');
+      // Worth saying out loud: this link carries the article inside it, which
+      // is why it's long — and why it hasn't been uploaded anywhere.
+      showToast(shareUrl.length > 2000
+        ? 'Copied. The article travels inside this link, so it is long — nothing was uploaded.'
+        : 'Article link copied to clipboard!');
+    }).catch(() => {});
+  }
+
+  async function copyPublicLink() {
+    const url = await publishPublicLink();
+    if (!url) return;
+    navigator.clipboard.writeText(url).then(() => {
+      showToast('Public link copied. Anyone with it can read the article.');
     }).catch(() => {});
   }
 
@@ -1300,32 +1344,22 @@
     }
   }
 
-  async function publishToGithub() {
-    showToast('Publishing to GitHub...');
-    try {
-      const resp = await fetch('/api/publish', { method: 'POST' });
-      if (!resp.ok) {
-        const errData = await resp.json().catch(() => ({}));
-        throw new Error(errData.error || 'Failed to publish');
-      }
-      const data = await resp.json();
-      showToast(data.message || 'Successfully published!');
-      setTimeout(() => {
-        alert('Your drafts have been published to GitHub!\n\nThey will be live in ~20 seconds at:\nhttps://bartholomewtj.github.io/article-generator/');
-      }, 500);
-    } catch (err) {
-      alert('Error publishing: ' + err.message);
-    }
-  }
-
   async function showQrModal() {
     const wrapper = document.getElementById('qrCanvasWrapper');
+
+    // A QR code can't carry a whole article, so this needs the short public
+    // link — which means uploading. And the code itself is rendered by
+    // api.qrserver.com, so whatever URL we pass goes to a third party too.
+    // Both are fine once the article is deliberately public; neither should
+    // happen to a private one, which is why publishPublicLink() asks first.
+    const shareUrl = await publishPublicLink();
+    if (!shareUrl) return;
+
     wrapper.innerHTML = '<p style="color:var(--muted); font-size:0.9rem;">⏳ Generating mobile QR code...</p>';
     openModal('qrModal');
 
     try {
-      const shareUrl = await getShareableArticleUrl();
-      const displayUrl = shareUrl.length > 90 ? (shareUrl.substring(0, 80) + '... (Base64 Draft)') : shareUrl;
+      const displayUrl = shareUrl.length > 90 ? (shareUrl.substring(0, 80) + '…') : shareUrl;
       wrapper.innerHTML = `
         <div style="display:flex; flex-direction:column; align-items:center;">
           <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(shareUrl)}" alt="QR Code" width="200" height="200" style="border-radius:8px; border:1px solid var(--card-border);">
@@ -1468,8 +1502,11 @@
       return;
     }
 
-    showToast('Generating public link & saving...');
-    const publicUrl = await getShareableArticleUrl();
+    // Saving to your own library is a local act, so it must not upload
+    // anything. Only carry a public URL if this article has already been
+    // deliberately published; otherwise the entry is local-only and the
+    // library offers a Publish button per item.
+    const publicUrl = cachedShareUrl || '';
     const title = currentTitle || doc.title || 'Untitled Article';
 
     let publishedLib = JSON.parse(localStorage.getItem('articlegen_published_library') || '[]');
@@ -1525,14 +1562,19 @@
         </div>
         <p style="font-size:0.8rem; color:var(--muted); margin:0 0 0.8rem;">Saved on ${new Date(item.date).toLocaleDateString()}</p>
         
-        <div style="background:var(--bg); border:1px solid var(--card-border); border-radius:8px; padding:0.5rem 0.8rem; display:flex; align-items:center; justify-content:space-between; margin-bottom:0.8rem;">
-          <span style="font-size:0.78rem; color:var(--accent); font-family:monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:240px;">${escapeHtml(shortUrl)}</span>
-          <button type="button" class="pill" style="font-size:0.75rem; padding:0.2rem 0.6rem;" onclick="copyLinkDirect('${escapeHtml(item.publicUrl)}')">🔗 Copy Link</button>
+        <div style="background:var(--bg); border:1px solid var(--card-border); border-radius:8px; padding:0.5rem 0.8rem; display:flex; align-items:center; justify-content:space-between; margin-bottom:0.8rem; gap:0.5rem;">
+          ${item.publicUrl
+            ? `<span style="font-size:0.78rem; color:var(--accent); font-family:monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:240px;">${escapeHtml(shortUrl)}</span>
+               <button type="button" class="pill" style="font-size:0.75rem; padding:0.2rem 0.6rem;" onclick="copyLinkDirect('${escapeHtml(item.publicUrl)}')">🔗 Copy Link</button>`
+            : `<span style="font-size:0.78rem; color:var(--muted);">Saved on this device only</span>
+               <button type="button" class="pill" style="font-size:0.75rem; padding:0.2rem 0.6rem; white-space:nowrap;" onclick="publishLibraryItem('${item.id}')">🌐 Publish</button>`}
         </div>
 
         <div style="display:flex; gap:0.5rem;">
           <button class="btn-select" style="flex:1; margin:0;" onclick="openPublishedArticle('${item.id}')">📖 Read Article</button>
-          <button class="pill" style="padding:0.6rem 0.8rem;" onclick="showQrForUrl('${escapeHtml(item.publicUrl)}')">📱 QR</button>
+          ${item.publicUrl
+            ? `<button class="pill" style="padding:0.6rem 0.8rem;" onclick="showQrForUrl('${escapeHtml(item.publicUrl)}')">📱 QR</button>`
+            : ''}
         </div>
       `;
       container.appendChild(card);
@@ -1548,6 +1590,27 @@
       cachedShareUrl = item.publicUrl;
       showView('readerView');
     }
+  }
+
+  /** Publish a library entry that was saved locally, on explicit request. */
+  async function publishLibraryItem(id) {
+    const lib = JSON.parse(localStorage.getItem('articlegen_published_library') || '[]');
+    const item = lib.find(d => d.id === id);
+    if (!item || !item.content) {
+      showToast('Nothing to publish for this entry.');
+      return;
+    }
+    const previous = cachedShareUrl;
+    cachedShareUrl = '';
+    document.getElementById('articleIframe').srcdoc = item.content;
+    const url = await publishPublicLink();
+    cachedShareUrl = url || previous;
+    if (!url) return;
+
+    item.publicUrl = url;
+    localStorage.setItem('articlegen_published_library', JSON.stringify(lib));
+    loadPublishedLibrary();
+    showToast('Published. Anyone with the link can read it.');
   }
 
   function copyLinkDirect(url) {
