@@ -25,6 +25,7 @@ no second implementation: an article generated from your phone goes through the
 same relevance gate, prose-style enforcement and statistic verification as one
 generated from the terminal. The hosted backend keeps nothing: it renders your
 article, returns it, and forgets it. Your drafts live in your own browser.
+See [`deploy/`](deploy/README.md) to host the backend yourself.
 
 **Provider key setup:**
 
