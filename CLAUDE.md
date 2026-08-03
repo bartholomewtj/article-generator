@@ -212,6 +212,27 @@ index.html on GitHub Pages  ──POST /api/draft──▶  backend on Render
   can't. Figures not found in any abstract are flagged "verify against full text."
 - **Abstracts only.** The writer never sees full text; it must not invent precise
   stats. Clinical topics get a "not medical advice" disclaimer (`_is_clinical`).
+- **Methods must name only databases that actually answered.** It used to read
+  them from a constant in `render.py`, so every article claimed both Semantic
+  Scholar and OpenAlex had been searched — while Semantic Scholar's keyless tier
+  was 429ing every request. That made the claim false in every article produced,
+  in the one section whose purpose is to state what was done. `provenance
+  ["databases"]` is now derived from sources that returned records. If you add a
+  source, add it to `sources.DATABASE_NAMES`; never hardcode the list again.
+- **Ranking**: topic overlap is the primary key, then `citation_weight +
+  recency`. Recency was once `year / 1000` — spanning 0.02 across two decades
+  against a citation term spanning 0-4, so it was a rounding error and old
+  heavily-cited reviews always won (a real search returned a median paper year
+  of 2013). It now decays over `RECENCY_HALF_LIFE` on the citation term's scale.
+  Ranking matters more than it looks: it decides what the writer sees first,
+  which paper is featured, and **which papers survive the Groq token trim**,
+  since the lowest-ranked are dropped first.
+- **A source that refuses once is skipped for the rest of the run**
+  (`gather_evidence`'s `exhausted` set). Each attempt is three tries with
+  backoff, ~10s, while the limits are per-minute and a run takes seconds —
+  retrying a dead source across every query cost more than half the gather time.
+  Live: 31.1s before, ~14s after. Source keys are explicit, never derived from
+  `search.__name__` — that is not a stable identity and two lambdas collide.
 
 ## Setup / testing
 
