@@ -35,19 +35,26 @@ curl https://articlegen-api.onrender.com/api/diag
 
 ## Next thing to do
 
-1. **Generate one article and read it.** Still the oldest outstanding question,
-   and now the only blocker is a key: `GROQ_API_KEY` is not set on this machine
-   (no `.env`, not in the environment). Set it, then run the pipeline once.
-   Several output-quality changes (#28, #29, #36, #37, and the substance rules)
-   have never been watched producing an article end to end. Look at whether the
-   substance rules fire, whether the revision pass triggers, and whether the
-   prose is less repetitive than the night-shift article that started this.
-2. **Then decide about issue #38** (evidence pool skews old, median paper year
-   2013). Whether it's worth fixing depends entirely on how step 1 reads.
+1. **Merge #49, then generate one article and check it worked.** An article was
+   finally generated and read (4 Aug, via the deployed web app) and it was badly
+   repetitive: the abstract, key points and Introduction were the same paragraph
+   three times (38% and 24% shared 6-word runs), and studies were only ever cited
+   in bundles, so no individual study was ever described. #49 fixes the cause —
+   the schema had asked all three surfaces to be self-contained summaries — and
+   adds `echoed-abstract` and `bundled-citations` to enforce it deterministically.
+   **The new rules are proven against the bad output; the prompt changes are not
+   verified end to end.** That needs `GROQ_API_KEY` (not set on this machine — no
+   `.env`, not in the environment) and one real generation.
+2. **Watch the quota when you do.** More substance rules firing means the
+   revision pass runs more often, and each revision spends tokens against the
+   ~4–7 articles/day free tier. If it becomes the binding constraint, that is
+   issue #34.
+3. **Then decide about issue #38** (evidence pool skews old, median paper year
+   2013). Whether it's worth fixing depends on how the next article reads.
 
 ## Open
 
-- No open PRs.
+- **#49** — the repetition/per-study-depth fix. Open, tests pass, awaiting merge.
 - **#47** — rename the default branch to `main`. Do it at the *start* of a
   session: Render tracks the branch by name and deploys stop silently otherwise.
   Needs the Render dashboard (owner login), so the rename and the dashboard
