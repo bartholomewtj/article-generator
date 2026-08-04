@@ -35,7 +35,15 @@ curl https://articlegen-api.onrender.com/api/diag
 
 ## Next thing to do
 
-1. **Merge #49, then generate one article and check it worked.** An article was
+0. **Set `GROQ_API_KEY` and generate one article — this is the only step left.**
+   Both PR #49 and the rule-review work on `feat/per-study-depth` are complete and
+   green, but neither has been watched producing an article, because no key is set
+   on this machine (no `.env`, not in the environment). Get a free key at
+   console.groq.com, then: `export GROQ_API_KEY=...` and
+   `python -m articlegen draft "artificial light and night shift workers"`.
+   The research half is confirmed working keyless (12 papers gathered on 4 Aug).
+
+1. **Context for what to look for.** An article was
    finally generated and read (4 Aug, via the deployed web app) and it was badly
    repetitive: the abstract, key points and Introduction were the same paragraph
    three times (38% and 24% shared 6-word runs), and studies were only ever cited
@@ -54,7 +62,9 @@ curl https://articlegen-api.onrender.com/api/diag
 
 ## Open
 
-- **#49** — the repetition/per-study-depth fix. Open, tests pass, awaiting merge.
+- **#49** — repetition/per-study-depth fix, plus the style-rule review (real-prose
+  false positives, hedge split, nominalisation deleted, scaled section floor).
+  Open, both suites green, awaiting merge.
 - **#47** — rename the default branch to `main`. Do it at the *start* of a
   session: Render tracks the branch by name and deploys stop silently otherwise.
   Needs the Render dashboard (owner login), so the rename and the dashboard
