@@ -107,7 +107,10 @@ def enforce_style(
     only be fixed by adding grounded material, and without the sources the model
     has nothing to add but more words about the same points.
     """
-    report = check_style(article)
+    # The section floor scales with how much directly on-topic evidence there is;
+    # demanding five sections from three usable abstracts invites padding.
+    direct_sources = ((curation or {}).get("counts") or {}).get("direct")
+    report = check_style(article, direct_sources=direct_sources)
     problems = style_errors(report)
     if not problems:
         log("Prose style: clean.")
@@ -129,7 +132,7 @@ def enforce_style(
         len(revised.get("references") or []) >= len(article.get("references") or [])
         and len(revised.get("sections") or []) == len(article.get("sections") or [])
     )
-    revised_report = check_style(revised)
+    revised_report = check_style(revised, direct_sources=direct_sources)
     if intact and len(style_errors(revised_report)) < len(problems):
         log(f"  revised: {len(problems)} -> {len(style_errors(revised_report))} issue(s).")
         log(format_style(revised_report))

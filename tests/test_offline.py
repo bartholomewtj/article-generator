@@ -885,6 +885,73 @@ def test_prose_style_check() -> None:
           any(i["rule"] == "under-hedged" for i in report["issues"]))
 
 
+def test_rules_do_not_reject_real_journal_prose() -> None:
+    """The register rules must not fire on genuinely published writing.
+
+    Every rule here is a guess about what journal prose looks like, and the guesses
+    have been wrong in ways no synthetic fixture could reveal. Checked against real
+    abstracts, an earlier version of the first-person rule flagged five of eight,
+    because its allowlist required "we" immediately followed by an approved verb —
+    so "we also review", "we searched", "we aimed to" all read as a human author
+    intruding. Three more false positives were pure clinical notation: "Axis I",
+    "I2 = 70.6%" (the meta-analysis heterogeneity statistic) and "US $16.3 million"
+    all matched a first-person pronoun.
+
+    `tests/real_abstracts.json` is a frozen corpus of real abstracts, stored rather
+    than fetched so the suite stays offline and deterministic. Two entries carry a
+    documented `expect_register_errors` — one rhetorical "we", and one genuine
+    author-voice "we hope" that the house style bans on purpose, which doubles as a
+    positive control that the rule still bites.
+    """
+    import json
+
+    from articlegen.style import check_style, errors
+
+    register = {"first-person", "second-person", "contraction", "booster",
+                "overclaim", "rhetorical-question", "exclamation"}
+    path = os.path.join(os.path.dirname(__file__), "real_abstracts.json")
+    corpus = json.load(open(path, encoding="utf-8"))
+    check("corpus is a usable size", len(corpus) >= 12)
+
+    unexpected = []
+    for entry in corpus:
+        article = {"sections": [{"heading": "Introduction",
+                                 "paragraphs": [entry["abstract"]]}]}
+        fired = sorted({i["rule"] for i in errors(check_style(article))} & register)
+        if fired != entry["expect_register_errors"]:
+            unexpected.append((entry["title"][:50], fired, entry["expect_register_errors"]))
+    if unexpected:
+        for title, fired, expected in unexpected:
+            print(f"      {title}: fired {fired}, expected {expected}")
+    check(f"register rules match expectations on {len(corpus)} real abstracts",
+          not unexpected)
+
+    check("every documented exception carries a reason",
+          all(e.get("note") for e in corpus if e["expect_register_errors"]))
+
+    # The corpus must not be so permissive that the rules stop working. These are
+    # the things the house style genuinely bans.
+    for text, expected in [
+        ("We believe this is the most important question.", "first-person"),
+        ("Our findings show a clear benefit.", "first-person"),
+        ("You should note the risk before prescribing.", "second-person"),
+        ("This clearly proves the point.", "booster"),
+        ("It doesn't replicate.", "contraction"),
+    ]:
+        fired = {i["rule"] for i in errors(check_style(
+            {"sections": [{"heading": "Introduction", "paragraphs": [text]}]}))}
+        check(f"still catches {expected}: {text[:34]!r}", expected in fired)
+
+    # Clinical notation that must never read as a first-person pronoun.
+    for text in ("Axis I comorbidity was recorded in most participants.",
+                 "Heterogeneity was substantial (I2 = 70.6%).",
+                 "Costs reached US $16.3 million by 2030.",
+                 "A Phase I trial enrolled 40 participants."):
+        fired = {i["rule"] for i in errors(check_style(
+            {"sections": [{"heading": "Introduction", "paragraphs": [text]}]}))}
+        check(f"not first person: {text[:38]!r}", "first-person" not in fired)
+
+
 def test_statistic_verification() -> None:
     from articlegen.verify import check_statistics
     from articlegen.sources import Paper
@@ -1145,7 +1212,7 @@ def main() -> int:
         test_methods_names_only_sources_that_answered,
         test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
-        test_prose_style_check,
+        test_prose_style_check, test_rules_do_not_reject_real_journal_prose,
         test_statistic_verification, test_ranking, test_recency_actually_counts, test_render_blocks,
         test_display_item_placement, test_legacy_draft_fields,
         test_demo_and_index, test_web_server,

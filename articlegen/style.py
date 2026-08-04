@@ -11,7 +11,7 @@ model followed the prompt:
 - first person only in the reviewing frame journals actually use ("here we review")
 - hedging present at roughly the density corpus studies report for research
   articles — about one hedge every two to three sentences
-- sentences of a readable length, and not wall-to-wall nominalisation
+- sentences of a readable length
 
 Everything here is a regex over the draft's own text. Like `verify.py`, it is
 deliberately not an LLM pass: a model asked "is this journal style?" will agree
@@ -49,19 +49,35 @@ _ABSOLUTES = (
     "beyond doubt", "without doubt", "categorically", "irrefutable",
 )
 
-# Hedges, from the standard epistemic-marker categories (modal, lexical, adverbial,
-# adjectival, nominal) used in corpus studies of research articles.
+# Epistemic hedges — markers that qualify how confident a claim is. These are the
+# only ones that count toward the hedging floor.
+#
+# The frequency and degree adverbs below used to live in this list, which made the
+# floor satisfiable by prose that hedges nothing: a paragraph of "approximately
+# 40%... typically higher... often persist... generally largest" scored 1.0
+# hedges/sentence against a 0.20 floor while qualifying not one claim. That is the
+# same loophole the substance rules exist to close, one level down.
+#
+# "cannot be" and "could not be" were also in here. They assert certainty, so a
+# confident claim was raising the hedge score.
 _HEDGES = (
     "may", "might", "could", "appears", "appear", "appeared", "seems", "seem",
     "suggests", "suggest", "suggested", "indicates", "indicate", "indicated",
     "likely", "unlikely", "probably", "possibly", "perhaps", "presumably",
-    "potentially", "apparently", "relatively", "largely", "broadly", "generally",
-    "typically", "often", "commonly", "frequently", "consistent with",
-    "is thought", "are thought", "reportedly", "estimated", "approximately",
+    "potentially", "apparently", "consistent with",
+    "is thought", "are thought", "reportedly",
     "tends to", "tend to", "in part", "partly", "to some extent", "plausible",
     "plausibly", "possible", "probable", "assumption", "possibility",
     "remains unclear", "remains unresolved", "not established", "uncertain",
-    "cannot be", "could not be", "would be expected",
+    "would be expected",
+)
+
+# Frequency and degree adverbs. They soften prose but do not qualify a claim's
+# evidential strength, so they are tracked (a draft built entirely from these is
+# worth knowing about) but never counted toward the hedging floor.
+_SOFTENERS = (
+    "relatively", "largely", "broadly", "generally", "typically", "often",
+    "commonly", "frequently", "estimated", "approximately",
 )
 
 _CONTRACTIONS = (
@@ -82,14 +98,55 @@ _WORDY = {
     "in the event that": "if",
 }
 
-# The one first-person frame journals do use — Nature asks for "Here we show" or
-# its equivalent. Anything else in the first person implies a human author.
+# The first-person frame journals do use — Nature asks for "Here we show" or its
+# equivalent. Anything else in the first person implies a human author.
+#
+# Both halves of this are load-bearing and were wrong once. The adverb slot exists
+# because "we also review" and "we further examine" are ordinary journal phrasing
+# that an immediate we+verb pattern rejects. The verb list covers what systematic
+# reviews actually say — checked against real published abstracts, where the
+# earlier list flagged five of eight as if a human had written them.
 _ALLOWED_FIRST_PERSON = re.compile(
-    r"\b(?:here\s+)?we\s+(?:review|reviewed|consider|considered|summarize|summarise|"
+    r"\b(?:here\s+)?we\s+(?:\w+ly\s+|also\s+|further\s+|then\s+|next\s+){0,2}"
+    r"(?:review|reviewed|consider|considered|summarize|summarise|"
     r"summarized|summarised|describe|described|argue|argued|focus|focused|focussed|"
-    r"report|reported|show|showed|examine|examined|assess|assessed|discuss|discussed)\b",
+    r"report|reported|show|showed|examine|examined|assess|assessed|discuss|discussed|"
+    r"search|searched|aim|aimed|identify|identified|conclude|concluded|compare|compared|"
+    r"hypothesise|hypothesize|hypothesised|hypothesized|estimate|estimated|"
+    r"analyse|analyze|analysed|analyzed|evaluate|evaluated|investigate|investigated|"
+    r"present|presented|propose|proposed|include|included|note|noted|find|found|"
+    r"observe|observed|explore|explored|outline|outlined|highlight|highlighted|"
+    r"use|used|conduct|conducted|perform|performed|group|grouped|pool|pooled|"
+    r"extract|extracted|screen|screened|select|selected|retain|retained|"
+    r"restrict|restricted|exclude|excluded|stratify|stratified|calculate|calculated|"
+    r"measure|measured|test|tested|apply|applied|suggest|suggested|"
+    r"recommend|recommended|seek|sought|develop|developed|derive|derived|"
+    r"validate|validated|collect|collected|obtain|obtained|define|defined|"
+    r"classify|classified|characterise|characterize|characterised|characterized|"
+    r"follow|followed|notice|noticed|adopt|adopted|adapt|adapted|"
+    r"searched|term|termed|report|reports|see|saw|seen)\b",
     re.IGNORECASE,
 )
+
+# "our understanding of the pathophysiology" is ordinary journal English and does
+# not claim authorship, unlike "our findings".
+_ALLOWED_OUR = re.compile(
+    r"\bour\s+(?:current\s+|present\s+|collective\s+)?"
+    r"(?:understanding|knowledge|ability|awareness|view|grasp|appreciation)\b",
+    re.IGNORECASE,
+)
+
+# Bare "I" is a pronoun only when it is not an enumerator. Clinical writing is
+# full of "Axis I", "Type I error", "Phase I trial", "Class I evidence" — all of
+# which a naive \bI\b flags as a human author speaking.
+_ENUMERATOR_BEFORE_I = re.compile(
+    r"\b(?:axis|type|phase|class|grade|stage|group|category|level|factor|"
+    r"cluster|tier|part|table|figure|appendix|chapter|study|trial)\s+$",
+    re.IGNORECASE,
+)
+# I² — the heterogeneity statistic, which appears in every meta-analysis this
+# tool is likely to review, written variously as "I2", "I 2" or "I²".
+_I_SQUARED_AFTER = re.compile(r"\s*[²2]\b")
 _FIRST_PERSON = re.compile(r"\b(I|me|my|mine|we|us|our|ours)\b", re.IGNORECASE)
 _SECOND_PERSON = re.compile(r"\b(you|your|yours|yourself)\b", re.IGNORECASE)
 
@@ -98,14 +155,20 @@ _SECOND_PERSON = re.compile(r"\b(you|your|yours|yourself)\b", re.IGNORECASE)
 _PASSIVE = re.compile(
     r"\b(?:is|are|was|were|been|being|be)\s+(?:\w+ly\s+)?\w+(?:ed|en)\b", re.IGNORECASE
 )
-_NOMINALISATION = re.compile(r"\b\w{4,}(?:tion|sion|ment|ance|ence|ity|ism)s?\b", re.IGNORECASE)
+# Nominalisation counting was removed deliberately. The rule counted every word
+# ending -tion/-sion/-ment/-ance/-ence/-ity/-ism against an 11% threshold, which
+# in clinical writing measures the subject matter rather than the style:
+# "Depression and anxiety following treatment: an assessment of intervention
+# adherence, medication use, and functional impairment in a clinical population"
+# scores 42%, because those nouns ARE the topic ("depression" itself ends -sion).
+# It was a warning that fired on essentially every article in this domain, and a
+# warning that always fires is one the reader learns to skip.
 
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+(?=[A-Z(\"'])")
 _ABBREV = re.compile(r"\b(et al|e\.g|i\.e|cf|vs|Fig|Dr|approx|no)\.", re.IGNORECASE)
 
 LONG_SENTENCE_WORDS = 45
 MIN_HEDGES_PER_SENTENCE = 0.20   # ~1 hedge per 5 sentences; corpora report 1 per 2-3
-MAX_NOMINALISATION_RATE = 0.11   # nominalised nouns as a share of all words
 MAX_PASSIVE_RATIO = 0.55         # share of sentences containing a passive
 MIN_SENTENCES_FOR_DENSITY = 12   # below this, density figures are noise
 MIN_WORDS_FOR_DENSITY = 250
@@ -123,6 +186,7 @@ MIN_WORDS_FOR_DENSITY = 250
 # calibrated against the curated sample in demo.py, which must keep passing.
 MIN_BODY_WORDS = 900             # informational only; see the note at the check
 MIN_SECTIONS = 5                 # the writer prompt asks for 5-7
+MIN_SECTIONS_FLOOR = 3           # Introduction + one thematic section + Conclusions
 MAX_HEDGE_SHARE = 0.40           # no single hedge may be this much of the total
 MAX_OPENER_REPEATS = 2           # same three-word sentence opening, at most twice
 REPEATED_PHRASE_WORDS = 8        # a shared run this long is recycled text
@@ -187,7 +251,20 @@ def _find(pattern: str, text: str) -> re.Match | None:
     return re.search(pattern, text, re.IGNORECASE)
 
 
-def check_style(article: dict) -> dict:
+def _required_sections(direct_sources: int | None) -> int:
+    """How many sections this particular review has the material to support.
+
+    A flat floor of 5 is a thinness rule that can *cause* thinness: told to
+    produce five sections from six abstracts, the cheapest way to fill the fifth
+    is to restate the fourth, which is exactly the repetition the substance rules
+    exist to catch. When the evidence base is known and small, the floor drops.
+    """
+    if direct_sources is None:
+        return MIN_SECTIONS
+    return max(MIN_SECTIONS_FLOOR, min(MIN_SECTIONS, direct_sources))
+
+
+def check_style(article: dict, direct_sources: int | None = None) -> dict:
     """Return {'issues': [...], 'stats': {...}}.
 
     Each issue is {'rule', 'severity', 'where', 'detail', 'excerpt'}. Severity is
@@ -197,7 +274,7 @@ def check_style(article: dict) -> dict:
     all_sentences: list[str] = []
     total_words = 0
     total_hedges = 0
-    total_nominalisations = 0
+    total_softeners = 0
     passive_sentences = 0
 
     def add(rule, severity, where, detail, excerpt=""):
@@ -250,8 +327,15 @@ def check_style(article: dict) -> dict:
 
         # First person outside the reviewing frame implies a human author.
         for m in _FIRST_PERSON.finditer(text):
+            if m.group(0) == "I" and (
+                _ENUMERATOR_BEFORE_I.search(text[:m.start()])
+                or _I_SQUARED_AFTER.match(text[m.end():])
+            ):
+                continue  # "Axis I", "Type I error", "I2 = 70%" — not a pronoun
+            if m.group(0) == "US":
+                continue  # "US adults", "US$16 million" — the country, not "us"
             window = text[max(0, m.start() - 8):m.end() + 30]
-            if _ALLOWED_FIRST_PERSON.search(window):
+            if _ALLOWED_FIRST_PERSON.search(window) or _ALLOWED_OUR.match(text[m.start():]):
                 continue
             add("first-person", "error", where,
                 f"First person ({m.group(0)!r}) outside the 'here we review' frame.",
@@ -274,7 +358,8 @@ def check_style(article: dict) -> dict:
 
         for hedge in _HEDGES:
             total_hedges += len(re.findall(rf"\b{re.escape(hedge)}\b", lower))
-        total_nominalisations += len(_NOMINALISATION.findall(text))
+        for softener in _SOFTENERS:
+            total_softeners += len(re.findall(rf"\b{re.escape(softener)}\b", lower))
 
     n_sentences = len(all_sentences)
     lengths = [len(re.findall(r"[A-Za-z][\w'-]*", s)) for s in all_sentences]
@@ -295,8 +380,8 @@ def check_style(article: dict) -> dict:
         "distinct_hedges": len(hedge_counts),
         "commonest_hedge": top_hedge,
         "hedges_per_sentence": round(total_hedges / n_sentences, 3) if n_sentences else 0.0,
+        "softeners": total_softeners,
         "mean_sentence_words": round(statistics.mean(lengths), 1) if lengths else 0.0,
-        "nominalisation_rate": round(total_nominalisations / total_words, 3) if total_words else 0.0,
         "passive_ratio": round(passive_sentences / n_sentences, 3) if n_sentences else 0.0,
     }
 
@@ -309,10 +394,6 @@ def check_style(article: dict) -> dict:
                 f"({stats['hedges_per_sentence']} per sentence). Research articles hedge "
                 "roughly once every two to three sentences; claims here are stated with "
                 "more certainty than the evidence carries.")
-        if stats["nominalisation_rate"] > MAX_NOMINALISATION_RATE:
-            add("nominalisation", "warning", "whole article",
-                f"{stats['nominalisation_rate']:.0%} of words are nominalised nouns; "
-                "prefer verbs ('evaluated', not 'conducted an evaluation').")
         if stats["passive_ratio"] > MAX_PASSIVE_RATIO:
             add("passive-voice", "warning", "whole article",
                 f"{stats['passive_ratio']:.0%} of sentences are passive; Nature and Science "
@@ -322,10 +403,12 @@ def check_style(article: dict) -> dict:
     # These fail a draft for saying too little, rather than for saying it wrongly.
 
     n_sections = len(article.get("sections") or [])
-    if n_sections and n_sections < MIN_SECTIONS:
+    required_sections = _required_sections(direct_sources)
+    if n_sections and n_sections < required_sections:
         add("too-few-sections", "error", "whole article",
-            f"{n_sections} sections; a Review runs {MIN_SECTIONS}-7. Add sections that "
-            "develop distinct aspects of the question rather than restating the same one.")
+            f"{n_sections} sections; this review needs at least {required_sections}. Add "
+            "sections that develop distinct aspects of the question rather than restating "
+            "the same one.")
 
     # Warning, not error, and deliberately so. Calibrating against the curated
     # sample in demo.py showed length does not discriminate: the good sample runs
@@ -365,12 +448,12 @@ def check_style(article: dict) -> dict:
                 "should carry information the others do not; if a point has been made, "
                 "develop it rather than restate it.", repeat)
 
-    for where, share in _abstract_echoes(article):
+    for where, against, share in _abstract_echoes(article):
         add("echoed-abstract", "error", where,
-            f"{share:.0%} of this text repeats wording from the abstract. The abstract "
-            "is the standalone summary; the key points carry specific findings and the "
-            "Introduction sets up the question. Say something here the abstract does "
-            "not.")
+            f"{share:.0%} of this text repeats wording from {against}. The abstract is "
+            "the standalone summary; the key points carry specific findings, the "
+            "Introduction sets up the question and the Conclusions state what is settled "
+            f"and what is not. Say something here that {against} does not.")
 
     never_solo, n_cited = _never_cited_alone(article)
     if never_solo:
@@ -389,50 +472,76 @@ def _grams(text: str, n: int = ECHO_GRAM_WORDS) -> list[str]:
     return [" ".join(words[i:i + n]) for i in range(len(words) - n + 1)]
 
 
-def _abstract_echoes(article: dict) -> list[tuple[str, float]]:
-    """(where, overlap) for blocks that mostly re-word the abstract.
+def _section_text(article: dict, prefix: str) -> str:
+    for section in article.get("sections") or []:
+        if section.get("heading", "").strip().lower().startswith(prefix):
+            return " ".join(section.get("paragraphs") or [])
+    return ""
+
+
+def _echo_pairs(article: dict) -> list[tuple[str, str, str, str]]:
+    """(where, against, text, reference) for every pair worth checking for echo."""
+    abstract = article.get("abstract") or article.get("standfirst") or ""
+    points = " ".join(article.get("key_points") or article.get("key_takeaways") or [])
+    introduction = _section_text(article, "introduction")
+    conclusions = _section_text(article, "conclusion")
+
+    pairs = []
+    if abstract:
+        if points:
+            pairs.append(("key points", "the abstract", points, abstract))
+        if introduction:
+            pairs.append(("Introduction", "the abstract", introduction, abstract))
+    # The other classic duplication: a Conclusions section that restates the
+    # Introduction. Only caught before when it was verbatim.
+    if introduction and conclusions:
+        pairs.append(("Conclusions", "the Introduction", conclusions, introduction))
+    return pairs
+
+
+def _abstract_echoes(article: dict) -> list[tuple[str, str, float]]:
+    """(where, against, overlap) for blocks that mostly re-word an earlier one.
 
     Catches the close-paraphrase case that `_repeated_phrase` misses: the same
     paragraph rewritten as the key points and again as the Introduction.
     """
-    abstract = article.get("abstract") or article.get("standfirst") or ""
-    if not abstract:
-        return []
-    reference = set(_grams(abstract))
-    if not reference:
-        return []
-
-    candidates: list[tuple[str, str]] = []
-    points = article.get("key_points") or article.get("key_takeaways") or []
-    if points:
-        candidates.append(("key points", " ".join(points)))
-    for section in article.get("sections") or []:
-        if section.get("heading", "").strip().lower().startswith("introduction"):
-            candidates.append(("Introduction", " ".join(section.get("paragraphs") or [])))
-
     flagged = []
-    for where, text in candidates:
+    for where, against, text, reference_text in _echo_pairs(article):
+        reference = set(_grams(reference_text))
         grams = _grams(text)
-        if len(grams) < MIN_GRAMS_FOR_ECHO:
+        if not reference or len(grams) < MIN_GRAMS_FOR_ECHO:
             continue
         share = sum(1 for g in grams if g in reference) / len(grams)
         if share > MAX_ABSTRACT_ECHO:
-            flagged.append((where, share))
+            flagged.append((where, against, share))
     return flagged
 
 
 def _never_cited_alone(article: dict) -> tuple[list[int], int]:
-    """Cited sources that only ever appear inside a multi-source citation bundle."""
-    text = " ".join(raw for _, raw in prose_blocks(article))
-    markers = re.findall(r"\[(\d+(?:\s*,\s*\d+)*)\]", text)
+    """Cited sources that only ever appear inside a multi-source citation bundle.
+
+    A solo citation only counts when it is in the body sections. A bullet in the
+    key points saying "roster speed matters [3]" is not a study having been
+    discussed; the body is where a design, population and result can actually be
+    reported, so that is where the credit has to be earned.
+    """
+    everywhere = " ".join(raw for _, raw in prose_blocks(article))
+    body = " ".join(
+        para
+        for section in article.get("sections") or []
+        for para in section.get("paragraphs") or []
+    )
+    markers = re.findall(r"\[(\d+(?:\s*,\s*\d+)*)\]", everywhere)
     if not markers:
         return [], 0
 
     cited: set[int] = set()
-    solo: set[int] = set()
     for marker in markers:
+        cited.update(int(n) for n in marker.split(","))
+
+    solo: set[int] = set()
+    for marker in re.findall(r"\[(\d+(?:\s*,\s*\d+)*)\]", body):
         numbers = [int(n) for n in marker.split(",")]
-        cited.update(numbers)
         if len(numbers) == 1:
             solo.add(numbers[0])
 
@@ -470,8 +579,7 @@ def format_report(report: dict) -> str:
     lines = [
         f"  {stats['sentences']} sentences, mean {stats['mean_sentence_words']} words; "
         f"{stats['hedges_per_sentence']} hedges/sentence; "
-        f"{stats['passive_ratio']:.0%} passive; "
-        f"{stats['nominalisation_rate']:.0%} nominalised"
+f"{stats['passive_ratio']:.0%} passive"
     ]
     for issue in report["issues"]:
         mark = "!" if issue["severity"] == "error" else "-"
