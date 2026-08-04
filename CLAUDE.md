@@ -101,7 +101,8 @@ citations and sections intact.
   ("proves", "definitively"), first person outside the `here we review` frame,
   and under-hedging (< 0.20 hedges/sentence).
 - **Substance errors** (`SUBSTANCE_RULES`): `too-few-sections`, `hedge-monotony`,
-  `repeated-opener`, `recycled-phrasing`. Every other rule is a *prohibition*,
+  `repeated-opener`, `recycled-phrasing`, `echoed-abstract`, `bundled-citations`.
+  Every other rule is a *prohibition*,
   and a model optimising only against prohibitions writes vague hedged filler —
   asserting nothing breaks no rule. A real draft passed every check at 803 words
   with one number in it, hedging at 0.69/sentence (three times the floor) using
@@ -110,6 +111,19 @@ citations and sections intact.
   *not* discriminate — the good sample is 773 words, the bad draft was 803 — so
   `under-length` is a warning, not an error. What separates them is hedge variety
   (8 distinct hedges vs one phrase at 50%) and verbatim recycling.
+- **The abstract, key points and Introduction are three jobs, not three renderings
+  of one paragraph.** The schema used to ask all three to be self-contained
+  summaries — `key_points` said "a reader must be able to take the whole claim
+  from these alone" — so the model dutifully wrote the same paragraph three times.
+  A shipped draft repeated 38% of the abstract's 6-word runs in its Introduction
+  and 24% in its key points. `echoed-abstract` measures that share (threshold
+  0.12; the curated sample scores 0% and 2.4%), and the writer prompt now carries
+  a DIVISION OF LABOUR block. Don't reinstate "self-contained" wording on more
+  than one of the three fields.
+- **`bundled-citations`**: a source cited only ever inside a bundle (`[1, 4]`) has
+  had nothing said about it individually. Fires when more than a third of cited
+  sources never appear as a solo marker. A bundle asserts studies agree; it has
+  to be earned by first reporting what each one found.
 - When a substance rule fires, `revision_brief()` **inverts**: instead of "do not
   introduce new claims or numbers" it tells the model to pull specific findings
   from the sources, and `enforce_style` passes `papers`/`curation` into

@@ -109,9 +109,11 @@ _ARTICLE_SCHEMA = {
                 "properties": {
                     "heading": {
                         "type": "string",
-                        "description": "A short noun-phrase heading in sentence case. The "
-                        "FIRST section must be headed 'Introduction' and the LAST "
-                        "'Conclusions' (or 'Conclusions and outlook').",
+                        "description": "A short noun-phrase heading in sentence case naming a "
+                        "THEME that cuts across several studies (a mechanism, an outcome "
+                        "domain, a population, a disagreement) — never a restatement of the "
+                        "article's topic. The FIRST section must be headed 'Introduction' and "
+                        "the LAST 'Conclusions' (or 'Conclusions and outlook').",
                     },
                     "paragraphs": {"type": "array", "items": {"type": "string"}},
                 },
@@ -122,9 +124,11 @@ _ARTICLE_SCHEMA = {
         "key_points": {
             "type": "array",
             "items": {"type": "string"},
-            "description": "4-6 declarative bullets carrying the article's argument, each "
-            "citing the source(s) it rests on. A reader must be able to take the whole "
-            "claim from these alone.",
+            "description": "4-6 declarative bullets, each resting on a NAMED finding from a "
+            "specific study and citing it. Not a precis of the abstract: a bullet must give "
+            "the reader something the abstract did not — the design, population, magnitude "
+            "or disagreement behind the claim. If a bullet would survive deleting every "
+            "source, it is too vague to include.",
         },
         "glossary": {
             "type": "array",
@@ -195,16 +199,43 @@ mechanism or context, and don't let them masquerade as direct findings.
 FROM ITS ABSTRACT ONLY. Prefer the most-relevant source you were given. It is \
 printed as a boxed display item, so it must stand alone.
 
+DIVISION OF LABOUR — the single most common failure is writing the same summary \
+four times. The abstract, the key points, the Introduction and the body sections \
+are four DIFFERENT jobs, not four renderings of one paragraph:
+
+- `abstract` — the standalone summary. It is the only place a general overview
+  belongs.
+- `key_points` — specific findings, each tied to a named study. Not the abstract
+  in bullets.
+- Introduction — scope, why the question matters, and what the review will cover.
+  It must NOT re-summarise the findings; that is the body's job and the
+  Conclusions'.
+- body sections — the evidence itself, study by study, grouped by theme.
+
+Do not reuse a phrase from the abstract anywhere else in the article. If a \
+sentence in one of these would read equally well in another, it is redundant: cut \
+it and write the specific thing instead.
+
 SUBSTANCE — what makes this a review rather than a summary of a summary:
 
 - Every section must report something specific: what a study DID (design,
   population, size, duration) and what it FOUND. "The evidence suggests these
   strategies may be effective" is not a finding; "a 12-week trial in rotating-shift
   nurses reported a 62% reduction in reported insomnia [4]" is.
+- GO THROUGH THE STUDIES ONE BY ONE. Every source you cite must, at least once,
+  be discussed on its own — its design, its population, and what it reported —
+  and not merely appended to a general claim in a bundle like [1, 4]. A citation
+  bundle asserts that several studies agree; earn it by having already said what
+  each of them found.
 - Attribute findings to their study, not to a vague body of evidence. Name the
   design and the population in the prose.
-- Where sources disagree, say so and say how they differ. Where one is much
-  stronger than the others, say why.
+- ORGANISE BY THEME, NOT BY REPETITION. Each body section takes one theme that
+  cuts across the evidence — a mechanism, an outcome domain, a population, a
+  methodological split — and works through the studies bearing on it, comparing
+  them. Sections must not each restate the article's overall topic.
+- Where sources disagree, say so and say how they differ — different populations,
+  designs, exposure definitions or follow-up lengths are the usual reasons.
+  Where one study is much stronger than the others, say why.
 - Do not restate a point once made. If a section is running short, the answer is
   another finding from the sources, never another sentence about the same one.
 - Hedge to the evidence in front of you, and vary how: "in a single small trial",

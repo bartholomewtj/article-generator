@@ -289,6 +289,55 @@ def test_substance_checks() -> None:
     ]}
     check("a specific, varied draft passes", not (rules(good) & SUBSTANCE_RULES))
 
+    # The abstract, key points and Introduction written as one paragraph three
+    # times. Paraphrased too loosely for the 8-word recycled-phrasing rule, which
+    # is exactly how a real shipped draft slipped through: its Introduction
+    # repeated 38% of the abstract's 6-word runs and its key points 24%.
+    abstract = (
+        "Night shift work has been linked to adverse health outcomes, including "
+        "metabolic, immune and cardiovascular impairments. The disruption of "
+        "circadian rhythms, particularly in shift workers, has been increasingly "
+        "associated with these outcomes. This review explores the impact of "
+        "artificial light on the health of night shift workers, with a focus on "
+        "the circadian system and its health implications."
+    )
+    echoed = {
+        "abstract": abstract,
+        "key_points": [
+            "The disruption of circadian rhythms, particularly in shift workers, "
+            "has been increasingly associated with these outcomes. [1]",
+            "Artificial light has been linked to adverse health outcomes, including "
+            "metabolic, immune and cardiovascular impairments. [2]",
+        ],
+        "sections": [{"heading": "Introduction", "paragraphs": [
+            "This review explores the impact of artificial light on the health of "
+            "night shift workers, with a focus on the circadian system and its "
+            "health implications. The disruption of circadian rhythms, particularly "
+            "in shift workers, has been increasingly associated with these outcomes."]}],
+    }
+    check("echoed-abstract flagged", "echoed-abstract" in rules(echoed))
+    check("echoed-abstract is a substance rule", "echoed-abstract" in SUBSTANCE_RULES)
+
+    # Sources cited only ever in a bundle have had nothing said about them.
+    bundled = dict(good)
+    bundled["sections"] = list(good["sections"])
+    bundled["sections"][2] = {"heading": "Interventions", "paragraphs": [
+        "Several studies report benefit from roster redesign [1, 2, 3, 4]. The "
+        "direction of effect was consistent across them [1, 2, 3, 4]. One review "
+        "considered the same question [5]."]}
+    check("bundled-citations flagged", "bundled-citations" in rules(bundled))
+
+    solo = dict(bundled)
+    solo["sections"] = list(bundled["sections"])
+    solo["sections"][2] = {"heading": "Interventions", "paragraphs": [
+        "A randomised trial in rotating-shift nurses reported fewer insomnia "
+        "symptoms [1]. A fixed-night cohort did not reproduce it [2]. A third "
+        "cohort found the effect only in workers under 40 [3]. A pooled analysis "
+        "reached no conclusion [4]. Together these suggest roster speed matters "
+        "[1, 2, 3, 4]."]}
+    check("citing sources individually clears bundled-citations",
+          "bundled-citations" not in rules(solo))
+
     # The curated sample is the calibration reference: these rules must never
     # reject it, or they are measuring the wrong thing.
     from articlegen.demo import SAMPLE_ARTICLE

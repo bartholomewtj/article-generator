@@ -128,6 +128,23 @@ MAX_OPENER_REPEATS = 2           # same three-word sentence opening, at most twi
 REPEATED_PHRASE_WORDS = 8        # a shared run this long is recycled text
 MIN_SENTENCES_FOR_VARIETY = 10   # below this, repetition counts are noise
 
+# The abstract, the key points and the Introduction are three different jobs, and
+# the commonest failure mode is writing them as three renderings of one paragraph
+# — paraphrased closely enough that the 8-word `recycled-phrasing` rule misses it.
+# Measured as the share of a block's 6-word runs that also occur in the abstract,
+# the separation is wide: the curated sample in demo.py scores 0% (Introduction)
+# and 2.4% (key points), while a real draft that read as pure repetition scored
+# 39% and 23%. The threshold sits well clear of both.
+ECHO_GRAM_WORDS = 6
+MAX_ABSTRACT_ECHO = 0.12
+MIN_GRAMS_FOR_ECHO = 25          # ~30 words; below this the ratio is noise
+
+# A source cited only ever inside a bundle ("[1, 4]") has had nothing said about
+# it individually. A bundle asserts that studies agree; it has to be earned by
+# first reporting what each one found.
+MAX_NEVER_SOLO_SHARE = 0.34
+MIN_SOURCES_FOR_SOLO_CHECK = 4
+
 
 def _sentences(text: str) -> list[str]:
     protected = _ABBREV.sub(lambda m: m.group(0).replace(".", "\x00"), text)
@@ -348,7 +365,83 @@ def check_style(article: dict) -> dict:
                 "should carry information the others do not; if a point has been made, "
                 "develop it rather than restate it.", repeat)
 
+    for where, share in _abstract_echoes(article):
+        add("echoed-abstract", "error", where,
+            f"{share:.0%} of this text repeats wording from the abstract. The abstract "
+            "is the standalone summary; the key points carry specific findings and the "
+            "Introduction sets up the question. Say something here the abstract does "
+            "not.")
+
+    never_solo, n_cited = _never_cited_alone(article)
+    if never_solo:
+        listed = ", ".join(f"[{n}]" for n in never_solo)
+        add("bundled-citations", "error", "whole article",
+            f"{len(never_solo)} of {n_cited} cited sources ({listed}) never appear on "
+            "their own — only bundled with others behind a general claim, so the review "
+            "never says what they individually did or found. Give each its own "
+            "treatment: design, population, and result.")
+
     return {"issues": issues, "stats": stats}
+
+
+def _grams(text: str, n: int = ECHO_GRAM_WORDS) -> list[str]:
+    words = re.findall(r"[A-Za-z][\w']*", _strip_citations(text).lower())
+    return [" ".join(words[i:i + n]) for i in range(len(words) - n + 1)]
+
+
+def _abstract_echoes(article: dict) -> list[tuple[str, float]]:
+    """(where, overlap) for blocks that mostly re-word the abstract.
+
+    Catches the close-paraphrase case that `_repeated_phrase` misses: the same
+    paragraph rewritten as the key points and again as the Introduction.
+    """
+    abstract = article.get("abstract") or article.get("standfirst") or ""
+    if not abstract:
+        return []
+    reference = set(_grams(abstract))
+    if not reference:
+        return []
+
+    candidates: list[tuple[str, str]] = []
+    points = article.get("key_points") or article.get("key_takeaways") or []
+    if points:
+        candidates.append(("key points", " ".join(points)))
+    for section in article.get("sections") or []:
+        if section.get("heading", "").strip().lower().startswith("introduction"):
+            candidates.append(("Introduction", " ".join(section.get("paragraphs") or [])))
+
+    flagged = []
+    for where, text in candidates:
+        grams = _grams(text)
+        if len(grams) < MIN_GRAMS_FOR_ECHO:
+            continue
+        share = sum(1 for g in grams if g in reference) / len(grams)
+        if share > MAX_ABSTRACT_ECHO:
+            flagged.append((where, share))
+    return flagged
+
+
+def _never_cited_alone(article: dict) -> tuple[list[int], int]:
+    """Cited sources that only ever appear inside a multi-source citation bundle."""
+    text = " ".join(raw for _, raw in prose_blocks(article))
+    markers = re.findall(r"\[(\d+(?:\s*,\s*\d+)*)\]", text)
+    if not markers:
+        return [], 0
+
+    cited: set[int] = set()
+    solo: set[int] = set()
+    for marker in markers:
+        numbers = [int(n) for n in marker.split(",")]
+        cited.update(numbers)
+        if len(numbers) == 1:
+            solo.add(numbers[0])
+
+    if len(cited) < MIN_SOURCES_FOR_SOLO_CHECK:
+        return [], len(cited)
+    never_solo = sorted(cited - solo)
+    if len(never_solo) / len(cited) <= MAX_NEVER_SOLO_SHARE:
+        return [], len(cited)
+    return never_solo, len(cited)
 
 
 def _repeated_phrase(sentences: list[str]) -> str:
@@ -391,7 +484,7 @@ def format_report(report: dict) -> str:
 # Failures that can only be fixed by adding grounded material, not by rewording.
 SUBSTANCE_RULES = frozenset({
     "under-length", "too-few-sections", "recycled-phrasing",
-    "hedge-monotony", "repeated-opener",
+    "hedge-monotony", "repeated-opener", "echoed-abstract", "bundled-citations",
 })
 
 
