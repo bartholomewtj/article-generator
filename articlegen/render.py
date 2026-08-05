@@ -583,18 +583,29 @@ def _assessment_paragraphs(
 ) -> dict:
     """The Evidence assessment opening and its Limitations, before any markup.
 
-    Shared by both renderers; `evidence_note` is deliberately not built here
-    because it carries citation markers, which the two formats render
-    differently (linked superscripts vs. plain numerals).
+    Shared by both renderers. The model used to add an `evidence_note` here; it
+    is no longer part of the schema, because every tally it wrote could — and
+    did — contradict the counts computed two lines above it. One article claimed
+    "13 out of 20 sources" beside a line reading 9; another claimed "5 sources",
+    "the majority is related" and "some are tangential" against a computed 3
+    cited, all direct, none related, none background. Nothing countable in this
+    section is model-written now (issue #54).
     """
+    n = len(cited)
     if counts:
+        direct, related, background = (
+            counts.get("direct", 0), counts.get("related", 0), counts.get("tangential", 0)
+        )
+        # Agreement matters here: a one-source review printed "1 address the
+        # review question directly" in the section that exists to be precise.
         opening = (
-            f"Of the {len(cited)} sources cited, {counts.get('direct', 0)} address the "
-            f"review question directly, {counts.get('related', 0)} are related and "
-            f"{counts.get('tangential', 0)} provide background only"
+            f"Of the {n} source{'' if n == 1 else 's'} cited, "
+            f"{direct} {'addresses' if direct == 1 else 'address'} the review question "
+            f"directly, {related} {'is' if related == 1 else 'are'} related and "
+            f"{background} {'provides' if background == 1 else 'provide'} background only"
         )
     else:
-        opening = f"This review cites {len(cited)} sources"
+        opening = f"This review cites {n} source{'' if n == 1 else 's'}"
     span = _year_range(cited)
     if span:
         opening += f"; they were published in {span}"
@@ -621,20 +632,19 @@ def _assessment_paragraphs(
 def _assessment_html(
     cited: list[Paper],
     counts: dict,
-    evidence_note: str,
     verification: dict | None,
-    cite_map: dict[int, int],
-    valid_numbers: set[int],
 ) -> str:
     """Evidence assessment + Limitations — the journal-register replacement for the
-    warning boxes: the same facts, stated in prose, in the back matter."""
+    warning boxes: the same facts, stated in prose, in the back matter.
+
+    Entirely deterministic. A legacy draft carrying `evidence_note` renders
+    without it rather than reprinting a tally that may contradict the counts.
+    """
     parts = _assessment_paragraphs(cited, counts, verification, html.escape)
-    body = ["<p>" + parts["opening"] + "</p>"]
-    if evidence_note:
-        body.append(f"<p>{_prose(evidence_note, cite_map, valid_numbers)}</p>")
-    body.append(
-        '<p><span class="run-in">Limitations.</span> ' + " ".join(parts["limitations"]) + "</p>"
-    )
+    body = [
+        "<p>" + parts["opening"] + "</p>",
+        '<p><span class="run-in">Limitations.</span> ' + " ".join(parts["limitations"]) + "</p>",
+    ]
     return '<section class="back-section">\n<h2>Evidence assessment</h2>\n' + "\n".join(body) + "\n</section>"
 
 
@@ -792,10 +802,7 @@ def render_article(
             key_points=key_points_html,
             body="\n\n".join(body),
             methods=_methods_html(provenance, len(papers), len(cited), topic),
-            assessment=_assessment_html(
-                cited, counts, article.get("evidence_note", ""), verification,
-                cite_map, valid_numbers,
-            ),
+            assessment=_assessment_html(cited, counts, verification),
             glossary=_glossary_html(article),
             references="\n".join(refs_html),
             additional=_back_matter_html(cited, topic, article, provenance),
@@ -1200,7 +1207,7 @@ def render_markdown(
         lines += [item, ""]
 
     lines += _methods_markdown(provenance, len(papers), len(cited), topic)
-    lines += _assessment_markdown(cited, counts, article.get("evidence_note", ""), verification, prose)
+    lines += _assessment_markdown(cited, counts, verification)
 
     glossary = [
         e for e in (article.get("glossary") or [])
@@ -1317,11 +1324,9 @@ def _methods_markdown(provenance: dict | None, screened: int, n_cited: int, topi
     ]
 
 
-def _assessment_markdown(cited, counts, evidence_note, verification, prose) -> list[str]:
+def _assessment_markdown(cited, counts, verification) -> list[str]:
     parts = _assessment_paragraphs(cited, counts, verification)
     lines = ["## Evidence assessment", "", parts["opening"], ""]
-    if evidence_note:
-        lines += [prose(evidence_note), ""]
     lines += ["**Limitations.** " + " ".join(parts["limitations"]), ""]
     return lines
 

@@ -217,26 +217,36 @@ far it sits from published practice.** Across the 20 abstracts:
 **17 of 20 fall below the 0.20 floor, and 10 use no hedge at all.** The floor
 would reject most of the corpus.
 
-The number cited above is not wrong; it is being applied to the wrong text. The
+The number cited above is not wrong; it was being applied to the wrong text. The
 corpus figures for hedging describe **whole research articles**, where the
 Discussion carries most of the epistemic load. An abstract compresses and
-asserts. So an abstract cannot calibrate a rule aimed at body prose — and in
-practice it barely tries to, since 18 of the 20 are too short to pass the density
-gate (>12 sentences *and* >250 words) at all.
+asserts, and 18 of the 20 are too short to pass the density gate (>12 sentences
+*and* >250 words) at all.
 
-What follows is that **the floor has never been checked against any measured
-sample of the register it polices.** `articlegen`'s own output *is* long enough to
-be judged, so the rule fires on generated prose while nothing comparable has been
-measured. The first article generated after the substance rules shipped was
-flagged `under-hedged` at 0.136 — higher than the median of every stratum in this
-table. Settling this needs full review texts rather than abstracts; until then,
-treat the floor as a preference the house has chosen, and do not describe it as
-what journals do.
+**Measured against body prose, the floor is right.**
+`tests/body_prose_measurements.json` holds the statistics for the body paragraphs
+of 18 open-access reviews — *Lancet*, *Lancet Psychiatry*, *BMJ*, *PLoS*,
+*Frontiers*, *Brain Behavior and Immunity* — with abstract and references
+excluded:
 
-Two rules inherit the same problem. `hedge-monotony` (no single hedge above 40%
-of the total) assumes a draft uses several distinct hedges; in the corpus the
-median is **0.5 distinct hedges**, with 8 of 20 using exactly one — a share of
-100%. Both rules are calibrated for a text type nothing here measures.
+| | body prose (n=18) | abstracts (n=20) |
+| --- | --- | --- |
+| hedges per sentence | median **0.216** | median 0.031 |
+| distinct hedges | median **12** | median 0.5 |
+| long enough for the density gate | 18 of 18 | 2 of 20 |
+
+The 0.20 floor sits almost exactly on the median of published review prose. The
+guess was sound; only the comparison was wrong. This is the register
+`articlegen` writes in, so this is the number that governs.
+
+The same measurement rescues `hedge-monotony`. Real review prose uses a median of
+**12** distinct hedges, so requiring that no single marker exceed 40% is a fair
+expectation — of an article-length text. It is not fair of a short one: at 7
+hedges, 3 of one is 43%, so one extra "suggest" flips a passing draft with no
+change in quality. That fired on a real article hedging at 0.389/sentence across
+3 distinct markers — better on both counts than nearly every abstract measured.
+`MIN_HEDGES_FOR_MONOTONY` now gates the rule at 8 hedges, below which variety is
+not something published prose reliably shows either.
 
 ### 16. No boosters, no claims of proof
 
@@ -293,13 +303,23 @@ Two tests consume it: `test_register_rules_are_scoped_to_the_synthesis_voice`
 `test_density_thresholds_are_documented_against_the_corpus`, which pins the
 measured distribution so that changing a threshold without re-measuring fails.
 
-The corpus deliberately does **not** decide whether a threshold is right. It
-records what published prose does, which is the thing the guessed numbers can be
-checked against — the same role `tests/real_abstracts.json` plays for the
-register rules, and the reason both files are stored rather than fetched.
+The corpus records what published prose does, which is the thing the guessed
+numbers can be checked against — the same role `tests/real_abstracts.json` plays
+for the register rules, and the reason both files are stored rather than fetched.
 
-Its main limitation is stated in §15: these are abstracts, and the density rules
-target body prose. Calibrating those properly needs open-access full texts.
+**`tests/body_prose_measurements.json` is the second half**, added because the
+first has a limitation the density rules care about: abstracts are not body
+prose. It holds per-article statistics for the body paragraphs of 18 open-access
+reviews, fetched from Europe PMC's full-text service with abstract, tables,
+figures and references stripped. Only the measurements are stored — the numbers
+are the evidence, and the repo has no business carrying other people's articles.
+`test_hedging_floor_is_calibrated_against_body_prose` consumes it and is what now
+justifies §15's floor.
+
+Between them the two corpora answer different questions: what register the rules
+model (abstracts, where the investigator/synthesis split is visible) and what
+density body prose actually runs at (full texts, the only fair comparison for a
+rule that judges an article).
 
 ## What we deliberately do *not* copy
 

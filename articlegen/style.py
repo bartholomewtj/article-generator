@@ -188,6 +188,16 @@ MIN_BODY_WORDS = 900             # informational only; see the note at the check
 MIN_SECTIONS = 5                 # the writer prompt asks for 5-7
 MIN_SECTIONS_FLOOR = 3           # Introduction + one thematic section + Conclusions
 MAX_HEDGE_SHARE = 0.40           # no single hedge may be this much of the total
+# ...but only once there are enough hedges for variety to be a fair expectation.
+# A 40% ceiling implicitly demands three distinct hedges, which is unreasonable
+# at low volume and arithmetically brittle: with 7 hedges, 3 of one is 43% and
+# fires, so a single extra "suggest" flips a passing draft regardless of whether
+# the prose got worse. It did exactly that on a real article that hedged at
+# 0.389/sentence with 3 distinct markers — better on both counts than 18 of the
+# 20 published abstracts in tests/style_corpus.json, where the median is 0.5
+# distinct hedges and half use none at all (issue #56). The rule's actual target
+# is a draft that hedges heavily using one stock phrase, which needs volume.
+MIN_HEDGES_FOR_MONOTONY = 8
 MAX_OPENER_REPEATS = 2           # same three-word sentence opening, at most twice
 REPEATED_PHRASE_WORDS = 8        # a shared run this long is recycled text
 MIN_SENTENCES_FOR_VARIETY = 10   # below this, repetition counts are noise
@@ -423,7 +433,8 @@ def check_style(article: dict, direct_sources: int | None = None) -> dict:
             "more evidence reported in more detail — specific findings, designs and "
             "populations from the sources — not more words about the same points.")
 
-    if total_hedges and top_hedge_n / total_hedges > MAX_HEDGE_SHARE and total_hedges >= 4:
+    if (total_hedges >= MIN_HEDGES_FOR_MONOTONY
+            and top_hedge_n / total_hedges > MAX_HEDGE_SHARE):
         add("hedge-monotony", "error", "whole article",
             f"'{top_hedge}' accounts for {top_hedge_n} of {total_hedges} hedges "
             f"({top_hedge_n / total_hedges:.0%}). Hedging should track how strong each "

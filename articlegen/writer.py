@@ -86,11 +86,6 @@ _ARTICLE_SCHEMA = {
             "description": "4-8 lowercase index terms a reader would search on, most "
             "specific first. Retrieval terms, not adjectives.",
         },
-        "evidence_note": {
-            "type": "string",
-            "description": "1-2 honest sentences on how much of the cited evidence directly "
-            "addresses the exact topic vs. is extrapolated from adjacent populations.",
-        },
         "featured_study": {
             "type": "object",
             "properties": {
@@ -151,7 +146,7 @@ _ARTICLE_SCHEMA = {
         },
     },
     "required": [
-        "title", "abstract", "keywords", "evidence_note", "featured_study",
+        "title", "abstract", "keywords", "featured_study",
         "sections", "key_points", "glossary", "references",
     ],
     "additionalProperties": False,
@@ -189,10 +184,12 @@ in words instead ("approximately halved", "a large effect") — do NOT reconstru
 precise statistics from memory. Invented-looking precision is the worst failure here.
 - HONESTY ABOUT THE EVIDENCE IS MANDATORY. You are told each source's relevance \
 (direct / related / tangential). If few or no sources are "direct", say so plainly \
-in the prose and in `evidence_note`, and explicitly label anything carried over from \
-another population or condition as extrapolation ("no studies in X were identified; \
-the following is extrapolated from Y"). Never imply an evidence base that the direct \
-sources don't support.
+in the prose, and explicitly label anything carried over from another population or \
+condition as extrapolation ("no studies in X were identified; the following is \
+extrapolated from Y"). Never imply an evidence base that the direct sources don't \
+support. Do NOT state counts or tallies of the evidence — how many sources were \
+cited, how many are direct, related or background, and the year range are computed \
+and printed for you. Every count you write is one that can contradict them.
 - Lead with the strongest DIRECT evidence. Use related/tangential sources only for \
 mechanism or context, and don't let them masquerade as direct findings.
 - featured_study: summarize the single most relevant study's method and results \

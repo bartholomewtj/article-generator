@@ -1054,6 +1054,55 @@ def test_rules_do_not_reject_real_journal_prose() -> None:
         check(f"not first person: {text[:38]!r}", "first-person" not in fired)
 
 
+def test_evidence_assessment_is_wholly_deterministic() -> None:
+    """Nothing countable in the Evidence assessment may be model-written.
+
+    The section exists to state honestly how good the evidence is, and the
+    model's `evidence_note` repeatedly contradicted the counts printed two lines
+    above it: one article claimed "13 out of 20 sources" beside a computed 9;
+    another claimed "5 sources", "the majority is related" and "some are
+    tangential" against a computed 3 cited, all direct, none related, none
+    background. The field is gone from the schema (issue #54).
+
+    Legacy drafts that still carry one must render without it rather than
+    reprinting a tally that may be wrong.
+    """
+    from articlegen import render, writer
+    from articlegen.sources import Paper
+
+    check("evidence_note is out of the schema",
+          "evidence_note" not in writer._ARTICLE_SCHEMA["properties"])
+    check("and is not required", "evidence_note" not in writer._ARTICLE_SCHEMA["required"])
+    check("the writer is told not to state counts",
+          "Do NOT state counts or tallies" in writer._WRITER_SYSTEM)
+
+    papers = [Paper(title="P1", abstract="a", year=2024, doi="10.1/a")]
+    counts = {"direct": 1, "related": 0, "tangential": 0}
+    legacy = render._assessment_html(papers, counts, {"unverified": []})
+    check("a legacy note is not rendered", "13 out of 20" not in legacy)
+    check("the deterministic opening survives", "Of the 1 source cited" in legacy)
+
+    # Number agreement: the section that exists to be precise printed
+    # "1 address the review question directly".
+    check("singular subject takes a singular verb", "1 addresses the review question" in legacy)
+    check("singular 'source', not 'sources'", "1 sources cited" not in legacy)
+    check("singular related reads 'is related'",
+          "0 are related" in legacy)
+
+    one_each = render._assessment_html(
+        papers, {"direct": 0, "related": 1, "tangential": 1}, {"unverified": []})
+    check("one related reads 'is related'", "1 is related" in one_each)
+    check("one background reads 'provides'", "1 provides background only" in one_each)
+
+    plural = render._assessment_html(
+        papers * 3, {"direct": 2, "related": 3, "tangential": 0}, {"unverified": []})
+    check("plurals still read correctly",
+          "Of the 3 sources cited, 2 address" in plural and "3 are related" in plural)
+
+    md = "\n".join(render._assessment_markdown(papers, counts, {"unverified": []}))
+    check("markdown agrees with the html", "Of the 1 source cited, 1 addresses" in md)
+
+
 def test_house_style_is_fixed_not_a_preference() -> None:
     """There is one register, and the front end must not offer alternatives to it.
 
@@ -1139,6 +1188,58 @@ def test_register_rules_are_scoped_to_the_synthesis_voice() -> None:
           all(not e["expect_register_errors"] for e in synthesis))
     check("every investigator-voice abstract does",
           all(e["expect_register_errors"] for e in investigator))
+
+
+def test_hedging_floor_is_calibrated_against_body_prose() -> None:
+    """The hedging floor is validated — against body prose, not abstracts.
+
+    #56 recorded that `MIN_HEDGES_PER_SENTENCE = 0.20` had never been checked
+    against the register it polices: abstracts run at a median of 0.031, but
+    they compress and assert, and 18 of the 20 in `style_corpus.json` are too
+    short for the density gate to apply at all.
+
+    `body_prose_measurements.json` closes that gap: the body paragraphs of 18
+    open-access reviews (Lancet, Lancet Psychiatry, BMJ, PLoS, Frontiers…),
+    abstract and references excluded. They hedge at a **median of 0.22** — the
+    0.20 floor is very nearly the median of published review prose. The guess
+    was right; it had simply been compared with the wrong text type.
+
+    Only the measurements are stored, not the articles: the statistics are the
+    evidence, and the repo has no business carrying other people's full texts.
+    """
+    import json
+    import statistics
+
+    from articlegen import style
+
+    path = os.path.join(os.path.dirname(__file__), "body_prose_measurements.json")
+    corpus = json.load(open(path, encoding="utf-8"))
+    check("body-prose corpus is a usable size", len(corpus) >= 15)
+    check("every entry is identifiable", all(e.get("pmcid") for e in corpus))
+    check("drawn from several journals", len({e["journal"] for e in corpus}) >= 10)
+    check("covers all three domains", len({e["domain"] for e in corpus}) == 3)
+
+    hedges = [e["hps"] for e in corpus]
+    median = statistics.median(hedges)
+    check(f"body prose hedges near the floor (median {median:.3f})",
+          abs(median - style.MIN_HEDGES_PER_SENTENCE) < 0.05)
+    check("which is why the floor stands", style.MIN_HEDGES_PER_SENTENCE == 0.20)
+
+    # Unlike abstracts, real body prose is long enough to be judged at all.
+    check("all of it clears the density gate",
+          all(e["sentences"] > style.MIN_SENTENCES_FOR_DENSITY
+              and e["body_words"] > style.MIN_WORDS_FOR_DENSITY for e in corpus))
+
+    # And it uses many distinct hedges, which is what hedge-monotony assumes.
+    distinct = [e["distinct"] for e in corpus]
+    check(f"body prose varies its hedges (median {statistics.median(distinct):.0f} distinct)",
+          statistics.median(distinct) >= 8)
+    check("so demanding variety is fair once there are enough hedges",
+          style.MIN_HEDGES_FOR_MONOTONY >= 8)
+
+    passive = [e["passive"] for e in corpus]
+    check("the passive threshold clears review prose too",
+          sum(1 for p in passive if p > style.MAX_PASSIVE_RATIO) == 0)
 
 
 def test_density_thresholds_are_documented_against_the_corpus() -> None:
@@ -1455,8 +1556,10 @@ def main() -> int:
         test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
         test_prose_style_check, test_rules_do_not_reject_real_journal_prose,
+        test_evidence_assessment_is_wholly_deterministic,
         test_house_style_is_fixed_not_a_preference,
         test_register_rules_are_scoped_to_the_synthesis_voice,
+        test_hedging_floor_is_calibrated_against_body_prose,
         test_density_thresholds_are_documented_against_the_corpus,
         test_statistic_verification, test_ranking, test_recency_actually_counts, test_render_blocks,
         test_display_item_placement, test_legacy_draft_fields,
