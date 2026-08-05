@@ -268,6 +268,32 @@ def _strip_markup(text: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", text)).strip()
 
 
+def _europe_pmc_author(author: dict) -> str:
+    """One Europe PMC author, in the given-name-first order the renderer expects.
+
+    Europe PMC returns `fullName` **surname-first** ("Kim SH"); OpenAlex's
+    `display_name` is the opposite ("Ari Min"). `render._format_author` takes the
+    last token as the surname, so passing `fullName` straight through printed
+    "SH, K." for "Kim SH" — every Europe PMC reference in an article had its
+    surname and initials swapped, while OpenAlex ones were correct.
+
+    Rather than teach the formatter to guess an order it cannot infer, normalise
+    here from the structured fields Europe PMC already returns. Initials are
+    split apart ("SH" -> "S H") so each survives as its own initial instead of
+    being collapsed into one.
+    """
+    last = (author.get("lastName") or "").strip()
+    if last:
+        initials = [c for c in (author.get("initials") or "") if c.isalpha()]
+        if initials:
+            return f"{' '.join(initials)} {last}"
+        first = (author.get("firstName") or "").strip()
+        return f"{first} {last}" if first else last
+    # Consortium authors carry `collectiveName` and no surname. `fullName` is the
+    # last resort: wrong-order for a person, but better than dropping the name.
+    return (author.get("collectiveName") or author.get("fullName") or "").strip()
+
+
 def search_europe_pmc(query: str, limit: int = 15) -> list[Paper]:
     params = {
         # HAS_ABSTRACT restricts server-side, like OpenAlex's has_abstract
@@ -292,8 +318,9 @@ def search_europe_pmc(query: str, limit: int = 15) -> list[Paper]:
             year = None
         journal = ((item.get("journalInfo") or {}).get("journal") or {}).get("title") or ""
         authors = [
-            a.get("fullName", "")
+            name
             for a in (item.get("authorList") or {}).get("author") or []
+            if (name := _europe_pmc_author(a))
         ]
         src, ext_id = item.get("source") or "", item.get("id") or ""
         papers.append(

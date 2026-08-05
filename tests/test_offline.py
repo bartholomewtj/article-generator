@@ -670,7 +670,7 @@ def test_europe_pmc_parsing() -> None:
     by substring presence in the abstract, so a figure adjacent to a tag would
     be reported unverifiable if tags were left in.
     """
-    from articlegen import sources
+    from articlegen import render, sources
 
     payload = {"resultList": {"result": [
         {   # the full-featured record
@@ -678,8 +678,13 @@ def test_europe_pmc_parsing() -> None:
             "title": "A <i>trial</i> of something",
             "abstractText": "<h4>Background</h4>Depression affects 20% of adults.<h4>Results</h4>Improved.",
             "pubYear": "2026", "citedByCount": 7, "doi": "10.1000/xyz",
-            "authorString": "A, B",
-            "authorList": {"author": [{"fullName": "Smith J"}, {"fullName": "Lee K"}]},
+            "authorString": "Kim SH, Jang G",
+            # The real shape: Europe PMC gives surname and initials separately,
+            # and `fullName` surname-first — the opposite of OpenAlex.
+            "authorList": {"author": [
+                {"fullName": "Kim SH", "lastName": "Kim", "initials": "SH", "firstName": "Su Hyun"},
+                {"fullName": "Jang G", "lastName": "Jang", "initials": "G", "firstName": "Geunsoo"},
+            ]},
             "journalInfo": {"journal": {"title": "J Affect Disord"}},
         },
         {   # sparse: book chapter — no journal, no doi, bad year
@@ -712,7 +717,22 @@ def test_europe_pmc_parsing() -> None:
           "Depression affects 20% of adults." in full.abstract)
     check("markup stripped from the title", full.title == "A trial of something")
     check("string year becomes int", full.year == 2026)
-    check("authors come from authorList", full.authors == ["Smith J", "Lee K"])
+    # Europe PMC names arrive surname-first; the renderer takes the last token as
+    # the surname, so they are normalised to given-name-first at parse time.
+    # Passing `fullName` through printed "SH, K." for "Kim SH" in every reference.
+    check("authors are normalised to given-name-first", full.authors == ["S H Kim", "G Jang"])
+    check("and render as a correct reference line",
+          render._reference_authors(full) == "Kim, S. H. & Jang, G.")
+    check("and as a correct short form", render._short_author(full) == "Kim & Jang")
+    check("a consortium author survives without a surname",
+          sources._europe_pmc_author({"collectiveName": "GBD 2019 Collaborators"})
+          == "GBD 2019 Collaborators")
+    check("a record with only fullName still yields a name",
+          sources._europe_pmc_author({"fullName": "Lee K"}) == "Lee K")
+    check("dotted initials are split too",
+          sources._europe_pmc_author({"lastName": "Kim", "initials": "S.H."}) == "S H Kim")
+    check("firstName is used when initials are absent",
+          sources._europe_pmc_author({"lastName": "Kim", "firstName": "Su Hyun"}) == "Su Hyun Kim")
     check("journal title found", full.venue == "J Affect Disord")
     check("europepmc url built from source+id", full.url.endswith("/MED/38000001"))
     check("unparseable year becomes None", sparse.year is None)
