@@ -1054,6 +1054,71 @@ def test_rules_do_not_reject_real_journal_prose() -> None:
         check(f"not first person: {text[:38]!r}", "first-person" not in fired)
 
 
+def test_openalex_reaches_for_recent_work_as_well() -> None:
+    """The evidence pool skewed old, and ranking alone could not fix it.
+
+    OpenAlex's relevance ordering returns old, heavily-cited work: measured over
+    three topics the median year of a 20-paper page was 2006-2016, with 13-18 of
+    20 published before 2015 (issue #38). Ranking only reorders what it is given,
+    and a bigger page makes it worse — one page of 50 returned *more* pre-2015
+    work, because it goes deeper into the same ordering.
+
+    So the source now issues a second, date-filtered query over the same terms
+    and merges. Live, that moved the median to 2018-2020 and tripled the count of
+    2020-or-later papers while leaving the pre-2015 count untouched — recent work
+    reaches the pool without a cutoff excluding foundational work.
+    """
+    from articlegen import sources
+    from articlegen.sources import Paper
+
+    calls = []
+
+    def fake_page(query, limit, from_year=None):
+        calls.append({"query": query, "limit": limit, "from_year": from_year})
+        if from_year:
+            return [Paper(title="Recent study", abstract="a", year=from_year + 3,
+                          doi="10.1/recent"),
+                    Paper(title="Shared study", abstract="a", year=from_year + 1,
+                          doi="10.1/shared")]
+        return [Paper(title="Old classic", abstract="a", year=1998, doi="10.1/old"),
+                Paper(title="Shared study", abstract="a", year=from_year or 2020,
+                      doi="10.1/shared")]
+
+    real = sources._openalex_page
+    try:
+        sources._openalex_page = fake_page
+        papers = sources.search_openalex("sleep", limit=10)
+    finally:
+        sources._openalex_page = real
+
+    check("both a plain and a dated query are issued", len(calls) == 2)
+    check("the plain query carries no date filter", calls[0]["from_year"] is None)
+    check("the companion query does", isinstance(calls[1]["from_year"], int))
+    import datetime as _dt
+    check("and reaches back a sensible window",
+          0 < _dt.date.today().year - calls[1]["from_year"] <= 15)
+    check("both use the same search terms", calls[0]["query"] == calls[1]["query"])
+
+    titles = [p.title for p in papers]
+    check("the old classic is kept", "Old classic" in titles)
+    check("recent work is added", "Recent study" in titles)
+    check("the overlap is deduplicated", titles.count("Shared study") == 1)
+
+    # If the companion query refuses, the relevance results must still stand.
+    def half_failing(query, limit, from_year=None):
+        if from_year:
+            raise sources.SearchFailure("HTTP 429")
+        return [Paper(title="Only result", abstract="a", year=2001)]
+
+    try:
+        sources._openalex_page = half_failing
+        survived = sources.search_openalex("sleep", limit=10)
+    finally:
+        sources._openalex_page = real
+    check("a refused recency query does not lose the plain results",
+          [p.title for p in survived] == ["Only result"])
+
+
 def test_display_items_are_selected_once_for_both_formats() -> None:
     """HTML and Markdown must not each decide what a display item contains.
 
@@ -1685,6 +1750,7 @@ def main() -> int:
         test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
         test_prose_style_check, test_rules_do_not_reject_real_journal_prose,
+        test_openalex_reaches_for_recent_work_as_well,
         test_display_items_are_selected_once_for_both_formats,
         test_failed_style_gate_is_visible_in_the_article,
         test_evidence_assessment_is_wholly_deterministic,
