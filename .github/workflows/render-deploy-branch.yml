@@ -1,0 +1,44 @@
+# Keeps the branch Render deploys from in step with the default branch.
+#
+# Render builds from a branch name stored in its dashboard, and Blueprint
+# auto-sync is off for this service — measured: setting `branch:` in render.yaml
+# and pushing produced a deploy that stayed on the old branch. So the deploy
+# branch cannot be changed from this repository (issue #47).
+#
+# Renaming the default branch to `main` would therefore have stopped deploys.
+# This mirrors `main` onto the branch Render still watches, so the rename is
+# safe and the deployment keeps building current code.
+#
+# THIS IS A BRIDGE, NOT A FIXTURE. When the Render dashboard is updated to build
+# from `main`, delete this workflow and the mirrored branch — then `render.yaml`
+# and Render agree directly and nothing needs mirroring.
+#
+# Verify at any time with:  curl https://articlegen-api.onrender.com/api/health
+# which reports the branch and commit the running service was built from.
+
+name: "Mirror main onto the Render deploy branch"
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  # A queued mirror of an older commit must never overwrite a newer one.
+  group: render-deploy-branch
+  cancel-in-progress: true
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fast-forward the Render deploy branch to main
+        run: |
+          git push origin HEAD:refs/heads/claude/article-generator-html-yth1u4
