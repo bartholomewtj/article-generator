@@ -15,6 +15,13 @@ services:
     name: articlegen-api
     runtime: docker
     plan: free
+    # Declared explicitly so the deploying branch is version-controlled rather
+    # than living only in the dashboard. It used to be stored there and nowhere
+    # else, which is what made renaming the default branch risky: nothing in the
+    # repo said which branch Render watched, and a rename would have stopped
+    # deploys silently. /api/health now reports the branch it actually built
+    # from, so this can be verified rather than assumed (#47).
+    branch: main
     # Closest free region to the Gold Coast. Oregon/Frankfurt are the
     # alternatives if Singapore is ever unavailable.
     region: singapore
