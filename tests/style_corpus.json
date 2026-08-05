@@ -1,0 +1,417 @@
+[
+ {
+  "title": "Inflammation and its discontents: the role of cytokines in the pathophysiology of major depression.",
+  "journal": "Biological psychiatry",
+  "year": "2009",
+  "doi": "10.1016/j.biopsych.2008.11.029",
+  "cited_by": 2877,
+  "type": "narrative-review",
+  "domain": "clinical-psychiatry",
+  "register": "synthesis",
+  "expect_register_errors": [],
+  "measured": {
+   "sentences": 7,
+   "words": 252,
+   "hedges_per_sentence": 0.857,
+   "distinct_hedges": 5,
+   "passive_ratio": 0.571,
+   "mean_sentence_words": 36
+  },
+  "abstract": "Recognition that inflammation may represent a common mechanism of disease has been extended to include neuropsychiatric disorders including major depression. Patients with major depression have been found to exhibit increased peripheral blood inflammatory biomarkers, including inflammatory cytokines, which have been shown to access the brain and interact with virtually every pathophysiologic domain known to be involved in depression, including neurotransmitter metabolism, neuroendocrine function, and neural plasticity. Indeed, activation of inflammatory pathways within the brain is believed to contribute to a confluence of decreased neurotrophic support and altered glutamate release/reuptake, as well as oxidative stress, leading to excitotoxicity and loss of glial elements, consistent with neuropathologic findings that characterize depressive disorders. Further instantiating the link between inflammation and depression are data demonstrating that psychosocial stress, a well-known precipitant of mood disorders, is capable of stimulating inflammatory signaling molecules, including nuclear factor kappa B, in part, through activation of sympathetic nervous system outflow pathways. Interestingly, depressed patients with increased inflammatory biomarkers have been found to be more likely to exhibit treatment resistance, and in several studies, antidepressant therapy has been associated with decreased inflammatory responses. Finally, preliminary data from patients with inflammatory disorders, as well as medically healthy depressed patients, suggest that inhibiting proinflammatory cytokines or their signaling pathways may improve depressed mood and increase treatment response to conventional antidepressant medication. Translational implications of these findings include the unique opportunity to identify relevant patient populations, apply immune-targeted therapies, and monitor therapeutic efficacy at the level of the immune system in addition to behavior."
+ },
+ {
+  "title": "The validity of the Hospital Anxiety and Depression Scale. An updated literature review.",
+  "journal": "Journal of psychosomatic research",
+  "year": "2002",
+  "doi": "10.1016/s0022-3999(01)00296-3",
+  "cited_by": 7011,
+  "type": "narrative-review",
+  "domain": "clinical-psychiatry",
+  "register": "investigator",
+  "expect_register_errors": [
+   "first-person",
+   "rhetorical-question"
+  ],
+  "measured": {
+   "sentences": 11,
+   "words": 220,
+   "hedges_per_sentence": 0.0,
+   "distinct_hedges": 0,
+   "passive_ratio": 0.182,
+   "mean_sentence_words": 20
+  },
+  "abstract": "Objective To review the literature of the validity of the Hospital Anxiety and Depression Scale (HADS). Method A review of the 747 identified papers that used HADS was performed to address the following questions: (I) How are the factor structure, discriminant validity and the internal consistency of HADS? (II) How does HADS perform as a case finder for anxiety disorders and depression? (III) How does HADS agree with other self-rating instruments used to rate anxiety and depression? Results Most factor analyses demonstrated a two-factor solution in good accordance with the HADS subscales for Anxiety (HADS-A) and Depression (HADS-D), respectively. The correlations between the two subscales varied from.40 to.74 (mean.56). Cronbach's alpha for HADS-A varied from.68 to.93 (mean.83) and for HADS-D from.67 to.90 (mean.82). In most studies an optimal balance between sensitivity and specificity was achieved when caseness was defined by a score of 8 or above on both HADS-A and HADS-D. The sensitivity and specificity for both HADS-A and HADS-D of approximately 0.80 were very similar to the sensitivity and specificity achieved by the General Health Questionnaire (GHQ). Correlations between HADS and other commonly used questionnaires were in the range.49 to.83. Conclusions HADS was found to perform well in assessing the symptom severity and caseness of anxiety disorders and depression in both somatic, psychiatric and primary care patients and in the general population."
+ },
+ {
+  "title": "Consensus methods for medical and health services research.",
+  "journal": "BMJ (Clinical research ed.)",
+  "year": "1995",
+  "doi": "10.1136/bmj.311.7001.376",
+  "cited_by": 2251,
+  "type": "narrative-review",
+  "domain": "health-services",
+  "register": "synthesis",
+  "expect_register_errors": [],
+  "measured": {
+   "sentences": 5,
+   "words": 190,
+   "hedges_per_sentence": 0.0,
+   "distinct_hedges": 0,
+   "passive_ratio": 0.6,
+   "mean_sentence_words": 38
+  },
+  "abstract": "Health providers face the problem of trying to make decisions in situations where there is insufficient information and also where there is an overload of (often contradictory) information. Statistical methods such as meta-analysis have been developed to summarise and to resolve inconsistencies in study findings--where information is available in an appropriate form. Consensus methods provide another means of synthesising information, but are liable to use a wider range of information than is common in statistical methods, and where published information is inadequate or non-existent these methods provide a means of harnessing the insights of appropriate experts to enable decisions to be made. Two consensus methods commonly adopted in medical, nursing, and health services research--the Delphi process and the nominal group technique (also known as the expert panel)--are described, together with the most appropriate situations for using them; an outline of the process involved in undertaking a study using each method is supplemented by illustrations of the authors' work. Key methodological issues in using the methods are discussed, along with the distinct contribution of consensus methods as aids to decision making, both in clinical practice and in health service development."
+ },
+ {
+  "title": "Physician burnout: contributors, consequences and solutions.",
+  "journal": "Journal of internal medicine",
+  "year": "2018",
+  "doi": "10.1111/joim.12752",
+  "cited_by": 1515,
+  "type": "narrative-review",
+  "domain": "health-services",
+  "register": "synthesis",
+  "expect_register_errors": [],
+  "measured": {
+   "sentences": 12,
+   "words": 283,
+   "hedges_per_sentence": 0.0,
+   "distinct_hedges": 0,
+   "passive_ratio": 0.25,
+   "mean_sentence_words": 23.6
+  },
+  "abstract": "Physician burnout, a work-related syndrome involving emotional exhaustion, depersonalization and a sense of reduced personal accomplishment, is prevalent internationally. Rates of burnout symptoms that have been associated with adverse effects on patients, the healthcare workforce, costs and physician health exceed 50% in studies of both physicians-in-training and practicing physicians. This problem represents a public health crisis with negative impacts on individual physicians, patients and healthcare organizations and systems. Drivers of this epidemic are largely rooted within healthcare organizations and systems and include excessive workloads, inefficient work processes, clerical burdens, work-home conflicts, lack of input or control for physicians with respect to issues affecting their work lives, organizational support structures and leadership culture. Individual physician-level factors also play a role, with higher rates of burnout commonly reported in female and younger physicians. Effective solutions align with these drivers. For example, organizational efforts such as locally developed practice modifications and increased support for clinical work have demonstrated benefits in reducing burnout. Individually focused solutions such as mindfulness-based stress reduction and small-group programmes to promote community, connectedness and meaning have also been shown to be effective. Regardless of the specific approach taken, the problem of physician burnout is best addressed when viewed as a shared responsibility of both healthcare systems and individual physicians. Although our understanding of physician burnout has advanced considerably in recent years, many gaps in our knowledge remain. Longitudinal studies of burnout's effects and the impact of interventions on both burnout and its effects are needed, as are studies of effective solutions implemented in combination. For medicine to fulfil its mission for patients and for public health, all stakeholders in healthcare delivery must work together to develop and implement effective remedies for physician burnout."
+ },
+ {
+  "title": "Emotion circuits in the brain.",
+  "journal": "Annual review of neuroscience",
+  "year": "2000",
+  "doi": "10.1146/annurev.neuro.23.1.155",
+  "cited_by": 5286,
+  "type": "narrative-review",
+  "domain": "neuroscience",
+  "register": "synthesis",
+  "expect_register_errors": [],
+  "measured": {
+   "sentences": 8,
+   "words": 192,
+   "hedges_per_sentence": 0.0,
+   "distinct_hedges": 0,
+   "passive_ratio": 0.0,
+   "mean_sentence_words": 24
+  },
+  "abstract": "The field of neuroscience has, after a long period of looking the other way, again embraced emotion as an important research area. Much of the progress has come from studies of fear, and especially fear conditioning. This work has pinpointed the amygdala as an important component of the system involved in the acquisition, storage, and expression of fear memory and has elucidated in detail how stimuli enter, travel through, and exit the amygdala. Some progress has also been made in understanding the cellular and molecular mechanisms that underlie fear conditioning, and recent studies have also shown that the findings from experimental animals apply to the human brain. It is important to remember why this work on emotion succeeded where past efforts failed. It focused on a psychologically well-defined aspect of emotion, avoided vague and poorly defined concepts such as \"affect,\" \"hedonic tone,\" or \"emotional feelings,\" and used a simple and straightforward experimental approach. With so much research being done in this area today, it is important that the mistakes of the past not be made again. It is also time to expand from this foundation into broader aspects of mind and behavior."
+ },
+ {
+  "title": "Neuroimaging standards for research into small vessel disease and its contribution to ageing and neurodegeneration.",
+  "journal": "The Lancet. Neurology",
+  "year": "2013",
+  "doi": "10.1016/s1474-4422(13)70124-8",
+  "cited_by": 4428,
+  "type": "narrative-review",
+  "domain": "neuroscience",
+  "register": "investigator",
+  "expect_register_errors": [
+   "first-person"
+  ],
+  "measured": {
+   "sentences": 11,
+   "words": 246,
+   "hedges_per_sentence": 0.091,
+   "distinct_hedges": 1,
+   "passive_ratio": 0.091,
+   "mean_sentence_words": 22.4
+  },
+  "abstract": "Cerebral small vessel disease (SVD) is a common accompaniment of ageing. Features seen on neuroimaging include recent small subcortical infarcts, lacunes, white matter hyperintensities, perivascular spaces, microbleeds, and brain atrophy. SVD can present as a stroke or cognitive decline, or can have few or no symptoms. SVD frequently coexists with neurodegenerative disease, and can exacerbate cognitive deficits, physical disabilities, and other symptoms of neurodegeneration. Terminology and definitions for imaging the features of SVD vary widely, which is also true for protocols for image acquisition and image analysis. This lack of consistency hampers progress in identifying the contribution of SVD to the pathophysiology and clinical features of common neurodegenerative diseases. We are an international working group from the Centres of Excellence in Neurodegeneration. We completed a structured process to develop definitions and imaging standards for markers and consequences of SVD. We aimed to achieve the following: first, to provide a common advisory about terms and definitions for features visible on MRI; second, to suggest minimum standards for image acquisition and analysis; third, to agree on standards for scientific reporting of changes related to SVD on neuroimaging; and fourth, to review emerging imaging methods for detection and quantification of preclinical manifestations of SVD. Our findings and recommendations apply to research studies, and can be used in the clinical setting to standardise image interpretation, acquisition, and reporting. This Position Paper summarises the main outcomes of this international effort to provide the STandards for ReportIng Vascular changes on nEuroimaging (STRIVE)."
+ },
+ {
+  "title": "The Microbiota-Gut-Brain Axis.",
+  "journal": "Physiological reviews",
+  "year": "2019",
+  "doi": "10.1152/physrev.00018.2018",
+  "cited_by": 3580,
+  "type": "narrative-review",
+  "domain": "neuroscience",
+  "register": "investigator",
+  "expect_register_errors": [
+   "first-person"
+  ],
+  "measured": {
+   "sentences": 11,
+   "words": 252,
+   "hedges_per_sentence": 0.0,
+   "distinct_hedges": 0,
+   "passive_ratio": 0.091,
+   "mean_sentence_words": 22.9
+  },
+  "abstract": "The importance of the gut-brain axis in maintaining homeostasis has long been appreciated. However, the past 15 yr have seen the emergence of the microbiota (the trillions of microorganisms within and on our bodies) as one of the key regulators of gut-brain function and has led to the appreciation of the importance of a distinct microbiota-gut-brain axis. This axis is gaining ever more traction in fields investigating the biological and physiological basis of psychiatric, neurodevelopmental, age-related, and neurodegenerative disorders. The microbiota and the brain communicate with each other via various routes including the immune system, tryptophan metabolism, the vagus nerve and the enteric nervous system, involving microbial metabolites such as short-chain fatty acids, branched chain amino acids, and peptidoglycans. Many factors can influence microbiota composition in early life, including infection, mode of birth delivery, use of antibiotic medications, the nature of nutritional provision, environmental stressors, and host genetics. At the other extreme of life, microbial diversity diminishes with aging. Stress, in particular, can significantly impact the microbiota-gut-brain axis at all stages of life. Much recent work has implicated the gut microbiota in many conditions including autism, anxiety, obesity, schizophrenia, Parkinson's disease, and Alzheimer's disease. Animal models have been paramount in linking the regulation of fundamental neural processes, such as neurogenesis and myelination, to microbiome activation of microglia. Moreover, translational human studies are ongoing and will greatly enhance the field. Future studies will focus on understanding the mechanisms underlying the microbiota-gut-brain axis and attempt to elucidate microbial-based intervention and therapeutic strategies for neuropsychiatric disorders."
+ },
+ {
+  "title": "The neural basis of drug craving: an incentive-sensitization theory of addiction.",
+  "journal": "Brain research. Brain research reviews",
+  "year": "1993",
+  "doi": "10.1016/0165-0173(93)90013-p",
+  "cited_by": 4734,
+  "type": "narrative-review",
+  "domain": "neuroscience",
+  "register": "investigator",
+  "expect_register_errors": [
+   "rhetorical-question"
+  ],
+  "measured": {
+   "sentences": 16,
+   "words": 320,
+   "hedges_per_sentence": 0.062,
+   "distinct_hedges": 1,
+   "passive_ratio": 0.125,
+   "mean_sentence_words": 20
+  },
+  "abstract": "This paper presents a biopsychological theory of drug addiction, the 'Incentive-Sensitization Theory'. The theory addresses three fundamental questions. The first is: why do addicts crave drugs? That is, what is the psychological and neurobiological basis of drug craving? The second is: why does drug craving persist even after long periods of abstinence? The third is whether 'wanting' drugs (drug craving) is attributable to 'liking' drugs (to the subjective pleasurable effects of drugs)? The theory posits the following. (1) Addictive drugs share the ability to enhance mesotelencephalic dopamine neurotransmission. (2) One psychological function of this neural system is to attribute 'incentive salience' to the perception and mental representation of events associated with activation of the system. Incentive salience is a psychological process that transforms the perception of stimuli, imbuing them with salience, making them attractive, 'wanted', incentive stimuli. (3) In some individuals the repeated use of addictive drugs produces incremental neuroadaptations in this neural system, rendering it increasingly and perhaps permanently, hypersensitive ('sensitized') to drugs and drug-associated stimuli. The sensitization of dopamine systems is gated by associative learning, which causes excessive incentive salience to be attributed to the act of drug taking and to stimuli associated with drug taking. It is specifically the sensitization of incentive salience, therefore, that transforms ordinary 'wanting' into excessive drug craving. (4) It is further proposed that sensitization of the neural systems responsible for incentive salience ('for wanting') can occur independently of changes in neural systems that mediate the subjective pleasurable effects of drugs (drug 'liking') and of neural systems that mediate withdrawal. Thus, sensitization of incentive salience can produce addictive behavior (compulsive drug seeking and drug taking) even if the expectation of drug pleasure or the aversive properties of withdrawal are diminished and even in the face of strong disincentives, including the loss of reputation, job, home and family. We review evidence for this view of addiction and discuss its implications for understanding the psychology and neurobiology of addiction."
+ },
+ {
+  "title": "A randomized trial of an N-methyl-D-aspartate antagonist in treatment-resistant major depression.",
+  "journal": "Archives of general psychiatry",
+  "year": "2006",
+  "doi": "10.1001/archpsyc.63.8.856",
+  "cited_by": 2568,
+  "type": "primary",
+  "domain": "clinical-psychiatry",
+  "register": "synthesis",
+  "expect_register_errors": [],
+  "measured": {
+   "sentences": 15,
+   "words": 280,
+   "hedges_per_sentence": 0.067,
+   "distinct_hedges": 1,
+   "passive_ratio": 0.267,
+   "mean_sentence_words": 18.7
+  },
+  "abstract": "Context Existing therapies for major depression have a lag of onset of action of several weeks, resulting in considerable morbidity. Exploring pharmacological strategies that have rapid onset of antidepressant effects within a few days and that are sustained would have an enormous impact on patient care. Converging lines of evidence suggest the role of the glutamatergic system in the pathophysiology and treatment of mood disorders. Objective To determine whether a rapid antidepressant effect can be achieved with an antagonist at the N-methyl-D-aspartate receptor in subjects with major depression. Design A randomized, placebo-controlled, double-blind crossover study from November 2004 to September 2005. Setting Mood Disorders Research Unit at the National Institute of Mental Health. Patients Eighteen subjects with DSM-IV major depression (treatment resistant). Interventions After a 2-week drug-free period, subjects were given an intravenous infusion of either ketamine hydrochloride (0.5 mg/kg) or placebo on 2 test days, a week apart. Subjects were rated at baseline and at 40, 80, 110, and 230 minutes and 1, 2, 3, and 7 days postinfusion. Main Outcome Measure Changes in scores on the primary efficacy measure, the 21-item Hamilton Depression Rating Scale. Results Subjects receiving ketamine showed significant improvement in depression compared with subjects receiving placebo within 110 minutes after injection, which remained significant throughout the following week. The effect size for the drug difference was very large (d = 1.46 [95% confidence interval, 0.91-2.01]) after 24 hours and moderate to large (d = 0.68 [95% confidence interval, 0.13-1.23]) after 1 week. Of the 17 subjects treated with ketamine, 71% met response and 29% met remission criteria the day following ketamine infusion. Thirty-five percent of subjects maintained response for at least 1 week. Conclusions Robust and rapid antidepressant effects resulted from a single intravenous dose of an N-methyl-D-aspartate antagonist; onset occurred within 2 hours postinfusion and continued to remain significant for 1 week."
+ },
+ {
+  "title": "Effectiveness of antipsychotic drugs in patients with chronic schizophrenia.",
+  "journal": "The New England journal of medicine",
+  "year": "2005",
+  "doi": "10.1056/nejmoa051688",
+  "cited_by": 3569,
+  "type": "primary",
+  "domain": "clinical-psychiatry",
+  "register": "synthesis",
+  "expect_register_errors": [],
+  "measured": {
+   "sentences": 9,
+   "words": 259,
+   "hedges_per_sentence": 0.111,
+   "distinct_hedges": 1,
+   "passive_ratio": 0.444,
+   "mean_sentence_words": 28.8
+  },
+  "abstract": "Background The relative effectiveness of second-generation (atypical) antipsychotic drugs as compared with that of older agents has been incompletely addressed, though newer agents are currently used far more commonly. We compared a first-generation antipsychotic, perphenazine, with several newer drugs in a double-blind study. Methods A total of 1493 patients with schizophrenia were recruited at 57 U.S. sites and randomly assigned to receive olanzapine (7.5 to 30 mg per day), perphenazine (8 to 32 mg per day), quetiapine (200 to 800 mg per day), or risperidone (1.5 to 6.0 mg per day) for up to 18 months. Ziprasidone (40 to 160 mg per day) was included after its approval by the Food and Drug Administration. The primary aim was to delineate differences in the overall effectiveness of these five treatments. Results Overall, 74 percent of patients discontinued the study medication before 18 months (1061 of the 1432 patients who received at least one dose): 64 percent of those assigned to olanzapine, 75 percent of those assigned to perphenazine, 82 percent of those assigned to quetiapine, 74 percent of those assigned to risperidone, and 79 percent of those assigned to ziprasidone. The time to the discontinuation of treatment for any cause was significantly longer in the olanzapine group than in the quetiapine (P Conclusions The majority of patients in each group discontinued their assigned treatment owing to inefficacy or intolerable side effects or for other reasons. Olanzapine was the most effective in terms of the rates of discontinuation, and the efficacy of the conventional antipsychotic agent perphenazine appeared similar to that of quetiapine, risperidone, and ziprasidone. Olanzapine was associated with greater weight gain and increases in measures of glucose and lipid metabolism."
+ },
+ {
+  "title": "Effect of a nursing-implemented sedation protocol on the duration of mechanical ventilation.",
+  "journal": "Critical care medicine",
+  "year": "1999",
+  "doi": "10.1097/00003246-199912000-00001",
+  "cited_by": 629,
+  "type": "primary",
+  "domain": "health-services",
+  "register": "synthesis",
+  "expect_register_errors": [],
+  "measured": {
+   "sentences": 8,
+   "words": 177,
+   "hedges_per_sentence": 0.0,
+   "distinct_hedges": 0,
+   "passive_ratio": 0.125,
+   "mean_sentence_words": 22.1
+  },
+  "abstract": "Objective To compare a practice of protocol-directed sedation during mechanical ventilation implemented by nurses with traditional non-protocol-directed sedation administration. Design Randomized, controlled clinical trial. Setting Medical intensive care unit (19 beds) in an urban teaching hospital. Patients Patients requiring mechanical ventilation (n = 321). Interventions Patients were randomly assigned to receive either protocol-directed sedation (n = 162) or non-protocol-directed sedation (n = 159). Measurements and main results The median duration of mechanical ventilation was 55.9 hrs (95% confidence interval, 41.0-90.0 hrs) for patients managed with protocol-directed sedation and 117.0 hrs (95% confidence interval, 96.0-155.6 hrs) for patients receiving non-protocol-directed sedation. Kaplan-Meier analysis demonstrated that patients in the protocol-directed sedation group had statistically shorter durations of mechanical ventilation than patients in the non-protocol-directed sedation group (chi-square = 7.00, p = .008, log rank test; chi-square = 8.54, p = .004, Wilcoxon's test; chi-square = 9.18, p = .003, -2 log test). Lengths of stay in the intensive care unit (5.7+/-5.9 days vs. 7.5+/-6.5 days; p = .013) and hospital (14.0+/-17.3 days vs. 19.9+/-24.2 days; p Conclusions The use of protocol-directed sedation can reduce the duration of mechanical ventilation, the intensive care unit and hospital lengths of stay, and the need for tracheostomy among critically ill patients with acute respiratory failure."
+ },
+ {
+  "title": "Emergency department-initiated buprenorphine/naloxone treatment for opioid dependence: a randomized clinical trial.",
+  "journal": "JAMA",
+  "year": "2015",
+  "doi": "10.1001/jama.2015.3474",
+  "cited_by": 725,
+  "type": "primary",
+  "domain": "health-services",
+  "register": "synthesis",
+  "expect_register_errors": [],
+  "measured": {
+   "sentences": 9,
+   "words": 252,
+   "hedges_per_sentence": 0.0,
+   "distinct_hedges": 0,
+   "passive_ratio": 0.333,
+   "mean_sentence_words": 28
+  },
+  "abstract": "Importance Opioid-dependent patients often use the emergency department (ED) for medical care. Objective To test the efficacy of 3 interventions for opioid dependence: (1) screening and referral to treatment (referral); (2) screening, brief intervention, and facilitated referral to community-based treatment services (brief intervention); and (3) screening, brief intervention, ED-initiated treatment with buprenorphine/naloxone, and referral to primary care for 10-week follow-up (buprenorphine). Design, setting, and participants A randomized clinical trial involving 329 opioid-dependent patients who were treated at an urban teaching hospital ED from April 7, 2009, through June 25, 2013. Interventions After screening, 104 patients were randomized to the referral group, 111 to the brief intervention group, and 114 to the buprenorphine treatment group. Main outcomes and measures Enrollment in and receiving addiction treatment 30 days after randomization was the primary outcome. Self-reported days of illicit opioid use, urine testing for illicit opioids, human immunodeficiency virus (HIV) risk, and use of addiction treatment services were the secondary outcomes. Results Seventy-eight percent of patients in the buprenorphine group (89 of 114 [95% CI, 70%-85%]) vs 37% in the referral group (38 of 102 [95% CI, 28%-47%]) and 45% in the brief intervention group (50 of 111 [95% CI, 36%-54%]) were engaged in addiction treatment on the 30th day after randomization (P Conclusions and relevance Among opioid-dependent patients, ED-initiated buprenorphine treatment vs brief intervention and referral significantly increased engagement in addiction treatment, reduced self-reported illicit opioid use, and decreased use of inpatient addiction treatment services but did not significantly decrease the rates of urine samples that tested positive for opioids or of HIV risk. These findings require replication in other centers before widespread adoption. Trial registration clinicaltrials.gov Identifier: NCT00913770."
+ },
+ {
+  "title": "Brief communication: Sleep curtailment in healthy young men is associated with decreased leptin levels, elevated ghrelin levels, and increased hunger and appetite.",
+  "journal": "Annals of internal medicine",
+  "year": "2004",
+  "doi": "10.7326/0003-4819-141-11-200412070-00008",
+  "cited_by": 1531,
+  "type": "primary",
+  "domain": "neuroscience",
+  "register": "synthesis",
+  "expect_register_errors": [],
+  "measured": {
+   "sentences": 10,
+   "words": 167,
+   "hedges_per_sentence": 0.0,
+   "distinct_hedges": 0,
+   "passive_ratio": 0.3,
+   "mean_sentence_words": 16.7
+  },
+  "abstract": "Background Total sleep deprivation in rodents and in humans has been associated with hyperphagia. Over the past 40 years, self-reported sleep duration in the United States has decreased by almost 2 hours. Objective To determine whether partial sleep curtailment, an increasingly prevalent behavior, alters appetite regulation. Design Randomized, 2-period, 2-condition crossover clinical study. Setting Clinical Research Center, University of Chicago, Chicago, Illinois. Patients 12 healthy men (mean age [+/-SD], 22 +/- 2 years; mean body mass index [+/-SD], 23.6 +/- 2.0 kg/m2). Measurements Daytime profiles of plasma leptin and ghrelin levels and subjective ratings of hunger and appetite. Intervention 2 days of sleep restriction and 2 days of sleep extension under controlled conditions of caloric intake and physical activity. Results Sleep restriction was associated with average reductions in the anorexigenic hormone leptin (decrease, 18%; P = 0.04), elevations in the orexigenic factor ghrelin (increase, 28%; P Limitations The study included only 12 young men and did not measure energy expenditure. Conclusions Short sleep duration in young, healthy men is associated with decreased leptin levels, increased ghrelin levels, and increased hunger and appetite."
+ },
+ {
+  "title": "Whole brain radiation therapy with or without stereotactic radiosurgery boost for patients with one to three brain metastases: phase III results of the RTOG 9508 randomised trial.",
+  "journal": "Lancet (London, England)",
+  "year": "2004",
+  "doi": "10.1016/s0140-6736(04)16250-8",
+  "cited_by": 1605,
+  "type": "primary",
+  "domain": "neuroscience",
+  "register": "investigator",
+  "expect_register_errors": [
+   "first-person"
+  ],
+  "measured": {
+   "sentences": 10,
+   "words": 243,
+   "hedges_per_sentence": 0.1,
+   "distinct_hedges": 1,
+   "passive_ratio": 0.3,
+   "mean_sentence_words": 24.3
+  },
+  "abstract": "Background Brain metastases occur in up to 40% of all patients with systemic cancer. We aimed to assess whether stereotactic radiosurgery provided any therapeutic benefit in a randomised multi-institutional trial directed by the Radiation Therapy Oncology Group (RTOG). Methods Patients with one to three newly diagnosed brain metastases were randomly allocated either whole brain radiation therapy (WBRT) or WBRT followed by stereotactic radiosurgery boost. Patients were stratified by number of metastases and status of extracranial disease. Primary outcome was survival; secondary outcomes were tumour response and local rates, overall intracranial recurrence rates, cause of death, and performance measurements. Findings From January, 1996, to June, 2001, we enrolled 333 patients from 55 participating RTOG institutions--167 were assigned WBRT and stereotactic radiosurgery and 164 were allocated WBRT alone. Univariate analysis showed that there was a survival advantage in the WBRT and stereotactic radiosurgery group for patients with a single brain metastasis (median survival time 6.5 vs 4.9 months, p=0.0393). Patients in the stereotactic surgery group were more likely to have a stable or improved Karnofsky Performance Status (KPS) score at 6 months' follow-up than were patients allocated WBRT alone (43% vs 27%, respectively; p=0.03). By multivariate analysis, survival improved in patients with an RPA class 1 (p Interpretation WBRT and stereotactic boost treatment improved functional autonomy (KPS) for all patients and survival for patients with a single unresectable brain metastasis. WBRT and stereotactic radiosurgery should, therefore, be standard treatment for patients with a single unresectable brain metastasis and considered for patients with two or three brain metastases."
+ },
+ {
+  "title": "Depression is a risk factor for noncompliance with medical treatment: meta-analysis of the effects of anxiety and depression on patient adherence.",
+  "journal": "Archives of internal medicine",
+  "year": "2000",
+  "doi": "10.1001/archinte.160.14.2101",
+  "cited_by": 2608,
+  "type": "systematic-review",
+  "domain": "clinical-psychiatry",
+  "register": "synthesis",
+  "expect_register_errors": [],
+  "measured": {
+   "sentences": 9,
+   "words": 230,
+   "hedges_per_sentence": 0.222,
+   "distinct_hedges": 2,
+   "passive_ratio": 0.222,
+   "mean_sentence_words": 25.6
+  },
+  "abstract": "Background Depression and anxiety are common in medical patients and are associated with diminished health status and increased health care utilization. This article presents a quantitative review and synthesis of studies correlating medical patients' treatment noncompliance with their anxiety and depression. Methods Research on patient adherence catalogued on MEDLINE and PsychLit from January 1, 1968, through March 31, 1998, was examined, and studies were included in this review if they measured patient compliance and depression or anxiety (with n>10); involved a medical regimen recommended by a nonpsychiatrist physician to a patient not being treated for anxiety, depression, or a psychiatric illness; and measured the relationship between patient compliance and patient anxiety and/or depression (or provided data to calculate it). Results Twelve articles about depression and 13 about anxiety met the inclusion criteria. The associations between anxiety and noncompliance were variable, and their averages were small and nonsignificant. The relationship between depression and noncompliance, however, was substantial and significant, with an odds ratio of 3.03 (95% confidence interval, 1.96-4.89). Conclusions Compared with nondepressed patients, the odds are 3 times greater that depressed patients will be noncompliant with medical treatment recommendations. Recommendations for future research include attention to causal inferences and exploration of mechanisms to explain the effects. Evidence of strong covariation of depression and medical noncompliance suggests the importance of recognizing depression as a risk factor for poor outcomes among patients who might not be adhering to medical advice."
+ },
+ {
+  "title": "The Patient Health Questionnaire Somatic, Anxiety, and Depressive Symptom Scales: a systematic review.",
+  "journal": "General hospital psychiatry",
+  "year": "2010",
+  "doi": "10.1016/j.genhosppsych.2010.03.006",
+  "cited_by": 2737,
+  "type": "systematic-review",
+  "domain": "clinical-psychiatry",
+  "register": "synthesis",
+  "expect_register_errors": [],
+  "measured": {
+   "sentences": 10,
+   "words": 240,
+   "hedges_per_sentence": 0.0,
+   "distinct_hedges": 0,
+   "passive_ratio": 0.1,
+   "mean_sentence_words": 24
+  },
+  "abstract": "Background Depression, anxiety and somatization are the most common mental disorders in primary care as well as medical specialty populations; each is present in at least 5-10% of patients and frequently comorbid with one another. An efficient means for measuring and monitoring all three conditions would be desirable. Methods Evidence regarding the psychometric and pragmatic characteristics of the Patient Health Questionnaire (PHQ)-9 depression, generalized anxiety disorder (GAD)-7 anxiety and PHQ-15 somatic symptom scales are synthesized from two sources: (1) four multisite cross-sectional studies (three conducted in primary care and one in obstetric-gynecology practices) comprising 9740 patients, and (2) key studies from the literature that have studied these scales. Results The PHQ-9 and its abbreviated eight-item (PHQ-8) and two-item (PHQ-2) versions have good sensitivity and specificity for detecting depressive disorders. Likewise, the GAD-7 and its abbreviated two-item (GAD-2) version have good operating characteristics for detecting generalized anxiety, panic, social anxiety and post-traumatic stress disorder. The optimal cutpoint is > or = 10 on the parent scales (PHQ-9 and GAD-7) and > or = 3 on the ultra-brief versions (PHQ-2 and GAD-2). The PHQ-15 is equal or superior to other brief measures for assessing somatic symptoms and screening for somatoform disorders. Cutpoints of 5, 10 and 15 represent mild, moderate and severe symptom levels on all three scales. Sensitivity to change is well-established for the PHQ-9 and emerging albeit not yet definitive for the GAD-7 and PHQ-15. Conclusions The PHQ-9, GAD-7 and PHQ-15 are brief well-validated measures for detecting and monitoring depression, anxiety and somatization."
+ },
+ {
+  "title": "Healthcare Staff Wellbeing, Burnout, and Patient Safety: A Systematic Review.",
+  "journal": "PloS one",
+  "year": "2016",
+  "doi": "10.1371/journal.pone.0159015",
+  "cited_by": 943,
+  "type": "systematic-review",
+  "domain": "health-services",
+  "register": "investigator",
+  "expect_register_errors": [
+   "first-person"
+  ],
+  "measured": {
+   "sentences": 11,
+   "words": 263,
+   "hedges_per_sentence": 0.0,
+   "distinct_hedges": 0,
+   "passive_ratio": 0.364,
+   "mean_sentence_words": 23.9
+  },
+  "abstract": "Objective To determine whether there is an association between healthcare professionals' wellbeing and burnout, with patient safety. Design Systematic research review. Data sources PsychInfo (1806 to July 2015), Medline (1946 to July 2015), Embase (1947 to July 2015) and Scopus (1823 to July 2015) were searched, along with reference lists of eligible articles. Eligibility criteria for selecting studies Quantitative, empirical studies that included i) either a measure of wellbeing or burnout, and ii) patient safety, in healthcare staff populations. Results Forty-six studies were identified. Sixteen out of the 27 studies that measured wellbeing found a significant correlation between poor wellbeing and worse patient safety, with six additional studies finding an association with some but not all scales used, and one study finding a significant association but in the opposite direction to the majority of studies. Twenty-one out of the 30 studies that measured burnout found a significant association between burnout and patient safety, whilst a further four studies found an association between one or more (but not all) subscales of the burnout measures employed, and patient safety. Conclusions Poor wellbeing and moderate to high levels of burnout are associated, in the majority of studies reviewed, with poor patient safety outcomes such as medical errors, however the lack of prospective studies reduces the ability to determine causality. Further prospective studies, research in primary care, conducted within the UK, and a clearer definition of healthcare staff wellbeing are needed. Implications This review illustrates the need for healthcare organisations to consider improving employees' mental health as well as creating safer work environments when planning interventions to improve patient safety. Systematic review registration PROSPERO registration number: CRD42015023340."
+ },
+ {
+  "title": "Systematic review of emergency department crowding: causes, effects, and solutions.",
+  "journal": "Annals of emergency medicine",
+  "year": "2008",
+  "doi": "10.1016/j.annemergmed.2008.03.014",
+  "cited_by": 930,
+  "type": "systematic-review",
+  "domain": "health-services",
+  "register": "synthesis",
+  "expect_register_errors": [],
+  "measured": {
+   "sentences": 12,
+   "words": 212,
+   "hedges_per_sentence": 0.25,
+   "distinct_hedges": 1,
+   "passive_ratio": 0.0,
+   "mean_sentence_words": 17.7
+  },
+  "abstract": "Emergency department (ED) crowding represents an international crisis that may affect the quality and access of health care. We conducted a comprehensive PubMed search to identify articles that (1) studied causes, effects, or solutions of ED crowding; (2) described data collection and analysis methodology; (3) occurred in a general ED setting; and (4) focused on everyday crowding. Two independent reviewers identified the relevant articles by consensus. We applied a 5-level quality assessment tool to grade the methodology of each study. From 4,271 abstracts and 188 full-text articles, the reviewers identified 93 articles meeting the inclusion criteria. A total of 33 articles studied causes, 27 articles studied effects, and 40 articles studied solutions of ED crowding. Commonly studied causes of crowding included nonurgent visits, \"frequent-flyer\" patients, influenza season, inadequate staffing, inpatient boarding, and hospital bed shortages. Commonly studied effects of crowding included patient mortality, transport delays, treatment delays, ambulance diversion, patient elopement, and financial effect. Commonly studied solutions of crowding included additional personnel, observation units, hospital bed access, nonurgent referrals, ambulance diversion, destination control, crowding measures, and queuing theory. The results illustrated the complex, multifaceted characteristics of the ED crowding problem. Additional high-quality studies may provide valuable contributions toward better understanding and alleviating the daily crisis. This structured overview of the literature may help to identify future directions for the crowding research agenda."
+ },
+ {
+  "title": "Functional neuroimaging of anxiety: a meta-analysis of emotional processing in PTSD, social anxiety disorder, and specific phobia.",
+  "journal": "The American journal of psychiatry",
+  "year": "2007",
+  "doi": "10.1176/appi.ajp.2007.07030504",
+  "cited_by": 2383,
+  "type": "systematic-review",
+  "domain": "neuroscience",
+  "register": "investigator",
+  "expect_register_errors": [
+   "first-person"
+  ],
+  "measured": {
+   "sentences": 13,
+   "words": 249,
+   "hedges_per_sentence": 0.077,
+   "distinct_hedges": 1,
+   "passive_ratio": 0.154,
+   "mean_sentence_words": 19.2
+  },
+  "abstract": "Objective The study of human anxiety disorders has benefited greatly from functional neuroimaging approaches. Individual studies, however, vary greatly in their findings. The authors searched for common and disorder-specific functional neurobiological deficits in several anxiety disorders. The authors also compared these deficits to the neural systems engaged during anticipatory anxiety in healthy subjects. Method Functional magnetic resonance imaging and positron emission tomography studies of posttraumatic stress disorder (PTSD), social anxiety disorder, specific phobia, and fear conditioning in healthy individuals were compared by quantitative meta-analysis. Included studies compared negative emotional processing to baseline, neutral, or positive emotion conditions. Results Patients with any of the three disorders consistently showed greater activity than matched comparison subjects in the amygdala and insula, structures linked to negative emotional responses. A similar pattern was observed during fear conditioning in healthy subjects. Hyperactivation in the amygdala and insula were, of interest, more frequently observed in social anxiety disorder and specific phobia than in PTSD. By contrast, only patients with PTSD showed hypoactivation in the dorsal and rostral anterior cingulate cortices and the ventromedial prefrontal cortex-structures linked to the experience and regulation of emotion. Conclusions This meta-analysis allowed us to synthesize often disparate findings from individual studies and thereby provide neuroimaging evidence for common brain mechanisms in anxiety disorders and normal fear. Effects unique to PTSD furthermore suggested a mechanism for the emotional dysregulation symptoms in PTSD that extend beyond an exaggerated fear response. Therefore, these findings help refine our understanding of anxiety disorders and their interrelationships."
+ },
+ {
+  "title": "Where is the semantic system? A critical review and meta-analysis of 120 functional neuroimaging studies.",
+  "journal": "Cerebral cortex (New York, N.Y. : 1991)",
+  "year": "2009",
+  "doi": "10.1093/cercor/bhp055",
+  "cited_by": 2906,
+  "type": "systematic-review",
+  "domain": "neuroscience",
+  "register": "synthesis",
+  "expect_register_errors": [],
+  "measured": {
+   "sentences": 8,
+   "words": 197,
+   "hedges_per_sentence": 0.125,
+   "distinct_hedges": 1,
+   "passive_ratio": 0.375,
+   "mean_sentence_words": 24.6
+  },
+  "abstract": "Semantic memory refers to knowledge about people, objects, actions, relations, self, and culture acquired through experience. The neural systems that store and retrieve this information have been studied for many years, but a consensus regarding their identity has not been reached. Using strict inclusion criteria, we analyzed 120 functional neuroimaging studies focusing on semantic processing. Reliable areas of activation in these studies were identified using the activation likelihood estimate (ALE) technique. These activations formed a distinct, left-lateralized network comprised of 7 regions: posterior inferior parietal lobe, middle temporal gyrus, fusiform and parahippocampal gyri, dorsomedial prefrontal cortex, inferior frontal gyrus, ventromedial prefrontal cortex, and posterior cingulate gyrus. Secondary analyses showed specific subregions of this network associated with knowledge of actions, manipulable artifacts, abstract concepts, and concrete concepts. The cortical regions involved in semantic processing can be grouped into 3 broad categories: posterior multimodal and heteromodal association cortex, heteromodal prefrontal cortex, and medial limbic regions. The expansion of these regions in the human relative to the nonhuman primate brain may explain uniquely human capacities to use language productively, plan, solve problems, and create cultural and technological artifacts, all of which depend on the fluid and efficient retrieval and manipulation of semantic knowledge."
+ }
+]
