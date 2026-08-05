@@ -267,7 +267,13 @@ this gets used for) is the durable answer rather than more header tuning.
   reply is invalid JSON, not a short one. `_anthropic_generate` also handles
   `stop_reason` of `refusal` and `max_tokens` explicitly: a refusal returns a
   normal 200 with no text block, which otherwise surfaced as a bare
-  `StopIteration`.
+  `StopIteration`. On Opus 5 (and Fable/Mythos) the call also opts into the
+  server-side refusal fallback (`fallbacks: "default"` +
+  `server-side-fallback-2026-07-01` beta, issue #45), so a classifier false
+  positive is re-served by Anthropic's recommended substitute model inside the
+  same call; a visible refusal error now means the fallback declined too.
+  Older models reject the parameter — `_refusal_fallback_kwargs` attaches it
+  by model prefix, and every Anthropic call goes through `client.beta.messages`.
 
 ## Grounding / trust design (why the pipeline is shaped this way)
 

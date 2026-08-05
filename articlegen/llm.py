@@ -123,6 +123,25 @@ def generate_json(
 
 # ---------------------------------------------------------------- anthropic
 
+# Claude Opus 5 (and the Fable/Mythos tier above it) runs safety classifiers
+# that can decline a request outright: a normal HTTP 200 with stop_reason
+# "refusal" and no text. The topics here are clinical and user-supplied, so a
+# false positive is possible, and it used to cost the whole run (issue #45).
+# The server-side fallback re-runs a declined request on Anthropic's
+# recommended substitute model, routed by refusal category, inside the same
+# call. "default" rather than a pinned model name, so nothing here needs
+# migrating when a fallback model is deprecated. Models without these
+# classifiers don't take the parameter, so it is attached by model prefix.
+_REFUSAL_FALLBACK_MODELS = ("claude-opus-5", "claude-fable", "claude-mythos")
+_REFUSAL_FALLBACK_BETA = "server-side-fallback-2026-07-01"
+
+
+def _refusal_fallback_kwargs(model: str) -> dict:
+    if not model.startswith(_REFUSAL_FALLBACK_MODELS):
+        return {}
+    return {"betas": [_REFUSAL_FALLBACK_BETA], "fallbacks": "default"}
+
+
 def _anthropic_generate(prompt, schema, system, model, deep, api_key=None) -> dict:
     import anthropic
 
@@ -131,11 +150,12 @@ def _anthropic_generate(prompt, schema, system, model, deep, api_key=None) -> di
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
     }
+    kwargs.update(_refusal_fallback_kwargs(model))
     if system:
         kwargs["system"] = system
 
     if deep:
-        with client.messages.stream(
+        with client.beta.messages.stream(
             max_tokens=64000,
             thinking={"type": "adaptive"},
             output_config={
@@ -151,7 +171,7 @@ def _anthropic_generate(prompt, schema, system, model, deep, api_key=None) -> di
         # the ceiling that was ample for a bare JSON reply on Opus 4.8 can now
         # truncate one mid-object. The curation call in particular grades twenty
         # sources at once.
-        response = client.messages.create(
+        response = client.beta.messages.create(
             max_tokens=16000,
             output_config={"format": {"type": "json_schema", "schema": schema}},
             **kwargs,
@@ -161,6 +181,8 @@ def _anthropic_generate(prompt, schema, system, model, deep, api_key=None) -> di
         # A safety classifier declined. This arrives as a normal 200 with no
         # text block, so without this check the generator below raises
         # StopIteration and the caller reports an empty, baffling failure.
+        # On models with the server-side fallback attached, reaching here
+        # means the fallback model declined too, not that no retry happened.
         detail = getattr(response, "stop_details", None)
         category = getattr(detail, "category", None) or "unspecified"
         raise RuntimeError(
