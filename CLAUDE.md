@@ -17,20 +17,19 @@ journal-article abstracts. It runs two ways:
   URLs still redirect).
 - **The default branch is now `main`** (renamed from the auto-generated
   `claude/article-generator-html-yth1u4`, issue #47). Old URLs still redirect.
-- **`claude/article-generator-html-yth1u4` still exists, and must, until someone
-  opens the Render dashboard.** Render builds from a branch name held in its own
-  settings, and Blueprint auto-sync is off for this service — measured: setting
-  `branch:` in `render.yaml` and pushing produced a deploy of the new commit that
-  stayed on the old branch. So the deploy branch cannot be moved from this repo.
-  `.github/workflows/render-deploy-branch.yml` mirrors `main` onto it on every
-  push, which is what made the rename safe.
-  - **This is a bridge, not a fixture.** Point Render at `main`
-    (Settings → Build & Deploy → Branch), then delete that workflow, delete the
-    mirrored branch, and set `render.yaml`'s `branch:` to `main`.
-  - **`GET /api/health` reports the branch and commit the running service was
-    actually built from.** That is how any of this is checked rather than
-    assumed — it is what turned "deploys might have silently stopped" into a
-    one-line verification.
+- **Render followed the rename by itself**, which the old note here said it
+  would not. It builds from `main` and reports so. What that note got right is
+  that `render.yaml` cannot move it: Blueprint auto-sync is off for this service
+  — measured, by setting `branch:` and watching a deploy stay put. So the
+  `branch:` line is a record, not a control.
+- **`GET /api/health` reports the branch and commit the running service was
+  actually built from.** That is what made the rename safe to attempt at all: it
+  turned "deploys may have silently stopped" into a one-line check, and it is how
+  every claim in these two bullets was verified rather than assumed.
+- The `github-pages` **environment** carries its own branch allowlist, separate
+  from `pages.yml`'s trigger list, and it silently rejected `main` until `main`
+  was added to it (`gh api .../environments/github-pages/deployment-branch-policies`).
+  A branch rename has to consider both.
 - `drafts/` is intentionally git-tracked — it's the review surface.
 
 ## Architecture (module map)
