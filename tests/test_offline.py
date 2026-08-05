@@ -1054,6 +1054,73 @@ def test_rules_do_not_reject_real_journal_prose() -> None:
         check(f"not first person: {text[:38]!r}", "first-person" not in fired)
 
 
+def test_display_items_are_selected_once_for_both_formats() -> None:
+    """HTML and Markdown must not each decide what a display item contains.
+
+    Box 1, Fig. 1 and Table 1 are the parts a model cannot fabricate, so both
+    renderers have to show the same facts. They used to compute those facts
+    independently — the same index validation, field picking, relevance
+    labelling and year bucketing written twice — which is a correctness risk,
+    not just duplication: the two could disagree and nothing would notice
+    (issue #46). Selection now lives in one place; the renderers only format.
+    """
+    import inspect
+
+    from articlegen import demo, render
+
+    cited, cite_map = render._citation_map(demo.SAMPLE_ARTICLE, demo.SAMPLE_PAPERS)
+    labels = render._display_relevance(cite_map, demo.SAMPLE_CURATION)
+
+    # Both renderers must go through the shared selectors.
+    for fn, selector in (
+        (render._box_html, "_box_parts"), (render._box_markdown, "_box_parts"),
+        (render._table_html, "_table_rows"), (render._table_markdown, "_table_rows"),
+        (render._figure_html, "_figure_series"), (render._figure_markdown, "_figure_series"),
+    ):
+        check(f"{fn.__name__} uses {selector}", selector in inspect.getsource(fn))
+
+    # And the facts they carry must actually agree.
+    rows = render._table_rows(cited, labels)
+    check("a row per cited source", len(rows) == len(cited))
+    table_html = render._table_html(cited, labels)
+    table_md = render._table_markdown(cited, labels)
+    for row in rows:
+        for value in (str(row["year"]), row["study"], row["cited_by"]):
+            if value == "—":
+                continue
+            check(f"both tables carry {value[:26]!r}",
+                  value in table_md and (value in table_html or html_escaped(value, table_html)))
+
+    series = render._figure_series(cited, labels)
+    check("the figure has data to plot", series is not None)
+    fig_md = render._figure_markdown(cited, labels)
+    for (label, _), tally in zip(series["buckets"], series["counts"]):
+        check(f"markdown figure reports bucket {label}",
+              f"- {label}: {sum(tally.values())}" in fig_md)
+
+    box = render._box_parts(demo.SAMPLE_ARTICLE, demo.SAMPLE_PAPERS, cite_map)
+    check("the featured study resolves", box is not None)
+    box_html, box_md = (
+        render._box_html(demo.SAMPLE_ARTICLE, demo.SAMPLE_PAPERS, cite_map),
+        render._box_markdown(demo.SAMPLE_ARTICLE, demo.SAMPLE_PAPERS, cite_map),
+    )
+    check("both boxes name the same study",
+          box["paper"].title in box_md and html_escaped(box["paper"].title, box_html))
+    check("both boxes carry the method", box["method"][:40] in box_md)
+
+    # A bad index must fail the same way in both, not render half a box.
+    broken = dict(demo.SAMPLE_ARTICLE, featured_study={"source_index": 999})
+    check("an out-of-range featured study yields nothing",
+          render._box_parts(broken, demo.SAMPLE_PAPERS, cite_map) is None
+          and render._box_html(broken, demo.SAMPLE_PAPERS, cite_map) == ""
+          and render._box_markdown(broken, demo.SAMPLE_PAPERS, cite_map) == "")
+
+
+def html_escaped(value: str, haystack: str) -> bool:
+    import html as _h
+    return value in haystack or _h.escape(value) in haystack
+
+
 def test_failed_style_gate_is_visible_in_the_article() -> None:
     """A draft that failed the prose check must not look like one that passed.
 
@@ -1618,6 +1685,7 @@ def main() -> int:
         test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
         test_prose_style_check, test_rules_do_not_reject_real_journal_prose,
+        test_display_items_are_selected_once_for_both_formats,
         test_failed_style_gate_is_visible_in_the_article,
         test_evidence_assessment_is_wholly_deterministic,
         test_house_style_is_fixed_not_a_preference,

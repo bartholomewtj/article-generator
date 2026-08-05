@@ -274,14 +274,86 @@ def _source_link_html(paper: Paper) -> str:
 # display items
 # --------------------------------------------------------------------------
 
-def _box_html(article: dict, papers: list[Paper], cite_map: dict[int, int]) -> str:
-    """Box 1 — the featured study, as a self-contained boxed display item."""
+# --- display-item content -------------------------------------------------
+#
+# The three display items are the part a model cannot fabricate, so each is
+# built from the fetched records. Both renderers need the same *selection* —
+# which paper, which fields, which relevance label, which year buckets — and
+# differ only in markup. These functions own the selection; the `_html` and
+# `_markdown` pairs below own the formatting and nothing else (issue #46).
+
+
+def _box_parts(article: dict, papers: list[Paper], cite_map: dict[int, int]) -> dict | None:
+    """The featured study's content for Box 1, or None if the index is unusable."""
     fs = article.get("featured_study") or {}
     idx = fs.get("source_index")
     if not (isinstance(idx, int) and 1 <= idx <= len(papers)):
-        return ""
+        return None
     paper = papers[idx - 1]
-    display = cite_map.get(idx)
+    return {
+        "paper": paper,
+        "reference": cite_map.get(idx),
+        "why": fs.get("why") or "",
+        "method": fs.get("method") or "",
+        "results": fs.get("results") or "",
+    }
+
+
+def _table_rows(cited: list[Paper], labels: dict[int, str]) -> list[dict]:
+    """One row per cited source: the values Table 1 prints, before markup."""
+    rows = []
+    for n, paper in enumerate(cited, start=1):
+        label = labels.get(n)
+        rows.append({
+            "n": n,
+            "paper": paper,
+            "study": _short_author(paper),
+            "year": paper.year or "n.d.",
+            "venue": paper.venue or "—",
+            "label": label if label in RELEVANCE_LABELS else "",
+            "relevance": RELEVANCE_LABELS.get(label, "—") if label else "—",
+            "cited_by": f"{paper.citation_count:,}" if paper.citation_count else "—",
+        })
+    return rows
+
+
+def _figure_series(cited: list[Paper], labels: dict[int, str]) -> dict | None:
+    """Fig. 1's data: year buckets and the relevance tally within each.
+
+    Returns None when there is too little to plot. Segmenting is all-or-nothing:
+    with any source unlabelled the stack would silently drop it, so the figure
+    falls back to a single undifferentiated series.
+    """
+    dated = [(n, p) for n, p in enumerate(cited, start=1) if p.year]
+    if len(dated) < 2:
+        return None
+    buckets = _year_buckets([p.year for _, p in dated])
+    if not buckets:
+        return None
+
+    segmented = all(labels.get(n) in RELEVANCE_LABELS for n, _ in dated)
+    series = (
+        [lvl for lvl in ("direct", "related", "tangential")
+         if any(labels.get(n) == lvl for n, _ in dated)]
+        if segmented else ["cited"]
+    )
+    counts = []
+    for _, members in buckets:
+        tally = {lvl: 0 for lvl in series}
+        for n, paper in dated:
+            if paper.year in members:
+                tally[labels[n] if segmented else "cited"] += 1
+        counts.append(tally)
+    return {"buckets": buckets, "series": series, "counts": counts, "segmented": segmented}
+
+
+def _box_html(article: dict, papers: list[Paper], cite_map: dict[int, int]) -> str:
+    """Box 1 — the featured study, as a self-contained boxed display item."""
+    parts = _box_parts(article, papers, cite_map)
+    if not parts:
+        return ""
+    paper, fs = parts["paper"], parts
+    display = parts["reference"]
     ref = f'<sup class="cite"><a href="#ref-{display}">{display}</a></sup>' if display else ""
     rows = []
     if fs.get("why"):
@@ -307,20 +379,18 @@ def _table_html(cited: list[Paper], labels: dict[int, str]) -> str:
     if not cited:
         return ""
     rows = []
-    for n, paper in enumerate(cited, start=1):
-        label = labels.get(n)
+    for row in _table_rows(cited, labels):
         relevance = (
-            f'<span class="swatch swatch-{label}"></span>{RELEVANCE_LABELS[label]}'
-            if label else "—"
+            f'<span class="swatch swatch-{row["label"]}"></span>{row["relevance"]}'
+            if row["label"] else "—"
         )
-        cites = f"{paper.citation_count:,}" if paper.citation_count else "—"
         rows.append(
-            f'<tr><td class="t-num"><a href="#ref-{n}">{n}</a></td>'
-            f"<td>{html.escape(_short_author(paper))}</td>"
-            f'<td class="t-num">{paper.year or "n.d."}</td>'
-            f'<td class="t-venue">{html.escape(paper.venue or "—")}</td>'
+            f'<tr><td class="t-num"><a href="#ref-{row["n"]}">{row["n"]}</a></td>'
+            f"<td>{html.escape(row['study'])}</td>"
+            f'<td class="t-num">{row["year"]}</td>'
+            f'<td class="t-venue">{html.escape(row["venue"])}</td>'
             f"<td>{relevance}</td>"
-            f'<td class="t-num">{cites}</td></tr>'
+            f'<td class="t-num">{row["cited_by"]}</td></tr>'
         )
     return (
         '<div class="display table-wrap" aria-labelledby="table-1">\n'
@@ -367,29 +437,11 @@ def _figure_html(cited: list[Paper], labels: dict[int, str]) -> str:
     An ordinal one-hue ramp (direct darkest -> background lightest) driven by CSS
     variables, so the figure re-steps itself for the dark theme.
     """
-    dated = [(n, p) for n, p in enumerate(cited, start=1) if p.year]
-    if len(dated) < 2:
+    data = _figure_series(cited, labels)
+    if not data:
         return ""
-    buckets = _year_buckets([p.year for _, p in dated])
-    if not buckets:
-        return ""
-
-    # Only segment by relevance when every cited source carries a label; otherwise the
-    # stack would silently drop the unlabelled ones.
-    segmented = all(labels.get(n) in RELEVANCE_LABELS for n, _ in dated)
-    series = (
-        [lvl for lvl in ("direct", "related", "tangential")
-         if any(labels.get(n) == lvl for n, _ in dated)]
-        if segmented else ["cited"]
-    )
-
-    counts: list[dict[str, int]] = []
-    for _, members in buckets:
-        tally = {lvl: 0 for lvl in series}
-        for n, paper in dated:
-            if paper.year in members:
-                tally[labels[n] if segmented else "cited"] += 1
-        counts.append(tally)
+    buckets, series, counts = data["buckets"], data["series"], data["counts"]
+    segmented = data["segmented"]
 
     totals = [sum(t.values()) for t in counts]
     y_max = max(totals)
@@ -1314,22 +1366,21 @@ def render_markdown(
 
 
 def _box_markdown(article: dict, papers: list[Paper], cite_map: dict[int, int]) -> str:
-    fs = article.get("featured_study") or {}
-    idx = fs.get("source_index")
-    if not (isinstance(idx, int) and 1 <= idx <= len(papers)):
+    parts = _box_parts(article, papers, cite_map)
+    if not parts:
         return ""
-    paper = papers[idx - 1]
-    ref = f" [{cite_map[idx]}]" if idx in cite_map else ""
+    paper = parts["paper"]
+    ref = f" [{parts['reference']}]" if parts["reference"] else ""
     out = [f"> **Box 1 | Key study: {paper.title}**", ">",
            f"> {_short_author(paper)} ({paper.year or 'n.d.'})"
            + (f", {paper.venue}" if paper.venue else "") + ref
            + (f" <{paper.link}>" if paper.link else "")]
-    if fs.get("why"):
-        out.append(f"> *{fs['why']}*")
-    if fs.get("method"):
-        out.append(f"> **Method.** {fs['method']}")
-    if fs.get("results"):
-        out.append(f"> **Results.** {fs['results']}")
+    if parts["why"]:
+        out.append(f"> *{parts['why']}*")
+    if parts["method"]:
+        out.append(f"> **Method.** {parts['method']}")
+    if parts["results"]:
+        out.append(f"> **Results.** {parts['results']}")
     return "\n".join(out)
 
 
@@ -1342,36 +1393,29 @@ def _table_markdown(cited: list[Paper], labels: dict[int, str]) -> str:
         "| Ref. | Study | Year | Source | Relevance | Cited by |",
         "| --- | --- | --- | --- | --- | --- |",
     ]
-    for n, paper in enumerate(cited, start=1):
-        relevance = RELEVANCE_LABELS.get(labels.get(n, ""), "—")
-        cites = f"{paper.citation_count:,}" if paper.citation_count else "—"
+    for row in _table_rows(cited, labels):
         rows.append(
-            f"| {n} | {_short_author(paper)} | {paper.year or 'n.d.'} | "
-            f"{paper.venue or '—'} | {relevance} | {cites} |"
+            f"| {row['n']} | {row['study']} | {row['year']} | "
+            f"{row['venue']} | {row['relevance']} | {row['cited_by']} |"
         )
     return "\n".join(rows)
 
 
 def _figure_markdown(cited: list[Paper], labels: dict[int, str]) -> str:
-    dated = [(n, p) for n, p in enumerate(cited, start=1) if p.year]
-    if len(dated) < 2:
-        return ""
-    buckets = _year_buckets([p.year for _, p in dated])
-    if not buckets:
+    data = _figure_series(cited, labels)
+    if not data:
         return ""
     lines = [
         "**Fig. 1 | Composition of the evidence base.** Cited sources by year of "
         "publication, segmented by how directly each addresses the review question.",
         "",
     ]
-    for label, members in buckets:
-        members_in = [n for n, p in dated if p.year in members]
-        tally = {}
-        for n in members_in:
-            key = RELEVANCE_LABELS.get(labels.get(n, ""), "unlabelled")
-            tally[key] = tally.get(key, 0) + 1
-        detail = ", ".join(f"{v} {k.lower()}" for k, v in tally.items())
-        lines.append(f"- {label}: {len(members_in)} ({detail})")
+    for (label, _), tally in zip(data["buckets"], data["counts"]):
+        total = sum(tally.values())
+        detail = ", ".join(
+            f"{v} {RELEVANCE_LABELS.get(k, k).lower()}" for k, v in tally.items() if v
+        )
+        lines.append(f"- {label}: {total} ({detail})")
     return "\n".join(lines)
 
 
