@@ -1,6 +1,6 @@
 # Next session
 
-_Last handoff: 4 August 2026 — branch `claude/article-generator-html-yth1u4` (default)_
+_Last handoff: 5 August 2026 — branch `main`_
 
 ## Where this stopped
 
@@ -8,16 +8,10 @@ _Last handoff: 4 August 2026 — branch `claude/article-generator-html-yth1u4` (
 like a journal Review article and grounded in real paper abstracts. It runs as a
 CLI and as a hosted web app (GitHub Pages front end → Render backend).
 
-This session (4 Aug, later): **the deployment is confirmed working.** Three
-`/api/diag` probes a minute apart all found papers — Europe PMC answered every
-time, Semantic Scholar twice, OpenAlex 429'd throughout. #41 closed with the
-measurements. Also verified from the browser: the Pages front end loads,
-`API_BASE` is right, `/api/health` returns 200 cross-origin. Both test suites
-pass. Stale PR #48 (a static-asset refactor based on pre-journal-format code
-from a forgotten second clone at `C:\geminiprojects\article generator\`) was
-closed as superseded; that clone should not be used again.
-
-The tree is clean. Nothing is half-finished.
+Everything open at the start of the day is closed. Two real articles were
+generated through OpenRouter and read; the defects they exposed were fixed and
+merged. The default branch was renamed to `main`. **The tree is clean, nothing is
+half-finished, and there are no open PRs.**
 
 ## Resume with
 
@@ -25,84 +19,69 @@ The tree is clean. Nothing is half-finished.
 cd /c/claudeOS/Projects/articlegenerator && python tests/test_offline.py && python tests/test_journal_conformance.py
 ```
 
-Both should print `ALL PASS` / `ALL CONVENTIONS MET`. No keys or network needed.
+Prints `ALL PASS` / `ALL CONVENTIONS MET`. No keys, no network.
 
-To check the deployed backend (costs quota, don't poll it):
+To check the live backend — it now reports which commit and branch it built:
 
 ```bash
-curl https://articlegen-api.onrender.com/api/diag
+curl https://articlegen-api.onrender.com/api/health
 ```
 
 ## Next thing to do
 
-0. **Set `GROQ_API_KEY` and generate one article — this is the only step left.**
-   Both PR #49 and the rule-review work on `feat/per-study-depth` are complete and
-   green, but neither has been watched producing an article, because no key is set
-   on this machine (no `.env`, not in the environment). Get a free key at
-   console.groq.com, then: `export GROQ_API_KEY=...` and
-   `python -m articlegen draft "artificial light and night shift workers"`.
-   The research half is confirmed working keyless (12 papers gathered on 4 Aug).
-
-1. **Context for what to look for.** An article was
-   finally generated and read (4 Aug, via the deployed web app) and it was badly
-   repetitive: the abstract, key points and Introduction were the same paragraph
-   three times (38% and 24% shared 6-word runs), and studies were only ever cited
-   in bundles, so no individual study was ever described. #49 fixes the cause —
-   the schema had asked all three surfaces to be self-contained summaries — and
-   adds `echoed-abstract` and `bundled-citations` to enforce it deterministically.
-   **The new rules are proven against the bad output; the prompt changes are not
-   verified end to end.** That needs `GROQ_API_KEY` (not set on this machine — no
-   `.env`, not in the environment) and one real generation.
-2. **Watch the quota when you do.** More substance rules firing means the
-   revision pass runs more often, and each revision spends tokens against the
-   ~4–7 articles/day free tier. If it becomes the binding constraint, that is
-   issue #34.
-3. **Then decide about issue #38** (evidence pool skews old, median paper year
-   2013). Whether it's worth fixing depends on how the next article reads.
+1. **Run the model test in #63.** One flag, ~10c of OpenRouter credit, and it
+   decides whether the remaining quality problem is the model or the pipeline:
+   `python -m articlegen draft "<topic>" --model anthropic/claude-sonnet-5`, then
+   measure the abstract-to-Introduction overlap. Everything else in #63 waits on
+   this answer, so do it before touching the revision loop.
+2. **Then #64** — 20 sources were screened and only 3 cited, all of them labelled
+   `direct`. Start by logging the relevance tally at draft time; it tells you
+   whether curation is too strict or the writer too timid, which need different
+   fixes.
+3. **#62** if you want something small and self-contained — corporate authors
+   (`GBD 2019 Collaborators`) render as `Collaborators, G.` in the reference list.
 
 ## Open
 
-- **#49** — repetition/per-study-depth fix, plus the style-rule review (real-prose
-  false positives, hedge split, nominalisation deleted, scaled section floor).
-  Open, both suites green, awaiting merge.
-- **#47** — rename the default branch to `main`. Do it at the *start* of a
-  session: Render tracks the branch by name and deploys stop silently otherwise.
-  Needs the Render dashboard (owner login), so the rename and the dashboard
-  change must happen in the same sitting, by the owner.
-- **#38** — evidence pool skews old; ranking reorders it but can't refresh it.
-- **#45** — decide whether Opus 5 calls should use server-side refusal fallbacks.
-- **#46** — Box, Table and Fig. 1 are still built twice (HTML and Markdown).
-- **#34** — substance rules double token cost; revisit only if quota bites.
-- **#33** — seven orphaned `theme:` issues; the workflow reading them is gone.
+- No PRs.
+- **#63** — the abstract is still reproduced verbatim as the Introduction (100%
+  on the last article). Retrieval, the prompt and the tone setting are all ruled
+  out by measurement; the model and the revision pass are what's left.
+- **#64** — only `direct`-labelled sources get cited, so the evidence base
+  collapses (20 → 3) and the article comes out as a 471-word stub.
+- **#62** — corporate/consortium author names are mangled in references.
 
 ## Watch out for
 
+- **Generate with OpenRouter, not Groq.** Same Llama 3.3 70B, but prepaid credit
+  instead of a 100,000-token daily cap, so a run never fails because the day is
+  spent. Well under a cent per article. Set `OPENROUTER_API_KEY`, or paste the key
+  into Settings in the web app. Any catalogue slug works with `--model`.
+- **`/api/health` reports the deployed commit and branch.** Use it before assuming
+  a merge reached production — that one line is what made the branch rename safe,
+  and it is the fastest way to answer "is the backend running my code".
+- **A branch rename touches three places, not one:** the trigger list in
+  `pages.yml`, the `github-pages` *environment* branch allowlist (which is
+  separate, and silently rejected `main` until it was added), and the host. Render
+  turned out to follow a GitHub rename by itself, contrary to every earlier note.
+- **`render.yaml`'s `branch:` is a record, not a control.** Blueprint auto-sync is
+  off — measured. Editing it moves nothing.
 - **Don't write down which scholarly source is working.** It changes, and it has
-  now been recorded backwards twice — issue #32 said Semantic Scholar was the
-  broken one while OpenAlex was in fact refusing every call. `/api/diag` is the
-  only trustworthy answer, and it bypasses the cache specifically to give one.
-- **Searches are cached for 24h** (refusals for 2 minutes). Re-running a topic is
-  free and repeatable, which is what makes a demo work. But if you are testing
-  changes to fetching, call `sources.clear_search_cache()` or set
-  `ARTICLEGEN_SEARCH_CACHE_TTL=0` — otherwise you are reading yesterday's results
-  and will think your change did nothing.
-- **Never hardcode the database list, including as a fallback.** That is exactly
-  how it came back after being fixed once: `provenance.get("databases") or
-  _DATABASES` kept a false Methods claim alive for every draft without
-  provenance. There is no fallback now — an unrecorded search says so and names
-  nothing.
-- **Groq's free tier allows roughly 4–7 articles a day**, and failed attempts
-  still spend quota. This is the failure a new user is most likely to hit. The
-  Settings copy and the error handler now say so in plain language rather than
-  showing the raw `rate_limit_exceeded ... TPD` string.
+  been recorded backwards twice. `/api/diag` is the only trustworthy answer, and
+  it bypasses the cache to give one.
+- **Searches are cached 24h** (refusals 2 min). Testing changes to fetching means
+  `sources.clear_search_cache()` or `ARTICLEGEN_SEARCH_CACHE_TTL=0`, or you are
+  reading yesterday's results and will think your change did nothing.
+- **Calibrate style rules against body prose, not abstracts.** The hedging floor
+  looked badly wrong against abstracts (median 0.031 vs a 0.20 floor) and is
+  almost exactly right against review body prose (median 0.216). Both corpora are
+  in `tests/`; use `body_prose_measurements.json` for anything density-related.
+- **Never hardcode the database list, including as a fallback** — that is exactly
+  how a false Methods claim came back after being fixed once.
 - **`protocol_version = "HTTP/1.1"` in `web.py` is load-bearing.** Without it
-  roughly half of browser fetches fail in ~140ms, and **curl cannot reproduce
-  it** — each invocation opens a fresh connection, so only a connection-pooling
-  client sees the bug. Don't "simplify" it away.
-- **Hugging Face Spaces and Fly.io are settled dead ends** — both require a
-  payment method for their free tier. Evidence is in `CLAUDE.md` → Deployment.
-  Moving Render region is also settled: a different region is a different shared
-  egress IP with the same problem (PR #42, closed).
+  about half of browser fetches fail in ~140ms, and curl cannot reproduce it.
+- **Hugging Face Spaces and Fly.io are settled dead ends** (both need a payment
+  method); so is moving Render region (same shared egress IP problem).
 - **"Copy Link" and "Publish public link" are deliberately different.** The first
-  encodes the article in the URL and uploads nothing; the second posts it to a
-  public pastebin behind a confirmation. Don't re-merge them.
+  encodes the article in the URL; the second uploads to a public pastebin behind a
+  confirmation. Don't re-merge them.
