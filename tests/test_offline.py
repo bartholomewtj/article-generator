@@ -1054,6 +1054,38 @@ def test_rules_do_not_reject_real_journal_prose() -> None:
         check(f"not first person: {text[:38]!r}", "first-person" not in fired)
 
 
+def test_health_reports_which_build_is_running() -> None:
+    """The deployment must be able to say what it is running, and from where.
+
+    `/api/diag` exists because a deployment's behaviour is undiagnosable from
+    outside; the same was true of its *identity*. "Is the running backend the
+    code I merged?" and "which branch does this host deploy from?" both needed a
+    dashboard login, which is what made renaming the default branch risky — the
+    deploy could stop silently and nothing observable would say so (#47).
+    """
+    from articlegen import web
+
+    for var in ("RENDER_GIT_COMMIT", "RENDER_GIT_BRANCH"):
+        os.environ.pop(var, None)
+    check("no build keys off Render", web._build_info() == {})
+
+    os.environ["RENDER_GIT_COMMIT"] = "0123456789abcdef0123456789abcdef01234567"
+    os.environ["RENDER_GIT_BRANCH"] = "main"
+    info = web._build_info()
+    check("the commit is reported short", info.get("commit") == "0123456")
+    check("the deploying branch is reported", info.get("branch") == "main")
+
+    os.environ["RENDER_GIT_BRANCH"] = ""
+    check("an empty value is omitted, not reported blank",
+          "branch" not in web._build_info())
+    for var in ("RENDER_GIT_COMMIT", "RENDER_GIT_BRANCH"):
+        os.environ.pop(var, None)
+
+    import inspect
+    src = inspect.getsource(web.ArticleGenHandler.do_GET)
+    check("health carries it", "_build_info()" in src)
+
+
 def test_openalex_reaches_for_recent_work_as_well() -> None:
     """The evidence pool skewed old, and ranking alone could not fix it.
 
@@ -1765,6 +1797,7 @@ def main() -> int:
         test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
         test_prose_style_check, test_rules_do_not_reject_real_journal_prose,
+        test_health_reports_which_build_is_running,
         test_openalex_reaches_for_recent_work_as_well,
         test_display_items_are_selected_once_for_both_formats,
         test_failed_style_gate_is_visible_in_the_article,
