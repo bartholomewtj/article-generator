@@ -15,13 +15,19 @@ services:
     name: articlegen-api
     runtime: docker
     plan: free
-    # Declared explicitly so the deploying branch is version-controlled rather
-    # than living only in the dashboard. It used to be stored there and nowhere
-    # else, which is what made renaming the default branch risky: nothing in the
-    # repo said which branch Render watched, and a rename would have stopped
-    # deploys silently. /api/health now reports the branch it actually built
-    # from, so this can be verified rather than assumed (#47).
-    branch: main
+    # The branch Render actually builds from. Recorded here so the coupling is
+    # visible in the repo instead of living only in the dashboard, which is what
+    # made renaming the default branch risky (#47).
+    #
+    # It is NOT authoritative: Blueprint auto-sync is off for this service, so
+    # editing this line changes nothing on its own. Measured — setting it to
+    # `main` and pushing produced a deploy of the new commit that stayed on the
+    # branch below. Treat it as documentation that must be updated *together
+    # with* the dashboard setting, in the same sitting as any rename.
+    #
+    # Verify with `curl .../api/health`, which reports the branch and commit the
+    # running service was actually built from.
+    branch: claude/article-generator-html-yth1u4
     # Closest free region to the Gold Coast. Oregon/Frankfurt are the
     # alternatives if Singapore is ever unavailable.
     region: singapore
