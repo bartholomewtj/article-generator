@@ -79,6 +79,30 @@ def test_per_request_api_key() -> None:
           "os.environ.get(\"GROQ_API_KEY\")" in inspect.getsource(llm._groq_generate))
 
 
+def test_refusal_fallbacks() -> None:
+    """Opus 5's safety classifiers can decline a clinical topic outright.
+
+    The server-side fallback re-runs a declined request on Anthropic's
+    recommended substitute model inside the same call, so a false positive
+    doesn't cost the whole run (issue #45). Models without those classifiers
+    reject the parameter, so it must only be attached where they fire.
+    """
+    import inspect
+    from articlegen import llm
+
+    kwargs = llm._refusal_fallback_kwargs("claude-opus-5")
+    check("opus 5 opts into the server-side fallback", kwargs.get("fallbacks") == "default")
+    check("and sends the matching beta header", kwargs.get("betas") == [llm._REFUSAL_FALLBACK_BETA])
+    check("fable gets the fallback too", "fallbacks" in llm._refusal_fallback_kwargs("claude-fable-5"))
+    check("opus 4.8 does not take the parameter", llm._refusal_fallback_kwargs("claude-opus-4-8") == {})
+    check("haiku does not either", llm._refusal_fallback_kwargs("claude-haiku-4-5") == {})
+
+    src = inspect.getsource(llm._anthropic_generate)
+    check("anthropic calls go through the beta endpoint",
+          "client.beta.messages" in src and "client.messages." not in src)
+    check("both call paths attach the fallback kwargs", "_refusal_fallback_kwargs(" in src)
+
+
 def test_pipeline_is_shared() -> None:
     """Both entry points must run the same pipeline.
 
@@ -1088,6 +1112,7 @@ def test_web_server() -> None:
 def main() -> int:
     for fn in (
         test_provider_resolution, test_per_request_api_key,
+        test_refusal_fallbacks,
         test_pipeline_is_shared, test_draft_summary, test_rate_limit,
         test_keepalive_connection_reuse, test_substance_checks,
         test_groq_token_budget, test_source_failures_are_distinguishable,
