@@ -319,6 +319,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         render_args = (
             draft.article, draft.papers, draft.topic,
             draft.curation, draft.verification, draft.provenance,
+            draft.style_report,
         )
         article_html = render_article(*render_args)
         article_md = render_markdown(*render_args)

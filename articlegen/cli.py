@@ -95,6 +95,7 @@ def cmd_draft(args) -> int:
     render_args = (
         draft.article, draft.papers, draft.topic,
         draft.curation, draft.verification, draft.provenance,
+        draft.style_report,
     )
     with open(html_path, "w", encoding="utf-8") as f:
         f.write(render_article(*render_args))

@@ -1054,6 +1054,249 @@ def test_rules_do_not_reject_real_journal_prose() -> None:
         check(f"not first person: {text[:38]!r}", "first-person" not in fired)
 
 
+def test_openalex_reaches_for_recent_work_as_well() -> None:
+    """The evidence pool skewed old, and ranking alone could not fix it.
+
+    OpenAlex's relevance ordering returns old, heavily-cited work: measured over
+    three topics the median year of a 20-paper page was 2006-2016, with 13-18 of
+    20 published before 2015 (issue #38). Ranking only reorders what it is given,
+    and a bigger page makes it worse — one page of 50 returned *more* pre-2015
+    work, because it goes deeper into the same ordering.
+
+    So the source now issues a second, date-filtered query over the same terms
+    and merges. Live, that moved the median to 2018-2020 and tripled the count of
+    2020-or-later papers while leaving the pre-2015 count untouched — recent work
+    reaches the pool without a cutoff excluding foundational work.
+    """
+    from articlegen import sources
+    from articlegen.sources import Paper
+
+    calls = []
+
+    def fake_page(query, limit, from_year=None):
+        calls.append({"query": query, "limit": limit, "from_year": from_year})
+        if from_year:
+            return [Paper(title="Recent study", abstract="a", year=from_year + 3,
+                          doi="10.1/recent"),
+                    Paper(title="Shared study", abstract="a", year=from_year + 1,
+                          doi="10.1/shared")]
+        return [Paper(title="Old classic", abstract="a", year=1998, doi="10.1/old"),
+                Paper(title="Shared study", abstract="a", year=from_year or 2020,
+                      doi="10.1/shared")]
+
+    real = sources._openalex_page
+    try:
+        sources._openalex_page = fake_page
+        papers = sources.search_openalex("sleep", limit=10)
+    finally:
+        sources._openalex_page = real
+
+    check("both a plain and a dated query are issued", len(calls) == 2)
+    check("the plain query carries no date filter", calls[0]["from_year"] is None)
+    check("the companion query does", isinstance(calls[1]["from_year"], int))
+    import datetime as _dt
+    check("and reaches back a sensible window",
+          0 < _dt.date.today().year - calls[1]["from_year"] <= 15)
+    check("both use the same search terms", calls[0]["query"] == calls[1]["query"])
+
+    titles = [p.title for p in papers]
+    check("the old classic is kept", "Old classic" in titles)
+    check("recent work is added", "Recent study" in titles)
+    check("the overlap is deduplicated", titles.count("Shared study") == 1)
+
+    # If the companion query refuses, the relevance results must still stand.
+    def half_failing(query, limit, from_year=None):
+        if from_year:
+            raise sources.SearchFailure("HTTP 429")
+        return [Paper(title="Only result", abstract="a", year=2001)]
+
+    try:
+        sources._openalex_page = half_failing
+        survived = sources.search_openalex("sleep", limit=10)
+    finally:
+        sources._openalex_page = real
+    check("a refused recency query does not lose the plain results",
+          [p.title for p in survived] == ["Only result"])
+
+
+def test_display_items_are_selected_once_for_both_formats() -> None:
+    """HTML and Markdown must not each decide what a display item contains.
+
+    Box 1, Fig. 1 and Table 1 are the parts a model cannot fabricate, so both
+    renderers have to show the same facts. They used to compute those facts
+    independently — the same index validation, field picking, relevance
+    labelling and year bucketing written twice — which is a correctness risk,
+    not just duplication: the two could disagree and nothing would notice
+    (issue #46). Selection now lives in one place; the renderers only format.
+    """
+    import inspect
+
+    from articlegen import demo, render
+
+    cited, cite_map = render._citation_map(demo.SAMPLE_ARTICLE, demo.SAMPLE_PAPERS)
+    labels = render._display_relevance(cite_map, demo.SAMPLE_CURATION)
+
+    # Both renderers must go through the shared selectors.
+    for fn, selector in (
+        (render._box_html, "_box_parts"), (render._box_markdown, "_box_parts"),
+        (render._table_html, "_table_rows"), (render._table_markdown, "_table_rows"),
+        (render._figure_html, "_figure_series"), (render._figure_markdown, "_figure_series"),
+    ):
+        check(f"{fn.__name__} uses {selector}", selector in inspect.getsource(fn))
+
+    # And the facts they carry must actually agree.
+    rows = render._table_rows(cited, labels)
+    check("a row per cited source", len(rows) == len(cited))
+    table_html = render._table_html(cited, labels)
+    table_md = render._table_markdown(cited, labels)
+    for row in rows:
+        for value in (str(row["year"]), row["study"], row["cited_by"]):
+            if value == "—":
+                continue
+            check(f"both tables carry {value[:26]!r}",
+                  value in table_md and (value in table_html or html_escaped(value, table_html)))
+
+    series = render._figure_series(cited, labels)
+    check("the figure has data to plot", series is not None)
+    fig_md = render._figure_markdown(cited, labels)
+    for (label, _), tally in zip(series["buckets"], series["counts"]):
+        check(f"markdown figure reports bucket {label}",
+              f"- {label}: {sum(tally.values())}" in fig_md)
+
+    box = render._box_parts(demo.SAMPLE_ARTICLE, demo.SAMPLE_PAPERS, cite_map)
+    check("the featured study resolves", box is not None)
+    box_html, box_md = (
+        render._box_html(demo.SAMPLE_ARTICLE, demo.SAMPLE_PAPERS, cite_map),
+        render._box_markdown(demo.SAMPLE_ARTICLE, demo.SAMPLE_PAPERS, cite_map),
+    )
+    check("both boxes name the same study",
+          box["paper"].title in box_md and html_escaped(box["paper"].title, box_html))
+    check("both boxes carry the method", box["method"][:40] in box_md)
+
+    # A bad index must fail the same way in both, not render half a box.
+    broken = dict(demo.SAMPLE_ARTICLE, featured_study={"source_index": 999})
+    check("an out-of-range featured study yields nothing",
+          render._box_parts(broken, demo.SAMPLE_PAPERS, cite_map) is None
+          and render._box_html(broken, demo.SAMPLE_PAPERS, cite_map) == ""
+          and render._box_markdown(broken, demo.SAMPLE_PAPERS, cite_map) == "")
+
+
+def html_escaped(value: str, haystack: str) -> bool:
+    import html as _h
+    return value in haystack or _h.escape(value) in haystack
+
+
+def test_failed_style_gate_is_visible_in_the_article() -> None:
+    """A draft that failed the prose check must not look like one that passed.
+
+    The gate ran, the revision was attempted, and if it did not clear the errors
+    the article shipped with no sign of it — a reader had no way to tell a clean
+    draft from one carrying five unfixed errors (issue #53). The house style puts
+    warnings in the Limitations paragraph rather than in callout boxes, so that
+    is where this goes, next to the unverified-figure warning.
+    """
+    from articlegen import render
+    from articlegen.sources import Paper
+
+    papers = [Paper(title="P1", abstract="a", year=2024, doi="10.1/a")]
+    counts = {"direct": 1, "related": 0, "tangential": 0}
+    clean = {"issues": [], "stats": {}}
+    failed = {"issues": [
+        {"rule": "echoed-abstract", "severity": "error", "where": "Introduction",
+         "detail": "d", "excerpt": ""},
+        {"rule": "echoed-abstract", "severity": "error", "where": "key points",
+         "detail": "d", "excerpt": ""},
+        {"rule": "bundled-citations", "severity": "error", "where": "whole article",
+         "detail": "d", "excerpt": ""},
+        {"rule": "under-length", "severity": "warning", "where": "whole article",
+         "detail": "d", "excerpt": ""},
+    ], "stats": {}}
+
+    ok = render._assessment_html(papers, counts, {"unverified": []}, clean)
+    check("a clean draft says nothing about the check",
+          "automated check of the writing" not in ok)
+
+    bad = render._assessment_html(papers, counts, {"unverified": []}, failed)
+    check("a failed draft says so", "automated check of the writing" in bad)
+    check("in the reader's terms, not the rule's",
+          "repeats the abstract rather than adding to it" in bad
+          and "echoed-abstract" not in bad)
+    check("the same rule twice is one fault to a reader",
+          bad.count("repeats the abstract") == 1)
+    check("faults are joined readably", " and " in bad)
+    check("warnings do not trigger it",
+          "under-length" not in bad and "under length" not in bad)
+    check("it says the revision was tried", "revision was attempted" in bad)
+    check("and lands in Limitations, not a callout box",
+          "Limitations." in bad and "⚠" not in bad)
+
+    md = "\n".join(render._assessment_markdown(papers, counts, {"unverified": []}, failed))
+    check("markdown carries the same warning", "automated check of the writing" in md)
+
+    # An absent report is not the same as a clean one, but it must not crash or
+    # invent a warning — legacy drafts have no style report at all.
+    legacy = render._assessment_html(papers, counts, {"unverified": []}, None)
+    check("a missing report warns about nothing",
+          "automated check of the writing" not in legacy)
+
+    # The pipeline must actually hand it over, or none of this is reachable.
+    import inspect
+    from articlegen import cli, web
+    for name, src in (("cli", inspect.getsource(cli.cmd_draft)),
+                      ("web", inspect.getsource(web.ArticleGenHandler._handle_draft))):
+        check(f"{name} passes the style report to the renderer",
+              "draft.style_report" in src)
+
+
+def test_evidence_assessment_is_wholly_deterministic() -> None:
+    """Nothing countable in the Evidence assessment may be model-written.
+
+    The section exists to state honestly how good the evidence is, and the
+    model's `evidence_note` repeatedly contradicted the counts printed two lines
+    above it: one article claimed "13 out of 20 sources" beside a computed 9;
+    another claimed "5 sources", "the majority is related" and "some are
+    tangential" against a computed 3 cited, all direct, none related, none
+    background. The field is gone from the schema (issue #54).
+
+    Legacy drafts that still carry one must render without it rather than
+    reprinting a tally that may be wrong.
+    """
+    from articlegen import render, writer
+    from articlegen.sources import Paper
+
+    check("evidence_note is out of the schema",
+          "evidence_note" not in writer._ARTICLE_SCHEMA["properties"])
+    check("and is not required", "evidence_note" not in writer._ARTICLE_SCHEMA["required"])
+    check("the writer is told not to state counts",
+          "Do NOT state counts or tallies" in writer._WRITER_SYSTEM)
+
+    papers = [Paper(title="P1", abstract="a", year=2024, doi="10.1/a")]
+    counts = {"direct": 1, "related": 0, "tangential": 0}
+    legacy = render._assessment_html(papers, counts, {"unverified": []})
+    check("a legacy note is not rendered", "13 out of 20" not in legacy)
+    check("the deterministic opening survives", "Of the 1 source cited" in legacy)
+
+    # Number agreement: the section that exists to be precise printed
+    # "1 address the review question directly".
+    check("singular subject takes a singular verb", "1 addresses the review question" in legacy)
+    check("singular 'source', not 'sources'", "1 sources cited" not in legacy)
+    check("singular related reads 'is related'",
+          "0 are related" in legacy)
+
+    one_each = render._assessment_html(
+        papers, {"direct": 0, "related": 1, "tangential": 1}, {"unverified": []})
+    check("one related reads 'is related'", "1 is related" in one_each)
+    check("one background reads 'provides'", "1 provides background only" in one_each)
+
+    plural = render._assessment_html(
+        papers * 3, {"direct": 2, "related": 3, "tangential": 0}, {"unverified": []})
+    check("plurals still read correctly",
+          "Of the 3 sources cited, 2 address" in plural and "3 are related" in plural)
+
+    md = "\n".join(render._assessment_markdown(papers, counts, {"unverified": []}))
+    check("markdown agrees with the html", "Of the 1 source cited, 1 addresses" in md)
+
+
 def test_house_style_is_fixed_not_a_preference() -> None:
     """There is one register, and the front end must not offer alternatives to it.
 
@@ -1139,6 +1382,58 @@ def test_register_rules_are_scoped_to_the_synthesis_voice() -> None:
           all(not e["expect_register_errors"] for e in synthesis))
     check("every investigator-voice abstract does",
           all(e["expect_register_errors"] for e in investigator))
+
+
+def test_hedging_floor_is_calibrated_against_body_prose() -> None:
+    """The hedging floor is validated — against body prose, not abstracts.
+
+    #56 recorded that `MIN_HEDGES_PER_SENTENCE = 0.20` had never been checked
+    against the register it polices: abstracts run at a median of 0.031, but
+    they compress and assert, and 18 of the 20 in `style_corpus.json` are too
+    short for the density gate to apply at all.
+
+    `body_prose_measurements.json` closes that gap: the body paragraphs of 18
+    open-access reviews (Lancet, Lancet Psychiatry, BMJ, PLoS, Frontiers…),
+    abstract and references excluded. They hedge at a **median of 0.22** — the
+    0.20 floor is very nearly the median of published review prose. The guess
+    was right; it had simply been compared with the wrong text type.
+
+    Only the measurements are stored, not the articles: the statistics are the
+    evidence, and the repo has no business carrying other people's full texts.
+    """
+    import json
+    import statistics
+
+    from articlegen import style
+
+    path = os.path.join(os.path.dirname(__file__), "body_prose_measurements.json")
+    corpus = json.load(open(path, encoding="utf-8"))
+    check("body-prose corpus is a usable size", len(corpus) >= 15)
+    check("every entry is identifiable", all(e.get("pmcid") for e in corpus))
+    check("drawn from several journals", len({e["journal"] for e in corpus}) >= 10)
+    check("covers all three domains", len({e["domain"] for e in corpus}) == 3)
+
+    hedges = [e["hps"] for e in corpus]
+    median = statistics.median(hedges)
+    check(f"body prose hedges near the floor (median {median:.3f})",
+          abs(median - style.MIN_HEDGES_PER_SENTENCE) < 0.05)
+    check("which is why the floor stands", style.MIN_HEDGES_PER_SENTENCE == 0.20)
+
+    # Unlike abstracts, real body prose is long enough to be judged at all.
+    check("all of it clears the density gate",
+          all(e["sentences"] > style.MIN_SENTENCES_FOR_DENSITY
+              and e["body_words"] > style.MIN_WORDS_FOR_DENSITY for e in corpus))
+
+    # And it uses many distinct hedges, which is what hedge-monotony assumes.
+    distinct = [e["distinct"] for e in corpus]
+    check(f"body prose varies its hedges (median {statistics.median(distinct):.0f} distinct)",
+          statistics.median(distinct) >= 8)
+    check("so demanding variety is fair once there are enough hedges",
+          style.MIN_HEDGES_FOR_MONOTONY >= 8)
+
+    passive = [e["passive"] for e in corpus]
+    check("the passive threshold clears review prose too",
+          sum(1 for p in passive if p > style.MAX_PASSIVE_RATIO) == 0)
 
 
 def test_density_thresholds_are_documented_against_the_corpus() -> None:
@@ -1455,8 +1750,13 @@ def main() -> int:
         test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
         test_prose_style_check, test_rules_do_not_reject_real_journal_prose,
+        test_openalex_reaches_for_recent_work_as_well,
+        test_display_items_are_selected_once_for_both_formats,
+        test_failed_style_gate_is_visible_in_the_article,
+        test_evidence_assessment_is_wholly_deterministic,
         test_house_style_is_fixed_not_a_preference,
         test_register_rules_are_scoped_to_the_synthesis_voice,
+        test_hedging_floor_is_calibrated_against_body_prose,
         test_density_thresholds_are_documented_against_the_corpus,
         test_statistic_verification, test_ranking, test_recency_actually_counts, test_render_blocks,
         test_display_item_placement, test_legacy_draft_fields,

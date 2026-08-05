@@ -16,6 +16,7 @@ as long as one source returns results the pipeline keeps going.
 
 from __future__ import annotations
 
+import datetime
 import os
 import re
 import threading
@@ -222,11 +223,21 @@ def _rebuild_abstract(inverted_index: dict[str, list[int]] | None) -> str:
     return " ".join(positions[i] for i in sorted(positions))
 
 
-def search_openalex(query: str, limit: int = 15) -> list[Paper]:
+# How far back the recency-biased companion query reaches. Eight years is wide
+# enough to include the consolidation work that follows a finding, and narrow
+# enough that the query returns something other than what relevance already gave.
+RECENCY_WINDOW_YEARS = 8
+
+
+def _openalex_page(query: str, limit: int, from_year: int | None = None) -> list[Paper]:
+    """One OpenAlex request."""
+    filters = ["has_abstract:true"]
+    if from_year:
+        filters.append(f"from_publication_date:{from_year}-01-01")
     params = {
         "search": query,
         "per-page": limit,
-        "filter": "has_abstract:true",
+        "filter": ",".join(filters),
         "select": _OA_FIELDS,
     }
     mailto = os.environ.get("OPENALEX_MAILTO")
@@ -256,6 +267,41 @@ def search_openalex(query: str, limit: int = 15) -> list[Paper]:
                 source="OpenAlex",
             )
         )
+    return papers
+
+
+def search_openalex(query: str, limit: int = 15) -> list[Paper]:
+    """Relevance search, plus a recency-biased companion query over the same terms.
+
+    OpenAlex's relevance ordering returns old, heavily-cited work. Measured over
+    three topics, the median year of a 20-paper page was 2006-2016, with 13-18 of
+    20 published before 2015 (issue #38). Ranking can only reorder what it is
+    given, and asking for a bigger page makes it worse rather than better: one
+    page of 50 returned *more* pre-2015 work, because it simply goes deeper into
+    the same ordering.
+
+    A second, date-filtered request fixes it without a hard cutoff that would
+    exclude foundational work — on the same three topics the merged pool's median
+    moved to 2018-2020 and the count of 2020-or-later papers rose three- to
+    tenfold, while the number of pre-2015 papers was unchanged.
+
+    The recency query is best-effort. If it refuses, the relevance results still
+    stand: a thinner pool beats no pool, and the caller's `exhausted` bookkeeping
+    treats OpenAlex as one source either way.
+    """
+    papers = _openalex_page(query, limit)
+    cutoff = datetime.date.today().year - RECENCY_WINDOW_YEARS
+    try:
+        recent = _openalex_page(query, limit, from_year=cutoff)
+    except SearchFailure:
+        return papers
+
+    seen = {(p.doi or _normalize_title(p.title)) for p in papers}
+    for paper in recent:
+        key = paper.doi or _normalize_title(paper.title)
+        if key not in seen:
+            seen.add(key)
+            papers.append(paper)
     return papers
 
 

@@ -121,13 +121,20 @@ citations and sections intact.
     ones do. So a primary-research abstract is *not* a negative control for the
     first-person rule, which is what the older corpus was papering over with
     per-entry exceptions.
-  - **The hedging floor (0.20/sentence) is a house preference, not a
-    measurement.** Published abstracts run at a median of 0.031, and 17 of 20 sit
-    below the floor; the corpus figure the guide cites is for *whole articles*,
-    where the Discussion carries the hedging. Abstracts cannot calibrate it (18
-    of 20 are too short for the density gate anyway), so it has never been
-    checked against the register it polices — issue #56. `hedge-monotony`
-    inherits the same problem. Don't cite the floor as "what journals do".
+  - **The hedging floor (0.20/sentence) is correct — but only body prose shows
+    it.** Published *abstracts* run at a median of 0.031, which looked damning
+    until the right comparison was made. `tests/body_prose_measurements.json`
+    holds the statistics for the body paragraphs of 18 open-access reviews
+    (Lancet, BMJ, PLoS, Frontiers): **median 0.216 hedges/sentence, median 12
+    distinct hedges**, and all 18 are long enough for the density gate where only
+    2 of 20 abstracts are. The floor sits on the median of the register we write
+    in. Don't re-open this with abstract data; that is the wrong text type, and
+    it is the mistake #56 was originally filed over.
+  - **`hedge-monotony` needs volume before it means anything.** Requiring no
+    single marker above 40% implies three distinct hedges, which body prose
+    easily supplies (median 12) but a short draft does not: at 7 hedges, 3 of one
+    is 43%, so one extra "suggest" flips a pass to a fail with no change in
+    quality. `MIN_HEDGES_FOR_MONOTONY = 8` gates it.
   - The passive-ratio and sentence-length thresholds *do* check out against the
     same corpus, which is what makes the §15 result a signal rather than an
     artefact.

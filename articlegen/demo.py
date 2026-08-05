@@ -134,11 +134,6 @@ SAMPLE_ARTICLE = {
         "sleep", "memory consolidation", "glymphatic system", "amyloid-beta",
         "slow-wave sleep", "sleep deprivation",
     ],
-    "evidence_note": (
-        "Three of the eight cited sources study the review question directly; the "
-        "clearance evidence [3] is drawn almost entirely from rodent models, and its "
-        "extrapolation to humans remains unverified."
-    ),
     "featured_study": {
         "source_index": 3,
         "why": "The first direct demonstration that sleep increases clearance of brain metabolites.",
