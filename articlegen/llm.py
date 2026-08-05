@@ -70,8 +70,6 @@ def prompt_budget_chars(model: str | None = None, api_key: str | None = None) ->
     spare = GROQ_FREE_TPM - GROQ_DEEP_OUTPUT - overhead_tokens - safety_margin_tokens
     return max(spare, 1000) * CHARS_PER_TOKEN
 
-_RESOLVED_GROQ_MODEL: str | None = None
-
 
 def resolve_provider(model: str | None = None, api_key: str | None = None) -> tuple[str, str]:
     """Return (provider, model). `model` may be empty -> use the provider's default."""
