@@ -100,8 +100,33 @@ citations and sections intact.
   boosters ("clearly", "striking", "unprecedented"), claims of proof
   ("proves", "definitively"), first person outside the `here we review` frame,
   and under-hedging (< 0.20 hedges/sentence).
+- **`tests/real_abstracts.json` is the guard against these rules being wrong.**
+  Every rule is a guess about journal prose, and checking them against real
+  published abstracts is what exposed the guesses that were wrong: the
+  first-person allowlist required "we" immediately followed by an approved verb,
+  so "we also review" / "we searched" / "we aimed to" all failed, and three more
+  false positives were clinical notation — `Axis I`, `I2 = 70.6%` (heterogeneity)
+  and `US $16.3 million` all matched a first-person pronoun. Add to the corpus
+  before adding a rule; two entries carry a documented expected failure, one of
+  which is a positive control.
+- **Hedges and softeners are separate lists.** Frequency/degree adverbs (often,
+  typically, generally, approximately, relatively) do not qualify a claim's
+  evidential strength, so they are counted but never satisfy the hedging floor —
+  otherwise "approximately 40%... typically higher... often persist" scores 1.0
+  hedges/sentence while hedging nothing. `cannot be` is not a hedge either; it
+  asserts certainty.
+- **Nominalisation counting was deleted, deliberately.** It counted every
+  -tion/-sion/-ment/-ance/-ence/-ity/-ism word against an 11% threshold, which in
+  this domain measures the topic: a routine clinical sentence scores 42% because
+  depression, treatment, intervention, assessment and population are the subject
+  matter. Don't reinstate it without a domain stoplist.
+- **The section floor scales with the evidence** (`_required_sections`). A flat
+  floor of 5 is a thinness rule that causes thinness: told to produce five
+  sections from three usable abstracts, the cheapest way to fill the fifth is to
+  restate the fourth. `enforce_style` passes the direct-source count in.
 - **Substance errors** (`SUBSTANCE_RULES`): `too-few-sections`, `hedge-monotony`,
-  `repeated-opener`, `recycled-phrasing`. Every other rule is a *prohibition*,
+  `repeated-opener`, `recycled-phrasing`, `echoed-abstract`, `bundled-citations`.
+  Every other rule is a *prohibition*,
   and a model optimising only against prohibitions writes vague hedged filler —
   asserting nothing breaks no rule. A real draft passed every check at 803 words
   with one number in it, hedging at 0.69/sentence (three times the floor) using
@@ -110,6 +135,19 @@ citations and sections intact.
   *not* discriminate — the good sample is 773 words, the bad draft was 803 — so
   `under-length` is a warning, not an error. What separates them is hedge variety
   (8 distinct hedges vs one phrase at 50%) and verbatim recycling.
+- **The abstract, key points and Introduction are three jobs, not three renderings
+  of one paragraph.** The schema used to ask all three to be self-contained
+  summaries — `key_points` said "a reader must be able to take the whole claim
+  from these alone" — so the model dutifully wrote the same paragraph three times.
+  A shipped draft repeated 38% of the abstract's 6-word runs in its Introduction
+  and 24% in its key points. `echoed-abstract` measures that share (threshold
+  0.12; the curated sample scores 0% and 2.4%), and the writer prompt now carries
+  a DIVISION OF LABOUR block. Don't reinstate "self-contained" wording on more
+  than one of the three fields.
+- **`bundled-citations`**: a source cited only ever inside a bundle (`[1, 4]`) has
+  had nothing said about it individually. Fires when more than a third of cited
+  sources never appear as a solo marker. A bundle asserts studies agree; it has
+  to be earned by first reporting what each one found.
 - When a substance rule fires, `revision_brief()` **inverts**: instead of "do not
   introduce new claims or numbers" it tells the model to pull specific findings
   from the sources, and `enforce_style` passes `papers`/`curation` into

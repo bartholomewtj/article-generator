@@ -178,6 +178,19 @@ _SECTIONS = [
     },
 ]
 
+# Used by the wide-year-range fixture, which cites twelve sources: each of the
+# studies its key points rest on has to be discussed somewhere in the body.
+_EARLIER_COHORTS = {
+    "heading": "Earlier cohorts",
+    "paragraphs": [
+        "The first cohort to report the association followed a single age band for "
+        "six years and described a modest effect [3]. A later attempt at replication, "
+        "in a sample drawn more broadly, did not reproduce it [4]. Investigators "
+        "attributed the discrepancy to differences in how exposure had been "
+        "defined [5].",
+    ],
+}
+
 
 def _papers(n, **kw):
     return [
@@ -233,9 +246,20 @@ def fixtures():
     wide_years = [1984, 1989, 1993, 1997, 2001, 2004, 2008, 2011, 2015, 2018, 2021, 2024]
     wide = _papers(12, years=wide_years)
     yield ("wide year range",
-           _article("A long-running literature", _SECTIONS,
+           _article("A long-running literature",
+                    # Conclusions must stay last, so the extra section goes before it.
+                    _SECTIONS[:-1] + [_EARLIER_COHORTS] + _SECTIONS[-1:],
                     references=list(range(1, 13)),
-                    key_points=[f"Point {i} [{i}]." for i in range(1, 6)]),
+                    # Each key point names the study it rests on, and each of those
+                    # studies is discussed on its own in the body. Placeholder
+                    # bullets citing sources the article never discusses is exactly
+                    # what `bundled-citations` exists to catch, so a fixture must
+                    # not model that.
+                    key_points=[
+                        "The earliest cohorts reported the effect in one age band only [3].",
+                        "A later replication attempt in a broader sample did not reproduce it [4].",
+                        "Pooled estimates remain sensitive to how exposure was defined [5].",
+                    ]),
            wide,
            {"relevance": {i: ("direct" if i % 3 == 0 else "related" if i % 3 == 1 else "tangential")
                           for i in range(1, 13)},

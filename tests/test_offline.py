@@ -289,6 +289,55 @@ def test_substance_checks() -> None:
     ]}
     check("a specific, varied draft passes", not (rules(good) & SUBSTANCE_RULES))
 
+    # The abstract, key points and Introduction written as one paragraph three
+    # times. Paraphrased too loosely for the 8-word recycled-phrasing rule, which
+    # is exactly how a real shipped draft slipped through: its Introduction
+    # repeated 38% of the abstract's 6-word runs and its key points 24%.
+    abstract = (
+        "Night shift work has been linked to adverse health outcomes, including "
+        "metabolic, immune and cardiovascular impairments. The disruption of "
+        "circadian rhythms, particularly in shift workers, has been increasingly "
+        "associated with these outcomes. This review explores the impact of "
+        "artificial light on the health of night shift workers, with a focus on "
+        "the circadian system and its health implications."
+    )
+    echoed = {
+        "abstract": abstract,
+        "key_points": [
+            "The disruption of circadian rhythms, particularly in shift workers, "
+            "has been increasingly associated with these outcomes. [1]",
+            "Artificial light has been linked to adverse health outcomes, including "
+            "metabolic, immune and cardiovascular impairments. [2]",
+        ],
+        "sections": [{"heading": "Introduction", "paragraphs": [
+            "This review explores the impact of artificial light on the health of "
+            "night shift workers, with a focus on the circadian system and its "
+            "health implications. The disruption of circadian rhythms, particularly "
+            "in shift workers, has been increasingly associated with these outcomes."]}],
+    }
+    check("echoed-abstract flagged", "echoed-abstract" in rules(echoed))
+    check("echoed-abstract is a substance rule", "echoed-abstract" in SUBSTANCE_RULES)
+
+    # Sources cited only ever in a bundle have had nothing said about them.
+    bundled = dict(good)
+    bundled["sections"] = list(good["sections"])
+    bundled["sections"][2] = {"heading": "Interventions", "paragraphs": [
+        "Several studies report benefit from roster redesign [1, 2, 3, 4]. The "
+        "direction of effect was consistent across them [1, 2, 3, 4]. One review "
+        "considered the same question [5]."]}
+    check("bundled-citations flagged", "bundled-citations" in rules(bundled))
+
+    solo = dict(bundled)
+    solo["sections"] = list(bundled["sections"])
+    solo["sections"][2] = {"heading": "Interventions", "paragraphs": [
+        "A randomised trial in rotating-shift nurses reported fewer insomnia "
+        "symptoms [1]. A fixed-night cohort did not reproduce it [2]. A third "
+        "cohort found the effect only in workers under 40 [3]. A pooled analysis "
+        "reached no conclusion [4]. Together these suggest roster speed matters "
+        "[1, 2, 3, 4]."]}
+    check("citing sources individually clears bundled-citations",
+          "bundled-citations" not in rules(solo))
+
     # The curated sample is the calibration reference: these rules must never
     # reject it, or they are measuring the wrong thing.
     from articlegen.demo import SAMPLE_ARTICLE
@@ -836,6 +885,73 @@ def test_prose_style_check() -> None:
           any(i["rule"] == "under-hedged" for i in report["issues"]))
 
 
+def test_rules_do_not_reject_real_journal_prose() -> None:
+    """The register rules must not fire on genuinely published writing.
+
+    Every rule here is a guess about what journal prose looks like, and the guesses
+    have been wrong in ways no synthetic fixture could reveal. Checked against real
+    abstracts, an earlier version of the first-person rule flagged five of eight,
+    because its allowlist required "we" immediately followed by an approved verb —
+    so "we also review", "we searched", "we aimed to" all read as a human author
+    intruding. Three more false positives were pure clinical notation: "Axis I",
+    "I2 = 70.6%" (the meta-analysis heterogeneity statistic) and "US $16.3 million"
+    all matched a first-person pronoun.
+
+    `tests/real_abstracts.json` is a frozen corpus of real abstracts, stored rather
+    than fetched so the suite stays offline and deterministic. Two entries carry a
+    documented `expect_register_errors` — one rhetorical "we", and one genuine
+    author-voice "we hope" that the house style bans on purpose, which doubles as a
+    positive control that the rule still bites.
+    """
+    import json
+
+    from articlegen.style import check_style, errors
+
+    register = {"first-person", "second-person", "contraction", "booster",
+                "overclaim", "rhetorical-question", "exclamation"}
+    path = os.path.join(os.path.dirname(__file__), "real_abstracts.json")
+    corpus = json.load(open(path, encoding="utf-8"))
+    check("corpus is a usable size", len(corpus) >= 12)
+
+    unexpected = []
+    for entry in corpus:
+        article = {"sections": [{"heading": "Introduction",
+                                 "paragraphs": [entry["abstract"]]}]}
+        fired = sorted({i["rule"] for i in errors(check_style(article))} & register)
+        if fired != entry["expect_register_errors"]:
+            unexpected.append((entry["title"][:50], fired, entry["expect_register_errors"]))
+    if unexpected:
+        for title, fired, expected in unexpected:
+            print(f"      {title}: fired {fired}, expected {expected}")
+    check(f"register rules match expectations on {len(corpus)} real abstracts",
+          not unexpected)
+
+    check("every documented exception carries a reason",
+          all(e.get("note") for e in corpus if e["expect_register_errors"]))
+
+    # The corpus must not be so permissive that the rules stop working. These are
+    # the things the house style genuinely bans.
+    for text, expected in [
+        ("We believe this is the most important question.", "first-person"),
+        ("Our findings show a clear benefit.", "first-person"),
+        ("You should note the risk before prescribing.", "second-person"),
+        ("This clearly proves the point.", "booster"),
+        ("It doesn't replicate.", "contraction"),
+    ]:
+        fired = {i["rule"] for i in errors(check_style(
+            {"sections": [{"heading": "Introduction", "paragraphs": [text]}]}))}
+        check(f"still catches {expected}: {text[:34]!r}", expected in fired)
+
+    # Clinical notation that must never read as a first-person pronoun.
+    for text in ("Axis I comorbidity was recorded in most participants.",
+                 "Heterogeneity was substantial (I2 = 70.6%).",
+                 "Costs reached US $16.3 million by 2030.",
+                 "A Phase I trial enrolled 40 participants."):
+        fired = {i["rule"] for i in errors(check_style(
+            {"sections": [{"heading": "Introduction", "paragraphs": [text]}]}))}
+        check(f"not first person: {text[:38]!r}", "first-person" not in fired)
+
+
 def test_statistic_verification() -> None:
     from articlegen.verify import check_statistics
     from articlegen.sources import Paper
@@ -1096,7 +1212,7 @@ def main() -> int:
         test_methods_names_only_sources_that_answered,
         test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
-        test_prose_style_check,
+        test_prose_style_check, test_rules_do_not_reject_real_journal_prose,
         test_statistic_verification, test_ranking, test_recency_actually_counts, test_render_blocks,
         test_display_item_placement, test_legacy_draft_fields,
         test_demo_and_index, test_web_server,
