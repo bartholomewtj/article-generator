@@ -1054,6 +1054,43 @@ def test_rules_do_not_reject_real_journal_prose() -> None:
         check(f"not first person: {text[:38]!r}", "first-person" not in fired)
 
 
+def test_default_tone_agrees_with_the_enforced_house_style() -> None:
+    """The default tone must not ask for the register the style gate rejects.
+
+    The front end folds a Tone preference into the `style_note` the writer is
+    given. It used to default to "Engaging Science Journalism (Wired/Quanta
+    style)" — while `style.py` deterministically bans second person,
+    contractions, boosters and rhetorical questions, which is the register that
+    tone asks for. The prompt requested exactly what the checker forbids, and
+    nothing caught the contradiction because the two live in different files.
+
+    The other tones stay available; they are the reader's choice, and the gate
+    still runs. Only the default has to be the one that agrees with it.
+    """
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "index.html")
+    html = open(path, encoding="utf-8").read()
+
+    tone_select = html.split('id="prefTone"', 1)[1].split("</select>", 1)[0]
+    selected = [line for line in tone_select.splitlines() if "selected" in line]
+    check("exactly one tone is preselected", len(selected) == 1)
+    check("and it is the academic one", 'value="academic"' in selected[0])
+    check("the magazine tone is no longer the default",
+          'value="journalism" selected' not in html)
+
+    # The JS fallbacks must agree with the markup, or a browser with no stored
+    # preference and a missing element would silently reinstate the old default.
+    check("no fallback still reaches for journalism", "|| 'journalism'" not in html)
+    check("fallbacks name the academic tone", html.count("|| 'academic'") >= 2)
+    check("the label map falls back to academic", "toneMap.academic" in html)
+
+    # A stored preference outlives the markup, so anyone who ever saved settings
+    # would keep the old default without a migration.
+    check("stored preferences carry a version", "PREFS_VERSION" in html)
+    check("the old default is migrated once",
+          "prefs.tone === 'journalism'" in html and "prefs.tone = 'academic'" in html)
+
+
 def test_register_rules_are_scoped_to_the_synthesis_voice() -> None:
     """The register rules model one voice, and the corpus proves which.
 
@@ -1420,6 +1457,7 @@ def main() -> int:
         test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
         test_prose_style_check, test_rules_do_not_reject_real_journal_prose,
+        test_default_tone_agrees_with_the_enforced_house_style,
         test_register_rules_are_scoped_to_the_synthesis_voice,
         test_density_thresholds_are_documented_against_the_corpus,
         test_statistic_verification, test_ranking, test_recency_actually_counts, test_render_blocks,
