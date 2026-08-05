@@ -1054,41 +1054,39 @@ def test_rules_do_not_reject_real_journal_prose() -> None:
         check(f"not first person: {text[:38]!r}", "first-person" not in fired)
 
 
-def test_default_tone_agrees_with_the_enforced_house_style() -> None:
-    """The default tone must not ask for the register the style gate rejects.
+def test_house_style_is_fixed_not_a_preference() -> None:
+    """There is one register, and the front end must not offer alternatives to it.
 
-    The front end folds a Tone preference into the `style_note` the writer is
-    given. It used to default to "Engaging Science Journalism (Wired/Quanta
-    style)" — while `style.py` deterministically bans second person,
-    contractions, boosters and rhetorical questions, which is the register that
-    tone asks for. The prompt requested exactly what the checker forbids, and
-    nothing caught the contradiction because the two live in different files.
+    The Tone selector used to fold a choice into the `style_note` the writer is
+    given, defaulting to "Engaging Science Journalism (Wired/Quanta style)" —
+    while `style.py` deterministically bans second person, contractions,
+    boosters and rhetorical questions, which is precisely that register. Three
+    of its four options asked for prose the checker then rejected, so the
+    setting could only make the output worse.
 
-    The other tones stay available; they are the reader's choice, and the gate
-    still runs. Only the default has to be the one that agrees with it.
+    `docs/journal-style.md` defines the register and `style.py` enforces it, so
+    the tone is part of the house style rather than something a reader picks.
+    The selector is gone and the label is a constant.
     """
     path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         "index.html")
     html = open(path, encoding="utf-8").read()
 
-    tone_select = html.split('id="prefTone"', 1)[1].split("</select>", 1)[0]
-    selected = [line for line in tone_select.splitlines() if "selected" in line]
-    check("exactly one tone is preselected", len(selected) == 1)
-    check("and it is the academic one", 'value="academic"' in selected[0])
-    check("the magazine tone is no longer the default",
-          'value="journalism" selected' not in html)
+    check("the tone selector is gone", 'id="prefTone"' not in html)
+    check("and no tone map survives it", "toneMap" not in html)
+    for banned in ("Wired", "Quanta", "ELI5", "Executive Briefing"):
+        check(f"no alternative register is offered: {banned}", banned not in html)
 
-    # The JS fallbacks must agree with the markup, or a browser with no stored
-    # preference and a missing element would silently reinstate the old default.
-    check("no fallback still reaches for journalism", "|| 'journalism'" not in html)
-    check("fallbacks name the academic tone", html.count("|| 'academic'") >= 2)
-    check("the label map falls back to academic", "toneMap.academic" in html)
+    # The writer is still told the register explicitly; it just isn't selectable.
+    check("the tone label is a single constant", html.count("const TONE_LABEL") == 1)
+    check("and it names the academic register",
+          "Formal Academic & Technical" in html)
+    check("styleGuidance still sends a tone", "'Tone: ' + p.toneLabel" in html)
+    check("which now resolves to the constant", "toneLabel: TONE_LABEL" in html)
 
-    # A stored preference outlives the markup, so anyone who ever saved settings
-    # would keep the old default without a migration.
-    check("stored preferences carry a version", "PREFS_VERSION" in html)
-    check("the old default is migrated once",
-          "prefs.tone === 'journalism'" in html and "prefs.tone = 'academic'" in html)
+    # The other three preferences are untouched.
+    for keep in ("prefLength", "prefDepth", "prefLang"):
+        check(f"{keep} still offered", f'id="{keep}"' in html)
 
 
 def test_register_rules_are_scoped_to_the_synthesis_voice() -> None:
@@ -1457,7 +1455,7 @@ def main() -> int:
         test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
         test_prose_style_check, test_rules_do_not_reject_real_journal_prose,
-        test_default_tone_agrees_with_the_enforced_house_style,
+        test_house_style_is_fixed_not_a_preference,
         test_register_rules_are_scoped_to_the_synthesis_voice,
         test_density_thresholds_are_documented_against_the_corpus,
         test_statistic_verification, test_ranking, test_recency_actually_counts, test_render_blocks,

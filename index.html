@@ -544,21 +544,6 @@
           </div>
 
           <div style="margin-bottom: 0.8rem;">
-            <label class="input-label" style="font-size:0.75rem;">Tone & Writing Style</label>
-            <select id="prefTone" class="theme-input" onchange="savePreferences()">
-              <option value="academic" selected>🎓 Academic &amp; Technical (Formal &amp; Precise)</option>
-              <option value="journalism">📰 Science Journalism (Wired / Quanta style)</option>
-              <option value="executive">💼 Executive Briefing (Strategic Impact)</option>
-              <option value="eli5">💡 ELI5 / Beginner Friendly (Simple Analogies)</option>
-            </select>
-            <p style="font-size:0.7rem; color:var(--muted); margin:0.35rem 0 0; line-height:1.45;">
-              Articles are checked against journal writing conventions after drafting.
-              Academic is the only tone that agrees with those checks &mdash; the others
-              ask for a register the checker flags, so expect style warnings.
-            </p>
-          </div>
-
-          <div style="margin-bottom: 0.8rem;">
             <label class="input-label" style="font-size:0.75rem;">Evidence & Citation Depth</label>
             <select id="prefDepth" class="theme-input" onchange="savePreferences()">
               <option value="balanced" selected>⚖️ Balanced Overview (Key Findings)</option>
@@ -1061,15 +1046,9 @@
     }
   }
 
-  // Bumped when a stored default changes meaning, so the migration in
-  // loadPreferences() runs once and then leaves deliberate choices alone.
-  const PREFS_VERSION = 2;
-
   function savePreferences() {
     const prefs = {
-      v: PREFS_VERSION,
       length: document.getElementById('prefLength')?.value || 'standard',
-      tone: document.getElementById('prefTone')?.value || 'academic',
       depth: document.getElementById('prefDepth')?.value || 'balanced',
       lang: document.getElementById('prefLang')?.value || 'English'
     };
@@ -1081,18 +1060,9 @@
       const raw = localStorage.getItem('articlegen_prefs');
       if (raw) {
         const prefs = JSON.parse(raw);
-        // The tone default used to be `journalism`, which asks the writer for the
-        // magazine register the server's style gate then rejects. Anyone still
-        // carrying that old default is moved across once. Saving after this
-        // stamps PREFS_VERSION, so picking journalism deliberately from here on
-        // survives — the migration only rewrites the un-chosen old default.
-        if (!prefs.v && prefs.tone === 'journalism') prefs.tone = 'academic';
-        if (prefs.v !== PREFS_VERSION) {
-          prefs.v = PREFS_VERSION;
-          localStorage.setItem('articlegen_prefs', JSON.stringify(prefs));
-        }
+        // A stored `tone` from an older version is ignored: the house style is
+        // fixed now, so there is nothing to restore it into.
         if (prefs.length && document.getElementById('prefLength')) document.getElementById('prefLength').value = prefs.length;
-        if (prefs.tone && document.getElementById('prefTone')) document.getElementById('prefTone').value = prefs.tone;
         if (prefs.depth && document.getElementById('prefDepth')) document.getElementById('prefDepth').value = prefs.depth;
         if (prefs.lang && document.getElementById('prefLang')) document.getElementById('prefLang').value = prefs.lang;
       }
@@ -1115,9 +1085,16 @@
     ].filter(Boolean).join('. ');
   }
 
+  // The house style is not a preference. `docs/journal-style.md` defines one
+  // register — a formal synthesis speaking about other people's work — and
+  // style.py enforces it deterministically after drafting, banning second
+  // person, contractions, boosters and rhetorical questions. The tone selector
+  // used to offer three alternatives that all asked for exactly that banned
+  // register, so choosing one produced a draft the checker then rejected.
+  const TONE_LABEL = 'Formal Academic & Technical (Rigorous, precise terminology)';
+
   function getPreferences() {
     const lenVal = document.getElementById('prefLength')?.value || 'standard';
-    const toneVal = document.getElementById('prefTone')?.value || 'academic';
     const depthVal = document.getElementById('prefDepth')?.value || 'balanced';
     const langVal = document.getElementById('prefLang')?.value || 'English';
 
@@ -1125,17 +1102,6 @@
       brief: 'Quick Read (~500 words, 2 concise sections)',
       standard: 'Standard Article (~1,000 words, 3-4 detailed sections)',
       deep: 'In-Depth Longform (~1,800+ words, 5+ extensive sections with deep analysis)'
-    };
-    // `academic` is the default because it is the only tone that agrees with the
-    // house style the server enforces after drafting: style.py bans second
-    // person, contractions, boosters and rhetorical questions — the register the
-    // other three ask for. The old default asked for Wired/Quanta prose and then
-    // failed the check that forbids it.
-    const toneMap = {
-      academic: 'Formal Academic & Technical (Rigorous, precise terminology)',
-      journalism: 'Engaging Science Journalism (Wired/Quanta style)',
-      executive: 'Executive Briefing (Strategic impact, key takeaways)',
-      eli5: 'ELI5 / Beginner Friendly (Simple analogies, highly accessible)'
     };
     const depthMap = {
       balanced: 'Balanced Overview of findings',
@@ -1145,7 +1111,7 @@
 
     return {
       lengthLabel: lenMap[lenVal] || lenMap.standard,
-      toneLabel: toneMap[toneVal] || toneMap.academic,
+      toneLabel: TONE_LABEL,
       depthLabel: depthMap[depthVal] || depthMap.balanced,
       lang: langVal
     };
