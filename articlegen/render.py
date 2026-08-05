@@ -579,6 +579,7 @@ def _assessment_paragraphs(
     cited: list[Paper],
     counts: dict,
     verification: dict | None,
+    style_report: dict | None = None,
     esc=lambda s: s,
 ) -> dict:
     """The Evidence assessment opening and its Limitations, before any markup.
@@ -626,13 +627,75 @@ def _assessment_paragraphs(
     unverified = (verification or {}).get("unverified") or []
     if unverified:
         limitations.append(_unverified_sentence([esc(u) for u in unverified]))
+    surviving = _style_failure_sentence(style_report, esc)
+    if surviving:
+        limitations.append(surviving)
     return {"opening": opening, "limitations": limitations}
+
+
+# What each rule means to a reader, who has not read style.py. Phrased as the
+# defect in the prose, not as the name of a check.
+_STYLE_FAILURE_WORDING = {
+    "echoed-abstract": "repeats the abstract rather than adding to it",
+    "bundled-citations": "cites sources in groups without describing them individually",
+    "recycled-phrasing": "reuses phrasing between sections",
+    "repeated-opener": "opens successive sentences the same way",
+    "hedge-monotony": "leans on a single hedging phrase",
+    "under-hedged": "states claims more firmly than the sources support",
+    "too-few-sections": "covers the topic in fewer sections than the evidence allows",
+    "first-person": "uses an author voice this synthesis has no claim to",
+    "second-person": "addresses the reader directly",
+    "booster": "uses intensifiers the sources do not carry",
+    "overclaim": "claims proof the evidence cannot give",
+    "contraction": "uses contractions",
+    "rhetorical-question": "poses rhetorical questions",
+    "exclamation": "uses exclamations",
+}
+
+
+def _style_failure_sentence(style_report: dict | None, esc=lambda s: s) -> str:
+    """State, in the article, that the prose check still objected.
+
+    A draft that failed the style gate used to be indistinguishable from one that
+    passed: the check ran, the revision was attempted, and if it did not clear the
+    errors the article shipped silently anyway (issue #53). The house style puts
+    warnings in the Limitations paragraph rather than in callout boxes, so this
+    goes where the unverified-figure warning already goes.
+    """
+    failures = [
+        i for i in (style_report or {}).get("issues", [])
+        if i.get("severity") == "error"
+    ]
+    if not failures:
+        return ""
+    # Deduplicate by rule: the same rule firing on two sections is one defect to
+    # a reader, and the wording above is per-rule.
+    seen, described = set(), []
+    for issue in failures:
+        rule = issue.get("rule", "")
+        if rule in seen:
+            continue
+        seen.add(rule)
+        described.append(_STYLE_FAILURE_WORDING.get(rule, rule.replace("-", " ")))
+    if len(described) == 1:
+        faults = described[0]
+    elif len(described) == 2:
+        faults = " and ".join(described)
+    else:
+        faults = ", ".join(described[:-1]) + ", and " + described[-1]
+    return (
+        "An automated check of the writing against journal prose conventions was "
+        f"not satisfied by this draft: it {esc(faults)}. A revision was attempted "
+        "and did not resolve this, so the text below should be read as a working "
+        "draft rather than a finished review."
+    )
 
 
 def _assessment_html(
     cited: list[Paper],
     counts: dict,
     verification: dict | None,
+    style_report: dict | None = None,
 ) -> str:
     """Evidence assessment + Limitations — the journal-register replacement for the
     warning boxes: the same facts, stated in prose, in the back matter.
@@ -640,7 +703,7 @@ def _assessment_html(
     Entirely deterministic. A legacy draft carrying `evidence_note` renders
     without it rather than reprinting a tally that may contradict the counts.
     """
-    parts = _assessment_paragraphs(cited, counts, verification, html.escape)
+    parts = _assessment_paragraphs(cited, counts, verification, style_report, html.escape)
     body = [
         "<p>" + parts["opening"] + "</p>",
         '<p><span class="run-in">Limitations.</span> ' + " ".join(parts["limitations"]) + "</p>",
@@ -715,6 +778,7 @@ def render_article(
     curation: dict | None = None,
     verification: dict | None = None,
     provenance: dict | None = None,
+    style_report: dict | None = None,
 ) -> str:
     cited, cite_map = _citation_map(article, papers)
     valid_numbers = set(range(1, len(cited) + 1))
@@ -802,7 +866,7 @@ def render_article(
             key_points=key_points_html,
             body="\n\n".join(body),
             methods=_methods_html(provenance, len(papers), len(cited), topic),
-            assessment=_assessment_html(cited, counts, verification),
+            assessment=_assessment_html(cited, counts, verification, style_report),
             glossary=_glossary_html(article),
             references="\n".join(refs_html),
             additional=_back_matter_html(cited, topic, article, provenance),
@@ -1150,6 +1214,7 @@ def render_markdown(
     curation: dict | None = None,
     verification: dict | None = None,
     provenance: dict | None = None,
+    style_report: dict | None = None,
 ) -> str:
     """Plain-Markdown version of the same journal-format article."""
     cited, cite_map = _citation_map(article, papers)
@@ -1207,7 +1272,7 @@ def render_markdown(
         lines += [item, ""]
 
     lines += _methods_markdown(provenance, len(papers), len(cited), topic)
-    lines += _assessment_markdown(cited, counts, verification)
+    lines += _assessment_markdown(cited, counts, verification, style_report)
 
     glossary = [
         e for e in (article.get("glossary") or [])
@@ -1324,8 +1389,8 @@ def _methods_markdown(provenance: dict | None, screened: int, n_cited: int, topi
     ]
 
 
-def _assessment_markdown(cited, counts, verification) -> list[str]:
-    parts = _assessment_paragraphs(cited, counts, verification)
+def _assessment_markdown(cited, counts, verification, style_report=None) -> list[str]:
+    parts = _assessment_paragraphs(cited, counts, verification, style_report)
     lines = ["## Evidence assessment", "", parts["opening"], ""]
     lines += ["**Limitations.** " + " ".join(parts["limitations"]), ""]
     return lines

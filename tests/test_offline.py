@@ -1054,6 +1054,68 @@ def test_rules_do_not_reject_real_journal_prose() -> None:
         check(f"not first person: {text[:38]!r}", "first-person" not in fired)
 
 
+def test_failed_style_gate_is_visible_in_the_article() -> None:
+    """A draft that failed the prose check must not look like one that passed.
+
+    The gate ran, the revision was attempted, and if it did not clear the errors
+    the article shipped with no sign of it — a reader had no way to tell a clean
+    draft from one carrying five unfixed errors (issue #53). The house style puts
+    warnings in the Limitations paragraph rather than in callout boxes, so that
+    is where this goes, next to the unverified-figure warning.
+    """
+    from articlegen import render
+    from articlegen.sources import Paper
+
+    papers = [Paper(title="P1", abstract="a", year=2024, doi="10.1/a")]
+    counts = {"direct": 1, "related": 0, "tangential": 0}
+    clean = {"issues": [], "stats": {}}
+    failed = {"issues": [
+        {"rule": "echoed-abstract", "severity": "error", "where": "Introduction",
+         "detail": "d", "excerpt": ""},
+        {"rule": "echoed-abstract", "severity": "error", "where": "key points",
+         "detail": "d", "excerpt": ""},
+        {"rule": "bundled-citations", "severity": "error", "where": "whole article",
+         "detail": "d", "excerpt": ""},
+        {"rule": "under-length", "severity": "warning", "where": "whole article",
+         "detail": "d", "excerpt": ""},
+    ], "stats": {}}
+
+    ok = render._assessment_html(papers, counts, {"unverified": []}, clean)
+    check("a clean draft says nothing about the check",
+          "automated check of the writing" not in ok)
+
+    bad = render._assessment_html(papers, counts, {"unverified": []}, failed)
+    check("a failed draft says so", "automated check of the writing" in bad)
+    check("in the reader's terms, not the rule's",
+          "repeats the abstract rather than adding to it" in bad
+          and "echoed-abstract" not in bad)
+    check("the same rule twice is one fault to a reader",
+          bad.count("repeats the abstract") == 1)
+    check("faults are joined readably", " and " in bad)
+    check("warnings do not trigger it",
+          "under-length" not in bad and "under length" not in bad)
+    check("it says the revision was tried", "revision was attempted" in bad)
+    check("and lands in Limitations, not a callout box",
+          "Limitations." in bad and "⚠" not in bad)
+
+    md = "\n".join(render._assessment_markdown(papers, counts, {"unverified": []}, failed))
+    check("markdown carries the same warning", "automated check of the writing" in md)
+
+    # An absent report is not the same as a clean one, but it must not crash or
+    # invent a warning — legacy drafts have no style report at all.
+    legacy = render._assessment_html(papers, counts, {"unverified": []}, None)
+    check("a missing report warns about nothing",
+          "automated check of the writing" not in legacy)
+
+    # The pipeline must actually hand it over, or none of this is reachable.
+    import inspect
+    from articlegen import cli, web
+    for name, src in (("cli", inspect.getsource(cli.cmd_draft)),
+                      ("web", inspect.getsource(web.ArticleGenHandler._handle_draft))):
+        check(f"{name} passes the style report to the renderer",
+              "draft.style_report" in src)
+
+
 def test_evidence_assessment_is_wholly_deterministic() -> None:
     """Nothing countable in the Evidence assessment may be model-written.
 
@@ -1556,6 +1618,7 @@ def main() -> int:
         test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
         test_prose_style_check, test_rules_do_not_reject_real_journal_prose,
+        test_failed_style_gate_is_visible_in_the_article,
         test_evidence_assessment_is_wholly_deterministic,
         test_house_style_is_fixed_not_a_preference,
         test_register_rules_are_scoped_to_the_synthesis_voice,
