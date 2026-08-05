@@ -109,6 +109,28 @@ citations and sections intact.
   and `US $16.3 million` all matched a first-person pronoun. Add to the corpus
   before adding a rule; two entries carry a documented expected failure, one of
   which is a positive control.
+- **`tests/style_corpus.json` is the second corpus, and it answers a different
+  question.** 20 high-cited abstracts, 20 journals, stratified across article
+  type (primary / systematic review / narrative review) × domain (clinical
+  psychiatry / neuroscience / health services) — all nine cells. Two findings are
+  now pinned by tests and written up in `docs/journal-style.md`:
+  - **The register rules model one voice: a synthesis speaking about other
+    people's work.** A trial report legitimately says "we randomly assigned
+    patients"; `articlegen` must not, because it ran nothing. The split is total —
+    7/7 investigator-voice abstracts fire a register rule, 0/13 synthesis-voice
+    ones do. So a primary-research abstract is *not* a negative control for the
+    first-person rule, which is what the older corpus was papering over with
+    per-entry exceptions.
+  - **The hedging floor (0.20/sentence) is a house preference, not a
+    measurement.** Published abstracts run at a median of 0.031, and 17 of 20 sit
+    below the floor; the corpus figure the guide cites is for *whole articles*,
+    where the Discussion carries the hedging. Abstracts cannot calibrate it (18
+    of 20 are too short for the density gate anyway), so it has never been
+    checked against the register it polices — issue #56. `hedge-monotony`
+    inherits the same problem. Don't cite the floor as "what journals do".
+  - The passive-ratio and sentence-length thresholds *do* check out against the
+    same corpus, which is what makes the §15 result a signal rather than an
+    artefact.
 - **Hedges and softeners are separate lists.** Frequency/degree adverbs (often,
   typically, generally, approximately, relatively) do not qualify a claim's
   evidential strength, so they are counted but never satisfy the hedging floor —

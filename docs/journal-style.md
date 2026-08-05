@@ -149,6 +149,27 @@ model for one targeted revision.
 | [Corpus studies of hedges and boosters](https://files.eric.ed.gov/fulltext/EJ1285159.pdf) (Hyland's epistemic-marker categories) | Hedging density: research articles hedge roughly once every two to three sentences |
 | [Nominalisation guidance](https://lifelong-learning.ox.ac.uk/nominalisation/) | Prefer verbs to abstract nouns — "evaluated", not "conducted an evaluation" |
 | [Sentence length and readability](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9955962/) | Sentence length is the single best proxy for grammatical complexity; vary it and cap it |
+| `tests/style_corpus.json` — 20 high-cited abstracts, 20 journals, stratified across article type × domain | What published prose *actually does*, as opposed to what the guidance above says it does. See "How these numbers were checked" below |
+
+### Which voice these rules model
+
+Everything from §13 down describes **one register: a synthesis speaking about
+other people's work.** That is the only voice `articlegen` ever writes in, and
+several rules only make sense in it.
+
+The clearest case is first person. A trial report in the *New England Journal of
+Medicine* says "we randomly assigned patients"; a meta-analysis says "our
+objective was to quantify". That is correct, unremarkable journal prose — those
+authors ran the study. `articlegen` did not run anything, so the same sentence in
+its output would claim work it has not done. §13 bans it for that reason, not
+because it is bad writing.
+
+The consequence matters when checking the rules against real articles: **a
+primary-research abstract is not a negative control for the register rules.**
+Measured over the corpus, the split is total — all 7 investigator-voice abstracts
+trip a register rule, and 0 of 13 synthesis-voice abstracts do. So the rules are
+precisely aimed; what was missing was any statement of what they were aimed at.
+`test_register_rules_are_scoped_to_the_synthesis_voice` pins both halves.
 
 ### 13. Voice and person
 
@@ -179,8 +200,43 @@ three sentences — more than one word in fifty. Under-hedging is not neutrality
 it is over-claiming.
 
 → `style.py` counts hedges from the standard epistemic-marker categories and
-raises an error below one per five sentences, once the draft is long enough for
-the density to mean anything.
+raises an error below one per five sentences (0.20), once the draft is long
+enough for the density to mean anything.
+
+**That floor is a house preference, not a measurement — and the corpus shows how
+far it sits from published practice.** Across the 20 abstracts:
+
+| | hedges per sentence |
+| --- | --- |
+| all 20 | median **0.031**, range 0–0.86 |
+| synthesis voice only (the register we write in) | median **0.000** |
+| systematic reviews | median 0.101 |
+| primary research | median 0.034 |
+| narrative reviews | median 0.000 |
+
+**17 of 20 fall below the 0.20 floor, and 10 use no hedge at all.** The floor
+would reject most of the corpus.
+
+The number cited above is not wrong; it is being applied to the wrong text. The
+corpus figures for hedging describe **whole research articles**, where the
+Discussion carries most of the epistemic load. An abstract compresses and
+asserts. So an abstract cannot calibrate a rule aimed at body prose — and in
+practice it barely tries to, since 18 of the 20 are too short to pass the density
+gate (>12 sentences *and* >250 words) at all.
+
+What follows is that **the floor has never been checked against any measured
+sample of the register it polices.** `articlegen`'s own output *is* long enough to
+be judged, so the rule fires on generated prose while nothing comparable has been
+measured. The first article generated after the substance rules shipped was
+flagged `under-hedged` at 0.136 — higher than the median of every stratum in this
+table. Settling this needs full review texts rather than abstracts; until then,
+treat the floor as a preference the house has chosen, and do not describe it as
+what journals do.
+
+Two rules inherit the same problem. `hedge-monotony` (no single hedge above 40%
+of the total) assumes a draft uses several distinct hedges; in the corpus the
+median is **0.5 distinct hedges**, with 8 of 20 using exactly one — a share of
+100%. Both rules are calibrated for a text type nothing here measures.
 
 ### 16. No boosters, no claims of proof
 
@@ -201,8 +257,49 @@ series", "an animal model".
 15–30 words on average, none over 45, varied. Paragraphs of two to four
 sentences: topic sentence, evidence, qualification.
 
-→ `style.py` warns on any sentence over 45 words and on a high nominalisation
-rate or a passive ratio above 55%.
+→ `style.py` warns on any sentence over 45 words and on a passive ratio above
+55%. (Nominalisation counting was deleted deliberately — in this domain it
+measured the subject matter rather than the writing.)
+
+**These two thresholds check out.** Unlike §15, both sit comfortably outside what
+published prose does, so they flag outliers instead of the norm:
+
+| | measured across the corpus | threshold | fires on |
+| --- | --- | --- | --- |
+| mean sentence length | median 23.8 words, 18 of 20 inside 15–30 | 15–30 guidance | 2 of 20 |
+| passive ratio | median 0.236 | warn above 0.55 | 2 of 20 |
+
+That contrast is the useful part: it shows the corpus is capable of ratifying a
+threshold, so §15 failing against it is a real signal rather than an artefact of
+measuring abstracts.
+
+## How these numbers were checked
+
+`tests/style_corpus.json` holds 20 abstracts drawn from Europe PMC, chosen to
+span the dimensions that plausibly move the register and density figures:
+
+- **article type** — primary research (RCTs), systematic reviews and
+  meta-analyses, narrative reviews;
+- **domain** — clinical psychiatry, neuroscience, health services;
+
+all nine combinations, 20 distinct journals (*NEJM*, *Lancet Neurology*, *BMJ*,
+*JAMA*, *Biological Psychiatry*, *Nature Genetics*, …), selected by citation
+count within each cell and filtered to those whose title actually places them in
+their cell. Each entry records the measured statistics alongside the text, and
+the voice it is written in.
+
+Two tests consume it: `test_register_rules_are_scoped_to_the_synthesis_voice`
+(the investigator/synthesis split above) and
+`test_density_thresholds_are_documented_against_the_corpus`, which pins the
+measured distribution so that changing a threshold without re-measuring fails.
+
+The corpus deliberately does **not** decide whether a threshold is right. It
+records what published prose does, which is the thing the guessed numbers can be
+checked against — the same role `tests/real_abstracts.json` plays for the
+register rules, and the reason both files are stored rather than fetched.
+
+Its main limitation is stated in §15: these are abstracts, and the density rules
+target body prose. Calibrating those properly needs open-access full texts.
 
 ## What we deliberately do *not* copy
 

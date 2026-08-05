@@ -1054,6 +1054,109 @@ def test_rules_do_not_reject_real_journal_prose() -> None:
         check(f"not first person: {text[:38]!r}", "first-person" not in fired)
 
 
+def test_register_rules_are_scoped_to_the_synthesis_voice() -> None:
+    """The register rules model one voice, and the corpus proves which.
+
+    `tests/style_corpus.json` is 20 high-cited abstracts stratified across
+    article type (primary / systematic review / narrative review) and domain
+    (clinical psychiatry / neuroscience / health services), 20 distinct journals.
+
+    Each is labelled by the voice it is written in. A primary trial report says
+    "we randomly assigned patients" because those authors ran the trial; a
+    synthesis speaks about other people's work. `articlegen` only ever writes the
+    second, so banning the first is correct — but it means primary-research
+    abstracts are *not* a negative control for the first-person rule, which is
+    the trap the older corpus had to paper over with per-entry exceptions.
+
+    The separation is clean, and that is the assertion: every investigator-voice
+    entry fires a register rule, no synthesis-voice entry does.
+    """
+    import json
+
+    from articlegen.style import check_style, errors
+
+    register = {"first-person", "second-person", "contraction", "booster",
+                "overclaim", "rhetorical-question", "exclamation"}
+    path = os.path.join(os.path.dirname(__file__), "style_corpus.json")
+    corpus = json.load(open(path, encoding="utf-8"))
+
+    check("corpus is 20 articles", len(corpus) == 20)
+    check("every type/domain cell is represented",
+          len({(e["type"], e["domain"]) for e in corpus}) == 9)
+    check("drawn from many journals, not one house style",
+          len({e["journal"] for e in corpus}) >= 15)
+
+    mismatched = []
+    for entry in corpus:
+        article = {"sections": [{"heading": "Introduction",
+                                 "paragraphs": [entry["abstract"]]}]}
+        fired = sorted({i["rule"] for i in errors(check_style(article))} & register)
+        if fired != entry["expect_register_errors"]:
+            mismatched.append((entry["title"][:48], fired, entry["expect_register_errors"]))
+    for title, fired, expected in mismatched:
+        print(f"      {title}: fired {fired}, expected {expected}")
+    check("register rules match expectations on all 20", not mismatched)
+
+    synthesis = [e for e in corpus if e["register"] == "synthesis"]
+    investigator = [e for e in corpus if e["register"] == "investigator"]
+    check("the corpus carries both voices", synthesis and investigator)
+    check("no synthesis-voice abstract trips a register rule",
+          all(not e["expect_register_errors"] for e in synthesis))
+    check("every investigator-voice abstract does",
+          all(e["expect_register_errors"] for e in investigator))
+
+
+def test_density_thresholds_are_documented_against_the_corpus() -> None:
+    """The density thresholds are house preferences, not measurements — say so.
+
+    Measured over the 20-article corpus: hedging runs at a median of 0.03 markers
+    per sentence and 17 of 20 sit below the 0.20 floor, half using no hedge at
+    all. `docs/journal-style.md` §15 cites corpus work reporting one marker every
+    two to three sentences, but that figure is for *whole research articles*,
+    where the Discussion carries most of the hedging — not for abstracts, which
+    compress and assert.
+
+    So this test does not assert that the floor is right. It pins the measured
+    distribution, so that changing a threshold without re-measuring fails here,
+    and records that abstracts cannot calibrate a rule aimed at body prose (18 of
+    20 are too short for the density gate to even apply).
+    """
+    import json
+    import statistics
+
+    from articlegen import style
+
+    path = os.path.join(os.path.dirname(__file__), "style_corpus.json")
+    corpus = json.load(open(path, encoding="utf-8"))
+    hedges = [e["measured"]["hedges_per_sentence"] for e in corpus]
+    passive = [e["measured"]["passive_ratio"] for e in corpus]
+    sentence_words = [e["measured"]["mean_sentence_words"] for e in corpus]
+
+    check("published abstracts hedge far below the floor",
+          statistics.median(hedges) < style.MIN_HEDGES_PER_SENTENCE / 2)
+    check("most of the corpus would fail the hedging floor",
+          sum(1 for h in hedges if h < style.MIN_HEDGES_PER_SENTENCE) >= 15)
+    check("and most are too short for the density gate to apply",
+          sum(1 for e in corpus
+              if e["measured"]["sentences"] > style.MIN_SENTENCES_FOR_DENSITY
+              and e["measured"]["words"] > style.MIN_WORDS_FOR_DENSITY) <= 4)
+
+    # These two are calibrated: real prose sits comfortably inside them, so they
+    # flag genuine outliers rather than the norm.
+    check("the passive ratio threshold clears real prose",
+          sum(1 for p in passive if p > style.MAX_PASSIVE_RATIO) <= 3)
+    check("mean sentence length matches the 15-30 guidance",
+          sum(1 for w in sentence_words if 15 <= w <= 30) >= 17)
+
+    # A measured corpus is the guard the docs promise; keep the recorded stats
+    # honest by recomputing one of them.
+    entry = corpus[0]
+    report = style.check_style(
+        {"sections": [{"heading": "Introduction", "paragraphs": [entry["abstract"]]}]})
+    check("recorded stats still match a fresh run",
+          round(report["stats"]["passive_ratio"], 3) == entry["measured"]["passive_ratio"])
+
+
 def test_statistic_verification() -> None:
     from articlegen.verify import check_statistics
     from articlegen.sources import Paper
@@ -1317,6 +1420,8 @@ def main() -> int:
         test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
         test_prose_style_check, test_rules_do_not_reject_real_journal_prose,
+        test_register_rules_are_scoped_to_the_synthesis_voice,
+        test_density_thresholds_are_documented_against_the_corpus,
         test_statistic_verification, test_ranking, test_recency_actually_counts, test_render_blocks,
         test_display_item_placement, test_legacy_draft_fields,
         test_demo_and_index, test_web_server,
