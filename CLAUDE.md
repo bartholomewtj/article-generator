@@ -238,9 +238,28 @@ this gets used for) is the durable answer rather than more header tuning.
   `generate_json(..., api_key=...)` and every wrapper takes it; `None` falls back
   to the environment, which is what the CLI uses. Guarded by
   `test_per_request_api_key`.
-- **Groq is the default** (free tier / fast inference). `GROQ_API_KEY` is used
-  automatically and wins even if `ANTHROPIC_API_KEY` is also set. The web app
-  offers Claude as an alternative in Settings, storing a key per provider.
+- **Three providers: Groq, OpenRouter, Anthropic.** Groq is the default (free
+  tier / fast inference); `GROQ_API_KEY` is used automatically and wins even if
+  the others are also set. The web app offers all three in Settings, storing a
+  key per provider.
+- **OpenRouter is the answer to the daily cap, not to writing quality.** Its
+  default model is the *same* Llama 3.3 70B as Groq's — the difference is that
+  it bills prepaid credit rather than a daily allowance, so a run never fails
+  because the day's quota is spent, and it costs well under a cent per article.
+  Reach for Claude when the prose quality is the problem instead.
+  - **A slash is what makes a model name an OpenRouter slug**, and it is checked
+    *before* the `claude` prefix in `resolve_provider`. OpenRouter re-sells the
+    other providers' models as `vendor/model`, and `anthropic/claude-sonnet-5`
+    routed to Anthropic's own SDK is a 404. No direct provider's model id
+    contains a slash, so the discriminator is unambiguous.
+  - **`provider: {"require_parameters": true}` is load-bearing.** Without it
+    OpenRouter may route to a provider that ignores `response_format`, and the
+    article comes back as prose — which reads like the model being bad at
+    instructions rather than a routing choice. The schema also goes in the
+    system prompt, same belt-and-braces as the Groq path.
+  - Implemented with `requests` against the OpenAI-compatible endpoint; no new
+    dependency. A 200 can still carry an `error` body (no provider matched, or
+    an upstream refusal), so that is checked separately from the status code.
 - **Groq's free tier is the binding constraint, and it bites twice.**
   - **12,000 tokens/minute.** Groq counts the *reserved output* against this as
     well as the prompt, so `max_completion_tokens` must fit inside the limit —
@@ -250,16 +269,20 @@ this gets used for) is the durable answer rather than more header tuning.
     dropping any paper, because breadth is what stops sections repeating.
   - **100,000 tokens/day.** One article costs ~14-23k (more when the substance
     rules trigger a revision), so the free tier allows roughly **4-7 articles a
-    day**, and failed attempts still spend quota. Claude has no comparable
-    ceiling and `prompt_budget_chars` returns `None` for it.
-- Use Claude by setting repo variable `ARTICLEGEN_PROVIDER=anthropic`, passing a
-  `claude-*` `--model`, or having only an Anthropic key.
-- Default models: `llama-3.3-70b-versatile` / `claude-opus-5`. Model ids live in
-  **two** places — `llm.py` and the `PROVIDERS` map in `index.html`. Nothing
-  links them, and `web._requested_model` silently drops an unrecognised name
-  rather than erroring, so a stale front end quietly stops honouring the
-  provider the user picked. `test_front_end_models_match_the_allowlist` catches
-  the drift; change both together.
+    day**, and failed attempts still spend quota. Neither Claude nor OpenRouter
+    has a comparable ceiling, and `prompt_budget_chars` returns `None` for both —
+    note this means the *same* Llama 3.3 70B is trimmed on Groq and untrimmed on
+    OpenRouter, which is correct: the ceiling is the tier's, not the model's.
+- Select a provider by setting `ARTICLEGEN_PROVIDER` (`anthropic` / `openrouter`
+  / `groq`), passing a `--model` that identifies one, or having only that
+  provider's key set.
+- Default models: `llama-3.3-70b-versatile` / `meta-llama/llama-3.3-70b-instruct`
+  / `claude-opus-5`. Model ids live in **two** places — `llm.py` and the
+  `PROVIDERS` map in `index.html`. Nothing links them, and `web._requested_model`
+  silently drops an unrecognised name rather than erroring, so a stale front end
+  quietly stops honouring the provider the user picked.
+  `test_front_end_models_match_the_allowlist` catches the drift; change both
+  together.
 - **On Claude Opus 5, thinking is on unless you say otherwise**, and `max_tokens`
   caps thinking *plus* the reply. The shallow (`deep=False`) call was sized for
   Opus 4.8, which did not think by default, so its ceiling was raised to 16,000
@@ -350,7 +373,8 @@ this gets used for) is the durable answer rather than more header tuning.
 
 ## Environment setup
 
-- Set `GROQ_API_KEY` (free key at console.groq.com) or `ANTHROPIC_API_KEY`.
+- Set `GROQ_API_KEY` (free key at console.groq.com), `OPENROUTER_API_KEY`
+  (prepaid credit, openrouter.ai/keys) or `ANTHROPIC_API_KEY`.
 - Optional: `SEMANTIC_SCHOLAR_API_KEY` and `OPENALEX_MAILTO` raise scholarly-API rate limits.
 
 ## Conventions

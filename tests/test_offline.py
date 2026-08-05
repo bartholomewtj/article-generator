@@ -58,6 +58,7 @@ def test_per_request_api_key() -> None:
 
     check("gsk_ key -> groq", resolve_provider(None, "gsk_abc")[0] == "groq")
     check("sk-ant- key -> anthropic", resolve_provider(None, "sk-ant-abc")[0] == "anthropic")
+    check("sk-or- key -> openrouter", resolve_provider(None, "sk-or-v1-abc")[0] == "openrouter")
     check(
         "explicit model still beats the key prefix",
         resolve_provider("claude-opus-5", "gsk_abc")[0] == "anthropic",
@@ -77,6 +78,63 @@ def test_per_request_api_key() -> None:
     check("no module assigns into os.environ", 'os.environ["GROQ_API_KEY"] =' not in src)
     check("groq key still falls back to the environment",
           "os.environ.get(\"GROQ_API_KEY\")" in inspect.getsource(llm._groq_generate))
+
+
+def test_openrouter_routing() -> None:
+    """OpenRouter is the escape hatch from Groq's daily cap — it must not steal
+    the other providers' traffic, and must not hand their own model ids back to
+    them prefixed.
+
+    The slash is the whole discriminator: OpenRouter re-sells Claude as
+    `anthropic/claude-sonnet-5`, which routed to Anthropic's SDK would 404.
+    """
+    for var in ("ANTHROPIC_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY", "ARTICLEGEN_PROVIDER"):
+        os.environ.pop(var, None)
+    from articlegen.llm import (
+        OPENROUTER_DEFAULT_MODEL, prompt_budget_chars, resolve_provider,
+    )
+
+    check("vendor/model slug -> openrouter",
+          resolve_provider("meta-llama/llama-3.3-70b-instruct")[0] == "openrouter")
+    check("a resold claude slug stays on openrouter",
+          resolve_provider("anthropic/claude-sonnet-5")[0] == "openrouter")
+    check("and keeps the slug as given",
+          resolve_provider("anthropic/claude-sonnet-5")[1] == "anthropic/claude-sonnet-5")
+    check("bare claude name still goes direct to anthropic",
+          resolve_provider("claude-opus-5")[0] == "anthropic")
+    check("bare llama name still goes direct to groq",
+          resolve_provider("llama-3.3-70b-versatile")[0] == "groq")
+
+    os.environ["OPENROUTER_API_KEY"] = "sk-or-v1-x"
+    check("openrouter key alone selects it", resolve_provider()[0] == "openrouter")
+    check("and supplies its default model", resolve_provider()[1] == OPENROUTER_DEFAULT_MODEL)
+    os.environ["GROQ_API_KEY"] = "gsk_x"
+    check("groq still wins when both keys are set", resolve_provider()[0] == "groq")
+    os.environ.pop("GROQ_API_KEY", None)
+    os.environ["ARTICLEGEN_PROVIDER"] = "openrouter"
+    check("provider override accepts openrouter", resolve_provider()[0] == "openrouter")
+
+    # Groq trims the source payload to fit a 12k tokens/minute ceiling that
+    # OpenRouter does not have; trimming there would cost breadth for nothing.
+    check("openrouter takes the full source payload",
+          prompt_budget_chars("meta-llama/llama-3.3-70b-instruct") is None)
+    for var in ("ANTHROPIC_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY", "ARTICLEGEN_PROVIDER"):
+        os.environ.pop(var, None)
+
+
+def test_openrouter_request_shape() -> None:
+    """The request has to pin structured output, or the article comes back as prose."""
+    import inspect
+    from articlegen import llm
+
+    src = inspect.getsource(llm._openrouter_generate)
+    check("asks for a json_schema response", '"type": "json_schema"' in src)
+    check("in strict mode", '"strict": True' in src)
+    check("and only routes to providers that honour it", '"require_parameters": True' in src)
+    check("reads the key from OPENROUTER_API_KEY", 'os.environ.get("OPENROUTER_API_KEY")' in src)
+    check("names the out-of-credit case", "402" in src)
+    check("checks for an error body behind a 200", 'data.get("error")' in src)
+    check("treats a truncated reply as an error", '"length"' in src)
 
 
 def test_refusal_fallbacks() -> None:
@@ -1228,6 +1286,7 @@ def test_web_server() -> None:
 def main() -> int:
     for fn in (
         test_provider_resolution, test_per_request_api_key,
+        test_openrouter_routing, test_openrouter_request_shape,
         test_refusal_fallbacks,
         test_pipeline_is_shared, test_draft_summary, test_rate_limit,
         test_keepalive_connection_reuse, test_substance_checks,

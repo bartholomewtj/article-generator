@@ -711,11 +711,14 @@
       <div style="margin-bottom: 1.25rem;">
         <label class="input-label" for="providerSelect">Writing model</label>
         <p style="font-size:0.8rem; color:var(--muted); margin-top:-0.2rem; margin-bottom:0.6rem;">
-          Groq is free and fast. Claude writes noticeably better articles &mdash; more
-          specific, less repetitive &mdash; but needs a paid Anthropic key.
+          Groq is free and fast, but capped at a few articles a day. OpenRouter runs
+          the same model from prepaid credit with no daily cap. Claude writes
+          noticeably better articles &mdash; more specific, less repetitive &mdash;
+          but needs a paid Anthropic key.
         </p>
         <select id="providerSelect" class="theme-input" onchange="onProviderChange()">
           <option value="groq">Groq &mdash; Llama 3.3 70B (free)</option>
+          <option value="openrouter">OpenRouter &mdash; Llama 3.3 70B (credit, no daily cap)</option>
           <option value="anthropic">Claude (paid Anthropic key)</option>
         </select>
       </div>
@@ -796,11 +799,15 @@
     // Groq's free tier is 100,000 tokens/day and one article costs 14-23k, so
     // this is the failure a new user is most likely to hit — and its raw form
     // ("rate_limit_exceeded ... TPD") reads like a bug rather than a quota.
+    if (/insufficient credit|402/i.test(detail)) {
+      return 'Your OpenRouter credit is exhausted. Top up at openrouter.ai/credits, ' +
+             'or switch to Groq in Settings (⚙️) to keep going for free.';
+    }
     if (/rate.?limit|quota|tokens per day|TPD|429/i.test(detail)) {
       return currentProvider() === 'groq'
         ? 'Your Groq free-tier allowance is used up — it allows roughly 4-7 articles ' +
-          'a day and resets every 24 hours. Wait, or switch to Claude in Settings (⚙️), ' +
-          'which has no daily article cap.'
+          'a day and resets every 24 hours. Wait, or switch to OpenRouter or Claude in ' +
+          'Settings (⚙️) — neither has a daily article cap.'
         : 'The writing model is rate-limited right now. Wait a moment and try again.';
     }
     return detail || ('Request failed (' + resp.status + ').');
@@ -962,6 +969,16 @@
             '<strong>4&ndash;7 articles a day</strong> and failed attempts still count. ' +
             'Get a key from <a href="https://console.groq.com/keys" target="_blank" style="color:var(--accent);">console.groq.com</a>. ' +
             'If you hit the daily limit, switch to Claude above.'
+    },
+    openrouter: {
+      model: 'meta-llama/llama-3.3-70b-instruct',
+      store: 'articlegen_key_openrouter',
+      label: 'OpenRouter API Key',
+      placeholder: 'sk-or-v1-...',
+      help: 'The same Llama 3.3 70B as Groq, but paid from prepaid credit instead of ' +
+            'a daily allowance — so a run never fails because the day&rsquo;s quota is spent. ' +
+            'Well under a cent per article. Create a key at ' +
+            '<a href="https://openrouter.ai/keys" target="_blank" style="color:var(--accent);">openrouter.ai/keys</a>.'
     },
     anthropic: {
       model: 'claude-opus-5',
