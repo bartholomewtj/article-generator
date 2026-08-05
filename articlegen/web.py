@@ -49,6 +49,7 @@ DRAFTS_DIR = "drafts"
 ALLOWED_MODELS = frozenset({
     llm.GROQ_DEFAULT_MODEL,
     llm.ANTHROPIC_DEFAULT_MODEL,
+    llm.OPENROUTER_DEFAULT_MODEL,
 })
 
 # Shared hosts set this. Local runs leave it unset and keep writing to drafts/.
@@ -131,7 +132,10 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         they have no environment to set. A locally-run server with its own key
         configured needs no key in the request, so only fail when both are absent.
         """
-        if api_key or os.environ.get("GROQ_API_KEY") or os.environ.get("ANTHROPIC_API_KEY"):
+        if api_key or any(
+            os.environ.get(var)
+            for var in ("GROQ_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY")
+        ):
             return False
         self._send_json(
             {"error": "No API key set. Open Settings (⚙️), choose a writing model, and "

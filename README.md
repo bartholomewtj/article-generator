@@ -31,17 +31,26 @@ See [`deploy/`](deploy/README.md) to host the backend yourself.
 
 - **Groq** (the default; free tier, fast inference): create a key at
   https://console.groq.com/keys and set `GROQ_API_KEY`.
+- **OpenRouter** (opt-in; same model as Groq, no daily cap): create a key at
+  https://openrouter.ai/keys and set `OPENROUTER_API_KEY`.
 - **Claude** (opt-in; best writing quality, paid API): set `ANTHROPIC_API_KEY`.
 
 **Groq is used by default** — with a `GROQ_API_KEY` set it runs
-automatically, and it takes priority even if an `ANTHROPIC_API_KEY` is also
-present. To use Claude instead, set `ARTICLEGEN_PROVIDER=anthropic`.
-Models: `llama-3.3-70b-versatile` on Groq, `claude-opus-5` on Anthropic, both
-overridable with `--model`.
+automatically, and it takes priority even if the other keys are also present.
+To use another provider, set `ARTICLEGEN_PROVIDER=openrouter` (or `anthropic`).
+Models: `llama-3.3-70b-versatile` on Groq,
+`meta-llama/llama-3.3-70b-instruct` on OpenRouter, `claude-opus-5` on
+Anthropic, all overridable with `--model`.
 
 **Groq's free tier allows roughly 4–7 articles a day** (100,000 tokens/day; one
 article costs 14–23k, and failed attempts still count). It's the right choice
-for trying this out. For regular use, Claude has no comparable daily cap.
+for trying this out. Once that cap is the thing stopping you, OpenRouter runs
+the *same* Llama 3.3 70B from prepaid credit with no daily allowance, for well
+under a cent per article — it fixes the quota, not the writing. Claude is the
+one to pick when the prose quality is what you want to improve; it also has no
+daily cap. Any OpenRouter catalogue model works with `--model`, so
+`--model anthropic/claude-sonnet-5` runs Claude billed through your OpenRouter
+credit instead of a separate Anthropic account.
 
 Optional extras: a `SEMANTIC_SCHOLAR_API_KEY` secret and an `OPENALEX_MAILTO`
 environment variable raise the scholarly APIs' rate limits.
@@ -107,6 +116,8 @@ Set credentials for either provider:
 ```bash
 export GROQ_API_KEY=gsk_...           # Groq — free key at https://console.groq.com/keys
 # or
+export OPENROUTER_API_KEY=sk-or-v1-...  # OpenRouter — https://openrouter.ai/keys
+# or
 export ANTHROPIC_API_KEY=sk-ant-...   # Claude (or: ant auth login)
 ```
 
@@ -170,7 +181,7 @@ articlegen/
   cli.py       subcommands (ideas / draft / queue / demo / web)
   pipeline.py  the draft pipeline — every caller, CLI and web, runs this one
   web.py       HTTP server + JSON API behind the web front end
-  llm.py       provider layer: Groq or Claude, auto-detected from keys
+  llm.py       provider layer: Groq, OpenRouter or Claude, auto-detected from keys
   ideas.py     LLM call: theme -> shortlist of article ideas
   writer.py    LLM calls: plan queries, write the article (structured JSON)
   sources.py   Semantic Scholar + OpenAlex fetching, dedupe, ranking

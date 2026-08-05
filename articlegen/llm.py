@@ -1,10 +1,14 @@
-"""Provider layer: one `generate_json()` call, backed by Groq or Anthropic (Claude).
+"""Provider layer: one `generate_json()` call, backed by Groq, Anthropic (Claude) or OpenRouter.
 
 Provider resolution, in priority order:
-1. The model name, when given: `claude-*` -> Anthropic, `llama*`/`mixtral*`/`groq*` -> Groq.
-2. An explicitly passed `api_key`, by its prefix: `sk-ant-` -> Anthropic, `gsk_` -> Groq.
-3. ARTICLEGEN_PROVIDER env var ("anthropic" or "groq").
-4. Whichever API key is present: GROQ_API_KEY, then ANTHROPIC_API_KEY.
+1. The model name, when given: a `vendor/model` slug -> OpenRouter, `claude-*` ->
+   Anthropic, `llama*`/`mixtral*`/`groq*` -> Groq. The slash is checked first
+   because OpenRouter re-sells the other providers' models under names like
+   `anthropic/claude-sonnet-5`, which must not route to Anthropic directly.
+2. An explicitly passed `api_key`, by its prefix: `sk-ant-` -> Anthropic,
+   `gsk_` -> Groq, `sk-or-` -> OpenRouter.
+3. ARTICLEGEN_PROVIDER env var ("anthropic", "groq" or "openrouter").
+4. Whichever API key is present: GROQ_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY.
 5. Fallback: Groq (the default provider).
 
 Keys are passed **per call**, never through `os.environ`. The server handles
@@ -15,6 +19,9 @@ what the CLI wants and what a single-user local run has always done.
 
 Groq is the default provider: with GROQ_API_KEY set it's used automatically.
 Claude is opt-in — set ARTICLEGEN_PROVIDER=anthropic, pass a `claude-*` --model, or run with only an Anthropic key.
+OpenRouter is opt-in the same way, and is the option to reach for when Groq's
+free daily cap is the binding constraint: it is prepaid credit rather than a
+quota, so a run never fails because the day's allowance is spent.
 """
 
 from __future__ import annotations
@@ -31,6 +38,13 @@ GROQ_DEFAULT_MODEL = "llama-3.3-70b-versatile"
 # app sends a model name, and web.ALLOWED_MODELS is built from the constants
 # here, so a stale name there is quietly dropped rather than honoured.
 ANTHROPIC_DEFAULT_MODEL = "claude-opus-5"
+# The same Llama 3.3 70B the Groq default uses, so switching to OpenRouter
+# changes what meters the run, not what writes it. At roughly $0.10/$0.32 per
+# million tokens an article costs well under a cent, and OpenRouter bills
+# prepaid credit rather than a daily allowance — which is the whole reason to
+# use it. Pass any other catalogue slug with --model (e.g.
+# `anthropic/claude-sonnet-5`) when the writing quality matters more.
+OPENROUTER_DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct"
 DEFAULT_PROVIDER = "groq"
 
 # Groq's free tier meters tokens per minute, and it counts the *reserved* output
@@ -54,8 +68,10 @@ CHARS_PER_TOKEN = 4
 def prompt_budget_chars(model: str | None = None, api_key: str | None = None) -> int | None:
     """How many characters of source material this provider can take, or None for no limit.
 
-    Anthropic's limits are far above anything this pipeline produces, so only
-    Groq needs trimming.
+    Anthropic's and OpenRouter's limits are far above anything this pipeline
+    produces, so only Groq needs trimming. OpenRouter meters prepaid credit
+    rather than tokens per minute, so the same Llama 3.3 70B that has to be
+    trimmed on Groq's free tier can take the full source payload here.
     """
     provider, _ = resolve_provider(model, api_key)
     if provider != "groq":
@@ -71,9 +87,22 @@ def prompt_budget_chars(model: str | None = None, api_key: str | None = None) ->
     return max(spare, 1000) * CHARS_PER_TOKEN
 
 
+_PROVIDER_DEFAULT_MODELS = {
+    "groq": GROQ_DEFAULT_MODEL,
+    "anthropic": ANTHROPIC_DEFAULT_MODEL,
+    "openrouter": OPENROUTER_DEFAULT_MODEL,
+}
+
+
 def resolve_provider(model: str | None = None, api_key: str | None = None) -> tuple[str, str]:
     """Return (provider, model). `model` may be empty -> use the provider's default."""
     if model:
+        # Checked before the `claude` prefix: OpenRouter re-sells other
+        # providers' models as `vendor/model`, and `anthropic/claude-sonnet-5`
+        # sent to Anthropic's own SDK is a 404. The slash is what makes a name
+        # an OpenRouter slug; no direct provider's model id contains one.
+        if "/" in model:
+            return "openrouter", model
         if model.startswith("claude"):
             return "anthropic", model
         if model.startswith(("llama", "mixtral", "gemma", "deepseek", "qwen", "groq")):
@@ -82,19 +111,22 @@ def resolve_provider(model: str | None = None, api_key: str | None = None) -> tu
     forced = os.environ.get("ARTICLEGEN_PROVIDER", "").strip().lower()
     if api_key and api_key.startswith("sk-ant-"):
         provider = "anthropic"
+    elif api_key and api_key.startswith("sk-or-"):
+        provider = "openrouter"
     elif api_key and api_key.startswith("gsk_"):
         provider = "groq"
-    elif forced in ("anthropic", "groq"):
+    elif forced in _PROVIDER_DEFAULT_MODELS:
         provider = forced
     elif os.environ.get("GROQ_API_KEY"):
         provider = "groq"
     elif os.environ.get("ANTHROPIC_API_KEY"):
         provider = "anthropic"
+    elif os.environ.get("OPENROUTER_API_KEY"):
+        provider = "openrouter"
     else:
         provider = DEFAULT_PROVIDER  # Groq by default
 
-    default = GROQ_DEFAULT_MODEL if provider == "groq" else ANTHROPIC_DEFAULT_MODEL
-    return provider, model or default
+    return provider, model or _PROVIDER_DEFAULT_MODELS[provider]
 
 
 def generate_json(
@@ -118,6 +150,8 @@ def generate_json(
     print(f"[articlegen] using provider={provider} model={model}", file=sys.stderr, flush=True)
     if provider == "groq":
         return _groq_generate(prompt, schema, system, model, deep, api_key)
+    if provider == "openrouter":
+        return _openrouter_generate(prompt, schema, system, model, deep, api_key)
     return _anthropic_generate(prompt, schema, system, model, deep, api_key)
 
 
@@ -270,3 +304,105 @@ def _groq_generate(
         return json.loads(cleaned)
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"Groq returned invalid JSON: {exc}\nRaw response:\n{text_response[:500]}") from exc
+
+
+# ---------------------------------------------------------------- openrouter
+
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+# No tokens-per-minute ceiling to fit inside, unlike Groq — OpenRouter bills
+# prepaid credit — so the reservation only has to be big enough for the reply.
+# A 1600-word article in JSON runs about 2500-3000 tokens.
+OPENROUTER_DEEP_OUTPUT = 8000
+OPENROUTER_OUTPUT = 4000
+
+
+def _openrouter_generate(
+    prompt: str, schema: dict, system: str | None, model: str, deep: bool, api_key: str | None = None
+) -> dict:
+    import requests
+
+    api_key = api_key or os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "OPENROUTER_API_KEY environment variable is not set. "
+            "Create a key at https://openrouter.ai/keys and set OPENROUTER_API_KEY."
+        )
+
+    # Belt and braces, exactly as on the Groq path: `response_format` is the
+    # real constraint, but OpenRouter fronts many providers and the weaker ones
+    # treat a schema as a hint, so the schema goes in the prompt too.
+    system_instruction = (
+        (system or "") +
+        "\n\nIMPORTANT: You must respond ONLY with a valid JSON object matching this schema. "
+        "Do NOT enclose in backticks or markdown fences. Do NOT output any conversational text or commentary.\n"
+        f"JSON Schema:\n{json.dumps(schema)}"
+    )
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": prompt},
+        ],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {"name": "articlegen", "strict": True, "schema": schema},
+        },
+        # Without this, OpenRouter may route to a provider that ignores
+        # `response_format` entirely and answers in prose — a failure that looks
+        # like the model being bad at instructions rather than a routing choice.
+        "provider": {"require_parameters": True},
+        "temperature": 0.2,
+        "max_tokens": OPENROUTER_DEEP_OUTPUT if deep else OPENROUTER_OUTPUT,
+    }
+
+    res = requests.post(
+        OPENROUTER_URL,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            # Attribution headers; optional, and they carry no user content.
+            "HTTP-Referer": "https://github.com/bartholomewtj/article-generator",
+            "X-Title": "articlegen",
+        },
+        json=payload,
+        timeout=180,
+    )
+
+    if res.status_code == 401:
+        raise RuntimeError("OpenRouter rejected the key. Check it at https://openrouter.ai/keys.")
+    if res.status_code == 402:
+        raise RuntimeError(
+            "OpenRouter reports insufficient credit for this request. "
+            "Top up at https://openrouter.ai/credits, or use a cheaper --model."
+        )
+    if res.status_code == 429:
+        raise RuntimeError("OpenRouter is rate-limiting this key. Wait a moment and retry.")
+    if res.status_code >= 400:
+        raise RuntimeError(f"OpenRouter returned HTTP {res.status_code}: {res.text[:300]}")
+
+    data = res.json()
+    # A 200 can still carry an error body — an upstream provider refusing, or no
+    # provider matching `require_parameters` for this model.
+    if isinstance(data.get("error"), dict):
+        message = data["error"].get("message") or "unspecified error"
+        raise RuntimeError(f"OpenRouter could not complete the request: {message}")
+
+    choices = data.get("choices") or []
+    if not choices:
+        raise RuntimeError(f"OpenRouter returned no choices: {json.dumps(data)[:300]}")
+    if choices[0].get("finish_reason") == "length":
+        raise RuntimeError(
+            "The model hit its output limit before finishing the JSON. Try a "
+            "narrower topic, or --max-papers with a smaller number."
+        )
+
+    text_response = (choices[0].get("message") or {}).get("content") or ""
+    cleaned = _clean_json_text(text_response)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"OpenRouter returned invalid JSON: {exc}\nRaw response:\n{text_response[:500]}"
+        ) from exc
