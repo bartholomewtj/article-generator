@@ -15,15 +15,22 @@ journal-article abstracts. It runs two ways:
 
 - GitHub repo: **`bartholomewtj/article-generator`** (was `Dispatch-test` — old
   URLs still redirect).
-- The default branch is still the auto-generated name
-  **`claude/article-generator-html-yth1u4`**. A rename to `main` is wanted.
-  **The old note here said no API exposes the rename; that was wrong** —
-  `gh api --method POST repos/bartholomewtj/article-generator/branches/<old>/rename
-  -f new_name=main` works (verified: it returns "Branch not found" for a
-  nonexistent branch, not "endpoint not found"). Workflows reference the default
-  branch dynamically, so a rename is safe — but **Render tracks a branch by
-  name**, so a rename means updating the service's branch setting in the same
-  sitting or deploys silently stop.
+- **The default branch is now `main`** (renamed from the auto-generated
+  `claude/article-generator-html-yth1u4`, issue #47). Old URLs still redirect.
+- **`claude/article-generator-html-yth1u4` still exists, and must, until someone
+  opens the Render dashboard.** Render builds from a branch name held in its own
+  settings, and Blueprint auto-sync is off for this service — measured: setting
+  `branch:` in `render.yaml` and pushing produced a deploy of the new commit that
+  stayed on the old branch. So the deploy branch cannot be moved from this repo.
+  `.github/workflows/render-deploy-branch.yml` mirrors `main` onto it on every
+  push, which is what made the rename safe.
+  - **This is a bridge, not a fixture.** Point Render at `main`
+    (Settings → Build & Deploy → Branch), then delete that workflow, delete the
+    mirrored branch, and set `render.yaml`'s `branch:` to `main`.
+  - **`GET /api/health` reports the branch and commit the running service was
+    actually built from.** That is how any of this is checked rather than
+    assumed — it is what turned "deploys might have silently stopped" into a
+    one-line verification.
 - `drafts/` is intentionally git-tracked — it's the review surface.
 
 ## Architecture (module map)
