@@ -1110,13 +1110,28 @@ def test_openalex_reaches_for_recent_work_as_well() -> None:
             raise sources.SearchFailure("HTTP 429")
         return [Paper(title="Only result", abstract="a", year=2001)]
 
+    attempts = []
+
+    def half_failing_counted(query, limit, from_year=None):
+        attempts.append(from_year)
+        if from_year:
+            raise sources.SearchFailure("HTTP 429")
+        return [Paper(title="Only result", abstract="a", year=2001)]
+
     try:
-        sources._openalex_page = half_failing
+        sources._recency_query_refused = False
+        sources._openalex_page = half_failing_counted
         survived = sources.search_openalex("sleep", limit=10)
+        # A second query in the same run must not re-attempt the dead one: the
+        # limits are per-minute, so retrying costs three tries and ~10s each.
+        sources.search_openalex("sleep again", limit=10)
     finally:
         sources._openalex_page = real
+        sources._recency_query_refused = False
     check("a refused recency query does not lose the plain results",
           [p.title for p in survived] == ["Only result"])
+    check("and is not retried for the rest of the run",
+          sum(1 for a in attempts if a) == 1)
 
 
 def test_display_items_are_selected_once_for_both_formats() -> None:
