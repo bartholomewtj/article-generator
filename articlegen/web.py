@@ -87,6 +87,29 @@ def _rate_limited(client_ip: str) -> bool:
     return False
 
 
+def _build_info() -> dict:
+    """Which commit, from which branch, this process is actually running.
+
+    Same reasoning as `/api/diag`: everything works locally, so questions about
+    the *deployment* are otherwise unanswerable from outside. "Is the running
+    backend the code I just merged?" and "which branch does the host deploy
+    from?" both needed a dashboard login to answer, which meant a rename of the
+    default branch could stop deploys without anything visible from here (#47).
+
+    Render injects these; anywhere else they are simply absent, and the keys are
+    omitted rather than reported as empty. Both values are public facts about a
+    public repository.
+    """
+    info = {}
+    commit = os.environ.get("RENDER_GIT_COMMIT", "").strip()
+    branch = os.environ.get("RENDER_GIT_BRANCH", "").strip()
+    if commit:
+        info["commit"] = commit[:7]
+    if branch:
+        info["branch"] = branch
+    return info
+
+
 def _requested_model(payload: dict) -> str | None:
     """The caller's model, accepted only from a known list.
 
@@ -197,7 +220,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
             self._handle_get_drafts()
             return
         if self.path in ("/api/health", "/api/health/"):
-            self._send_json({"ok": True, "stateless": STATELESS})
+            self._send_json({"ok": True, "stateless": STATELESS, **_build_info()})
             return
         if self.path in ("/api/diag", "/api/diag/"):
             self._handle_diag()
