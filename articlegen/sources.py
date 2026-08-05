@@ -228,6 +228,11 @@ def _rebuild_abstract(inverted_index: dict[str, list[int]] | None) -> str:
 # enough that the query returns something other than what relevance already gave.
 RECENCY_WINDOW_YEARS = 8
 
+# Set when the recency companion query refuses, and cleared at the start of each
+# gather. Mirrors gather_evidence's `exhausted` set, which exists because
+# retrying a dead source on every query cost more than half the gather time.
+_recency_query_refused = False
+
 
 def _openalex_page(query: str, limit: int, from_year: int | None = None) -> list[Paper]:
     """One OpenAlex request."""
@@ -288,12 +293,22 @@ def search_openalex(query: str, limit: int = 15) -> list[Paper]:
     The recency query is best-effort. If it refuses, the relevance results still
     stand: a thinner pool beats no pool, and the caller's `exhausted` bookkeeping
     treats OpenAlex as one source either way.
+
+    A refusal also stops it being attempted again for the rest of the run, for
+    the same reason `gather_evidence` keeps an `exhausted` set: the limits are
+    per-minute and a run takes seconds, so re-attempting a dead query on every
+    subsequent query would spend three tries and about ten seconds each time,
+    which is what made gathering take 31s before that set existed.
     """
+    global _recency_query_refused
     papers = _openalex_page(query, limit)
+    if _recency_query_refused:
+        return papers
     cutoff = datetime.date.today().year - RECENCY_WINDOW_YEARS
     try:
         recent = _openalex_page(query, limit, from_year=cutoff)
     except SearchFailure:
+        _recency_query_refused = True
         return papers
 
     seen = {(p.doi or _normalize_title(p.title)) for p in papers}
@@ -512,6 +527,8 @@ def gather_evidence(
     endpoint wants this — it exists to answer "can this host reach its sources
     *right now*", which a cached answer cannot. Drafting always leaves it on.
     """
+    global _recency_query_refused
+    _recency_query_refused = False
     seen: set[str] = set()
     collected: list[Paper] = []
     # A source that has already refused once in this run will almost certainly
