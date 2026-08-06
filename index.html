@@ -147,6 +147,12 @@
     padding: 1.25rem 1.25rem 5rem;
     flex: 1;
   }
+  /* Only the article reader earns a wider shell on big screens: the iframe's
+     own CSS scales its text column to the room it gets. Forms and idea cards
+     stay at the 640px column they were designed for. */
+  @media (min-width: 900px) {
+    main.container:has(#readerView.active) { max-width: min(88vw, 1040px); }
+  }
 
   /* View Containers */
   .view { display: none; }
