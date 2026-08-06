@@ -135,6 +135,12 @@ def test_openrouter_request_shape() -> None:
     check("names the out-of-credit case", "402" in src)
     check("checks for an error body behind a 200", 'data.get("error")' in src)
     check("treats a truncated reply as an error", '"length"' in src)
+    # Reasoning models (anthropic/claude-sonnet-5) expose no `temperature`, and
+    # `require_parameters` demands every sent parameter — so sending it 404s
+    # with "No endpoints found". The retry drops temperature, not the schema.
+    check("retries a parameter 404 without temperature",
+          'res.status_code == 404 and "temperature" in payload' in src)
+    check("but never gives up require_parameters", src.count('"require_parameters"') == 1)
 
 
 def test_refusal_fallbacks() -> None:

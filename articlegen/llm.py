@@ -357,18 +357,30 @@ def _openrouter_generate(
         "max_tokens": OPENROUTER_DEEP_OUTPUT if deep else OPENROUTER_OUTPUT,
     }
 
-    res = requests.post(
-        OPENROUTER_URL,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            # Attribution headers; optional, and they carry no user content.
-            "HTTP-Referer": "https://github.com/bartholomewtj/article-generator",
-            "X-Title": "articlegen",
-        },
-        json=payload,
-        timeout=180,
-    )
+    def _post(body):
+        return requests.post(
+            OPENROUTER_URL,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                # Attribution headers; optional, and they carry no user content.
+                "HTTP-Referer": "https://github.com/bartholomewtj/article-generator",
+                "X-Title": "articlegen",
+            },
+            json=body,
+            timeout=180,
+        )
+
+    res = _post(payload)
+
+    # `require_parameters` demands every sent parameter, not just
+    # `response_format` — and reasoning models (e.g. anthropic/claude-sonnet-5)
+    # expose no `temperature` at all, so its mere presence 404s with "No
+    # endpoints found". Retry without it rather than give up `require_parameters`,
+    # which is what actually protects the JSON output.
+    if res.status_code == 404 and "temperature" in payload:
+        retry = {k: v for k, v in payload.items() if k != "temperature"}
+        res = _post(retry)
 
     if res.status_code == 401:
         raise RuntimeError("OpenRouter rejected the key. Check it at https://openrouter.ai/keys.")
