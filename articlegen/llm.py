@@ -32,12 +32,12 @@ import sys
 import time
 
 GROQ_DEFAULT_MODEL = "llama-3.3-70b-versatile"
-# Claude Opus 5 is the current Opus, at the same price as the 4.8 it replaces
-# ($5/$25 per million tokens). `claude-opus-4-8` still works if you pass it with
+# Claude Fable 5 is the top of the Claude 5 family, above Opus in capability.
+# `claude-opus-5` and `claude-opus-4-8` still work if you pass them with
 # --model. Keep this in step with the Settings dropdown in index.html: the web
 # app sends a model name, and web.ALLOWED_MODELS is built from the constants
 # here, so a stale name there is quietly dropped rather than honoured.
-ANTHROPIC_DEFAULT_MODEL = "claude-opus-5"
+ANTHROPIC_DEFAULT_MODEL = "claude-fable-5"
 # The same Llama 3.3 70B the Groq default uses, so switching to OpenRouter
 # changes what meters the run, not what writes it. At roughly $0.10/$0.32 per
 # million tokens an article costs well under a cent, and OpenRouter bills
@@ -312,9 +312,13 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # No tokens-per-minute ceiling to fit inside, unlike Groq — OpenRouter bills
 # prepaid credit — so the reservation only has to be big enough for the reply.
-# A 1600-word article in JSON runs about 2500-3000 tokens.
-OPENROUTER_DEEP_OUTPUT = 8000
-OPENROUTER_OUTPUT = 4000
+# A 1600-word article in JSON runs about 2500-3000 tokens, but reasoning models
+# (claude-fable-5, claude-sonnet-5) think inside `max_tokens` too, and a
+# truncated reply is invalid JSON, not a short one: at 8000 the revision pass
+# hit the ceiling on every reasoning-model run and was discarded. Same trap,
+# same fix as the Anthropic path's shallow-call ceiling.
+OPENROUTER_DEEP_OUTPUT = 16000
+OPENROUTER_OUTPUT = 8000
 
 
 def _openrouter_generate(

@@ -312,7 +312,7 @@ this gets used for) is the durable answer rather than more header tuning.
   / `groq`), passing a `--model` that identifies one, or having only that
   provider's key set.
 - Default models: `llama-3.3-70b-versatile` / `meta-llama/llama-3.3-70b-instruct`
-  / `claude-opus-5`. Model ids live in **two** places — `llm.py` and the
+  / `claude-fable-5`. Model ids live in **two** places — `llm.py` and the
   `PROVIDERS` map in `index.html`. Nothing links them, and `web._requested_model`
   silently drops an unrecognised name rather than erroring, so a stale front end
   quietly stops honouring the provider the user picked.

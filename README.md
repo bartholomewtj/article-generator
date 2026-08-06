@@ -39,7 +39,7 @@ See [`deploy/`](deploy/README.md) to host the backend yourself.
 automatically, and it takes priority even if the other keys are also present.
 To use another provider, set `ARTICLEGEN_PROVIDER=openrouter` (or `anthropic`).
 Models: `llama-3.3-70b-versatile` on Groq,
-`meta-llama/llama-3.3-70b-instruct` on OpenRouter, `claude-opus-5` on
+`meta-llama/llama-3.3-70b-instruct` on OpenRouter, `claude-fable-5` on
 Anthropic, all overridable with `--model`.
 
 **Groq's free tier allows roughly 4–7 articles a day** (100,000 tokens/day; one
@@ -159,7 +159,7 @@ Markdown, for easy editing), and refreshes `index.html` (your review queue).
 | `queue` | `--open` |
 | `demo` | `--open`, `-o` |
 
-`--model` (default `claude-opus-5`) is global: `articlegen --model … draft "…"`.
+`--model` (default `claude-fable-5`) is global: `articlegen --model … draft "…"`.
 
 ## Notes & limitations
 

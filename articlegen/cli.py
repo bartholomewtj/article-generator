@@ -164,7 +164,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Model to use; the name picks the provider (claude-* / llama-* / groq-*). "
             "Default: auto — llama-3.3-70b-versatile (Groq is the default provider), "
-            "or claude-opus-5 when only an Anthropic key is set."
+            "or claude-fable-5 when only an Anthropic key is set."
         ),
     )
     sub = parser.add_subparsers(dest="command", required=True)
