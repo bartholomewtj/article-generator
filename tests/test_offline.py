@@ -868,7 +868,10 @@ def test_citation_renumbering() -> None:
     check("map renumbers source indices", m == {6: 1, 7: 2, 18: 3, 8: 4, 15: 5})
     check("remap single marker", _remap_citations("x [18] y", m) == "x [3] y")
     check("remap combined marker", _remap_citations("a [7, 8] b", m) == "a [2, 4] b")
-    check("remap drops unknown marker", _remap_citations("z [99] w", m) == "z  w")
+    # The dropped marker takes its leading space with it — leaving it produced
+    # "z  w" here and a stranded full stop ("…the market .") in a real article.
+    check("remap drops unknown marker without leaving a gap",
+          _remap_citations("z [99] w", m) == "z w")
 
 
 def test_journal_citation_style() -> None:
@@ -1807,6 +1810,25 @@ def test_web_server() -> None:
     check("web handler GET /api/drafts returns 200 OK", "200 OK" in output and "application/json" in output)
 
 
+def test_ungrounded_citations_leave_no_trace() -> None:
+    """A model does cite SOURCE numbers it was never given. The marker is
+    dropped — but it used to leave its leading space behind, stranding the
+    sentence's full stop as "…the market ." in a shipped article."""
+    from articlegen.render import _remap_citations, _shift_markers_after_punctuation
+
+    def rendered(text, mapping):
+        return _shift_markers_after_punctuation(_remap_citations(text, mapping))
+
+    check("a dropped marker takes its space with it",
+          rendered("ahead of the market [15].", {1: 1}) == "ahead of the market.")
+    check("kept markers still hug their word",
+          rendered("a claim [1].", {1: 1}) == "a claim.[1]")
+    check("dropping one of a bundle keeps the rest",
+          rendered("both agree [1, 9].", {1: 1}) == "both agree.[1]")
+    check("a dropped marker mid-sentence closes up",
+          rendered("dropped [9] here [2].", {2: 2}) == "dropped here.[2]")
+
+
 def test_full_text_grounding() -> None:
     """Full-text mode: fetch only what is truly open access, show a bounded
     excerpt, tell the model the truth about its inputs, and verify statistics
@@ -2014,6 +2036,7 @@ def main() -> int:
         test_groq_token_budget, test_source_failures_are_distinguishable,
         test_search_cache, test_front_end_models_match_the_allowlist,
         test_polite_pool_identification, test_europe_pmc_parsing,
+        test_ungrounded_citations_leave_no_trace,
         test_full_text_grounding, test_pipeline_fetches_full_text,
         test_methods_names_only_sources_that_answered,
         test_groq_json_cleaning,

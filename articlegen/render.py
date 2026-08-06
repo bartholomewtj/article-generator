@@ -23,6 +23,9 @@ import re
 from .sources import Paper
 
 _CITATION_RE = re.compile(r"\[(\d+(?:\s*,\s*\d+)*)\]")
+# The same marker with any space in front of it, so dropping an ungrounded
+# citation does not leave that space stranded before the punctuation.
+_CITATION_WITH_LEAD_RE = re.compile(r"([ \t]*)\[(\d+(?:\s*,\s*\d+)*)\]")
 # A citation marker sitting *before* the sentence punctuation, e.g. "…rest [1]."
 _MARKER_BEFORE_PUNCT_RE = re.compile(r"[ \t]*(\[\d+(?:\s*,\s*\d+)*\])[ \t]*([.,;:?!])")
 # A marker floated off the word it belongs to — the superscript should hug it.
@@ -53,14 +56,22 @@ def _citation_map(article: dict, papers: list[Paper]) -> tuple[list[Paper], dict
 
 
 def _remap_citations(text: str, mapping: dict[int, int]) -> str:
-    """Rewrite raw SOURCE-index markers to display numbers; drop any with no source."""
+    """Rewrite raw SOURCE-index markers to display numbers; drop any with no source.
+
+    A dropped marker takes the space in front of it with it. The model does cite
+    source numbers it was never given — the marker is then removed, and leaving
+    the space behind stranded the sentence's full stop: "…the market ." appeared
+    in a shipped article. The leading whitespace is captured rather than matched
+    globally so a kept marker's spacing is untouched.
+    """
 
     def replace(match: re.Match) -> str:
-        mapped = [str(mapping[int(n)]) for n in match.group(1).split(",")
+        lead, body = match.group(1), match.group(2)
+        mapped = [str(mapping[int(n)]) for n in body.split(",")
                   if int(n.strip()) in mapping]
-        return f"[{', '.join(mapped)}]" if mapped else ""
+        return f"{lead}[{', '.join(mapped)}]" if mapped else ""
 
-    return _CITATION_RE.sub(replace, text)
+    return _CITATION_WITH_LEAD_RE.sub(replace, text)
 
 
 def _cited_papers(article: dict, papers: list[Paper]) -> list[Paper]:
