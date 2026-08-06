@@ -1,20 +1,26 @@
 """Deterministic grounding check for the statistics in a generated article.
 
-The writer only ever sees abstracts, yet is prone to stating precise figures
-(effect sizes, confidence intervals, risk ratios) that live in full-text tables.
-This pass extracts the decimal/percentage figures the article asserts and checks
-whether each actually appears in the fetched abstracts. Anything missing is
+The writer sees abstracts, plus — for open-access sources — the same full-text
+excerpts that `sources.full_text_excerpts` yields. It is prone to stating
+precise figures (effect sizes, confidence intervals, risk ratios) it was never
+shown. This pass extracts the decimal/percentage figures the article asserts
+and checks whether each appears in that same material. Anything missing is
 surfaced to the reader as "verify against the full text" rather than trusted.
 
+The haystack is exactly what the writer was shown, not the whole retrieved
+paper: searching text the writer never saw would let a figure recalled from
+training pass as grounded. `full_text_excerpts` is deterministic over the
+papers, so both sides derive the same excerpts without anything recorded.
+
 It is intentionally deterministic — an LLM verifier can hallucinate agreement;
-substring presence in the real abstract text cannot.
+substring presence in the real source text cannot.
 """
 
 from __future__ import annotations
 
 import re
 
-from .sources import Paper
+from .sources import Paper, full_text_excerpts
 
 # Decimals (0.90, -0.38, 4.91) and percentages (12%, 3.5%) — the figures most at
 # risk of being reconstructed from memory. Plain integers (years, counts) are
@@ -44,8 +50,11 @@ def _article_text(article: dict) -> str:
 
 
 def check_statistics(article: dict, papers: list[Paper]) -> dict:
-    """Return {'unverified': [figures not found in any abstract], 'total': n}."""
+    """Return {'unverified': [figures not found in the shown material], 'total': n}."""
+    shown = full_text_excerpts(papers)
     haystack = " ".join(p.abstract or "" for p in papers)
+    if shown:
+        haystack += " " + " ".join(shown.values())
     haystack_norm = haystack.replace(" ", "")
 
     seen: set[str] = set()

@@ -91,14 +91,16 @@ title ──▶ the model plans search queries
   deterministically after drafting — second person, contractions, boosters
   ("clearly", "striking"), claims of proof and under-hedging are errors — and any
   failures go back to the model once for a targeted revision.
-- **Evidence-grounded, and honest about it.** The writer only sees real
-  abstracts and cites them; every superscript links to a numbered reference with
-  a link back to the paper (DOI when available). Before writing, each source is
-  scored for how *directly* it addresses the exact topic — so the article can say
-  when direct evidence is thin instead of quietly substituting adjacent work. A
-  deterministic check flags any statistic absent from the source abstracts, and
-  Fig. 1 and Table 1 are built from the fetched records rather than written by
-  the model. Clinical topics get a "not medical advice" disclaimer.
+- **Evidence-grounded, and honest about it.** The writer sees real abstracts —
+  and, for the most relevant sources with an open-access copy on Europe PMC,
+  the full text too — and cites them; every superscript links to a numbered
+  reference with a link back to the paper (DOI when available). Before writing,
+  each source is scored for how *directly* it addresses the exact topic — so
+  the article can say when direct evidence is thin instead of quietly
+  substituting adjacent work. A deterministic check flags any statistic absent
+  from the material the writer was actually shown, and Fig. 1 and Table 1 are
+  built from the fetched records rather than written by the model. Clinical
+  topics get a "not medical advice" disclaimer.
 - **No fabricated apparatus.** No invented journal name, volume, DOI, received
   dates or affiliations. The masthead says "Not peer reviewed" and the back
   matter says a machine wrote it.
@@ -170,9 +172,12 @@ Markdown, for easy editing), and refreshes `index.html` (your review queue).
   instant and costs nothing against those shared limits. This matters more than
   it sounds: the free tiers refuse often enough that a second attempt at the
   same query is likelier to fail than to find anything new.
-- The article is AI-written from **abstracts**, not full texts. Treat it as a
-  well-sourced starting point: follow the source links before relying on any
-  specific claim.
+- The article is AI-written from **abstracts, plus the open-access full texts**
+  of the most relevant sources when Europe PMC can serve them (on Claude or
+  OpenRouter; Groq's free-tier token ceiling keeps it abstracts-only). The
+  Methods section and Table 1's Read column state exactly how deeply each
+  source was read. Treat it as a well-sourced starting point: follow the
+  source links before relying on any specific claim.
 
 ## Layout
 

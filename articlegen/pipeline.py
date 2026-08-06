@@ -17,14 +17,19 @@ import datetime
 from dataclasses import dataclass, field
 from typing import Callable
 
-from .llm import resolve_provider
-from .sources import DATABASE_NAMES, Paper, gather_evidence
+from .llm import prompt_budget_chars, resolve_provider
+from .sources import DATABASE_NAMES, Paper, fetch_full_text, gather_evidence
 from .style import check_style, errors as style_errors, format_report as format_style, revision_brief
 from .verify import check_statistics
 from .writer import curate_sources, plan_queries, revise_prose, write_article
 
 # A caller that wants progress reporting passes one of these; the default drops it.
 Logger = Callable[[str], None]
+
+# Upper bound on full-text HTTP fetches per draft. Each is one request to
+# Europe PMC; more than this many full texts would blow the excerpt budget
+# anyway, so extra fetches buy nothing.
+MAX_FULLTEXT_FETCHES = 8
 
 
 def _silent(message: str) -> None:
@@ -191,6 +196,28 @@ def generate_draft(
         log(f"  relevance: {counts.get('direct', 0)} direct / "
             f"{counts.get('related', 0)} related / {counts.get('tangential', 0)} tangential")
 
+    # Full-text grounding: after curation, fetch the open-access full text of
+    # the sources that earned it — direct/related labels, in rank order. Gated
+    # off Groq, whose per-minute token ceiling cannot fit any full text; there
+    # the article stays abstracts-only and the Methods section says so. The
+    # fetch cap bounds HTTP calls, not tokens — the writer's excerpt budget in
+    # `sources.full_text_excerpts` does the token bounding.
+    fetched: list[int] = []
+    if prompt_budget_chars(model, api_key) is None:
+        relevance = curation.get("relevance") or {}
+        log("Fetching open-access full texts...")
+        for index, paper in enumerate(papers, start=1):
+            if len(fetched) >= MAX_FULLTEXT_FETCHES:
+                break
+            if relevance.get(index) not in ("direct", "related"):
+                continue
+            text = fetch_full_text(paper)
+            if text:
+                paper.full_text = text
+                fetched.append(index)
+        log(f"  full text retrieved for {len(fetched)} source(s)"
+            + (f": {fetched}" if fetched else " (none open access)"))
+
     log("Writing the article (this can take a few minutes)...")
     article = write_article(
         topic, papers, model=model, style_note=style_note, curation=curation, api_key=api_key
@@ -219,6 +246,10 @@ def generate_draft(
         "databases": databases,
         "model": resolve_provider(model, api_key)[1],
         "date": datetime.date.today().strftime("%d %B %Y").lstrip("0"),
+        # Which sources (1-based indices) the writer saw full text for. The
+        # Methods section is written from this — like `databases`, it records
+        # what actually happened, never what was intended.
+        "full_text_sources": fetched,
     }
 
     return Draft(

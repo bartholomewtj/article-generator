@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 
 from .llm import generate_json, prompt_budget_chars
-from .sources import Paper
+from .sources import Paper, full_text_excerpts
 
 _QUERY_SCHEMA = {
     "type": "object",
@@ -305,6 +305,35 @@ claim; the section headings, the reference list and every number must be \
 unchanged. Do not add claims, sources or figures.
 """
 
+# When open-access full texts ride along in the payload, the abstracts-only
+# framing above becomes false — and a prompt that lies about its own inputs
+# teaches the model to ignore it. The full-text variants are derived by
+# substitution so the two framings cannot drift apart; a test pins that every
+# substitution still finds its target.
+_FULLTEXT_SUBSTITUTIONS = (
+    ("You are working from ABSTRACTS ONLY — never the full papers. This constrains you:",
+     "You are working from the abstract of every source, plus the open-access FULL "
+     "TEXT included below for some of them (the rest say so and stay abstract-only). "
+     "This constrains you:"),
+    ("if that exact figure appears in the abstract you are citing",
+     "if that exact figure appears in the abstract or included full text of the "
+     "source you are citing"),
+    ("If the abstract doesn't give the number,",
+     "If the material you were given doesn't contain the number,"),
+    ("FROM ITS ABSTRACT ONLY",
+     "from its abstract and included full text ONLY"),
+)
+
+
+def _with_fulltext_framing(system: str) -> str:
+    for old, new in _FULLTEXT_SUBSTITUTIONS:
+        system = system.replace(old, new)
+    return system
+
+
+_WRITER_SYSTEM_FULLTEXT = _with_fulltext_framing(_WRITER_SYSTEM)
+_REVISE_SYSTEM_FULLTEXT = _with_fulltext_framing(_REVISE_SYSTEM)
+
 
 def plan_queries(
     topic: str, model: str | None = None, api_key: str | None = None
@@ -332,6 +361,7 @@ def _format_sources(
     papers: list[Paper],
     relevance: dict[int, str] | None = None,
     budget_chars: int | None = None,
+    excerpts: dict[int, str] | None = None,
 ) -> str:
     """Render the sources for the prompt, trimmed to `budget_chars` if given.
 
@@ -339,16 +369,31 @@ def _format_sources(
     stops the article restating the same few findings, so losing the tail of a
     verbose abstract costs less than losing a whole study. Papers arrive already
     ranked, so anything that must go is the least relevant.
+
+    `excerpts` (from `sources.full_text_excerpts`) appends each paper's
+    open-access full text below its abstract. Full text and a char budget are
+    mutually exclusive: the budget exists because Groq meters tokens per
+    minute, and no full text fits inside that — so a budget drops the excerpts.
     """
+    if budget_chars is not None:
+        excerpts = None
+
     def render(paper: Paper, index: int, abstract: str) -> str:
         tag = f" [{relevance[index]} to topic]" if relevance and index in relevance else ""
-        return (
+        block = (
             f"SOURCE {index}{tag}\n"
             f"Title: {paper.title}\n"
             f"Authors: {paper.author_line} ({paper.year or 'n.d.'})\n"
             f"Venue: {paper.venue or 'unknown'} | Citations: {paper.citation_count}\n"
             f"Abstract: {abstract}"
         )
+        if excerpts and index in excerpts:
+            block += (
+                "\nFull text (open access; may be truncated):\n" + excerpts[index]
+            )
+        elif excerpts:
+            block += "\n(Abstract only — no open-access full text was available.)"
+        return block
 
     blocks = [render(p, i, p.abstract) for i, p in enumerate(papers, start=1)]
     if budget_chars is None or sum(len(b) for b in blocks) <= budget_chars:
@@ -441,15 +486,18 @@ def write_article(
         context += "\n\n"
     if mri:
         context += f"Suggested study to feature (most relevant): SOURCE {mri}.\n\n"
+    budget = prompt_budget_chars(model, api_key)
+    excerpts = full_text_excerpts(papers)
+    use_full_text = bool(excerpts) and budget is None
     context += (
         "Here are the candidate sources with their relevance labels. Choose the ones "
         "that genuinely support the article and write it.\n\n"
-        + _format_sources(papers, relevance, prompt_budget_chars(model, api_key))
+        + _format_sources(papers, relevance, budget, excerpts)
     )
     return generate_json(
         context,
         _ARTICLE_SCHEMA,
-        system=_WRITER_SYSTEM,
+        system=_WRITER_SYSTEM_FULLTEXT if use_full_text else _WRITER_SYSTEM,
         model=model,
         deep=True,
         api_key=api_key,
@@ -484,17 +532,21 @@ def revise_prose(
         budget = prompt_budget_chars(model, api_key)
         if budget is not None:
             budget = max(budget - len(draft_json), 1000)
+        excerpts = full_text_excerpts(papers)
+        use_full_text = bool(excerpts) and budget is None
         context += (
-            "SOURCES — the abstracts this article must be grounded in. Anything you "
+            "SOURCES — the material this article must be grounded in. Anything you "
             "add must come from here and be cited by its SOURCE number:\n\n"
-            + _format_sources(papers, relevance, budget)
+            + _format_sources(papers, relevance, budget, excerpts)
             + "\n\n"
         )
+    else:
+        use_full_text = False
     context += "Here is the draft to revise, as JSON:\n\n" + draft_json
     return generate_json(
         context,
         _ARTICLE_SCHEMA,
-        system=_REVISE_SYSTEM,
+        system=_REVISE_SYSTEM_FULLTEXT if use_full_text else _REVISE_SYSTEM,
         model=model,
         deep=True,
         api_key=api_key,
