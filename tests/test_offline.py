@@ -1725,9 +1725,12 @@ def test_display_item_placement() -> None:
     h = render_article(article, papers, "sunlight for schizophrenia", curation, verification, provenance)
     check("each display item appears once",
           h.count("Box 1 |") == 1 and h.count("Fig. 1 |") == 1 and h.count("Table 1 |") == 1)
-    check("box precedes figure precedes table",
-          h.index("Box 1 |") < h.index("Fig. 1 |") < h.index("Table 1 |"))
+    check("figure precedes box in the body", h.index("Fig. 1 |") < h.index("Box 1 |"))
+    check("table sits in the back matter, after Methods",
+          h.index("Table 1 |") > h.index("<h2>Methods"))
     check("table precedes the reference list", h.index("Table 1 |") < h.index("References"))
+    check("key points sit before the conclusions",
+          h.index("<h2>Introduction") < h.index("Key points") < h.index("<h2>Conclusions"))
 
     # A one-section article still gets all three, appended rather than interleaved.
     short = dict(article, sections=[{"heading": "Introduction", "paragraphs": ["Only [1]."]}])

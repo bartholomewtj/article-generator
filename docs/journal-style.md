@@ -59,8 +59,11 @@ Nature Reviews prints Key points in a tinted box at the head of the article; JAM
 prints Question / Findings / Meaning. Both exist so a reader can take the paper's
 claim without reading the paper.
 
-→ `key_takeaways` becomes `key_points`, 4–6 bullets, rendered in a bordered box
-directly under the abstract instead of at the foot of the page.
+→ `key_takeaways` becomes `key_points`, 4–6 bullets in a bordered box — placed
+**directly before the concluding section**, a deliberate departure from Nature's
+head-of-article position: read in sequence, the points bridge the evidence just
+presented to the verdict about to be drawn, instead of pre-empting an argument
+the reader has not seen.
 
 ### 4. Index terms are printed
 
@@ -87,9 +90,16 @@ hold, so they cannot be hallucinated:
   cited sources by publication year, segmented by relevance (direct / related /
   background).
 - **`Table 1 | Characteristics of the cited evidence.`** — one row per cited
-  source: number, authors, year, venue, relevance to the topic, citation count.
-- **`Box 1 | <featured study title>`** — the featured study's method and
-  results, which used to be the "Featured study" magazine aside.
+  source: number, authors, year, venue, relevance to the topic, citation count
+  (and, in full-text mode, how deeply it was read). It is reference apparatus,
+  so it sits in the **back matter after Methods** rather than interrupting the
+  prose — a second deliberate departure from journal convention.
+- **`Box 1 | <featured study title>`** — the featured study's **Method,
+  Results and Limitations**, each from its abstract only. The box carries no
+  editorial "why this study" line: it reports the study and lets that speak.
+
+In the body, Fig. 1 follows the Introduction and Box 1 follows the first
+thematic section.
 
 ### 7. Citations are superscript numerals, numbered by first appearance
 

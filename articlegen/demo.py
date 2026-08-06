@@ -136,11 +136,14 @@ SAMPLE_ARTICLE = {
     ],
     "featured_study": {
         "source_index": 3,
-        "why": "The first direct demonstration that sleep increases clearance of brain metabolites.",
         "method": "Two-photon imaging with tracer injection in sleeping versus waking mice.",
         "results": (
             "Interstitial space expanded during sleep, with a corresponding increase in "
             "the clearance rate of amyloid-beta."
+        ),
+        "limitations": (
+            "An anaesthetised-mouse model; whether clearance scales the same way in "
+            "naturally sleeping humans was not tested."
         ),
     },
     "sections": [
