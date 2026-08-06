@@ -1,5 +1,11 @@
 name: "Deploy Mobile Web App to GitHub Pages"
 
+# Push triggers silently stopped firing on 6 Aug 2026 after a Pages deployment
+# timed out mid-flight (issue #71); workflow_dispatch kept working throughout.
+# Editing this file makes GitHub re-register the workflow's triggers, which is
+# the documented remedy for exactly this state. If pushes go quiet again:
+# `gh workflow run pages.yml --ref main` deploys, and NEVER re-run a failed
+# Pages deploy — the rerun double-uploads the artifact and fails on that.
 on:
   push:
     branches:
