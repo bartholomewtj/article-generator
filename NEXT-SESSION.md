@@ -1,17 +1,32 @@
 # Next session
 
-_Last handoff: 5 August 2026 — branch `main`_
+_Last handoff: 7 August 2026 — branch `main`_
 
 ## Where this stopped
 
 `articlegen` turns a topic into a single-page HTML evidence review, formatted
-like a journal Review article and grounded in real paper abstracts. It runs as a
-CLI and as a hosted web app (GitHub Pages front end → Render backend).
+like a journal Review article and grounded in real paper abstracts and, where
+available, open-access full texts. It runs as a CLI and as a hosted web app
+(GitHub Pages front end → Render backend).
 
-Everything open at the start of the day is closed. Two real articles were
-generated through OpenRouter and read; the defects they exposed were fixed and
-merged. The default branch was renamed to `main`. **The tree is clean, nothing is
-half-finished, and there are no open PRs.**
+6 August closed out all three quality issues from the last handoff:
+
+- **#63 (abstract echoed as Introduction) — verdict: the model, not the
+  pipeline.** The single-variable test (PR #66) reran the same topic with
+  `anthropic/claude-sonnet-5`; the echo vanished. Fable is now the Anthropic
+  default (PR #68).
+- **#64 (20 sources screened, 3 cited) — same root cause.** The writer prompt
+  now says to cite `related` sources too (PR #68). On the sonnet test run, 12
+  of 20 screened sources were cited and the body ran 1,661 words — against a
+  471-word stub on Llama. One confirming run on a second topic would be nice
+  but wasn't required to close it.
+- **#62 (corporate authors mangled)** — fixed; consortium names pass through
+  unsplit (PR #69).
+
+Then two bigger merges: **full-text grounding** (PR #72 — direct/related
+sources with open-access full text get excerpt-level grounding, not just
+abstracts) and an **article layout rearrange** (PR #73 — Table 1 to back
+matter, key points before Conclusions).
 
 ## Resume with
 
@@ -21,7 +36,7 @@ cd /c/claudeOS/Projects/articlegenerator && python tests/test_offline.py && pyth
 
 Prints `ALL PASS` / `ALL CONVENTIONS MET`. No keys, no network.
 
-To check the live backend — it now reports which commit and branch it built:
+Backend check (reports the commit and branch it built):
 
 ```bash
 curl https://articlegen-api.onrender.com/api/health
@@ -29,59 +44,35 @@ curl https://articlegen-api.onrender.com/api/health
 
 ## Next thing to do
 
-1. **Run the model test in #63.** One flag, ~10c of OpenRouter credit, and it
-   decides whether the remaining quality problem is the model or the pipeline:
-   `python -m articlegen draft "<topic>" --model anthropic/claude-sonnet-5`, then
-   measure the abstract-to-Introduction overlap. Everything else in #63 waits on
-   this answer, so do it before touching the revision loop.
-2. **Then #64** — 20 sources were screened and only 3 cited, all of them labelled
-   `direct`. Start by logging the relevance tally at draft time; it tells you
-   whether curation is too strict or the writer too timid, which need different
-   fixes.
-3. **#62** if you want something small and self-contained — corporate authors
-   (`GBD 2019 Collaborators`) render as `Collaborators, G.` in the reference list.
+1. **Generate a fresh article end-to-end and read it.** Full-text grounding,
+   the new layout, and the Fable default have not yet been combined in one
+   generated article that a human read. That reading is what has surfaced
+   every defect so far. Use OpenRouter or Anthropic, not Groq (Groq never gets
+   full text — its token ceiling can't fit any).
+2. **Optionally, the #64 confirming run**: one draft on a second topic with a
+   strong model, check the cited/screened ratio holds up.
 
 ## Open
 
-- No PRs.
-- **#63** — the abstract is still reproduced verbatim as the Introduction (100%
-  on the last article). Retrieval, the prompt and the tone setting are all ruled
-  out by measurement; the model and the revision pass are what's left.
-- **#64** — only `direct`-labelled sources get cited, so the evidence base
-  collapses (20 → 3) and the article comes out as a 471-word stub.
-- **#62** — corporate/consortium author names are mangled in references.
+- No open PRs, no open issues.
+- **#71 (Pages push trigger dead) was closed on 7 Aug.** A no-op workflow
+  edit did not fix it; renaming the file (`pages.yml` → `deploy-pages.yml`)
+  did — GitHub registered it as a new workflow with a working push trigger,
+  and also delivered the backlogged push events for the two orphaned commits.
+  If pushes ever go quiet again, rename the file again; don't bother with
+  no-op edits.
 
 ## Watch out for
 
-- **Generate with OpenRouter, not Groq.** Same Llama 3.3 70B, but prepaid credit
-  instead of a 100,000-token daily cap, so a run never fails because the day is
-  spent. Well under a cent per article. Set `OPENROUTER_API_KEY`, or paste the key
-  into Settings in the web app. Any catalogue slug works with `--model`.
-- **`/api/health` reports the deployed commit and branch.** Use it before assuming
-  a merge reached production — that one line is what made the branch rename safe,
-  and it is the fastest way to answer "is the backend running my code".
-- **A branch rename touches three places, not one:** the trigger list in
-  `pages.yml`, the `github-pages` *environment* branch allowlist (which is
-  separate, and silently rejected `main` until it was added), and the host. Render
-  turned out to follow a GitHub rename by itself, contrary to every earlier note.
-- **`render.yaml`'s `branch:` is a record, not a control.** Blueprint auto-sync is
-  off — measured. Editing it moves nothing.
-- **Don't write down which scholarly source is working.** It changes, and it has
-  been recorded backwards twice. `/api/diag` is the only trustworthy answer, and
-  it bypasses the cache to give one.
-- **Searches are cached 24h** (refusals 2 min). Testing changes to fetching means
-  `sources.clear_search_cache()` or `ARTICLEGEN_SEARCH_CACHE_TTL=0`, or you are
-  reading yesterday's results and will think your change did nothing.
-- **Calibrate style rules against body prose, not abstracts.** The hedging floor
-  looked badly wrong against abstracts (median 0.031 vs a 0.20 floor) and is
-  almost exactly right against review body prose (median 0.216). Both corpora are
-  in `tests/`; use `body_prose_measurements.json` for anything density-related.
-- **Never hardcode the database list, including as a fallback** — that is exactly
-  how a false Methods claim came back after being fixed once.
-- **`protocol_version = "HTTP/1.1"` in `web.py` is load-bearing.** Without it
-  about half of browser fetches fail in ~140ms, and curl cannot reproduce it.
-- **Hugging Face Spaces and Fly.io are settled dead ends** (both need a payment
-  method); so is moving Render region (same shared egress IP problem).
-- **"Copy Link" and "Publish public link" are deliberately different.** The first
-  encodes the article in the URL; the second uploads to a public pastebin behind a
-  confirmation. Don't re-merge them.
+- **Never re-run a failed Pages deploy** — the rerun double-uploads the
+  artifact and fails on that. Dispatch a fresh run instead.
+- **Generate with OpenRouter or Anthropic, not Groq.** Groq's daily cap kills
+  runs mid-day and its per-minute ceiling means abstracts-only grounding.
+- **`/api/health` before assuming a merge reached the backend;** `/api/diag`
+  is the only trustworthy answer on which scholarly source is currently
+  working — never write that down, it flips.
+- **Searches are cached 24h** (refusals 2 min). Testing fetch changes needs
+  `sources.clear_search_cache()` or `ARTICLEGEN_SEARCH_CACHE_TTL=0`.
+- Everything structural (module map, style-gate calibration, deployment
+  constraints, provider quirks) lives in `CLAUDE.md` — this file only carries
+  what changed hands at the last session boundary.
