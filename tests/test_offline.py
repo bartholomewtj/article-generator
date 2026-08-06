@@ -922,6 +922,21 @@ def test_reference_formatting() -> None:
     check("short form for tables", _short_author(two) == "Diekelmann & Born")
     check("short form collapses many", _short_author(many) == "Xie et al.")
 
+    # Corporate/consortium authors pass through whole (issue #62): a digit or an
+    # organisational word marks a name no initials should be invented from.
+    check("consortium with a digit is not split",
+          _format_author("GBD 2019 Collaborators") == "GBD 2019 Collaborators")
+    check("organisational word is not split",
+          _format_author("WHO Expert Committee") == "WHO Expert Committee")
+    check("a person named after none of the org words still splits",
+          _format_author("Sofia Network") == "Sofia Network"
+          and _format_author("Sofia Networks") == "Networks, S.")
+    corporate = Paper(title="T", abstract="a", authors=["GBD 2019 Collaborators"])
+    check("corporate reference line survives intact",
+          _reference_authors(corporate) == "GBD 2019 Collaborators.")
+    check("corporate short form survives intact",
+          _short_author(corporate) == "GBD 2019 Collaborators")
+
 
 def test_prose_style_check() -> None:
     """The style gate must catch magazine register and pass real journal prose."""
@@ -1580,7 +1595,7 @@ def _sample_draft():
     from articlegen.sources import Paper
 
     papers = [
-        Paper(title=f"Study {i}", abstract="a", year=2000 + i, authors=[f"Ann A{i}"],
+        Paper(title=f"Study {i}", abstract="a", year=2000 + i, authors=[f"Ann A{'bcdef'[i - 1]}"],
               venue=f"Journal {i}", citation_count=100 * i, doi=f"10/{i}")
         for i in range(1, 6)
     ]
@@ -1682,7 +1697,7 @@ def test_render_blocks() -> None:
     check("html glossary", "Glossary" in h and "Lux" in h)
     check("html back matter", "Competing interests" in h and "Data availability" in h)
     check("html references are Vancouver-style",
-          '<span class="ref-authors">A1, A.</span>' in h
+          '<span class="ref-authors">Ab, A.</span>' in h
           and ">Study 1.</a> <em>Journal 1</em> (2001)." in h)
     check("html clinical disclaimer", "Not medical or clinical advice" in h)
     check("html has no magazine furniture",

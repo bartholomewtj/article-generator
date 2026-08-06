@@ -17,7 +17,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from articlegen.render import render_article, render_markdown  # noqa: E402
+from articlegen.render import _is_corporate_author, render_article, render_markdown  # noqa: E402
 from articlegen.style import check_style, errors as style_errors  # noqa: E402
 from articlegen.sources import Paper  # noqa: E402
 
@@ -59,10 +59,13 @@ CONVENTIONS = [
     ("references are numbered and titled",
      lambda h, a: '<section class="refs">' in h and 'id="ref-1"' in h),
     # Records with no authorship data at all exist in OpenAlex; "Unknown authors" is
-    # the honest rendering, so it satisfies the convention too.
+    # the honest rendering, so it satisfies the convention too. Corporate and
+    # consortium names ("GBD 2019 Collaborators") pass through whole — inventing
+    # initials from an organisation is the defect issue #62 fixed.
     ("reference authors are in surname-initial form",
      lambda h, a: all(
          re.match(r"[^<]+, [A-Z]\.", author) or author == "Unknown authors."
+         or _is_corporate_author(author.rstrip("."))
          for author in re.findall(r'class="ref-authors">([^<]+)<', h)
      )),
     ("Methods reports the search strategy",
@@ -192,12 +195,17 @@ _EARLIER_COHORTS = {
 }
 
 
+# Letter suffixes, not digits: a digit in a name marks it corporate (issue #62),
+# and these fixtures model personal authors.
+_ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
 def _papers(n, **kw):
     return [
         Paper(
             title=f"Study {i}", abstract=f"abstract {i}",
             year=kw.get("years", [2000 + i] * n)[i - 1],
-            authors=[f"Given{i} Sur{i}"],
+            authors=[f"Given Sur{_ALPHA[i - 1]}"],
             venue=kw.get("venue", f"Journal {i}"),
             citation_count=10 * i,
             doi=f"10.1000/{i}",
@@ -267,9 +275,11 @@ def fixtures():
             "counts": {"direct": 4, "related": 4, "tangential": 4}},
            None, provenance, "a long-running literature")
 
-    # 5. Many authors and a clinical topic — reference truncation + disclaimer.
+    # 5. Many authors and a clinical topic — reference truncation + disclaimer,
+    # plus a consortium author that must pass through unsplit (issue #62).
     crowded = _papers(3)
-    crowded[0].authors = [f"Given{i} Sur{i}" for i in range(1, 12)]
+    crowded[0].authors = [f"Given Sur{_ALPHA[i]}" for i in range(11)]
+    crowded[1].authors = ["GBD 2019 Collaborators"]
     yield ("many authors, clinical topic",
            _article("Treatment response in a patient population", _SECTIONS,
                     references=[1, 2, 3]),

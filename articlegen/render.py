@@ -169,12 +169,34 @@ _NAME_PARTICLES = {
     "la", "le", "los", "ten", "ter", "bin", "ibn",
 }
 
+# Words that mark an author as an organisation, not a person — "GBD 2019
+# Collaborators" must not become "Collaborators, G." (issue #62). Consortium
+# authors are common in exactly the literature this reads: guideline bodies,
+# collaborations, working groups.
+_CORPORATE_WORDS = {
+    "collaborators", "collaboration", "group", "committee", "consortium",
+    "network", "initiative", "trialists", "investigators", "society",
+    "association", "organization", "organisation",
+}
+
+
+def _is_corporate_author(name: str) -> bool:
+    """A digit anywhere, or any organisational word, marks a non-personal name."""
+    if any(ch.isdigit() for ch in name):
+        return True
+    tokens = {t.strip(".,()").lower() for t in name.split()}
+    return bool(tokens & _CORPORATE_WORDS)
+
 
 def _format_author(name: str) -> str:
     """`Susanne Diekelmann` -> `Diekelmann, S.` (journal reference form)."""
     name = " ".join(name.split())
     if not name:
         return ""
+    # An organisational name passes through whole: inventing initials from it is
+    # always wrong, and passing it unchanged is always safe.
+    if _is_corporate_author(name):
+        return name
     parts = name.split(" ")
     if len(parts) == 1:
         return parts[0]
