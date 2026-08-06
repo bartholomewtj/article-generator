@@ -42,6 +42,17 @@ conclusion, (iv) 2–3 sentences of wider context. Science: ≤150 words, explic
 moves and the 150–220 word budget in the schema description and the system
 prompt. `render.py` sets it as a run-in `Abstract` block above the body.
 
+**The abstract-into-Introduction echo is a model-capability limit, not a prompt
+or pipeline defect** (issue #63). With the prompt's DIVISION OF LABOUR block in
+place, `llama-3.3-70b-instruct` still reproduced the abstract as the
+Introduction — 61% of six-word runs on one article, 100% on another — and one
+revision pass did not recover it. The single-variable test (same topic, same
+pipeline, `--model anthropic/claude-sonnet-5`, 6 Aug 2026) measured **0%**
+overlap for both the Introduction and the key points, with 12 of 20 screened
+sources cited instead of 3. The `echoed-abstract` rule stays as the guard, and a
+draft that fails it says so in its Limitations paragraph — but the durable fix
+for the echo is a stronger writer model, not more prompt emphasis.
+
 ### 3. A "Key points" box carries the argument in 4–6 bullets
 
 Nature Reviews prints Key points in a tinted box at the head of the article; JAMA
