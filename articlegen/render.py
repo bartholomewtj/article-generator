@@ -1008,7 +1008,15 @@ _CSS = """
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
   }
-  main { max-width: 40rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+  /* Fluid column: phones keep the viewport width exactly as before (the 40rem
+     floor only binds once the screen exceeds it); desktops scale with the
+     window up to 52rem. The wide-screen font bump below grows the rem, so the
+     ceiling is ~985px of column while the measure stays near 75 characters —
+     wider than this stops being readable prose, which is why journals cap it. */
+  main { max-width: clamp(40rem, 72vw, 52rem); margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+  @media (min-width: 1200px) {
+    html { font-size: 112.5%; }
+  }
   .sans, .meta-line, .subject-line, .keywords, .di-caption, .fig-legend, .key-points,
   .refs ol, .toolbar, .colophon, table, .meta-label {
     font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
@@ -1502,7 +1510,7 @@ _INDEX_TEMPLATE = """<!DOCTYPE html>
   html[data-theme="dark"] {{ --bg:#14150f; --ink:#f2f1ea; --muted:#9d9d94; --accent:#9dc4f5; --link:#86b6ef; --rule:#33342f; --card:#1e1f1c; color-scheme: dark; }}
   body {{ margin:0; background:var(--bg); color:var(--ink);
     font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; line-height:1.5; }}
-  main {{ max-width:44rem; margin:0 auto; padding:2.5rem 1.25rem 5rem; }}
+  main {{ max-width:clamp(44rem, 72vw, 58rem); margin:0 auto; padding:2.5rem 1.25rem 5rem; }}
   .header-row {{ display:flex; align-items:baseline; justify-content:space-between;
     border-top:3px solid var(--ink); padding-top:0.8rem; margin-bottom:0.3rem; }}
   h1 {{ font-size:1.3rem; margin:0; letter-spacing:-0.01em; }}
