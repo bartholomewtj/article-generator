@@ -70,8 +70,14 @@ CONVENTIONS = [
      )),
     ("Methods reports the search strategy",
      lambda h, a: _has_all(h, "Methods", "Search strategy.", "OpenAlex")),
-    ("Methods states the abstracts-only constraint",
-     lambda h, a: "full texts were not retrieved" in h),
+    # Methods must state how deeply sources were read — either the abstracts-only
+    # sentence, or the full-text one naming Europe PMC. Never neither.
+    ("Methods states how deeply the sources were read",
+     lambda h, a: "full texts were not retrieved" in h or "read alongside them" in h),
+    # When Methods claims full texts were read, Table 1 must show which sources
+    # they were — the claim is per-source and the table is where it is kept.
+    ("full-text claims are itemised in Table 1",
+     lambda h, a: "read alongside them" not in h or "<th>Read</th>" in h),
     ("evidence assessment carries a Limitations paragraph",
      lambda h, a: _has_all(h, "Evidence assessment", "Limitations.")),
     ("back matter is complete",
@@ -274,6 +280,21 @@ def fixtures():
             "most_relevant_index": 3,
             "counts": {"direct": 4, "related": 4, "tangential": 4}},
            None, provenance, "a long-running literature")
+
+    # 6. Full-text mode: some sources were read in full, and every honesty
+    # surface must say so — Methods names Europe PMC and the count, Table 1
+    # itemises which, and the abstracts-only sentence must NOT appear.
+    deep = _papers(3)
+    deep[0].full_text = "The full body text of study one, with 441 participants."
+    deep[1].full_text = "The full body text of study two."
+    yield ("full-text mode",
+           _article("A topic with open-access sources", _SECTIONS),
+           deep,
+           {"relevance": {1: "direct", 2: "direct", 3: "related"},
+            "most_relevant_index": 1, "counts": {"direct": 2, "related": 1, "tangential": 0}},
+           None,
+           dict(provenance, full_text_sources=[1, 2]),
+           "a topic with open-access sources")
 
     # 5. Many authors and a clinical topic — reference truncation + disclaimer,
     # plus a consortium author that must pass through unsplit (issue #62).

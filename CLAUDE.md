@@ -43,8 +43,10 @@ articlegen/
   ideas.py     LLM: theme -> shortlist of article ideas
   writer.py    LLM: plan_queries -> curate_sources -> write_article
   sources.py   Semantic Scholar + OpenAlex + Europe PMC fetch, 24h result cache,
-               dedupe, relevance-blended rank
-  verify.py    deterministic: flag article statistics absent from source abstracts
+               dedupe, relevance-blended rank; open-access full-text fetch +
+               the excerpt budget both writer and verifier derive from
+  verify.py    deterministic: flag article statistics absent from what the
+               writer was shown (abstracts + full-text excerpts)
   style.py     deterministic: flag prose that breaks journal writing conventions
   render.py    structured article -> journal-format HTML + Markdown + drafts/ index
   demo.py      built-in sample for `articlegen demo` (no API/network)
@@ -346,8 +348,26 @@ this gets used for) is the durable answer rather than more header tuning.
 - **Statistic verification is deterministic** (`verify.py`), not an LLM pass — an
   LLM verifier can hallucinate agreement; substring presence in the real abstract
   can't. Figures not found in any abstract are flagged "verify against full text."
-- **Abstracts only.** The writer never sees full text; it must not invent precise
-  stats. Clinical topics get a "not medical advice" disclaimer (`_is_clinical`).
+- **Abstracts plus open-access full text — with one invariant.** After curation,
+  the pipeline fetches full text for direct/related sources that Europe PMC can
+  serve (PMCID + both OA flags; `MAX_FULLTEXT_FETCHES` bounds the HTTP calls).
+  The writer is shown excerpts derived by `sources.full_text_excerpts` —
+  deterministic per-paper and total char caps — and `verify.check_statistics`
+  searches **exactly those excerpts plus the abstracts, never the unseen tail
+  of a paper**: verifying against text the writer was not shown would let a
+  figure recalled from training pass as grounded. Because both sides call the
+  same function, nothing has to be recorded per run. Groq never gets full text
+  (its TPM ceiling cannot fit any); there the draft stays abstracts-only and
+  says so. `provenance["full_text_sources"]` records what was actually
+  fetched — the Methods sentence and Table 1's Read column are written from
+  it, same no-fallback rule as `databases`. The full-text framing of the
+  system prompt is derived from the abstracts-only one by substitution
+  (`_FULLTEXT_SUBSTITUTIONS`) so the two cannot drift; a test pins every
+  target. Full texts get their bracketed citation numbers stripped at parse
+  time — they collide with the [N] SOURCE-index scheme. Known bias: the
+  deeply-read subset skews open-access, which Table 1 makes visible
+  per-source. Clinical topics get a "not medical advice" disclaimer
+  (`_is_clinical`).
 - **Methods must name only databases that actually answered.** It used to read
   them from a constant in `render.py`, so every article claimed both Semantic
   Scholar and OpenAlex had been searched while one of them was 429ing every

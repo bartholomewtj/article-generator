@@ -335,6 +335,7 @@ def _table_rows(cited: list[Paper], labels: dict[int, str]) -> list[dict]:
             "label": label if label in RELEVANCE_LABELS else "",
             "relevance": RELEVANCE_LABELS.get(label, "—") if label else "—",
             "cited_by": f"{paper.citation_count:,}" if paper.citation_count else "—",
+            "read": "Full text" if paper.full_text else "Abstract",
         })
     return rows
 
@@ -400,6 +401,10 @@ def _table_html(cited: list[Paper], labels: dict[int, str]) -> str:
     """Table 1 — characteristics of the cited evidence, one row per source."""
     if not cited:
         return ""
+    # The Read column only appears when it distinguishes anything: in an
+    # abstracts-only draft every row would say "Abstract", which is already
+    # what the Methods section states once.
+    show_read = any(p.full_text for p in cited)
     rows = []
     for row in _table_rows(cited, labels):
         relevance = (
@@ -412,17 +417,27 @@ def _table_html(cited: list[Paper], labels: dict[int, str]) -> str:
             f'<td class="t-num">{row["year"]}</td>'
             f'<td class="t-venue">{html.escape(row["venue"])}</td>'
             f"<td>{relevance}</td>"
-            f'<td class="t-num">{row["cited_by"]}</td></tr>'
+            + (f'<td>{row["read"]}</td>' if show_read else "")
+            + f'<td class="t-num">{row["cited_by"]}</td></tr>'
+        )
+    caption = (
+        "Characteristics of the cited evidence. Relevance is the curation label for how "
+        "directly each source addresses the review question; citation counts are as "
+        "reported by the indexing database."
+    )
+    if show_read:
+        caption += (
+            " Read records whether the model saw the source's open-access full text "
+            "or its abstract only."
         )
     return (
         '<div class="display table-wrap" aria-labelledby="table-1">\n'
         '<p class="di-caption" id="table-1"><span class="di-label">Table 1 |</span> '
-        "Characteristics of the cited evidence. Relevance is the curation label for how "
-        "directly each source addresses the review question; citation counts are as "
-        "reported by the indexing database.</p>\n"
+        f"{caption}</p>\n"
         '<div class="table-scroll"><table>\n'
         "<thead><tr><th>Ref.</th><th>Study</th><th>Year</th><th>Source</th>"
-        "<th>Relevance</th><th>Cited by</th></tr></thead>\n"
+        "<th>Relevance</th>" + ("<th>Read</th>" if show_read else "")
+        + "<th>Cited by</th></tr></thead>\n"
         "<tbody>" + "".join(rows) + "</tbody>\n</table></div>\n</div>"
     )
 
@@ -623,12 +638,28 @@ def _methods_paragraphs(
         "listed in Table 1."
     )
 
-    handling = (
-        "Only titles and abstracts were read; full texts were not retrieved, so no claim "
-        "in this review rests on data reported beyond an abstract. Every numerical value "
-        "in the text was checked automatically against the abstracts of the cited sources, "
-        "and any figure that could not be located is flagged under Limitations."
-    )
+    # `full_text_sources` records which sources the model was actually shown
+    # full text for. Like `databases` above, it is never guessed: absent or
+    # empty means this draft was abstracts-only and Methods says exactly that.
+    n_full = len(provenance.get("full_text_sources") or [])
+    if n_full:
+        handling = (
+            f"Titles and abstracts were read for every record, and the open-access "
+            f"full text{'s' if n_full != 1 else ''} of {n_full} "
+            f"source{'s were' if n_full != 1 else ' was'} retrieved from Europe PMC "
+            "and read alongside them (marked in Table 1); claims resting on the "
+            "remaining sources draw on no data beyond an abstract. Every numerical "
+            "value in the text was checked automatically against exactly the material "
+            "shown to the model — the abstracts plus those full-text excerpts — and "
+            "any figure that could not be located is flagged under Limitations."
+        )
+    else:
+        handling = (
+            "Only titles and abstracts were read; full texts were not retrieved, so no claim "
+            "in this review rests on data reported beyond an abstract. Every numerical value "
+            "in the text was checked automatically against the abstracts of the cited sources, "
+            "and any figure that could not be located is flagged under Limitations."
+        )
 
     generation = (
         "Search planning, source curation and drafting were performed by a large language "
@@ -1417,16 +1448,20 @@ def _box_markdown(article: dict, papers: list[Paper], cite_map: dict[int, int]) 
 def _table_markdown(cited: list[Paper], labels: dict[int, str]) -> str:
     if not cited:
         return ""
+    show_read = any(p.full_text for p in cited)
     rows = [
         "**Table 1 | Characteristics of the cited evidence.**",
         "",
-        "| Ref. | Study | Year | Source | Relevance | Cited by |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| Ref. | Study | Year | Source | Relevance | "
+        + ("Read | " if show_read else "") + "Cited by |",
+        "| --- | --- | --- | --- | --- | " + ("--- | " if show_read else "") + "--- |",
     ]
     for row in _table_rows(cited, labels):
         rows.append(
             f"| {row['n']} | {row['study']} | {row['year']} | "
-            f"{row['venue']} | {row['relevance']} | {row['cited_by']} |"
+            f"{row['venue']} | {row['relevance']} | "
+            + (f"{row['read']} | " if show_read else "")
+            + f"{row['cited_by']} |"
         )
     return "\n".join(rows)
 

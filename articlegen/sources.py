@@ -99,6 +99,13 @@ class Paper:
     url: str = ""
     doi: str = ""
     source: str = ""  # which API it came from
+    # Full-text plumbing (issue: expand grounding beyond abstracts). `pmcid`
+    # and `is_open_access` come from the Europe PMC search response; only a
+    # paper with both can have its full text fetched. `full_text` is filled by
+    # `fetch_full_text` later in the pipeline, never by search.
+    pmcid: str = ""
+    is_open_access: bool = False
+    full_text: str = ""
 
     @property
     def author_line(self) -> str:
@@ -395,6 +402,10 @@ def search_europe_pmc(query: str, limit: int = 15) -> list[Paper]:
                 url=f"https://europepmc.org/article/{src}/{ext_id}" if src and ext_id else "",
                 doi=item.get("doi") or "",
                 source="Europe PMC",
+                pmcid=item.get("pmcid") or "",
+                # Both flags are needed: isOpenAccess without inEPMC means the
+                # OA copy lives somewhere Europe PMC cannot serve from.
+                is_open_access=(item.get("isOpenAccess") == "Y" and item.get("inEPMC") == "Y"),
             )
         )
     return papers
@@ -444,6 +455,122 @@ def clear_search_cache() -> None:
     """Forget every cached search. For tests, and for forcing a fresh look."""
     with _cache_lock:
         _search_cache.clear()
+        _fulltext_cache.clear()
+
+
+# ---------------------------------------------------------------- full text
+
+EUROPE_PMC_FULLTEXT_URL = "https://www.ebi.ac.uk/europepmc/webservices/rest/{pmcid}/fullTextXML"
+
+# Back-matter sections that cost tokens and ground nothing. Matched against the
+# lowercased section title; anything else is kept in document order.
+_FULLTEXT_SKIP_TITLES = re.compile(
+    r"acknowledg|funding|reference|supplementar|abbreviation|author contribution"
+    r"|conflict|competing|availability|ethics|consent|orcid|appendix"
+)
+
+# pmcid -> (expiry, text). Same lifecycle as the search cache: full text does
+# not change hour to hour, and each fetch is a real request against the one
+# scholarly API that reliably answers — do not spend it twice.
+_fulltext_cache: dict[str, tuple[float, str]] = {}
+
+
+def _jats_text(node) -> str:
+    return re.sub(r"\s+", " ", " ".join(node.itertext())).strip()
+
+
+def _parse_fulltext_xml(xml_text: str) -> str:
+    """JATS XML -> plain text of the body, section by section.
+
+    Titles are kept ("Methods. ...") so the writer can attribute what it reads,
+    and back matter is dropped. Falls back to the whole body text when the
+    article has no <sec> structure. Markup is flattened for the same reason
+    `_strip_markup` exists: verification is a substring check over this text.
+    """
+    import xml.etree.ElementTree as ET
+
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return ""
+    body = root.find(".//body")
+    if body is None:
+        return ""
+
+    chunks: list[str] = []
+    for sec in body.findall("sec"):
+        title_node = sec.find("title")
+        title = _jats_text(title_node) if title_node is not None else ""
+        if title and _FULLTEXT_SKIP_TITLES.search(title.lower()):
+            continue
+        text = _jats_text(sec)
+        if text:
+            chunks.append(text)
+    text = "\n\n".join(chunks) if chunks else _jats_text(body)
+    # The paper's own bracketed citation numbers ("[ 1 ]", "[2, 5]", "[3-7]")
+    # collide with the pipeline's [N] SOURCE-index scheme: a writer reading
+    # "improves outcomes [ 4 ]" mid-paragraph may echo that number as if it
+    # were one of OUR sources. Strip them; the prose keeps its meaning.
+    return re.sub(r"\[\s*\d+(?:\s*[,–—-]\s*\d+)*\s*\]", "", text)
+
+
+# Prompt policy for full text, and simultaneously the verification contract:
+# the writer is shown exactly the excerpts this function yields, and verify.py
+# checks statistics against exactly the same excerpts. Both sides derive them
+# from this one deterministic function so nothing has to be recorded per run —
+# and so verification never searches text the writer was not shown, which
+# would let a remembered figure pass as grounded.
+FULLTEXT_PER_PAPER_CHARS = 12000
+FULLTEXT_TOTAL_CHARS = 60000
+
+
+def full_text_excerpts(papers: list[Paper]) -> dict[int, str]:
+    """{1-based index: the full-text excerpt shown to the writer}.
+
+    Papers arrive ranked, so when the total budget runs out it is the least
+    relevant full texts that are left as abstract-only.
+    """
+    out: dict[int, str] = {}
+    used = 0
+    for i, p in enumerate(papers, start=1):
+        if not p.full_text:
+            continue
+        room = FULLTEXT_TOTAL_CHARS - used
+        if room <= 0:
+            break
+        excerpt = p.full_text[:min(FULLTEXT_PER_PAPER_CHARS, room)]
+        out[i] = excerpt
+        used += len(excerpt)
+    return out
+
+
+def fetch_full_text(paper: Paper, use_cache: bool = True) -> str:
+    """The paper's open-access full text as plain text, or "" when unavailable.
+
+    Only papers Europe PMC can actually serve (a PMCID plus both OA flags) are
+    fetchable; everything else returns "" and stays abstract-only. Failures are
+    cached briefly, like search refusals, so one dead fetch is not retried
+    across a run.
+    """
+    if not (paper.pmcid and paper.is_open_access):
+        return ""
+    now = time.time()
+    if use_cache and _CACHE_TTL > 0:
+        with _cache_lock:
+            entry = _fulltext_cache.get(paper.pmcid)
+            if entry and entry[0] > now:
+                return entry[1]
+    try:
+        resp = _get_with_retry(
+            EUROPE_PMC_FULLTEXT_URL.format(pmcid=paper.pmcid), params={}, headers={})
+        text = _parse_fulltext_xml(resp.text)
+    except SearchFailure:
+        text = ""
+    if _CACHE_TTL > 0:
+        ttl = _CACHE_TTL if text else _CACHE_FAILURE_TTL
+        with _cache_lock:
+            _fulltext_cache[paper.pmcid] = (now + ttl, text)
+    return text
 
 
 def _cache_get(key: tuple[str, str, int]) -> tuple[list[Paper], str] | None:
@@ -530,6 +657,7 @@ def gather_evidence(
     global _recency_query_refused
     _recency_query_refused = False
     seen: set[str] = set()
+    _first_by_title: dict[str, Paper] = {}
     collected: list[Paper] = []
     # A source that has already refused once in this run will almost certainly
     # refuse again — the limits are per-minute and the run takes seconds. Each
@@ -579,9 +707,20 @@ def gather_evidence(
 
             for paper in results:
                 key = _normalize_title(paper.title)
-                if not key or key in seen:
+                if not key:
+                    continue
+                if key in seen:
+                    # First-seen wins, but a duplicate from Europe PMC may know
+                    # something the kept copy does not: the PMCID that makes
+                    # full text fetchable. Merge that instead of discarding it.
+                    if paper.pmcid:
+                        kept = _first_by_title.get(key)
+                        if kept is not None and not kept.pmcid:
+                            kept.pmcid = paper.pmcid
+                            kept.is_open_access = paper.is_open_access
                     continue
                 seen.add(key)
+                _first_by_title[key] = paper
                 collected.append(paper)
 
     # Build a keyword set from the topic + core entity for a relevance signal.

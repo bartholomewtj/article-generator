@@ -1804,6 +1804,203 @@ def test_web_server() -> None:
     check("web handler GET /api/drafts returns 200 OK", "200 OK" in output and "application/json" in output)
 
 
+def test_full_text_grounding() -> None:
+    """Full-text mode: fetch only what is truly open access, show a bounded
+    excerpt, tell the model the truth about its inputs, and verify statistics
+    against exactly what was shown — never against text the writer did not see.
+    """
+    from articlegen import render, sources, verify, writer
+    from articlegen.sources import Paper, full_text_excerpts
+
+    # -- search carries the fetchability facts ------------------------------
+    payload = {"resultList": {"result": [
+        {"id": "1", "source": "MED", "title": "OA paper", "abstractText": "An abstract.",
+         "pubYear": "2026", "pmcid": "PMC123", "isOpenAccess": "Y", "inEPMC": "Y"},
+        {"id": "2", "source": "MED", "title": "OA elsewhere only", "abstractText": "A.",
+         "pubYear": "2026", "pmcid": "PMC124", "isOpenAccess": "Y", "inEPMC": "N"},
+    ]}}
+
+    class FakeResp:
+        def __init__(self, data=None, text=""):
+            self._data, self.text = data, text
+        def json(self):
+            return self._data
+
+    real = sources._get_with_retry
+    try:
+        sources._get_with_retry = lambda url, params, headers: FakeResp(payload)
+        papers = sources.search_europe_pmc("q", limit=2)
+    finally:
+        sources._get_with_retry = real
+    check("pmcid captured from the search", papers[0].pmcid == "PMC123")
+    check("in-EPMC open access marks fetchable", papers[0].is_open_access)
+    check("OA hosted elsewhere is not fetchable", not papers[1].is_open_access)
+
+    # -- JATS parsing -------------------------------------------------------
+    jats = """<article><body>
+      <sec><title>Methods</title><p>We enrolled 441 participants [ 3 ] over two years.</p></sec>
+      <sec><title>Results</title><p>Readmission fell (OR 0.66) [2, 5].</p></sec>
+      <sec><title>Acknowledgements</title><p>We thank everyone.</p></sec>
+    </body></article>"""
+    text = sources._parse_fulltext_xml(jats)
+    check("sections flattened in order", text.index("enrolled") < text.index("Readmission"))
+    check("back matter dropped", "thank" not in text)
+    check("the paper's own citation brackets are stripped",
+          "[ 3 ]" not in text and "[2, 5]" not in text)
+    check("statistics survive the stripping", "OR 0.66" in text)
+
+    # -- fetch gating and cache --------------------------------------------
+    calls = []
+    try:
+        sources._get_with_retry = (
+            lambda url, params, headers: (calls.append(url), FakeResp(text=jats))[1])
+        sources.clear_search_cache()
+        no_pmcid = Paper(title="n", abstract="a")
+        check("no PMCID -> no fetch", sources.fetch_full_text(no_pmcid) == "")
+        oa = Paper(title="o", abstract="a", pmcid="PMC9", is_open_access=True)
+        first = sources.fetch_full_text(oa)
+        again = sources.fetch_full_text(oa)
+        check("OA paper fetches and parses", "enrolled 441" in first)
+        check("second fetch is served from cache", again == first and len(calls) == 1)
+    finally:
+        sources._get_with_retry = real
+        sources.clear_search_cache()
+
+    # -- dedupe enrichment: the kept copy learns the duplicate's PMCID ------
+    dup_title = "The same study twice"
+    oa_copy = Paper(title=dup_title, abstract="a", pmcid="PMC77", is_open_access=True)
+    plain_copy = Paper(title=dup_title, abstract="a")
+    reals = (sources.search_semantic_scholar, sources.search_openalex, sources.search_europe_pmc)
+    try:
+        sources.search_semantic_scholar = lambda q, limit=15: []
+        sources.search_openalex = lambda q, limit=15: [plain_copy]
+        sources.search_europe_pmc = lambda q, limit=15: [oa_copy]
+        merged = sources.gather_evidence(["q"], use_cache=False)
+    finally:
+        (sources.search_semantic_scholar, sources.search_openalex,
+         sources.search_europe_pmc) = reals
+    check("dedupe keeps one copy", len(merged) == 1)
+    check("which inherits the duplicate's PMCID",
+          merged[0].pmcid == "PMC77" and merged[0].is_open_access)
+
+    # -- excerpt budgeting: the shared writer/verifier contract -------------
+    big = "x" * (sources.FULLTEXT_PER_PAPER_CHARS + 5000)
+    ranked = [Paper(title=f"t{i}", abstract="a", full_text=big) for i in range(7)]
+    ranked.insert(1, Paper(title="no ft", abstract="a"))
+    ex = full_text_excerpts(ranked)
+    check("papers without full text are skipped", 2 not in ex)
+    check("per-paper cap applies", len(ex[1]) == sources.FULLTEXT_PER_PAPER_CHARS)
+    check("total budget bounds the set",
+          sum(len(v) for v in ex.values()) <= sources.FULLTEXT_TOTAL_CHARS)
+    check("rank order decides who is left abstract-only",
+          1 in ex and max(ex) < len(ranked))
+
+    # -- payload formatting -------------------------------------------------
+    two = [Paper(title="ft", abstract="A1.", full_text="Full body text 12.5% here."),
+           Paper(title="ab", abstract="A2.")]
+    shown = full_text_excerpts(two)
+    block = writer._format_sources(two, None, None, shown)
+    check("full text rides along under its source", "Full text (open access" in block
+          and "Full body text 12.5% here." in block)
+    check("abstract-only sources say so", "no open-access full text" in block)
+    budgeted = writer._format_sources(two, None, 5000, shown)
+    check("a char budget (Groq) drops the excerpts", "Full body text" not in budgeted)
+
+    # -- the system prompt tells the truth about its inputs -----------------
+    for old, new in writer._FULLTEXT_SUBSTITUTIONS:
+        check(f"substitution target still present: {old[:40]}…", old in writer._WRITER_SYSTEM)
+        check(f"and replaced in the full-text variant: {new[:40]}…",
+              new in writer._WRITER_SYSTEM_FULLTEXT
+              and old not in writer._WRITER_SYSTEM_FULLTEXT)
+
+    # -- verification checks the shown excerpt, not the unseen tail ---------
+    tail_figure = "the unseen tail says 77.7%"
+    paper = Paper(title="t", abstract="Abstract only.",
+                  full_text="Shown text reports 12.5% improvement. "
+                            + "y" * sources.FULLTEXT_PER_PAPER_CHARS + tail_figure)
+    art = {"abstract": "It improved by 12.5% but also 77.7%.", "sections": [],
+           "key_points": [], "references": []}
+    result = verify.check_statistics(art, [paper])
+    check("figure in the shown excerpt verifies", "12.5%" not in result["unverified"])
+    check("figure only in the unseen tail stays unverified",
+          "77.7%" in result["unverified"])
+
+    # -- Methods and Table 1 report what happened ---------------------------
+    prov_ft = {"queries": ["q"], "databases": ["Europe PMC"], "model": "m",
+               "full_text_sources": [1, 3]}
+    parts = render._methods_paragraphs(prov_ft, 10, 2, "topic")
+    check("Methods reports full texts read", "full texts of 2 sources were retrieved"
+          in parts["handling"] and "read alongside them" in parts["handling"])
+    parts_abs = render._methods_paragraphs({"queries": ["q"], "databases": ["Europe PMC"]},
+                                           10, 2, "topic")
+    check("abstracts-only Methods wording unchanged",
+          "full texts were not retrieved" in parts_abs["handling"])
+    ft_cited = [Paper(title="a", abstract="x", full_text="body", year=2020),
+                Paper(title="b", abstract="x", year=2021)]
+    table = render._table_html(ft_cited, {1: "direct", 2: "related"})
+    check("Table 1 grows a Read column in full-text mode",
+          "<th>Read</th>" in table and "Full text" in table and "Abstract" in table)
+    plain_table = render._table_html(
+        [Paper(title="a", abstract="x", year=2020)], {1: "direct"})
+    check("no Read column when everything is abstract-only",
+          "<th>Read</th>" not in plain_table)
+    md = render._table_markdown(ft_cited, {1: "direct", 2: "related"})
+    check("markdown table matches", "Read |" in md and "Full text |" in md)
+
+
+def test_pipeline_fetches_full_text() -> None:
+    """The pipeline stage itself: fetch only direct/related sources, respect the
+    cap, record provenance, and skip the whole step on Groq (whose token budget
+    cannot fit a full text)."""
+    from articlegen import pipeline
+    from articlegen.sources import Paper
+
+    papers = [Paper(title=f"p{i}", abstract="a", pmcid=f"PMC{i}", is_open_access=True)
+              for i in range(1, 5)]
+    article = {"title": "t", "abstract": "x", "keywords": [], "sections": [],
+               "key_points": [], "glossary": [], "references": [1]}
+    curation = {"relevance": {1: "direct", 2: "tangential", 3: "related", 4: "direct"},
+                "most_relevant_index": 1,
+                "counts": {"direct": 2, "related": 1, "tangential": 1}}
+    fetched_pmcids: list[str] = []
+
+    saved = (pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
+             pipeline.write_article, pipeline.fetch_full_text, pipeline.enforce_style,
+             pipeline.prompt_budget_chars)
+    try:
+        pipeline.plan_queries = lambda topic, **kw: (["q"], "core")
+        def fake_gather(queries, **kw):
+            kw.get("outcomes", []).append(
+                {"source": "europe_pmc", "query": "q", "count": 4, "error": "", "cached": False})
+            return papers
+        pipeline.gather_evidence = fake_gather
+        pipeline.curate_sources = lambda topic, p, **kw: curation
+        pipeline.write_article = lambda topic, p, **kw: dict(article)
+        pipeline.fetch_full_text = (
+            lambda p, use_cache=True: (fetched_pmcids.append(p.pmcid), "body text")[1])
+        pipeline.enforce_style = lambda a, **kw: (a, {"issues": [], "stats": {}})
+
+        pipeline.prompt_budget_chars = lambda model=None, api_key=None: None
+        draft = pipeline.generate_draft("topic")
+        check("direct and related sources are fetched, tangential is not",
+              fetched_pmcids == ["PMC1", "PMC3", "PMC4"])
+        check("papers carry their full text", draft.papers[0].full_text == "body text")
+        check("provenance records which sources were read in full",
+              draft.provenance["full_text_sources"] == [1, 3, 4])
+
+        for p in papers:
+            p.full_text = ""
+        fetched_pmcids.clear()
+        pipeline.prompt_budget_chars = lambda model=None, api_key=None: 30000  # Groq
+        draft = pipeline.generate_draft("topic")
+        check("Groq's token budget disables the full-text step entirely",
+              fetched_pmcids == [] and draft.provenance["full_text_sources"] == [])
+    finally:
+        (pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
+         pipeline.write_article, pipeline.fetch_full_text, pipeline.enforce_style,
+         pipeline.prompt_budget_chars) = saved
+
+
 def main() -> int:
     for fn in (
         test_provider_resolution, test_per_request_api_key,
@@ -1814,6 +2011,7 @@ def main() -> int:
         test_groq_token_budget, test_source_failures_are_distinguishable,
         test_search_cache, test_front_end_models_match_the_allowlist,
         test_polite_pool_identification, test_europe_pmc_parsing,
+        test_full_text_grounding, test_pipeline_fetches_full_text,
         test_methods_names_only_sources_that_answered,
         test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
