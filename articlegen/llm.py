@@ -38,13 +38,13 @@ GROQ_DEFAULT_MODEL = "llama-3.3-70b-versatile"
 # app sends a model name, and web.ALLOWED_MODELS is built from the constants
 # here, so a stale name there is quietly dropped rather than honoured.
 ANTHROPIC_DEFAULT_MODEL = "claude-fable-5"
-# The same Llama 3.3 70B the Groq default uses, so switching to OpenRouter
-# changes what meters the run, not what writes it. At roughly $0.10/$0.32 per
-# million tokens an article costs well under a cent, and OpenRouter bills
-# prepaid credit rather than a daily allowance — which is the whole reason to
-# use it. Pass any other catalogue slug with --model (e.g.
-# `anthropic/claude-sonnet-5`) when the writing quality matters more.
-OPENROUTER_DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct"
+# Claude Fable 5 resold through OpenRouter at pass-through pricing ($10/$50
+# per million tokens — think dollars per article, not cents). The #63/#64 model
+# test showed the writing-quality problems were the Llama writer, so the
+# default follows the quality; OpenRouter still bills prepaid credit with no
+# daily allowance. Pass any other catalogue slug with --model (e.g.
+# `meta-llama/llama-3.3-70b-instruct`) when cost matters more than prose.
+OPENROUTER_DEFAULT_MODEL = "anthropic/claude-fable-5"
 DEFAULT_PROVIDER = "groq"
 
 # Groq's free tier meters tokens per minute, and it counts the *reserved* output

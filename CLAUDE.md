@@ -285,11 +285,14 @@ this gets used for) is the durable answer rather than more header tuning.
   tier / fast inference); `GROQ_API_KEY` is used automatically and wins even if
   the others are also set. The web app offers all three in Settings, storing a
   key per provider.
-- **OpenRouter is the answer to the daily cap, not to writing quality.** Its
-  default model is the *same* Llama 3.3 70B as Groq's — the difference is that
-  it bills prepaid credit rather than a daily allowance, so a run never fails
-  because the day's quota is spent, and it costs well under a cent per article.
-  Reach for Claude when the prose quality is the problem instead.
+- **OpenRouter's default is Claude Fable 5** (`anthropic/claude-fable-5`, at
+  Anthropic's pass-through pricing: $10/$50 per million tokens, so roughly
+  $1–2 per article). It used to default to the same Llama 3.3 70B as Groq,
+  but the #63/#64 model test pinned the quality problems on the Llama writer,
+  so the default follows the quality. OpenRouter still bills prepaid credit
+  with no daily allowance — a run never fails because the day's quota is
+  spent. Pass `meta-llama/llama-3.3-70b-instruct` with `--model` when cost
+  matters more than prose.
   - **A slash is what makes a model name an OpenRouter slug**, and it is checked
     *before* the `claude` prefix in `resolve_provider`. OpenRouter re-sells the
     other providers' models as `vendor/model`, and `anthropic/claude-sonnet-5`
@@ -314,12 +317,12 @@ this gets used for) is the durable answer rather than more header tuning.
     rules trigger a revision), so the free tier allows roughly **4-7 articles a
     day**, and failed attempts still spend quota. Neither Claude nor OpenRouter
     has a comparable ceiling, and `prompt_budget_chars` returns `None` for both —
-    note this means the *same* Llama 3.3 70B is trimmed on Groq and untrimmed on
-    OpenRouter, which is correct: the ceiling is the tier's, not the model's.
+    so even Llama via OpenRouter (`--model meta-llama/llama-3.3-70b-instruct`)
+    runs untrimmed, which is correct: the ceiling is the tier's, not the model's.
 - Select a provider by setting `ARTICLEGEN_PROVIDER` (`anthropic` / `openrouter`
   / `groq`), passing a `--model` that identifies one, or having only that
   provider's key set.
-- Default models: `llama-3.3-70b-versatile` / `meta-llama/llama-3.3-70b-instruct`
+- Default models: `llama-3.3-70b-versatile` / `anthropic/claude-fable-5`
   / `claude-fable-5`. Model ids live in **two** places — `llm.py` and the
   `PROVIDERS` map in `index.html`. Nothing links them, and `web._requested_model`
   silently drops an unrecognised name rather than erroring, so a stale front end
