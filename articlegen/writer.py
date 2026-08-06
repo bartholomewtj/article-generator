@@ -190,8 +190,10 @@ extrapolated from Y"). Never imply an evidence base that the direct sources don'
 support. Do NOT state counts or tallies of the evidence — how many sources were \
 cited, how many are direct, related or background, and the year range are computed \
 and printed for you. Every count you write is one that can contradict them.
-- Lead with the strongest DIRECT evidence. Use related/tangential sources only for \
-mechanism or context, and don't let them masquerade as direct findings.
+- Lead with the strongest DIRECT evidence, and cite the related and tangential \
+sources too: they carry mechanism, context and adjacent-population findings, and \
+the house style asks for extrapolation to be labelled, not left out. Report what \
+each found under its own label — just don't let it masquerade as a direct finding.
 - featured_study: summarize the single most relevant study's method and results \
 FROM ITS ABSTRACT ONLY. Prefer the most-relevant source you were given. It is \
 printed as a boxed display item, so it must stand alone.
