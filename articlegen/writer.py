@@ -90,11 +90,11 @@ _ARTICLE_SCHEMA = {
             "type": "object",
             "properties": {
                 "source_index": {"type": "integer", "description": "SOURCE number of the featured study"},
-                "why": {"type": "string", "description": "One sentence: why this is the key study here."},
+                "limitations": {"type": "string", "description": "1-2 sentences: what this study could not show — design limits, sample, follow-up — from its abstract only."},
                 "method": {"type": "string", "description": "1-2 sentences on design/method, from its abstract only."},
                 "results": {"type": "string", "description": "1-2 sentences on the main result, from its abstract only."},
             },
-            "required": ["source_index", "why", "method", "results"],
+            "required": ["source_index", "method", "results", "limitations"],
             "additionalProperties": False,
         },
         "sections": {

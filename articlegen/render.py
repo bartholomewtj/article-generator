@@ -315,7 +315,10 @@ def _box_parts(article: dict, papers: list[Paper], cite_map: dict[int, int]) -> 
     return {
         "paper": paper,
         "reference": cite_map.get(idx),
-        "why": fs.get("why") or "",
+        # `why` (the old schema's editorial justification) is deliberately not
+        # read: the box states what the study did and found, and lets that
+        # speak. `limitations` completes the method -> results -> caveat arc.
+        "limitations": fs.get("limitations") or "",
         "method": fs.get("method") or "",
         "results": fs.get("results") or "",
     }
@@ -379,12 +382,13 @@ def _box_html(article: dict, papers: list[Paper], cite_map: dict[int, int]) -> s
     display = parts["reference"]
     ref = f'<sup class="cite"><a href="#ref-{display}">{display}</a></sup>' if display else ""
     rows = []
-    if fs.get("why"):
-        rows.append(f'<p class="box-why">{html.escape(fs["why"])}</p>')
     if fs.get("method"):
         rows.append(f'<p><span class="run-in">Method.</span> {html.escape(fs["method"])}</p>')
     if fs.get("results"):
         rows.append(f'<p><span class="run-in">Results.</span> {html.escape(fs["results"])}</p>')
+    if fs.get("limitations"):
+        rows.append(
+            f'<p><span class="run-in">Limitations.</span> {html.escape(fs["limitations"])}</p>')
     return (
         '<aside class="display box" aria-labelledby="box-1">\n'
         f'<p class="di-caption" id="box-1"><span class="di-label">Box 1 |</span> '
@@ -901,22 +905,14 @@ def render_article(
             f"{paragraphs}\n</section>"
         )
 
-    # Display items are interleaved the way a journal places them: the box after the
-    # introduction, the figure after the first thematic section, the table before the
-    # conclusions. Short articles get them appended in order instead.
+    # Display items in the body: the figure after the introduction, the box
+    # after the first thematic section. Table 1 is reference apparatus, so it
+    # lives in the back matter with Methods and the reference list rather than
+    # interrupting the prose. Key points sit at the end of the body, directly
+    # before the conclusions, as the bridge from evidence to verdict.
     box = _box_html(article, papers, cite_map)
     figure = _figure_html(cited, labels)
     table = _table_html(cited, labels)
-    body: list[str] = []
-    pending = [item for item in (box, figure, table) if item]
-    positions = {1: box, 2: figure, max(len(sections_html) - 1, 3): table}
-    for i, section_html in enumerate(sections_html, start=1):
-        body.append(section_html)
-        item = positions.get(i)
-        if item and item in pending:
-            body.append(item)
-            pending.remove(item)
-    body.extend(pending)
 
     key_points = "\n".join(
         f"<li>{_prose(point, cite_map, valid_numbers)}</li>" for point in _key_points(article)
@@ -925,6 +921,21 @@ def render_article(
         '<aside class="key-points">\n<h2>Key points</h2>\n<ul>\n'
         f"{key_points}\n</ul>\n</aside>" if key_points else ""
     )
+
+    body: list[str] = []
+    pending = [item for item in (figure, box) if item]
+    positions = {1: figure, 2: box}
+    for i, section_html in enumerate(sections_html, start=1):
+        if key_points_html and i == len(sections_html) and i > 1:
+            body.append(key_points_html)
+        body.append(section_html)
+        item = positions.get(i)
+        if item and item in pending:
+            body.append(item)
+            pending.remove(item)
+    body.extend(pending)
+    if key_points_html and len(sections_html) <= 1:
+        body.append(key_points_html)
 
     keywords = [k for k in (article.get("keywords") or []) if k]
     keywords_html = (
@@ -968,10 +979,10 @@ def render_article(
             meta_line=" &middot; ".join(html.escape(b) for b in meta_bits),
             abstract=_prose(_summary_text(article), cite_map, valid_numbers),
             keywords=keywords_html,
-            key_points=key_points_html,
             body="\n\n".join(body),
             methods=_methods_html(provenance, len(papers), len(cited), topic),
             assessment=_assessment_html(cited, counts, verification, style_report),
+            table=table,
             glossary=_glossary_html(article),
             references="\n".join(refs_html),
             additional=_back_matter_html(cited, topic, article, provenance),
@@ -1126,7 +1137,6 @@ _CSS = """
   aside.box p { font-size: 0.95rem; line-height: 1.55; margin: 0 0 0.6rem; }
   aside.box p:last-child { margin-bottom: 0; }
   .box-cite { color: var(--muted); font-size: 0.85rem !important; }
-  .box-why { font-style: italic; }
   figure.figure { margin: 1.8rem 0 2rem; padding: 1rem 0 0; border-top: 1px solid var(--rule); }
   .fig-svg { width: 100%; height: auto; display: block; }
   .fig-grid { stroke: var(--rule); stroke-width: 1; }
@@ -1251,13 +1261,13 @@ _TEMPLATE = """<!DOCTYPE html>
     {keywords}
   </header>
 
-  {key_points}
-
   {body}
 
   {methods}
 
   {assessment}
+
+  {table}
 
   {glossary}
 
@@ -1360,20 +1370,25 @@ def render_markdown(
     if keywords:
         lines += [f"**Keywords:** {'; '.join(keywords)}", ""]
 
+    # Same layout as the HTML: figure after the introduction, box after the
+    # first thematic section, key points directly before the conclusions, and
+    # Table 1 in the back matter rather than interrupting the prose.
     points = _key_points(article)
-    if points:
-        lines += ["## Key points", ""]
-        lines += [f"- {prose(p)}" for p in points]
-        lines.append("")
+    key_points_md = (
+        "\n".join(["## Key points", ""] + [f"- {prose(p)}" for p in points])
+        if points else ""
+    )
 
     sections = article.get("sections", [])
     box_md = _box_markdown(article, papers, cite_map)
     figure_md = _figure_markdown(cited, labels)
     table_md = _table_markdown(cited, labels)
-    positions = {1: box_md, 2: figure_md, max(len(sections) - 1, 3): table_md}
-    pending = [item for item in (box_md, figure_md, table_md) if item]
+    positions = {1: figure_md, 2: box_md}
+    pending = [item for item in (figure_md, box_md) if item]
 
     for i, section in enumerate(sections, start=1):
+        if key_points_md and i == len(sections) and i > 1:
+            lines += [key_points_md, ""]
         lines += [f"## {section['heading']}", ""]
         for para in section.get("paragraphs", []):
             lines += [prose(para), ""]
@@ -1383,9 +1398,13 @@ def render_markdown(
             pending.remove(item)
     for item in pending:
         lines += [item, ""]
+    if key_points_md and len(sections) <= 1:
+        lines += [key_points_md, ""]
 
     lines += _methods_markdown(provenance, len(papers), len(cited), topic)
     lines += _assessment_markdown(cited, counts, verification, style_report)
+    if table_md:
+        lines += [table_md, ""]
 
     glossary = [
         e for e in (article.get("glossary") or [])
@@ -1436,12 +1455,12 @@ def _box_markdown(article: dict, papers: list[Paper], cite_map: dict[int, int]) 
            f"> {_short_author(paper)} ({paper.year or 'n.d.'})"
            + (f", {paper.venue}" if paper.venue else "") + ref
            + (f" <{paper.link}>" if paper.link else "")]
-    if parts["why"]:
-        out.append(f"> *{parts['why']}*")
     if parts["method"]:
         out.append(f"> **Method.** {parts['method']}")
     if parts["results"]:
         out.append(f"> **Results.** {parts['results']}")
+    if parts["limitations"]:
+        out.append(f"> **Limitations.** {parts['limitations']}")
     return "\n".join(out)
 
 

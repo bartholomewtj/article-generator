@@ -44,8 +44,18 @@ CONVENTIONS = [
      lambda h, a: not re.search(r"\[\d", a.get("abstract", ""))),
     ("index terms are printed",
      lambda h, a: 'class="keywords"' in h or not a.get("keywords")),
-    ("key points box sits above the body",
-     lambda h, a: h.index("Key points") < h.index("Introduction")),
+    # Key points close the body as the bridge from evidence to verdict: after
+    # the Introduction, immediately before the concluding section.
+    ("key points box sits before the conclusions",
+     lambda h, a: h.index("<h2>Introduction") < h.index("Key points") < h.index("<h2>Conclusions")),
+    # Table 1 is reference apparatus and must not interrupt the prose: it lives
+    # in the back matter, after Methods.
+    ("Table 1 sits in the back matter",
+     lambda h, a: 'id="table-1"' not in h or h.index('id="table-1"') > h.index("<h2>Methods")),
+    # The featured-study box reports the study, not the editor: no "why this
+    # study" line, and a Limitations line completing method -> results -> caveat.
+    ("Box 1 carries no editorial justification",
+     lambda h, a: "box-why" not in h),
     ("first section is the Introduction",
      lambda h, a: a["sections"][0]["heading"] == "Introduction"),
     ("last section is the Conclusions",
@@ -115,8 +125,11 @@ def _article(title, sections, **overrides):
         "abstract": "A single unstructured paragraph summarising the evidence and its limits.",
         "keywords": ["alpha", "beta"],
         "evidence_note": "The direct evidence is thin.",
+        # `why` rides along deliberately: legacy drafts carry it and the
+        # renderer must ignore it rather than print an editorial line.
         "featured_study": {"source_index": 1, "why": "Most relevant.",
-                           "method": "Cohort study.", "results": "A positive association."},
+                           "method": "Cohort study.", "results": "A positive association.",
+                           "limitations": "Observational; no causal claim is supported."},
         "sections": sections,
         "key_points": ["First point [1].", "Second point [2]."],
         "glossary": [{"term": "Term", "definition": "A definition."}],

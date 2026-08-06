@@ -86,12 +86,18 @@ before changing the layout.
   `glossary`, `references`. **`standfirst`, `key_takeaways` and `pull_quote` are
   gone** — `render.py` and `verify.py` still read the old names so drafts written
   against the previous schema keep rendering; don't drop those fallbacks.
+  `featured_study.why` is gone too, replaced by `limitations`; old drafts still
+  carry `why` and the renderer must keep ignoring it silently.
 - Sections must run `Introduction` → thematic sections → `Conclusions`.
 - Three display items are built **deterministically** in `render.py` and must
   stay that way (they're the part a model can't fabricate): `Box 1` (featured
-  study), `Fig. 1` (inline SVG of cited sources by year, segmented by relevance,
-  themed through CSS variables), `Table 1` (the cited records). They interleave
-  after sections 1, 2 and the penultimate one.
+  study: Method / Results / Limitations, no editorial "why" line), `Fig. 1`
+  (inline SVG of cited sources by year, segmented by relevance, themed through
+  CSS variables), `Table 1` (the cited records). Layout (owner's preference,
+  recorded in `docs/journal-style.md` §3/§6): Fig. 1 after the Introduction,
+  Box 1 after the first thematic section, **key points directly before the
+  concluding section** (not under the abstract), and **Table 1 in the back
+  matter after Methods** — never mid-prose.
 - Citations render as Nature superscripts after the punctuation, with runs of
   three or more collapsed (`.¹,³–⁵`). References are Vancouver/Nature form.
 - Warnings are **prose in a Limitations paragraph**, not emoji callout boxes.
