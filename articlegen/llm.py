@@ -343,6 +343,30 @@ OPENROUTER_REASONING_DEEP_OUTPUT = 64000
 OPENROUTER_REASONING_OUTPUT = 16000
 
 
+def _openrouter_provider_routing(model: str) -> dict:
+    """Which upstream endpoints OpenRouter may serve this model from.
+
+    `require_parameters` stops a provider that ignores `response_format` from
+    answering in prose — a failure that reads like the model being bad at
+    instructions rather than a routing choice. It is necessary and it is not
+    sufficient: it filters on what a provider *advertises*, and OpenRouter
+    lists Azure as supporting structured outputs for the Anthropic models while
+    the workspace behind it returns `400 structured_outputs not supported in
+    your workspace` (issue #81).
+
+    So Anthropic slugs are pinned to Anthropic's own endpoint, out of the nine
+    that re-sell them. That is where structured outputs is GA rather than beta
+    or workspace-gated, and where the refusal and thinking semantics match the
+    direct Anthropic path — so the handling added for #79 behaves identically
+    on both. Everything else keeps open routing, where competing providers are
+    the point and the advertised capability is trustworthy enough.
+    """
+    routing = {"require_parameters": True}
+    if model.startswith("anthropic/"):
+        routing["only"] = ["anthropic"]
+    return routing
+
+
 def _openrouter_max_tokens(model: str, deep: bool) -> int:
     """How much room to leave for thinking plus the reply.
 
@@ -389,10 +413,7 @@ def _openrouter_generate(
             "type": "json_schema",
             "json_schema": {"name": "articlegen", "strict": True, "schema": schema},
         },
-        # Without this, OpenRouter may route to a provider that ignores
-        # `response_format` entirely and answers in prose — a failure that looks
-        # like the model being bad at instructions rather than a routing choice.
-        "provider": {"require_parameters": True},
+        "provider": _openrouter_provider_routing(model),
         "temperature": 0.2,
         "max_tokens": _openrouter_max_tokens(model, deep),
     }
@@ -428,6 +449,15 @@ def _openrouter_generate(
         raise RuntimeError(
             "OpenRouter reports insufficient credit for this request. "
             "Top up at https://openrouter.ai/credits, or use a cheaper --model."
+        )
+    if res.status_code == 403 and "limit" in res.text.lower():
+        # Distinct from 402: the account has credit, but this *key* carries a
+        # spending cap that is now spent. The fix is on the key's own page, not
+        # the credits page, and nothing about the request will change it.
+        raise RuntimeError(
+            "This OpenRouter key has hit its own spending limit. Raise or clear "
+            "the limit on the key at https://openrouter.ai/keys — topping up "
+            "credit will not help, the cap is set per key."
         )
     if res.status_code == 429:
         raise RuntimeError("OpenRouter is rate-limiting this key. Wait a moment and retry.")

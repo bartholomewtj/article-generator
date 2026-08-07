@@ -130,7 +130,23 @@ def test_openrouter_request_shape() -> None:
     src = inspect.getsource(llm._openrouter_generate)
     check("asks for a json_schema response", '"type": "json_schema"' in src)
     check("in strict mode", '"strict": True' in src)
-    check("and only routes to providers that honour it", '"require_parameters": True' in src)
+    check("names the per-key spending cap separately from running out of credit",
+          '"limit" in res.text.lower()' in src)
+
+    # Provider routing lives in its own function now, so assert on behaviour
+    # rather than on the text of the payload.
+    opus = llm._openrouter_provider_routing("anthropic/claude-opus-5")
+    llama_routing = llm._openrouter_provider_routing("meta-llama/llama-3.3-70b-instruct")
+    check("and only routes to providers that honour structured output",
+          opus["require_parameters"] is True and llama_routing["require_parameters"] is True)
+    # OpenRouter re-sells the Anthropic models from nine endpoints and lists
+    # Azure as supporting structured outputs; the workspace behind it returns
+    # 400 "structured_outputs not supported in your workspace" (issue #81). So
+    # the advertised capability that `require_parameters` filters on is not
+    # always true, and Anthropic slugs go to Anthropic's own endpoint.
+    check("Anthropic models are pinned to Anthropic's own endpoint",
+          opus.get("only") == ["anthropic"])
+    check("other vendors keep open routing", "only" not in llama_routing)
     check("reads the key from OPENROUTER_API_KEY", 'os.environ.get("OPENROUTER_API_KEY")' in src)
     check("names the out-of-credit case", "402" in src)
     check("checks for an error body behind a 200", 'data.get("error")' in src)
@@ -140,7 +156,11 @@ def test_openrouter_request_shape() -> None:
     # with "No endpoints found". The retry drops temperature, not the schema.
     check("retries a parameter 404 without temperature",
           'res.status_code == 404 and "temperature" in payload' in src)
-    check("but never gives up require_parameters", src.count('"require_parameters"') == 1)
+    # The retry drops exactly one key. Giving up `provider` instead would let
+    # the request reach an endpoint that ignores `response_format` and answers
+    # in prose, which is the failure the routing exists to prevent.
+    check("and the retry gives up temperature, never the provider routing",
+          'if k != "temperature"' in src and '"provider"' not in src.split("retry = ")[1][:200])
     check("also treats the provider's own truncation word as truncation",
           "native_finish_reason" in src)
 
