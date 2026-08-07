@@ -707,14 +707,13 @@
       <div style="margin-bottom: 1.25rem;">
         <label class="input-label" for="providerSelect">Writing model</label>
         <p style="font-size:0.8rem; color:var(--muted); margin-top:-0.2rem; margin-bottom:0.6rem;">
-          Groq is free and fast, but capped at a few articles a day. OpenRouter runs
-          the same model from prepaid credit with no daily cap. Claude writes
+          Groq is free and fast, but capped at a few articles a day. Claude writes
           noticeably better articles &mdash; more specific, less repetitive &mdash;
-          but needs a paid Anthropic key.
+          via OpenRouter prepaid credit or a paid Anthropic key.
         </p>
         <select id="providerSelect" class="theme-input" onchange="onProviderChange()">
           <option value="groq">Groq &mdash; Llama 3.3 70B (free)</option>
-          <option value="openrouter">OpenRouter &mdash; Llama 3.3 70B (credit, no daily cap)</option>
+          <option value="openrouter">OpenRouter &mdash; Claude Fable 5 (credit, no daily cap)</option>
           <option value="anthropic">Claude (paid Anthropic key)</option>
         </select>
       </div>
@@ -967,13 +966,13 @@
             'If you hit the daily limit, switch to Claude above.'
     },
     openrouter: {
-      model: 'meta-llama/llama-3.3-70b-instruct',
+      model: 'anthropic/claude-fable-5',
       store: 'articlegen_key_openrouter',
       label: 'OpenRouter API Key',
       placeholder: 'sk-or-v1-...',
-      help: 'The same Llama 3.3 70B as Groq, but paid from prepaid credit instead of ' +
-            'a daily allowance — so a run never fails because the day&rsquo;s quota is spent. ' +
-            'Well under a cent per article. Create a key at ' +
+      help: 'Claude Fable 5 paid from prepaid credit, with no daily allowance — so a run ' +
+            'never fails because the day&rsquo;s quota is spent. Expect roughly ' +
+            '<strong>$1&ndash;2 per article</strong>. Create a key at ' +
             '<a href="https://openrouter.ai/keys" target="_blank" style="color:var(--accent);">openrouter.ai/keys</a>.'
     },
     anthropic: {
