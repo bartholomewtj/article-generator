@@ -65,16 +65,37 @@ cited** (#64's collapse is gone), and the style gate detected the thin prose,
 attempted a revision, failed, and said so plainly in Limitations rather than
 shipping quietly.
 
+## The Opus 5 article — the pipeline works
+
+Generated 7 Aug on `anthropic/claude-opus-5`, same subject area as the Llama
+baseline, and it is the first article that vindicates the whole design:
+<https://bartholomewtj.github.io/article-generator/#p=AC7NQV359>
+
+| | Llama (morning) | Opus 5 (evening) |
+|---|---|---|
+| Body | ~470 words, 2-sentence sections | **3,311 words, 8 sections** |
+| Sources cited | 3 of 20 | **19 of 20** |
+| Style-gate failures | 4, revision failed | **1** (recycled phrasing) |
+| Introduction | restated the abstract | its own argument |
+| Unverified figures | — | **none** |
+
+The title is a finding rather than a topic label, effect estimates carry
+confidence intervals and GRADE certainty, and it adjudicates its own evidence
+base — flagging that a cohort "probably supports association rather than an
+intervention effect", and that an injury-risk meta-analysis and two register
+studies "are not entirely concordant". Every numerical claim was located in
+the material the model was shown, so `verify.py` flagged nothing.
+
 ## Next thing to do
 
-1. **Generate an article on Fable and read it.** Everything is now in place —
-   full-text grounding, the new layout, Fable on both paid providers, and
-   truthful provenance statements — but no one has read an article with all of
-   it combined. That reading is what has surfaced every defect so far. Not
-   Groq: it never gets full text, its token ceiling can't fit any.
-2. Compare it against the 7 August Llama article (same topic: night-shift
-   scheduling) — that one is the before picture, and it is worth keeping as a
-   baseline.
+1. **The one remaining style failure is `recycled-phrasing`**, and the
+   revision pass could not resolve it. Worth reading the article for where the
+   repetition actually is before touching the rule — it may be correct.
+2. **Only 4 of 19 sources had open-access full text.** That is the binding
+   constraint on depth now, not the writer. Whether more can be reached (other
+   OA sources, publisher APIs) is the next real capability question.
+3. Consider whether Opus 5 is worth its cost against Sonnet 5 on the same
+   topic — Sonnet is 2.5x cheaper and was what the #63 test validated.
 
 ## Open
 
