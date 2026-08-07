@@ -38,13 +38,24 @@ GROQ_DEFAULT_MODEL = "llama-3.3-70b-versatile"
 # app sends a model name, and web.ALLOWED_MODELS is built from the constants
 # here, so a stale name there is quietly dropped rather than honoured.
 ANTHROPIC_DEFAULT_MODEL = "claude-fable-5"
-# Claude Fable 5 resold through OpenRouter at pass-through pricing ($10/$50
-# per million tokens — think dollars per article, not cents). The #63/#64 model
-# test showed the writing-quality problems were the Llama writer, so the
-# default follows the quality; OpenRouter still bills prepaid credit with no
-# daily allowance. Pass any other catalogue slug with --model (e.g.
-# `meta-llama/llama-3.3-70b-instruct`) when cost matters more than prose.
-OPENROUTER_DEFAULT_MODEL = "anthropic/claude-fable-5"
+# Claude Opus 5, resold by OpenRouter at $5/$25 per million tokens. Fable 5 was
+# the default briefly and cost twice as much for a model whose extra capability
+# this pipeline never needed. Both run elevated bio/cyber safety classifiers
+# that false-positive on clinical and life-sciences topics — this project's
+# entire subject matter — which is why the refusal fallback below is not
+# optional (issue #79). Pass any catalogue slug with --model:
+# `meta-llama/llama-3.3-70b-instruct` when cost matters more than prose,
+# `anthropic/claude-sonnet-5` for a cheaper Claude that carries no elevated
+# classifiers, `anthropic/claude-fable-5` for the hardest topics.
+OPENROUTER_DEFAULT_MODEL = "anthropic/claude-opus-5"
+
+# Where to retry when a safety classifier declines. OpenRouter cannot pass
+# Anthropic's server-side `fallbacks` parameter (Claude API only), so this
+# client-side retry is the OpenRouter equivalent of what the direct Anthropic
+# path gets for free (#45). Sonnet 5 is the substitute precisely because it
+# carries no elevated bio/cyber classifiers — falling back from one
+# elevated-classifier model to another would reproduce the refusal.
+OPENROUTER_REFUSAL_FALLBACK = "anthropic/claude-sonnet-5"
 DEFAULT_PROVIDER = "groq"
 
 # Groq's free tier meters tokens per minute, and it counts the *reserved* output
@@ -346,7 +357,8 @@ def _openrouter_max_tokens(model: str, deep: bool) -> int:
 
 
 def _openrouter_generate(
-    prompt: str, schema: dict, system: str | None, model: str, deep: bool, api_key: str | None = None
+    prompt: str, schema: dict, system: str | None, model: str, deep: bool,
+    api_key: str | None = None, allow_fallback: bool = True,
 ) -> dict:
     import requests
 
@@ -439,6 +451,33 @@ def _openrouter_generate(
     # missed it and the caller saw a JSON parse error instead of the real cause.
     finish = choices[0].get("finish_reason")
     native_finish = choices[0].get("native_finish_reason")
+
+    # A safety classifier declined. OpenRouter normalises this to
+    # "content_filter" and puts the provider's own word in
+    # `native_finish_reason`; Anthropic's is "refusal". It can fire mid-reply,
+    # so there may be partial content — which is a fragment, not an answer, and
+    # is discarded. Claude Fable 5 runs elevated bio/cyber classifiers that
+    # false-positive on clinical and life-sciences topics, and this project
+    # writes about little else (issue #79).
+    if finish == "content_filter" or native_finish == "refusal":
+        if allow_fallback and model != OPENROUTER_REFUSAL_FALLBACK:
+            print(
+                f"[articlegen] {model} declined this request; retrying on "
+                f"{OPENROUTER_REFUSAL_FALLBACK}",
+                file=sys.stderr,
+                flush=True,
+            )
+            return _openrouter_generate(
+                prompt, schema, system, OPENROUTER_REFUSAL_FALLBACK, deep, api_key,
+                allow_fallback=False,
+            )
+        # Reached only when the fallback itself declined, or when the requested
+        # model already was the fallback — either way there is nothing left to try.
+        raise RuntimeError(
+            f"{model} declined this request on safety grounds. Rephrase the "
+            "topic, or generate it with Groq instead."
+        )
+
     if finish == "length" or native_finish in ("length", "max_tokens", "MAX_TOKENS"):
         raise RuntimeError(
             f"{model} hit its output limit ({_openrouter_max_tokens(model, deep)} "
