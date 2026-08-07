@@ -324,10 +324,23 @@ this gets used for) is the durable answer rather than more header tuning.
     and the ceiling. OpenRouter bills tokens generated, not reserved, so
     headroom is free — the opposite of Groq, where the reservation counts
     against the per-minute limit.
-  - **`provider: {"require_parameters": true}` is load-bearing.** Without it
-    OpenRouter may route to a provider that ignores `response_format`, and the
-    article comes back as prose — which reads like the model being bad at
-    instructions rather than a routing choice. The schema also goes in the
+  - **`provider: {"require_parameters": true}` is load-bearing but not
+    sufficient.** Without it OpenRouter may route to a provider that ignores
+    `response_format`, and the article comes back as prose — which reads like
+    the model being bad at instructions rather than a routing choice. It
+    filters on what each provider *advertises*, though, and the advertisement
+    can be wrong: OpenRouter re-sells `anthropic/*` from nine endpoints and
+    lists Azure as supporting structured outputs, while the workspace behind
+    it returns `400 structured_outputs not supported in your workspace` (#81).
+    So `_openrouter_provider_routing` also pins Anthropic slugs to
+    `only: ["anthropic"]` — GA structured outputs, and refusal/thinking
+    semantics matching the direct path, so #79's handling behaves the same on
+    both. **Provider selection is dynamic**, so a routing fault like this
+    appears intermittently and looks like a new bug each time; the provider
+    that served a request is in the error body's `provider_name`.
+  - **A 403 mentioning a limit is a per-key spending cap, not exhausted
+    credit.** Different page, different fix: raise or clear the cap on the key
+    at openrouter.ai/keys. Topping up credit does nothing. The schema also goes in the
     system prompt, same belt-and-braces as the Groq path.
   - Implemented with `requests` against the OpenAI-compatible endpoint; no new
     dependency. A 200 can still carry an `error` body (no provider matched, or
