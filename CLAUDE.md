@@ -361,8 +361,9 @@ this gets used for) is the durable answer rather than more header tuning.
 - Select a provider by setting `ARTICLEGEN_PROVIDER` (`anthropic` / `openrouter`
   / `groq`), passing a `--model` that identifies one, or having only that
   provider's key set.
-- Default models: `llama-3.3-70b-versatile` / `anthropic/claude-fable-5`
-  / `claude-fable-5`. Model ids live in **two** places — `llm.py` and the
+- Default models: `llama-3.3-70b-versatile` / `anthropic/claude-opus-5`
+  / `claude-fable-5`, plus `OPENROUTER_REFUSAL_FALLBACK` =
+  `anthropic/claude-sonnet-5`. Model ids live in **two** places — `llm.py` and the
   `PROVIDERS` map in `index.html`. Nothing links them, and `web._requested_model`
   silently drops an unrecognised name rather than erroring, so a stale front end
   quietly stops honouring the provider the user picked.
