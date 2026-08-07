@@ -171,6 +171,78 @@ def test_openrouter_request_shape() -> None:
           == llm._openrouter_max_tokens(llama, False))
 
 
+def test_openrouter_refusal_falls_back() -> None:
+    """A safety classifier decline must retry elsewhere, not surface as bad JSON.
+
+    OpenRouter cannot pass Anthropic's server-side `fallbacks` parameter, so the
+    protection the direct path gets from #45 has to be re-implemented here. The
+    trigger is real: Fable declined a circadian-biology topic mid-reply, and
+    because the refusal went unrecognised the caller saw a JSON parse error
+    pointing at the fragment it had already written (issue #79).
+    """
+    import json as _json
+    from articlegen import llm
+
+    calls: list[str] = []
+    refuse_everything = False
+
+    class _Resp:
+        status_code = 200
+
+        def __init__(self, payload):
+            self._payload = payload
+
+        def json(self):
+            return self._payload
+
+    def _fake_post(url, headers=None, json=None, timeout=None):
+        model = json["model"]
+        calls.append(model)
+        if refuse_everything or model != llm.OPENROUTER_REFUSAL_FALLBACK:
+            # Mid-reply decline: partial content, normalised to content_filter.
+            return _Resp({"choices": [{
+                "finish_reason": "content_filter",
+                "native_finish_reason": "refusal",
+                "message": {"content": '{"ideas": [{"title": "Circadian'},
+            }]})
+        return _Resp({"choices": [{
+            "finish_reason": "stop",
+            "message": {"content": '{"ideas": []}'},
+        }]})
+
+    import requests
+    original = requests.post
+    requests.post = _fake_post
+    try:
+        out = llm._openrouter_generate(
+            "p", {"type": "object"}, None, llm.OPENROUTER_DEFAULT_MODEL, False, "sk-or-v1-x")
+        check("a refusal is retried on the fallback model", calls == [
+            llm.OPENROUTER_DEFAULT_MODEL, llm.OPENROUTER_REFUSAL_FALLBACK])
+        check("the fallback is not itself an elevated-classifier model",
+              llm.OPENROUTER_REFUSAL_FALLBACK != llm.OPENROUTER_DEFAULT_MODEL)
+        check("and the fallback's answer is what comes back", out == {"ideas": []})
+
+        # When nothing will serve it, the partial fragment must still never reach
+        # the caller: it parses as broken JSON, which is the confusing failure
+        # this whole check replaces.
+        refuse_everything = True
+        calls.clear()
+        raised = ""
+        try:
+            llm._openrouter_generate(
+                "p", {"type": "object"}, None, llm.OPENROUTER_DEFAULT_MODEL, False,
+                "sk-or-v1-x")
+        except RuntimeError as exc:
+            raised = str(exc)
+        check("a refusal by the fallback too is a clear error, not a parse error",
+              "declined this request on safety grounds" in raised
+              and "invalid JSON" not in raised)
+        check("and the retry happens once, never in a loop",
+              calls == [llm.OPENROUTER_DEFAULT_MODEL, llm.OPENROUTER_REFUSAL_FALLBACK])
+    finally:
+        requests.post = original
+
+
 def test_refusal_fallbacks() -> None:
     """Opus 5's safety classifiers can decline a clinical topic outright.
 
@@ -2093,6 +2165,7 @@ def main() -> int:
     for fn in (
         test_provider_resolution, test_per_request_api_key,
         test_openrouter_routing, test_openrouter_request_shape,
+        test_openrouter_refusal_falls_back,
         test_refusal_fallbacks,
         test_pipeline_is_shared, test_draft_summary, test_rate_limit,
         test_keepalive_connection_reuse, test_substance_checks,

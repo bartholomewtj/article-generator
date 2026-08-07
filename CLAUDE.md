@@ -285,14 +285,26 @@ this gets used for) is the durable answer rather than more header tuning.
   tier / fast inference); `GROQ_API_KEY` is used automatically and wins even if
   the others are also set. The web app offers all three in Settings, storing a
   key per provider.
-- **OpenRouter's default is Claude Fable 5** (`anthropic/claude-fable-5`, at
-  Anthropic's pass-through pricing: $10/$50 per million tokens, so roughly
-  $1–2 per article). It used to default to the same Llama 3.3 70B as Groq,
-  but the #63/#64 model test pinned the quality problems on the Llama writer,
-  so the default follows the quality. OpenRouter still bills prepaid credit
-  with no daily allowance — a run never fails because the day's quota is
-  spent. Pass `meta-llama/llama-3.3-70b-instruct` with `--model` when cost
-  matters more than prose.
+- **OpenRouter's default is Claude Opus 5** (`anthropic/claude-opus-5`, $5/$25
+  per million tokens, roughly 50c–$1 an article). It used to be the same Llama
+  3.3 70B as Groq, but the #63/#64 test pinned the quality problems on the
+  Llama writer, so the default follows the quality. Fable 5 held the slot
+  briefly and cost twice as much for capability this pipeline never needed.
+  OpenRouter bills prepaid credit with no daily allowance, so a run never
+  fails because the day's quota is spent. `--model` takes any catalogue slug.
+- **Opus 5 and Fable 5 both decline clinical topics sometimes, and OpenRouter
+  cannot use Anthropic's server-side fallback.** Their elevated bio/cyber
+  classifiers false-positive on exactly what this project writes about —
+  Fable declined a circadian-biology topic mid-reply (#79). On the direct
+  Anthropic path `fallbacks` re-serves it automatically (#45); that parameter
+  is Claude-API-only, so the OpenRouter path implements the retry itself:
+  `finish_reason == "content_filter"` or `native_finish_reason == "refusal"`
+  retries once on `OPENROUTER_REFUSAL_FALLBACK`. **The fallback must stay a
+  model without elevated classifiers** (Sonnet 5) — falling back from one
+  elevated-classifier model to another just reproduces the refusal. A refusal
+  can arrive mid-reply with partial content; that fragment is a fragment, not
+  an answer, and discarding it is what stops the failure resurfacing as
+  "invalid JSON" pointing at the model's own half-written sentence.
   - **A slash is what makes a model name an OpenRouter slug**, and it is checked
     *before* the `claude` prefix in `resolve_provider`. OpenRouter re-sells the
     other providers' models as `vendor/model`, and `anthropic/claude-sonnet-5`

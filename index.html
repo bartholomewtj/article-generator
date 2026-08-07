@@ -713,7 +713,7 @@
         </p>
         <select id="providerSelect" class="theme-input" onchange="onProviderChange()">
           <option value="groq">Groq &mdash; Llama 3.3 70B (free)</option>
-          <option value="openrouter">OpenRouter &mdash; Claude Fable 5 (credit, no daily cap)</option>
+          <option value="openrouter">OpenRouter &mdash; Claude Opus 5 (credit, no daily cap)</option>
           <option value="anthropic">Claude (paid Anthropic key)</option>
         </select>
       </div>
@@ -966,13 +966,13 @@
             'If you hit the daily limit, switch to Claude above.'
     },
     openrouter: {
-      model: 'anthropic/claude-fable-5',
+      model: 'anthropic/claude-opus-5',
       store: 'articlegen_key_openrouter',
       label: 'OpenRouter API Key',
       placeholder: 'sk-or-v1-...',
-      help: 'Claude Fable 5 paid from prepaid credit, with no daily allowance — so a run ' +
-            'never fails because the day&rsquo;s quota is spent. Expect roughly ' +
-            '<strong>$1&ndash;2 per article</strong>. Create a key at ' +
+      help: 'Claude Opus 5 paid from prepaid credit, with no daily allowance — so a run ' +
+            'never fails because the day&rsquo;s quota is spent. Roughly ' +
+            '<strong>50c&ndash;$1 per article</strong>. Create a key at ' +
             '<a href="https://openrouter.ai/keys" target="_blank" style="color:var(--accent);">openrouter.ai/keys</a>.'
     },
     anthropic: {
