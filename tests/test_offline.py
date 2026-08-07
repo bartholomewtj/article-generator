@@ -1972,6 +1972,41 @@ def test_full_text_grounding() -> None:
     md = render._table_markdown(ft_cited, {1: "direct", 2: "related"})
     check("markdown table matches", "Read |" in md and "Full text |" in md)
 
+    # -- every provenance statement agrees with Table 1 (issue #75) ----------
+    # A shipped article said "full texts of 7 sources were retrieved" in Methods
+    # and "prepared from abstracts alone" in Limitations, plus an
+    # "Abstract-derived synthesis" masthead and a "(not full texts)" colophon:
+    # Methods read provenance, the other four were hardcoded. The contradiction
+    # is what these assert against, so keep them keyed to the *wording* a reader
+    # sees rather than to the helpers that produce it.
+    # `references` is load-bearing: `cited` is resolved from it, and an empty
+    # list means nothing is cited, so every count below would be 0.
+    art_ft = {"title": "T", "abstract": "A.", "sections": [], "key_points": [],
+              "references": [1, 2], "keywords": []}
+    html_ft = render.render_article(art_ft, ft_cited, "night shift work",
+                                    curation={1: "direct", 2: "related"},
+                                    provenance=prov_ft)
+    md_ft = render.render_markdown(art_ft, ft_cited, "night shift work",
+                                   curation={1: "direct", 2: "related"},
+                                   provenance=prov_ft)
+    for name, out in (("HTML", html_ft), ("Markdown", md_ft)):
+        check(f"{name} never claims abstracts-only when a full text was read",
+              "abstracts alone" not in out
+              and "not full texts" not in out
+              and "not the full texts" not in out
+              and "Abstract-derived synthesis" not in out)
+        check(f"{name} states the mixed grounding instead",
+              "Full text read for 1 of 2 sources" in out)
+
+    # The abstracts-only wording must survive untouched — it is the truthful one
+    # whenever nothing was read in full, which is every Groq draft.
+    abs_cited = [Paper(title="a", abstract="x", year=2020)]
+    art_abs = dict(art_ft, references=[1])
+    html_abs = render.render_article(art_abs, abs_cited, "night shift work",
+                                     curation={1: "direct"}, provenance={})
+    check("abstracts-only article still says so",
+          "abstracts alone" in html_abs and "Abstract-derived synthesis" in html_abs)
+
 
 def test_pipeline_fetches_full_text() -> None:
     """The pipeline stage itself: fetch only direct/related sources, respect the

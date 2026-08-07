@@ -695,6 +695,19 @@ def _methods_html(provenance: dict | None, screened: int, n_cited: int, topic: s
     )
 
 
+def _full_text_count(cited: list[Paper]) -> int:
+    """How many cited sources the model read in full.
+
+    Derived from the papers themselves, exactly as Table 1's Read column is, so
+    the two cannot disagree. Methods counts what was *fetched* (from
+    provenance); every statement about this synthesis's evidence base has to
+    count what was fetched *and* cited, which is this. Absent full text this is
+    0 and the abstracts-only wording is the truthful one — never assume either
+    way, the same no-fallback rule as `databases`.
+    """
+    return sum(1 for p in cited if getattr(p, "full_text", None))
+
+
 def _assessment_paragraphs(
     cited: list[Paper],
     counts: dict,
@@ -732,12 +745,39 @@ def _assessment_paragraphs(
         opening += f"; they were published in {span}"
     opening += ". The composition of the evidence base is shown in Fig. 1."
 
-    limitations = [
-        "This synthesis was prepared from abstracts alone. Effect estimates, "
-        "methodological detail, and the limitations that authors report only in a full "
-        "text were unavailable, so the strength of individual studies could not be "
-        "appraised here."
-    ]
+    # Abstracts-only used to be asserted here unconditionally, so an article
+    # that had read seven full texts still told the reader none were available —
+    # contradicting its own Methods section (issue #75). Both wordings are
+    # derived, never assumed.
+    n_full = _full_text_count(cited)
+    n_abstract = n - n_full
+    if n_full:
+        limit = (
+            f"This synthesis was prepared from the open-access full text"
+            f"{'s' if n_full != 1 else ''} of {n_full} cited source"
+            f"{'s' if n_full != 1 else ''}"
+        )
+        if n_abstract:
+            limit += (
+                f" and the abstract{'s' if n_abstract != 1 else ''} of the remaining "
+                f"{n_abstract}. Where only an abstract was available, effect estimates, "
+                "methodological detail, and the limitations that authors report only in "
+                "a full text were unavailable, so the strength of those studies could "
+                "not be appraised here."
+            )
+        else:
+            limit += (
+                ". The deeply read subset skews open-access, which is a selection the "
+                "reader should weigh alongside the findings."
+            )
+        limitations = [limit]
+    else:
+        limitations = [
+            "This synthesis was prepared from abstracts alone. Effect estimates, "
+            "methodological detail, and the limitations that authors report only in a full "
+            "text were unavailable, so the strength of individual studies could not be "
+            "appraised here."
+        ]
     if counts and not counts.get("direct"):
         limitations.append(
             "No cited source studies the review question directly. The claims made above "
@@ -870,21 +910,45 @@ def _back_matter_html(cited: list[Paper], topic: str, article: dict, provenance:
     )
 
 
-def _disclaimer_html(topic: str, article: dict) -> str:
+def _disclaimer_html(topic: str, article: dict, cited: list[Paper]) -> str:
+    # "not the full texts" was stated unconditionally here, which understated
+    # the grounding of any draft that had read some (issue #75).
+    read = _read_phrase(cited)
     base = (
-        "Machine-generated evidence review, written from the abstracts (not the full texts) "
-        "of the journal articles listed in the references. Follow the source links before "
-        "relying on any specific claim."
+        f"Machine-generated evidence review of the journal articles listed in the "
+        f"references, {read}. Follow the source links before relying on any "
+        "specific claim."
     )
     if _is_clinical(topic, article):
         base = (
             "<strong>Not medical or clinical advice.</strong> This is a machine-generated "
-            "summary of journal <em>abstracts</em> (not full texts), for background only. "
+            f"summary of the cited journal articles, {read}, for background only. "
             "It is not a substitute for professional judgement, primary sources, or "
             "clinical guidelines. Verify every claim, figure, and dose against the cited "
             "papers before acting on it."
         )
     return base
+
+
+def _synthesis_label(cited: list[Paper]) -> str:
+    """The masthead's one-line statement of what this was built from."""
+    n_full = _full_text_count(cited)
+    if not n_full:
+        return "Abstract-derived synthesis"
+    if n_full == len(cited):
+        return "Full-text synthesis"
+    return f"Full text read for {n_full} of {len(cited)} sources"
+
+
+def _read_phrase(cited: list[Paper]) -> str:
+    """A trailing clause describing how deeply the cited articles were read."""
+    n_full = _full_text_count(cited)
+    n = len(cited)
+    if not n_full:
+        return "written from their abstracts, not their full texts"
+    if n_full == n:
+        return "each read in full"
+    return f"{n_full} of {n} read in full, the rest from their abstracts"
 
 
 # --------------------------------------------------------------------------
@@ -976,7 +1040,7 @@ def render_article(
     meta_bits = [
         f"Generated {datetime.date.today().strftime('%d %B %Y').lstrip('0')}",
         f"{len(cited)} sources cited" + (f", {span}" if span else ""),
-        "Abstract-derived synthesis",
+        _synthesis_label(cited),
         "Not peer reviewed",
     ]
 
@@ -997,7 +1061,7 @@ def render_article(
             glossary=_glossary_html(article),
             references="\n".join(refs_html),
             additional=_back_matter_html(cited, topic, article, provenance),
-            disclaimer=_disclaimer_html(topic, article),
+            disclaimer=_disclaimer_html(topic, article, cited),
         ).replace("__STYLE__", _CSS)
     )
 
@@ -1369,7 +1433,7 @@ def render_markdown(
         "",
         f"*Generated {today} · {len(cited)} sources cited"
         + (f", {span}" if span else "")
-        + " · Abstract-derived synthesis · Not peer reviewed*",
+        + f" · {_synthesis_label(cited)} · Not peer reviewed*",
         "",
         f"**Subject:** {topic}",
         "",
@@ -1450,7 +1514,7 @@ def render_markdown(
         "",
         "---",
         "",
-        _markdown_disclaimer(topic, article),
+        _markdown_disclaimer(topic, article, cited),
         "",
     ]
     return "\n".join(lines)
@@ -1535,16 +1599,17 @@ def _assessment_markdown(cited, counts, verification, style_report=None) -> list
     return lines
 
 
-def _markdown_disclaimer(topic: str, article: dict) -> str:
+def _markdown_disclaimer(topic: str, article: dict, cited: list[Paper]) -> str:
+    read = _read_phrase(cited)
     if _is_clinical(topic, article):
         return (
-            "**Not medical or clinical advice.** Machine-generated summary of journal "
-            "*abstracts* (not full texts), for background only — not a substitute for "
+            "**Not medical or clinical advice.** Machine-generated summary of the cited "
+            f"journal articles, {read}, for background only — not a substitute for "
             "professional judgement, primary sources, or clinical guidelines. Verify "
             "every claim, figure, and dose against the cited papers."
         )
     return (
-        "Machine-generated from the *abstracts* (not full texts) of the cited articles. "
+        f"Machine-generated from the cited articles, {read}. "
         "Follow the source links before relying on any specific claim."
     )
 

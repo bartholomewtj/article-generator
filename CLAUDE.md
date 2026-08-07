@@ -368,8 +368,17 @@ this gets used for) is the durable answer rather than more header tuning.
   same function, nothing has to be recorded per run. Groq never gets full text
   (its TPM ceiling cannot fit any); there the draft stays abstracts-only and
   says so. `provenance["full_text_sources"]` records what was actually
-  fetched — the Methods sentence and Table 1's Read column are written from
-  it, same no-fallback rule as `databases`. The full-text framing of the
+  fetched — the Methods sentence is written from it, same no-fallback rule as
+  `databases`. **Every other statement about grounding counts the *cited*
+  papers instead** (`render._full_text_count`), because that is what Table 1's
+  Read column shows and the two must never disagree. Getting this wrong
+  shipped an article that said "full texts of 7 sources were retrieved" in
+  Methods and "prepared from abstracts alone" in Limitations, under an
+  "Abstract-derived synthesis" masthead (#75): Methods branched on provenance
+  while four other statements stayed hardcoded to the abstracts-only wording.
+  `_synthesis_label` and `_read_phrase` own that wording now, and
+  `test_full_text_grounding` asserts a mixed-grounding article renders none of
+  the abstracts-only phrases in either output format. The full-text framing of the
   system prompt is derived from the abstracts-only one by substitution
   (`_FULLTEXT_SUBSTITUTIONS`) so the two cannot drift; a test pins every
   target. Full texts get their bracketed citation numbers stripped at parse
