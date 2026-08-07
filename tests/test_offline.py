@@ -141,6 +141,34 @@ def test_openrouter_request_shape() -> None:
     check("retries a parameter 404 without temperature",
           'res.status_code == 404 and "temperature" in payload' in src)
     check("but never gives up require_parameters", src.count('"require_parameters"') == 1)
+    check("also treats the provider's own truncation word as truncation",
+          "native_finish_reason" in src)
+
+    # Ceilings are per-model because the models disagree about what they allow,
+    # and because thinking is spent from the same budget as the reply. Sizing
+    # these for a non-reasoning model is what broke the ideas call on Fable
+    # (issue #77): a truncated reply is invalid JSON, not a short one.
+    #
+    # The upper bounds are OpenRouter's published max_completion_tokens. Raising
+    # a ceiling past one of them trades a truncation bug for a rejected request,
+    # so the assertions are on the real limits rather than the current values.
+    ANTHROPIC_CEILING, LLAMA_CEILING = 128_000, 16_384
+    fable, llama = "anthropic/claude-fable-5", "meta-llama/llama-3.3-70b-instruct"
+    for deep in (False, True):
+        check(f"Fable stays inside its own limit (deep={deep})",
+              llm._openrouter_max_tokens(fable, deep) <= ANTHROPIC_CEILING)
+        check(f"Llama stays inside its own limit (deep={deep})",
+              llm._openrouter_max_tokens(llama, deep) <= LLAMA_CEILING)
+        check(f"a thinking model gets more room than one that doesn't (deep={deep})",
+              llm._openrouter_max_tokens(fable, deep)
+              > llm._openrouter_max_tokens(llama, deep))
+    check("the deep call gets more room than the shallow one",
+          llm._openrouter_max_tokens(fable, True) > llm._openrouter_max_tokens(fable, False))
+    check("the shallow ceiling matches what the direct Anthropic path reserves",
+          llm._openrouter_max_tokens(fable, False) == 16000)
+    check("an unrecognised vendor keeps the conservative pair",
+          llm._openrouter_max_tokens("mistralai/mistral-large", False)
+          == llm._openrouter_max_tokens(llama, False))
 
 
 def test_refusal_fallbacks() -> None:

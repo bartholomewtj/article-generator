@@ -311,14 +311,38 @@ def _groq_generate(
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # No tokens-per-minute ceiling to fit inside, unlike Groq — OpenRouter bills
-# prepaid credit — so the reservation only has to be big enough for the reply.
-# A 1600-word article in JSON runs about 2500-3000 tokens, but reasoning models
-# (claude-fable-5, claude-sonnet-5) think inside `max_tokens` too, and a
-# truncated reply is invalid JSON, not a short one: at 8000 the revision pass
-# hit the ceiling on every reasoning-model run and was discarded. Same trap,
-# same fix as the Anthropic path's shallow-call ceiling.
+# the tokens actually generated, not the reservation — so a generous ceiling is
+# free when it goes unused. It only has to be big enough for the reply, and no
+# bigger than the model itself permits.
+#
+# Reasoning models (claude-fable-5, claude-sonnet-5) think inside `max_tokens`,
+# and a truncated reply is invalid JSON, not a short one, so the failure lands
+# as a parse error a long way from its cause. At 8000 the revision pass hit the
+# ceiling on every reasoning-model run; at 8000 the *shallow* calls broke too
+# once Fable became the default (issue #77) — the ideas call came back cut off
+# 190 tokens in, having spent the rest of the budget thinking.
+#
+# The ceilings can't simply be raised for everyone: OpenRouter caps
+# `meta-llama/llama-3.3-70b-instruct` at 16,384 completion tokens while the
+# Anthropic models allow 128,000. Hence two pairs, chosen by model.
 OPENROUTER_DEEP_OUTPUT = 16000
 OPENROUTER_OUTPUT = 8000
+# Matches what the direct Anthropic path reserves, for the same reason.
+OPENROUTER_REASONING_DEEP_OUTPUT = 64000
+OPENROUTER_REASONING_OUTPUT = 16000
+
+
+def _openrouter_max_tokens(model: str, deep: bool) -> int:
+    """How much room to leave for thinking plus the reply.
+
+    Keyed off the vendor prefix rather than a list of model names: OpenRouter
+    slugs are `vendor/model`, every Anthropic model it re-sells thinks, and a
+    new one should get the headroom without an edit here. Anything else keeps
+    the conservative pair, which fits inside Llama 3.3 70B's 16,384 ceiling.
+    """
+    if model.startswith("anthropic/"):
+        return OPENROUTER_REASONING_DEEP_OUTPUT if deep else OPENROUTER_REASONING_OUTPUT
+    return OPENROUTER_DEEP_OUTPUT if deep else OPENROUTER_OUTPUT
 
 
 def _openrouter_generate(
@@ -358,7 +382,7 @@ def _openrouter_generate(
         # like the model being bad at instructions rather than a routing choice.
         "provider": {"require_parameters": True},
         "temperature": 0.2,
-        "max_tokens": OPENROUTER_DEEP_OUTPUT if deep else OPENROUTER_OUTPUT,
+        "max_tokens": _openrouter_max_tokens(model, deep),
     }
 
     def _post(body):
@@ -408,10 +432,19 @@ def _openrouter_generate(
     choices = data.get("choices") or []
     if not choices:
         raise RuntimeError(f"OpenRouter returned no choices: {json.dumps(data)[:300]}")
-    if choices[0].get("finish_reason") == "length":
+    # Truncation is reported inconsistently: OpenRouter normalises to "length",
+    # but the upstream provider's own word for it arrives in
+    # `native_finish_reason` and sometimes only there — issue #77 was a
+    # truncated reply whose normalised reason was not "length", so this check
+    # missed it and the caller saw a JSON parse error instead of the real cause.
+    finish = choices[0].get("finish_reason")
+    native_finish = choices[0].get("native_finish_reason")
+    if finish == "length" or native_finish in ("length", "max_tokens", "MAX_TOKENS"):
         raise RuntimeError(
-            "The model hit its output limit before finishing the JSON. Try a "
-            "narrower topic, or --max-papers with a smaller number."
+            f"{model} hit its output limit ({_openrouter_max_tokens(model, deep)} "
+            "tokens) before finishing the JSON. Reasoning models spend part of "
+            "that budget thinking. Try a narrower topic, or --max-papers with a "
+            "smaller number."
         )
 
     text_response = (choices[0].get("message") or {}).get("content") or ""
@@ -419,6 +452,12 @@ def _openrouter_generate(
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError as exc:
+        # Name the finish reason: an unterminated string almost always means the
+        # reply was cut off, and without this the error points at the JSON
+        # rather than at the ceiling that truncated it.
         raise RuntimeError(
-            f"OpenRouter returned invalid JSON: {exc}\nRaw response:\n{text_response[:500]}"
+            f"OpenRouter returned invalid JSON from {model} "
+            f"(finish_reason={finish!r}, native={native_finish!r}, "
+            f"max_tokens={_openrouter_max_tokens(model, deep)}): {exc}\n"
+            f"Raw response:\n{text_response[:500]}"
         ) from exc

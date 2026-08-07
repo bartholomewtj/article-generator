@@ -298,6 +298,20 @@ this gets used for) is the durable answer rather than more header tuning.
     other providers' models as `vendor/model`, and `anthropic/claude-sonnet-5`
     routed to Anthropic's own SDK is a 404. No direct provider's model id
     contains a slash, so the discriminator is unambiguous.
+  - **OpenRouter's `max_tokens` is per-model, and thinking is spent from it.**
+    `_openrouter_max_tokens` gives `anthropic/*` slugs 64,000 deep / 16,000
+    shallow — matching the direct Anthropic path — and everything else 16,000 /
+    8,000. Two pairs, not one, because OpenRouter caps Llama 3.3 70B at 16,384
+    completion tokens while the Anthropic models allow 128,000: raising the
+    ceiling for everyone trades a truncation for a rejected request. The
+    shallow pair is the one that bit — #74 pointed the default at Fable
+    without raising it, and the ideas call came back cut off 190 tokens in,
+    having spent the rest thinking (#77). **A truncated reply is invalid JSON,
+    not a short one**, so it surfaces as a parse error nowhere near its cause;
+    both the truncation check and the parse error now name the finish reason
+    and the ceiling. OpenRouter bills tokens generated, not reserved, so
+    headroom is free — the opposite of Groq, where the reservation counts
+    against the per-minute limit.
   - **`provider: {"require_parameters": true}` is load-bearing.** Without it
     OpenRouter may route to a provider that ignores `response_format`, and the
     article comes back as prose — which reads like the model being bad at
