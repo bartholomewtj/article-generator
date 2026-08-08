@@ -399,7 +399,24 @@ this gets used for) is the durable answer rather than more header tuning.
   can't. Figures not found in any abstract are flagged "verify against full text."
 - **Abstracts plus open-access full text — with one invariant.** After curation,
   the pipeline fetches full text for direct/related sources that Europe PMC can
-  serve (PMCID + both OA flags; `MAX_FULLTEXT_FETCHES` bounds the HTTP calls).
+  serve (PMCID + both OA flags). Two bounds, limiting different things:
+  `FULLTEXT_TARGET` (5) stops once the excerpt budget is full — 5 × 12,000 is
+  exactly `FULLTEXT_TOTAL_CHARS`, so a sixth full text is truncated and a
+  seventh shows nothing — and `MAX_FULLTEXT_REQUESTS` (18) stops a topic with
+  no open-access literature from spending a request per paper to find that out.
+  Tangential sources are never fetched even when the target goes unmet: 12,000
+  characters of an off-topic paper is the topic drift the relevance gate exists
+  to stop. `test_pipeline_fetches_full_text` pins that exclusion.
+- **Only the Europe PMC *search* returns pmcid/inEPMC, so a paper's full text
+  used to depend on which API happened to find it.** Anything from OpenAlex
+  arrived with an empty pmcid and was treated as abstract-only regardless of
+  licence — including wholly open-access journals (Frontiers, MDPI) whose full
+  text Europe PMC serves fine. On a real 20-paper run that cost 9 of the 11
+  available full texts; the draft was built from 2, and those 2 were whichever
+  search found them rather than the best sources. `sources.resolve_pmcid` looks
+  the DOI up before giving up, and the same run now returns 5 — the top-ranked
+  direct sources. **Do not "optimise" this by trusting `paper.pmcid` alone**;
+  an empty pmcid means nobody asked, not that no full text exists.
   The writer is shown excerpts derived by `sources.full_text_excerpts` —
   deterministic per-paper and total char caps — and `verify.check_statistics`
   searches **exactly those excerpts plus the abstracts, never the unseen tail
