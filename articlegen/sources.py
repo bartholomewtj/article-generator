@@ -456,6 +456,7 @@ def clear_search_cache() -> None:
     with _cache_lock:
         _search_cache.clear()
         _fulltext_cache.clear()
+        _pmcid_cache.clear()
 
 
 # ---------------------------------------------------------------- full text
@@ -473,6 +474,65 @@ _FULLTEXT_SKIP_TITLES = re.compile(
 # not change hour to hour, and each fetch is a real request against the one
 # scholarly API that reliably answers — do not spend it twice.
 _fulltext_cache: dict[str, tuple[float, str]] = {}
+
+# doi -> (expiry, pmcid, is_open_access). See `resolve_pmcid`.
+_pmcid_cache: dict[str, tuple[float, str, bool]] = {}
+
+
+def resolve_pmcid(paper: Paper, use_cache: bool = True) -> bool:
+    """Look a paper's DOI up in Europe PMC to fill in `pmcid` / `is_open_access`.
+
+    Only the Europe PMC *search* returns those two fields, so before this
+    existed a paper's full text was reachable only if that search happened to
+    be the one that found it. Everything from OpenAlex arrived with an empty
+    pmcid and was therefore treated as abstract-only — including wholly
+    open-access journals (Frontiers, MDPI, and the like) whose full text
+    Europe PMC serves perfectly well. Measured on one real run, that cost 9 of
+    11 available full texts: 2 were fetched where 11 could have been.
+
+    Returns True when the paper now has a fetchable open-access full text. One
+    HTTP call per unseen DOI, so callers must bound how many they make.
+    """
+    doi = (paper.doi or "").removeprefix("https://doi.org/").strip()
+    if paper.pmcid or not doi:
+        return bool(paper.pmcid and paper.is_open_access)
+
+    now = time.time()
+    if use_cache and _CACHE_TTL > 0:
+        with _cache_lock:
+            entry = _pmcid_cache.get(doi)
+        if entry and entry[0] > now:
+            paper.pmcid, paper.is_open_access = entry[1], entry[2]
+            return bool(entry[1] and entry[2])
+
+    pmcid, open_access = "", False
+    try:
+        resp = _get_with_retry(
+            EUROPE_PMC_URL,
+            # The DOI field is exact-match, so this returns the one record or none.
+            params={"query": f'DOI:"{doi}"', "format": "json",
+                    "resultType": "core", "pageSize": 1},
+            headers={},
+        )
+        results = (resp.json().get("resultList") or {}).get("result") or []
+        if results:
+            item = results[0]
+            pmcid = item.get("pmcid") or ""
+            # Both flags, for the same reason as in `search_europe_pmc`:
+            # isOpenAccess without inEPMC means the copy is somewhere else.
+            open_access = item.get("isOpenAccess") == "Y" and item.get("inEPMC") == "Y"
+    except SearchFailure:
+        # A refused lookup is cached briefly, like a refused search, so a
+        # throttled Europe PMC is not asked the same question twice a run.
+        pass
+
+    if _CACHE_TTL > 0:
+        ttl = _CACHE_TTL if pmcid else _CACHE_FAILURE_TTL
+        with _cache_lock:
+            _pmcid_cache[doi] = (now + ttl, pmcid, open_access)
+
+    paper.pmcid, paper.is_open_access = pmcid, open_access
+    return bool(pmcid and open_access)
 
 
 def _jats_text(node) -> str:

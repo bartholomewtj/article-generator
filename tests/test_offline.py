@@ -2181,6 +2181,125 @@ def test_pipeline_fetches_full_text() -> None:
          pipeline.prompt_budget_chars) = saved
 
 
+def test_pmcid_is_resolved_by_doi() -> None:
+    """A paper found via OpenAlex can still reach its open-access full text.
+
+    Only the Europe PMC *search* returns pmcid/inEPMC, so before `resolve_pmcid`
+    a paper was fetchable only if that search happened to be the one that found
+    it. Everything from OpenAlex was abstract-only regardless of licence — on a
+    real run, 9 of 11 available full texts were lost that way.
+    """
+    from articlegen import pipeline, sources
+    from articlegen.sources import Paper
+
+    class FakeResp:
+        def __init__(self, data=None, text=""):
+            self._data, self.text = data, text
+        def json(self):
+            return self._data
+
+    def record(item):
+        return {"resultList": {"result": ([item] if item else [])}}
+
+    known = {
+        "10.3389/fpsyt.2017.00156": {"pmcid": "PMC5572353", "isOpenAccess": "Y", "inEPMC": "Y"},
+        "10.1002/ams2.182": {"pmcid": "PMC5667234", "isOpenAccess": "N", "inEPMC": "Y"},
+    }
+    calls: list[str] = []
+
+    def fake_get(url, params, headers):
+        query = (params or {}).get("query", "")
+        calls.append(query)
+        doi = query.removeprefix('DOI:"').removesuffix('"')
+        return FakeResp(record(known.get(doi)))
+
+    real = sources._get_with_retry
+    try:
+        sources._get_with_retry = fake_get
+        sources.clear_search_cache()
+
+        oa = Paper(title="t", abstract="a", doi="https://doi.org/10.3389/fpsyt.2017.00156")
+        check("a DOI lookup finds the open-access record", sources.resolve_pmcid(oa))
+        check("the pmcid is written back onto the paper", oa.pmcid == "PMC5572353")
+
+        sources.resolve_pmcid(oa)
+        check("an already-resolved paper costs no second request", len(calls) == 1)
+
+        cached = Paper(title="t2", abstract="a", doi="10.3389/fpsyt.2017.00156")
+        check("a second paper with the same DOI is served from cache",
+              sources.resolve_pmcid(cached) and len(calls) == 1)
+
+        not_oa = Paper(title="t3", abstract="a", doi="10.1002/ams2.182")
+        check("a PMCID without open access is not fetchable", not sources.resolve_pmcid(not_oa))
+
+        unknown = Paper(title="t4", abstract="a", doi="10.9999/nope")
+        check("a DOI Europe PMC does not hold stays abstract-only",
+              not sources.resolve_pmcid(unknown) and unknown.pmcid == "")
+
+        no_doi = Paper(title="t5", abstract="a")
+        before = len(calls)
+        check("no DOI means no lookup",
+              not sources.resolve_pmcid(no_doi) and len(calls) == before)
+    finally:
+        sources._get_with_retry = real
+        sources.clear_search_cache()
+
+    # -- the pipeline stops at the target, not at the end of the list --------
+    papers = [Paper(title=f"p{i}", abstract="a", doi=f"10.1/{i}") for i in range(1, 11)]
+    curation = {"relevance": {i: "direct" for i in range(1, 11)},
+                "most_relevant_index": 1, "counts": {"direct": 10}}
+    article = {"title": "t", "abstract": "x", "keywords": [], "sections": [],
+               "key_points": [], "glossary": [], "references": [1]}
+    resolved: list[str] = []
+
+    saved = (pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
+             pipeline.write_article, pipeline.fetch_full_text, pipeline.resolve_pmcid,
+             pipeline.enforce_style, pipeline.prompt_budget_chars)
+    try:
+        pipeline.plan_queries = lambda topic, **kw: (["q"], "core")
+        def fake_gather(queries, **kw):
+            kw.get("outcomes", []).append(
+                {"source": "europe_pmc", "query": "q", "count": 10, "error": "", "cached": False})
+            return papers
+        pipeline.gather_evidence = fake_gather
+        pipeline.curate_sources = lambda topic, p, **kw: curation
+        pipeline.write_article = lambda topic, p, **kw: dict(article)
+        pipeline.enforce_style = lambda a, **kw: (a, {"issues": [], "stats": {}})
+        pipeline.prompt_budget_chars = lambda model=None, api_key=None: None
+
+        def fake_resolve(paper, use_cache=True):
+            resolved.append(paper.doi)
+            paper.pmcid, paper.is_open_access = "PMC" + paper.doi[-1], True
+            return True
+        pipeline.resolve_pmcid = fake_resolve
+        pipeline.fetch_full_text = lambda p, use_cache=True: "body text"
+
+        draft = pipeline.generate_draft("topic")
+        check("the pipeline stops at the full-text target",
+              draft.provenance["full_text_sources"] == [1, 2, 3, 4, 5])
+        check("it does not resolve DOIs it will never fetch", len(resolved) == 5)
+        check("the target matches what the excerpt budget can show",
+              pipeline.FULLTEXT_TARGET * sources.FULLTEXT_PER_PAPER_CHARS
+              <= sources.FULLTEXT_TOTAL_CHARS)
+
+        # -- a topic with no open-access literature must not spend a request
+        #    per paper against the one API that reliably answers -------------
+        for p in papers:
+            p.pmcid, p.is_open_access, p.full_text = "", False, ""
+        resolved.clear()
+        pipeline.resolve_pmcid = (
+            lambda paper, use_cache=True: (resolved.append(paper.doi), False)[1])
+        draft = pipeline.generate_draft("topic")
+        check("no open access means no full text",
+              draft.provenance["full_text_sources"] == [])
+        check("lookups are bounded when nothing is fetchable",
+              len(resolved) <= pipeline.MAX_FULLTEXT_REQUESTS)
+    finally:
+        (pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
+         pipeline.write_article, pipeline.fetch_full_text, pipeline.resolve_pmcid,
+         pipeline.enforce_style, pipeline.prompt_budget_chars) = saved
+
+
 def main() -> int:
     for fn in (
         test_provider_resolution, test_per_request_api_key,
@@ -2194,6 +2313,7 @@ def main() -> int:
         test_polite_pool_identification, test_europe_pmc_parsing,
         test_ungrounded_citations_leave_no_trace,
         test_full_text_grounding, test_pipeline_fetches_full_text,
+        test_pmcid_is_resolved_by_doi,
         test_methods_names_only_sources_that_answered,
         test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,

@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from .llm import prompt_budget_chars, resolve_provider
-from .sources import DATABASE_NAMES, Paper, fetch_full_text, gather_evidence
+from .sources import DATABASE_NAMES, Paper, fetch_full_text, gather_evidence, resolve_pmcid
 from .style import check_style, errors as style_errors, format_report as format_style, revision_brief
 from .verify import check_statistics
 from .writer import curate_sources, plan_queries, revise_prose, write_article
@@ -26,10 +26,25 @@ from .writer import curate_sources, plan_queries, revise_prose, write_article
 # A caller that wants progress reporting passes one of these; the default drops it.
 Logger = Callable[[str], None]
 
-# Upper bound on full-text HTTP fetches per draft. Each is one request to
-# Europe PMC; more than this many full texts would blow the excerpt budget
-# anyway, so extra fetches buy nothing.
-MAX_FULLTEXT_FETCHES = 8
+# How many full texts a draft aims for, and what it will spend getting them.
+#
+# The target is 5 because that is what the reader can actually be shown:
+# `sources.full_text_excerpts` allows 12,000 characters per paper inside a
+# 60,000-character total, so the sixth full text is truncated and the seventh
+# gets nothing. Fetching more than the excerpt budget can display is pure cost.
+# The old ceiling of 8 was above that budget and still never reached, which
+# disguised the real limiter — see `sources.resolve_pmcid`.
+FULLTEXT_TARGET = 5
+
+# Every candidate now costs up to two Europe PMC requests (a DOI lookup, then
+# the fetch), where before a paper with no pmcid cost nothing. A topic whose
+# sources are all paywalled would otherwise spend one request per paper and
+# come back with nothing, against the one scholarly API that reliably answers.
+MAX_FULLTEXT_REQUESTS = 18
+
+# Kept as an alias: it was the documented knob, and callers outside this module
+# may still import it.
+MAX_FULLTEXT_FETCHES = FULLTEXT_TARGET
 
 
 def _silent(message: str) -> None:
@@ -199,24 +214,48 @@ def generate_draft(
     # Full-text grounding: after curation, fetch the open-access full text of
     # the sources that earned it — direct/related labels, in rank order. Gated
     # off Groq, whose per-minute token ceiling cannot fit any full text; there
-    # the article stays abstracts-only and the Methods section says so. The
-    # fetch cap bounds HTTP calls, not tokens — the writer's excerpt budget in
-    # `sources.full_text_excerpts` does the token bounding.
+    # the article stays abstracts-only and the Methods section says so.
+    #
+    # Two separate bounds, because they limit different things. FULLTEXT_TARGET
+    # stops once the excerpt budget is full; MAX_FULLTEXT_REQUESTS stops a topic
+    # with no open-access literature from spending a request per paper to learn
+    # that. Neither bounds tokens — `sources.full_text_excerpts` does that.
+    #
+    # A paper reaches the fetch only after `resolve_pmcid` has had a chance to
+    # discover it is open access, which is what a paper found via OpenAlex
+    # rather than Europe PMC always needed and never got.
     fetched: list[int] = []
     if prompt_budget_chars(model, api_key) is None:
         relevance = curation.get("relevance") or {}
         log("Fetching open-access full texts...")
+        requests_spent = 0
+        # Still direct and related only, in rank order. Tangential sources are
+        # deliberately excluded even when that leaves the target unmet: they are
+        # background, and handing the writer 12,000 characters of an off-topic
+        # paper is exactly the topic drift the relevance gate exists to prevent.
         for index, paper in enumerate(papers, start=1):
-            if len(fetched) >= MAX_FULLTEXT_FETCHES:
+            if len(fetched) >= FULLTEXT_TARGET or requests_spent >= MAX_FULLTEXT_REQUESTS:
                 break
             if relevance.get(index) not in ("direct", "related"):
                 continue
+            if not paper.pmcid and paper.doi:
+                requests_spent += 1
+                resolve_pmcid(paper)
+            if not (paper.pmcid and paper.is_open_access):
+                continue
+            requests_spent += 1
             text = fetch_full_text(paper)
             if text:
                 paper.full_text = text
                 fetched.append(index)
         log(f"  full text retrieved for {len(fetched)} source(s)"
-            + (f": {fetched}" if fetched else " (none open access)"))
+            + (f": {fetched}" if fetched else " (none open access)")
+            + f" in {requests_spent} request(s)")
+        if len(fetched) < FULLTEXT_TARGET:
+            # Not a failure: open access is a property of the literature, not of
+            # this code. Say so plainly rather than let it read as a bug.
+            log(f"  (target is {FULLTEXT_TARGET}; the rest of the cited sources have "
+                "no open-access copy Europe PMC can serve)")
 
     log("Writing the article (this can take a few minutes)...")
     article = write_article(
