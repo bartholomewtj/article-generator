@@ -25,14 +25,40 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The site is static, so a broken commit deploys just as happily as a good
+  # one. This gate is the only thing standing between a failing test and the
+  # live page. Duplicated here rather than depending on the Tests workflow:
+  # `workflow_run` fires *after* a separate run completes and cannot block this
+  # one, so a needs: gate in the same workflow is what actually holds.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install -e .
+
+      - name: Offline tests
+        run: python tests/test_offline.py
+
+      - name: Journal format conformance
+        run: python tests/test_journal_conformance.py
+
   deploy:
+    needs: test
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

@@ -1,0 +1,102 @@
+name: Deployment health
+
+# Everything works locally. That is the whole problem this file exists for:
+# a dead backend, a stale Pages build, or all three scholarly APIs refusing at
+# once is currently first discovered by a visitor, after a ~50 second
+# cold-start wait. /api/health reports the commit the running service was
+# actually built from, so comparing it against main HEAD is a one-line answer
+# to "are deploys still happening" — which is not hypothetical: the Pages push
+# trigger silently stopped firing on 6 Aug 2026 (issue #71).
+on:
+  schedule:
+    # 19:00 UTC = 05:00 AEST, so a failure is waiting in the morning.
+    - cron: "0 19 * * *"
+  workflow_dispatch:
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # Always main, never the ref this run was triggered on. The question
+          # is "is the deployment serving current main", which does not change
+          # depending on where someone dispatched the run from — and comparing
+          # against a feature branch's HEAD would report a failure that is
+          # really just the branch not being deployed.
+          ref: main
+
+      - name: Backend is awake and reports its build
+        id: health
+        run: |
+          # The free tier sleeps after 15 minutes idle and takes ~50s to wake,
+          # so the first request is expected to be slow rather than broken.
+          # --max-time covers the cold start; a retry covers a wake that races
+          # the timeout. Neither is generous enough to hide a real outage.
+          echo "Waking the backend (free tier cold start is ~50s)..."
+          for attempt in 1 2 3; do
+            if curl -fsS --max-time 90 \
+                 https://articlegen-api.onrender.com/api/health -o health.json; then
+              break
+            fi
+            echo "Attempt $attempt failed; retrying in 15s"
+            sleep 15
+            if [ "$attempt" = "3" ]; then
+              echo "::error::/api/health did not return 200 after 3 attempts. The backend is down or the Render deploy is broken."
+              exit 1
+            fi
+          done
+          cat health.json
+          echo "deployed_commit=$(jq -r '.commit // empty' health.json)" >> "$GITHUB_OUTPUT"
+          echo "deployed_branch=$(jq -r '.branch // empty' health.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Running build matches main
+        run: |
+          DEPLOYED="${{ steps.health.outputs.deployed_commit }}"
+          BRANCH="${{ steps.health.outputs.deployed_branch }}"
+          HEAD_SHA="$(git rev-parse HEAD)"
+          echo "main HEAD:  $HEAD_SHA"
+          echo "deployed:   $DEPLOYED (branch $BRANCH)"
+
+          if [ -z "$DEPLOYED" ]; then
+            echo "::error::/api/health answered but reported no commit. The health endpoint has regressed."
+            exit 1
+          fi
+
+          # Short and long SHAs both appear depending on how the build stamped
+          # it, so compare on the shorter of the two.
+          if [ "${HEAD_SHA:0:${#DEPLOYED}}" != "$DEPLOYED" ]; then
+            echo "::error::Render is serving $DEPLOYED but main is at $HEAD_SHA. Deploys have stopped, or a deploy failed silently."
+            exit 1
+          fi
+          echo "Backend is serving current main."
+
+      - name: Pages front end is being served
+        run: |
+          if ! curl -fsS --max-time 30 \
+               https://bartholomewtj.github.io/article-generator/ -o /dev/null; then
+            echo "::error::GitHub Pages did not return 200. The push trigger may have silently stopped firing again (issue #71); deploy manually with: gh workflow run deploy-pages.yml --ref main"
+            exit 1
+          fi
+          echo "Pages is serving."
+
+      - name: Scholarly APIs are answering
+        run: |
+          # /api/diag spends real quota, so it runs once a day and never in the
+          # test workflow. Which source works flips constantly, so this fails
+          # only when *every* source is refusing — that is the state that makes
+          # the app useless, and any narrower assertion would page daily.
+          if ! curl -fsS --max-time 90 \
+               https://articlegen-api.onrender.com/api/diag -o diag.json; then
+            echo "::warning::/api/diag did not respond. Backend health passed, so this is likely rate limiting rather than an outage."
+            exit 0
+          fi
+          cat diag.json
+          FOUND="$(jq -r '.papers_found // 0' diag.json)"
+          echo "Papers found by the keyless probe: $FOUND"
+          if [ "$FOUND" -eq 0 ]; then
+            echo "::error::Every scholarly source returned nothing. Drafting will fail with 'no papers found' for every visitor."
+            jq -r '.sources[]? | "  \(.source): \(.count) \(.error // "")"' diag.json
+            exit 1
+          fi
