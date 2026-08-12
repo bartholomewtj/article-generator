@@ -233,6 +233,14 @@ and sections intact.
   tangential to the *exact* topic; the writer is told the counts and must flag
   when nothing is directly on-topic. Prevents a "schizophrenia" article quietly
   leaning on depression studies.
+- **`CURATION_ABSTRACT_CHARS` is `None` and stays that way until measured.**
+  Truncating the abstracts sent to curation would cut ~39,000 input tokens to
+  ~15,000, but `style._required_sections` reads the `direct` count and
+  `write_article` omits `tangential` sources, so a degraded label degrades the
+  article silently. Run `tools/compare_curation.py` and read its verdict: it
+  accepts only if `direct` **and** `tangential` are stable, because overall
+  agreement is satisfiable by collapsing everything to `related` — which is
+  exactly what happened when curation ran at a cheaper tier (#117).
 - **Ranking**: topic overlap first, then `citation_weight + recency`, decaying
   over `RECENCY_HALF_LIFE` on the citation term's scale.
 - **A source that refuses once is skipped for the rest of the run**
