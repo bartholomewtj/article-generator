@@ -14,6 +14,9 @@ Callers differ only in what they do with the result: the CLI writes files into
 from __future__ import annotations
 
 import datetime
+import os
+import threading
+import time
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -40,6 +43,71 @@ FULLTEXT_TARGET = 5
 # sources are all paywalled would otherwise spend one request per paper and
 # come back with nothing, against the one scholarly API that reliably answers.
 MAX_FULLTEXT_REQUESTS = 18
+
+# Fail before billing the caller, when the sources are the problem.
+#
+# `plan_queries` is a paid LLM call and it runs before anything touches a
+# scholarly API, so on a day when every API is refusing the caller pays for a
+# run that was doomed from the start (#96). A one-query probe against the topic
+# costs less than the gather it would precede, and on the dead day it costs
+# nothing at all after the first one.
+#
+# The two memos are what keep this from being a tax on the healthy path. A
+# server that has heard from a source recently skips the probe entirely, so a
+# busy deployment pays for it once every SOURCE_PROBE_TTL rather than per
+# request; a server that just saw every source fail reuses that verdict for
+# SOURCE_PROBE_FAIL_TTL rather than re-probing per request.
+#
+# It can only ever refuse on the same condition `generate_draft` already raises
+# on after the fact — *every* source returned an error, not merely no results —
+# so it cannot block a draft that would have worked, short of the sources
+# recovering inside the two-minute failure window.
+SOURCE_PROBE_TTL = 900
+SOURCE_PROBE_FAIL_TTL = 120
+
+_probe_lock = threading.Lock()
+_sources_last_ok = 0.0
+_sources_last_fail: tuple[float, str] = (0.0, "")
+
+
+def _note_sources_answered() -> None:
+    global _sources_last_ok
+    with _probe_lock:
+        _sources_last_ok = time.time()
+
+
+def _preflight_sources(topic: str, log: Logger) -> None:
+    """Raise NoPapersFound before the first paid call if every source is down."""
+    global _sources_last_fail
+    if os.environ.get("ARTICLEGEN_SOURCE_PROBE", "").strip() == "0":
+        return
+    now = time.time()
+    with _probe_lock:
+        if now - _sources_last_ok < SOURCE_PROBE_TTL:
+            return
+        failed_at, reasons = _sources_last_fail
+        if now - failed_at < SOURCE_PROBE_FAIL_TTL:
+            raise NoPapersFound(_SOURCES_DOWN + reasons, sources_failed=True)
+
+    outcomes: list[dict] = []
+    log("Checking the scholarly APIs are answering...")
+    papers = gather_evidence([topic], max_papers=1, per_query=1, topic=topic,
+                             log=_silent, outcomes=outcomes)
+    failures = [o for o in outcomes if o["error"]]
+    if outcomes and len(failures) == len(outcomes):
+        reasons = "; ".join(sorted({f"{o['source']}: {o['error']}" for o in failures}))
+        with _probe_lock:
+            _sources_last_fail = (time.time(), reasons)
+        raise NoPapersFound(_SOURCES_DOWN + reasons, sources_failed=True)
+    if papers or outcomes:
+        _note_sources_answered()
+
+
+_SOURCES_DOWN = (
+    "The scholarly APIs are not responding, so no evidence could be gathered. "
+    "This is not a problem with the topic, and nothing has been charged for this "
+    "attempt. "
+)
 
 
 def _silent(message: str) -> None:
@@ -194,6 +262,11 @@ def generate_draft(
     `api_key` overrides the environment for this call only — the server passes
     the caller's key here and must never route it through `os.environ`.
     """
+    # Before anything paid. `plan_queries` is an LLM call, and on a day when
+    # every scholarly API is refusing, the caller used to pay for it and then be
+    # told the run was doomed from the start (#96).
+    _preflight_sources(topic, log)
+
     log(f"Planning search queries for: {topic}")
     queries, core_entity = plan_queries(topic, model=model, api_key=api_key)
     log("Queries: " + "; ".join(queries) + (f"  (core: {core_entity})" if core_entity else ""))
@@ -219,6 +292,9 @@ def generate_draft(
             "APIs throttle under load."
         )
     log(f"Collected {len(papers)} candidate papers.")
+    # Feeds the pre-flight memo: a server that has heard from a source this
+    # recently has no reason to spend a probe on the next request.
+    _note_sources_answered()
 
     log("Assessing source relevance...")
     curation = curate_sources(topic, papers, model=model, api_key=api_key)

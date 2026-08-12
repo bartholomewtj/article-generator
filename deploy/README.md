@@ -57,6 +57,9 @@ own, and every visitor brings theirs.
 | `ARTICLEGEN_STATELESS` | `1` | Render and return; never write to disk. Leave on for any shared host. |
 | `ARTICLEGEN_ALLOWED_ORIGINS` | the Pages origin | Comma-separated origins allowed to call the API from a browser. |
 | `ARTICLEGEN_RATE_LIMIT` | `20` | Requests per hour per IP. |
+| `ARTICLEGEN_RATE_LIMIT_TOTAL` | `120` | Requests per hour across **all** visitors. The scholarly APIs meter against this server's one egress IP, so the per-IP limit alone does not protect the quota. |
+| `ARTICLEGEN_TRUST_PROXY` | auto on Render | Read the caller's address from the rightmost `X-Forwarded-For` entry. Turn on only behind a proxy that rewrites the header — otherwise any caller can pick their own rate-limit bucket. Render is detected automatically. |
+| `ARTICLEGEN_SOURCE_PROBE` | `1` | Check the scholarly APIs are answering before the first paid LLM call. Set `0` to skip. |
 | `OPENALEX_MAILTO` | unset | Your email; OpenAlex "polite pool". |
 | `SEMANTIC_SCHOLAR_API_KEY` | unset | Optional; raises Semantic Scholar's rate limit. Set as a *secret*. |
 

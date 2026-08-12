@@ -65,25 +65,76 @@ ALLOWED_ORIGINS = [
 # this server's IP — one abusive client can get the whole deployment throttled.
 RATE_LIMIT_WINDOW = 3600
 RATE_LIMIT_MAX = int(os.environ.get("ARTICLEGEN_RATE_LIMIT", "20"))
+
+# ...and an aggregate ceiling, because the per-IP limit protects nothing the
+# scholarly APIs care about. They meter against this server's single egress IP,
+# so upstream load scales with visitor count: one popular share of the link
+# exhausts the shared quota for everybody while every individual stays politely
+# under 20 (#96). Six busy visitors' worth by default.
+RATE_LIMIT_TOTAL = int(os.environ.get("ARTICLEGEN_RATE_LIMIT_TOTAL", "120"))
+
 _rate_lock = threading.Lock()
 _rate_hits: dict[str, list[float]] = {}
+_rate_hits_all: list[float] = []
+
+# Whether X-Forwarded-For can be believed. Render sets it; a direct-to-internet
+# server must not trust it, because then any caller can pick their own bucket
+# by sending the header themselves. Render also injects RENDER_GIT_COMMIT, so
+# the deployment auto-detects and a self-hoster behind their own proxy sets
+# ARTICLEGEN_TRUST_PROXY=1.
+TRUST_PROXY = (
+    os.environ.get("ARTICLEGEN_TRUST_PROXY", "").strip().lower() in ("1", "true", "yes")
+    or bool(os.environ.get("RENDER_GIT_COMMIT", "").strip())
+)
 
 
-def _rate_limited(client_ip: str) -> bool:
-    """Sliding-window count of expensive requests from one address."""
+def _client_ip(peer: str, forwarded_for: str | None) -> str:
+    """The address to charge this request to.
+
+    Behind Render's load balancer `client_address[0]` is the *proxy*, so every
+    visitor shared one bucket: one abuser locked out everybody, which is the
+    exact failure the throttle exists to prevent, and a direct attacker could
+    not be attributed at all (#96).
+
+    The **rightmost** X-Forwarded-For entry is the one to use, not the leftmost.
+    A caller can send their own X-Forwarded-For header; the proxy appends the
+    real peer address to whatever arrived, so the leftmost entry is attacker-
+    controlled and the rightmost is the one hop we actually trust.
+    """
+    if not TRUST_PROXY or not forwarded_for:
+        return peer
+    parts = [p.strip() for p in forwarded_for.split(",") if p.strip()]
+    return parts[-1] if parts else peer
+
+
+def _rate_limited(client_ip: str) -> str | None:
+    """Charge this request; return the reason it was refused, or None to allow.
+
+    Two sliding windows: one per address, one across every address. The second
+    is what the upstream quota actually experiences.
+    """
     now = time.time()
     with _rate_lock:
+        _rate_hits_all[:] = [t for t in _rate_hits_all if now - t < RATE_LIMIT_WINDOW]
         hits = [t for t in _rate_hits.get(client_ip, []) if now - t < RATE_LIMIT_WINDOW]
         if len(hits) >= RATE_LIMIT_MAX:
             _rate_hits[client_ip] = hits
-            return True
+            return (f"Rate limit reached ({RATE_LIMIT_MAX} requests/hour). "
+                    "Try again later.")
+        if len(_rate_hits_all) >= RATE_LIMIT_TOTAL:
+            _rate_hits[client_ip] = hits
+            return ("This shared server has reached its hourly total across all "
+                    f"visitors ({RATE_LIMIT_TOTAL}/hour) and cannot search the "
+                    "scholarly databases again yet. This is not your limit — try "
+                    "again later, or run the generator locally.")
         hits.append(now)
         _rate_hits[client_ip] = hits
+        _rate_hits_all.append(now)
         # Opportunistic sweep so the dict doesn't grow without bound.
         if len(_rate_hits) > 2048:
             for ip in [k for k, v in _rate_hits.items() if not v or now - v[-1] > RATE_LIMIT_WINDOW]:
                 _rate_hits.pop(ip, None)
-    return False
+    return None
 
 
 def _build_info() -> dict:
@@ -174,12 +225,12 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         upstream, and locking someone out for a typo in the form is a worse
         failure than the flood it would prevent.
         """
-        if not _rate_limited(self.client_address[0]):
-            return False
-        self._send_json(
-            {"error": f"Rate limit reached ({RATE_LIMIT_MAX} requests/hour). Try again later."},
-            status=429,
+        refusal = _rate_limited(
+            _client_ip(self.client_address[0], self.headers.get("X-Forwarded-For"))
         )
+        if refusal is None:
+            return False
+        self._send_json({"error": refusal}, status=429)
         return True
 
     def _cors_origin(self) -> str | None:

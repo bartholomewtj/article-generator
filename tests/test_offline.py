@@ -315,6 +315,89 @@ def test_pipeline_is_shared() -> None:
     check("pipeline builds provenance", '"queries": queries' in inspect.getsource(pipeline.generate_draft))
 
 
+def test_dead_sources_fail_before_the_caller_is_billed() -> None:
+    """A doomed run must not spend an LLM call first.
+
+    `plan_queries` is paid and runs before anything touches a scholarly API, so
+    on a day when every API refuses, the caller paid for a run that could never
+    have worked (issue #96). The pre-flight probe can only refuse on the same
+    condition `generate_draft` already raises on afterwards — *every* source
+    errored, not merely no results — so it cannot block a draft that would have
+    succeeded.
+    """
+    import inspect
+    import time
+
+    from articlegen import pipeline
+
+    src = inspect.getsource(pipeline.generate_draft)
+    check("the probe runs before the first paid call",
+          src.index("_preflight_sources(") < src.index("plan_queries("))
+
+    def reset(ok=0.0, fail=(0.0, "")):
+        pipeline._sources_last_ok = ok
+        pipeline._sources_last_fail = fail
+
+    real_gather = pipeline.gather_evidence
+    calls = []
+
+    def all_sources_down(queries, **kwargs):
+        calls.append(queries)
+        outcomes = kwargs.get("outcomes")
+        if outcomes is not None:
+            for name in ("semantic_scholar", "openalex", "europe_pmc"):
+                outcomes.append({"source": name, "query": queries[0], "count": 0,
+                                 "error": "429 Too Many Requests", "cached": False})
+        return []
+
+    try:
+        pipeline.gather_evidence = all_sources_down
+        reset()
+        raised = None
+        try:
+            pipeline._preflight_sources("light therapy", lambda m: None)
+        except pipeline.NoPapersFound as exc:
+            raised = exc
+        check("every source failing refuses the run", raised is not None)
+        check("and names it as the sources' problem, not the topic's",
+              raised is not None and raised.sources_failed
+              and "not a problem with the topic" in str(raised))
+        check("and says nothing was charged", "nothing has been charged" in str(raised))
+
+        # A second request must not re-probe dead sources — it reuses the verdict.
+        before = len(calls)
+        try:
+            pipeline._preflight_sources("light therapy", lambda m: None)
+        except pipeline.NoPapersFound:
+            pass
+        check("a recent failure is reused rather than re-probed", len(calls) == before)
+
+        # And a server that heard from a source recently skips the probe, so
+        # this is not a tax on every request of a healthy deployment.
+        reset(ok=time.time())
+        before = len(calls)
+        pipeline._preflight_sources("light therapy", lambda m: None)
+        check("a recently healthy server does not probe at all", len(calls) == before)
+
+        # Sources answering with no results is a topic problem, not an outage:
+        # the probe must let that through to the real gather.
+        def answered_but_empty(queries, **kwargs):
+            calls.append(queries)
+            outcomes = kwargs.get("outcomes")
+            if outcomes is not None:
+                outcomes.append({"source": "europe_pmc", "query": queries[0], "count": 0,
+                                 "error": "", "cached": False})
+            return []
+
+        pipeline.gather_evidence = answered_but_empty
+        reset()
+        pipeline._preflight_sources("a topic with no literature", lambda m: None)
+        check("a source that answered with nothing does not refuse the run", True)
+    finally:
+        pipeline.gather_evidence = real_gather
+        reset()
+
+
 def test_draft_summary() -> None:
     from articlegen.pipeline import Draft
     from articlegen.sources import Paper
@@ -356,16 +439,66 @@ def test_rate_limit() -> None:
     from articlegen import web
 
     original_max = web.RATE_LIMIT_MAX
+    original_total = web.RATE_LIMIT_TOTAL
+    original_trust = web.TRUST_PROXY
     web.RATE_LIMIT_MAX = 3
+    web.RATE_LIMIT_TOTAL = 10_000
     web._rate_hits.clear()
+    web._rate_hits_all.clear()
     try:
-        allowed = [not web._rate_limited("10.0.0.1") for _ in range(4)]
+        allowed = [web._rate_limited("10.0.0.1") is None for _ in range(4)]
         check("first N requests allowed", allowed[:3] == [True, True, True])
         check("request over the limit is blocked", allowed[3] is False)
-        check("a different address is unaffected", not web._rate_limited("10.0.0.2"))
+        check("a different address is unaffected", web._rate_limited("10.0.0.2") is None)
+
+        # The per-IP limit protects nothing the scholarly APIs care about: they
+        # meter against this server's single egress IP, so upstream load scales
+        # with visitor count while every individual stays politely under 20
+        # (#96). The aggregate ceiling is the one that matches the real quota.
+        web._rate_hits.clear()
+        web._rate_hits_all.clear()
+        web.RATE_LIMIT_TOTAL = 4
+        spread = [web._rate_limited(f"10.0.1.{i}") for i in range(6)]
+        check("the aggregate ceiling stops a crowd of polite visitors",
+              spread[:4] == [None, None, None, None] and spread[4] is not None)
+        check("and says it is not the visitor's own limit",
+              "not your limit" in spread[4])
+
+        # Behind Render's load balancer client_address[0] is the proxy, so
+        # every visitor shared one bucket: one abuser locked out everybody.
+        web._rate_hits.clear()
+        web._rate_hits_all.clear()
+        web.RATE_LIMIT_TOTAL = 10_000
+        web.TRUST_PROXY = True
+        for _ in range(3):
+            web._rate_limited(web._client_ip("10.0.0.9", "203.0.113.5"))
+        check("a proxied caller fills their own bucket",
+              web._rate_limited(web._client_ip("10.0.0.9", "203.0.113.5")) is not None)
+        check("and does not lock out the next visitor behind the same proxy",
+              web._rate_limited(web._client_ip("10.0.0.9", "203.0.113.6")) is None)
     finally:
         web.RATE_LIMIT_MAX = original_max
+        web.RATE_LIMIT_TOTAL = original_total
+        web.TRUST_PROXY = original_trust
         web._rate_hits.clear()
+        web._rate_hits_all.clear()
+
+    # X-Forwarded-For is caller-controlled unless a proxy is known to rewrite
+    # it, so trusting it by default would let anyone pick their own bucket. And
+    # the *rightmost* entry is the one to use: a caller can send their own
+    # header and the proxy appends the real peer to whatever arrived, so the
+    # leftmost entry is attacker-chosen.
+    try:
+        web.TRUST_PROXY = False
+        check("an untrusted deployment ignores the header",
+              web._client_ip("10.0.0.1", "203.0.113.5") == "10.0.0.1")
+        web.TRUST_PROXY = True
+        check("a trusted deployment takes the rightmost entry",
+              web._client_ip("10.0.0.1", "1.2.3.4, 203.0.113.5") == "203.0.113.5")
+        check("and falls back to the peer with no header",
+              web._client_ip("10.0.0.1", None) == "10.0.0.1")
+    finally:
+        web.TRUST_PROXY = original_trust
 
     # /api/diag deliberately bypasses the search cache so it reports what the
     # sources are doing right now, which makes every call spend real quota. It
@@ -3390,7 +3523,8 @@ def main() -> int:
         test_openrouter_routing, test_openrouter_request_shape,
         test_openrouter_refusal_falls_back,
         test_refusal_fallbacks,
-        test_pipeline_is_shared, test_draft_summary, test_rate_limit,
+        test_pipeline_is_shared, test_dead_sources_fail_before_the_caller_is_billed,
+        test_draft_summary, test_rate_limit,
         test_keepalive_connection_reuse, test_substance_checks,
         test_source_failures_are_distinguishable,
         test_search_cache, test_front_end_models_match_the_allowlist,
