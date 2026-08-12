@@ -94,9 +94,17 @@ hold, so they cannot be hallucinated:
   (and, in full-text mode, how deeply it was read). It is reference apparatus,
   so it sits in the **back matter after Methods** rather than interrupting the
   prose — a second deliberate departure from journal convention.
-- **`Box 1 | <featured study title>`** — the featured study's **Method,
+- **`Box 1 | Most relevant source: <title>`** — that source's **Method,
   Results and Limitations**, each from its abstract only. The box carries no
   editorial "why this study" line: it reports the study and lets that speak.
+  It closes with a fixed note that the source was picked for closeness to the
+  review question and that **no quality appraisal was performed**. The caption
+  used to read "Key study", which claims an appraisal nothing in this pipeline
+  does: `curate_sources` ranks on topic fit alone, so a scoping review was
+  boxed as the "key study" while an adequately powered trial sat in the body.
+  Table 1's "Cited by" is the only quality-looking number on the page and a
+  busy reader takes it as authority, which is why the disclaimer is on the box
+  rather than left to the back matter.
 
 In the body, Fig. 1 follows the Introduction and Box 1 follows the first
 thematic section.
@@ -197,6 +205,35 @@ Measured over the corpus, the split is total — all 7 investigator-voice abstra
 trip a register rule, and 0 of 13 synthesis-voice abstracts do. So the rules are
 precisely aimed; what was missing was any statement of what they were aimed at.
 `test_register_rules_are_scoped_to_the_synthesis_voice` pins both halves.
+
+**Clinical advice is the same argument, with consequences.** A *Lancet* trial
+abstract in the corpus ends "WBRT and stereotactic radiosurgery should,
+therefore, be standard treatment for patients with a single unresectable brain
+metastasis." Those authors ran the trial and are entitled to that sentence.
+`articlegen` is a synthesis and is not — it may report that the trial concluded
+it, and no more. A shipped draft once carried a full titration protocol
+("starting with a low-dose exposure of 15 minutes per day… titrated upward by
+15 minutes each week") for a population the same article said had zero studies.
+The footer disclaimer does no work against that: a reader given a dose and a
+schedule has already been given advice.
+
+The line the checker draws is grammatical, because that is the part a
+deterministic rule can see. Past tense with a study subject reports;
+a modal or an imperative aimed at a clinical act instructs:
+
+| Reports (allowed) | Instructs (error) |
+| --- | --- |
+| Participants received 10,000 lux for 30 minutes each morning. | Exposure should be titrated upward each week. |
+| The trial titrated the dose to response over eight weeks. | The starting dose is 25 mg at night. |
+| Screening was performed at baseline and at 12 weeks. | Monitor serum levels every four weeks. |
+
+Research recommendations are exempt — "future trials should measure adherence"
+is standard in a Conclusions section and is not advice about care.
+
+→ `style.py` raises `clinical-directive` as an **error**, and the writer prompt
+carries the prohibition with a worked wrong/right pair. 1 of the 20 corpus
+abstracts fires, and that one is the *Lancet* sentence above: a true positive
+with respect to the voice `articlegen` writes in.
 
 ### 13. Voice and person
 

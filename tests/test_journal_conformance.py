@@ -56,6 +56,12 @@ CONVENTIONS = [
     # study" line, and a Limitations line completing method -> results -> caveat.
     ("Box 1 carries no editorial justification",
      lambda h, a: "box-why" not in h),
+    # ...but it must disclaim the appraisal it looks like it is making. The
+    # source is picked on topic fit alone; "Key study" claimed a judgement
+    # nothing in the pipeline performs (#102).
+    ("Box 1 claims relevance, not quality",
+     lambda h, a: "Key study" not in h
+     and ("box-1" not in h or "no quality appraisal was performed" in h)),
     ("first section is the Introduction",
      lambda h, a: a["sections"][0]["heading"] == "Introduction"),
     ("last section is the Conclusions",
