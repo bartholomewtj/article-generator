@@ -17,7 +17,7 @@ Open the working web app directly in your browser:
 ## Use it from your phone (recommended)
 
 1. **Open the site:** [https://bartholomewtj.github.io/article-generator/](https://bartholomewtj.github.io/article-generator/) (or run `articlegen web --open` locally).
-2. **Add a key:** Open Settings (⚙️) and paste a free [Groq API key](https://console.groq.com/keys). It stays in your browser and is sent only with the request you make.
+2. **Add a key:** Open Settings (⚙️) and paste an [OpenRouter API key](https://openrouter.ai/keys). It stays in your browser and is sent only with the request you make. Articles cost roughly 50c–$1 each. The web app offers OpenRouter only for now; the CLI below still supports Groq, Anthropic and a Claude subscription.
 3. **Type a theme:** Enter your topic (e.g. `renewable energy storage`) and optional audience/style notes.
 4. **Choose a draft:** Tap any generated **Draft Idea Card** to launch the evidence-grounded research pipeline.
 5. **Read & Share:** View the rendered article and tap **Share**, **Copy Link**, or **QR Code**.
