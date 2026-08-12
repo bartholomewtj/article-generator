@@ -19,7 +19,7 @@ Two things landed this session, both merged:
 2. **A token-efficiency pass, and a new provider** (PR #115). Three changes cut
    what a draft spends; a fourth was measured and rejected.
 
-**PR #116 is open and unreviewed** — the `CLAUDE.md` corrections and this note.
+**PR #118 is open and unreviewed** — the `CLAUDE.md` corrections and this note.
 
 ## Resume with
 
@@ -51,7 +51,7 @@ The backend sleeps after 15 min idle and takes ~50s to wake.
 
 ## Next thing to do
 
-1. **Merge or close PR #116.** It only touches `CLAUDE.md` and this file.
+1. **Merge or close PR #118.** It only touches `CLAUDE.md` and this file.
 2. **Replace the OpenRouter key.** `.env` holds a dead one, so the default
    provider path cannot be run or tested locally until it is swapped. Visitors
    to the deployed app use their own keys and are unaffected.
@@ -60,8 +60,8 @@ The backend sleeps after 15 min idle and takes ~50s to wake.
 
 ## Open
 
-- **PR #116** — `CLAUDE.md` reconciliation + this note. Waiting on your review.
-- **#116/#117** (issues, filed this session) — the `gemini-cli` revision call
+- **PR #118** — `CLAUDE.md` reconciliation + this note. Waiting on your review.
+- **#116, #117** (filed this session) — the `gemini-cli` revision call
   costs far more context than its prompt explains; and curating on truncated
   abstracts would save ~24k input tokens but needs the relevance gate
   re-validated first.
@@ -72,7 +72,7 @@ The backend sleeps after 15 min idle and takes ~50s to wake.
   misattribution passes as verified.
 - **#102** — nothing stops the writer producing dose and titration instructions.
 - **#114, #99** — `CLAUDE.md` upkeep. #114 was proved right this session: one
-  session's work drifted six passages, all corrected by hand in PR #116.
+  session's work drifted six passages, all corrected by hand in PR #118.
 - **#104, #92, #95, #96, #98, #84, #85** — unchanged. Read the comments on #84,
   #85 and #98 before starting; they carry real measurements.
 
