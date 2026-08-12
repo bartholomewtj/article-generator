@@ -487,6 +487,13 @@
   .gallery-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 0.2rem; }
   .gallery-meta { font-size: 0.78rem; color: var(--muted); }
   .gallery-action { color: var(--accent); text-decoration: none; font-weight: 600; font-size: 0.85rem; }
+  /* Quiet on purpose — this is a diagnostic, not content. It only needs to be
+     legible when someone is asking "am I looking at a stale page?" */
+  .build-stamp {
+    text-align: center; font-size: 0.7rem; color: var(--muted);
+    margin: 2rem 0 1rem; opacity: 0.75;
+  }
+  .build-stamp code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.7rem; }
 </style>
 </head>
 <body>
@@ -752,6 +759,30 @@
 </div>
 
 <div id="toast" class="toast">Action completed!</div>
+
+<!-- Which build you are actually looking at.
+     GitHub Pages serves this file with Cache-Control: max-age=600, so for ten
+     minutes after a deploy a browser can show the old page while the server
+     has the new one — and nothing on the page said which. That is not only
+     cosmetic: the front end picks the model, so a cached copy can go on
+     requesting a model that has been retired.
+     /api/health answers this question for the backend. This is the front
+     end's version of it. The placeholder below is substituted with the commit
+     SHA by the Pages workflow; if you can still read the placeholder, you are
+     looking at a local file that was never deployed. -->
+<p class="build-stamp" id="buildStamp">build <code>__BUILD_COMMIT__</code></p>
+
+<script>
+  (function () {
+    var el = document.getElementById('buildStamp');
+    // Deliberately a *prefix* of the placeholder: the deploy step substitutes
+    // the full `__BUILD_COMMIT__` token, so matching the whole thing here
+    // would get rewritten too and this branch could never fire.
+    if (el && el.textContent.indexOf('__BUILD') !== -1) {
+      el.innerHTML = 'build <code>local</code> — not deployed';
+    }
+  })();
+</script>
 
 <script>
   // Where the Python pipeline lives.
