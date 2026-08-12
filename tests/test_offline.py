@@ -4173,9 +4173,11 @@ def test_claude_md_still_describes_this_code() -> None:
     #    actually drifted while the paragraph around it read as authoritative.
     import inspect
 
-    from articlegen import llm, pipeline, sources, style, web
+    # Every module, not a subset — a constant named in the docs is stale
+    # wherever it lives, and a partial sweep fails on correct text.
+    from articlegen import llm, pipeline, render, sources, style, verify, web, writer
 
-    modules = (llm, pipeline, sources, style, web)
+    modules = (llm, pipeline, render, sources, style, verify, web, writer)
     # Env vars and front-end constants are not module attributes, so a plain
     # `hasattr` sweep would fail on a dozen names that are perfectly current.
     # Falling back to "appears anywhere in the code" still catches the case
