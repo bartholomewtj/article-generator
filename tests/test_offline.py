@@ -1171,6 +1171,89 @@ def test_rules_do_not_reject_real_journal_prose() -> None:
         check(f"not first person: {text[:38]!r}", "first-person" not in fired)
 
 
+def test_unverified_figures_are_marked_inline() -> None:
+    """The flag has to travel with the number, not sit 90 lines below it.
+
+    A draft's first Key point stated an odds ratio of 0.66 (95% CI 0.43-0.99);
+    the fact that those figures could not be located appeared about ninety
+    lines later, with no way to tell which figure it meant — while the number
+    carried a superscript citation, the strongest "this came from that paper"
+    signal on the page. Someone copies the Key points into a team email, the
+    numbers travel and every qualification stays behind (issue #92).
+    """
+    from articlegen import render
+    from articlegen.render import render_article, render_markdown
+    from articlegen.sources import Paper
+
+    papers = [Paper(title="S1", abstract="a", year=2020, authors=["Ann Ab"]),
+              Paper(title="S2", abstract="b", year=2021, authors=["Bo Cd"])]
+    article = {
+        "title": "T", "abstract": "The odds ratio was 0.66 [1].",
+        "sections": [
+            {"heading": "Introduction",
+             "paragraphs": ["An effect of 0.66 was seen [1]. Also 112% of baseline [1]."]},
+            {"heading": "Conclusions", "paragraphs": ["Unresolved [1]."]}],
+        "key_points": ["Odds ratio 0.66 favours the intervention [1].",
+                       "A separate trial found 1.24 [2]."],
+        "featured_study": {"source_index": 1, "method": "m", "results": "RR 1.24 overall"},
+        "references": [1, 2], "keywords": [],
+    }
+    verification = {"unverified": ["0.66"], "misattributed": ["1.24"], "total": 6}
+    provenance = {"queries": ["q"], "databases": ["Europe PMC"], "model": "m"}
+
+    h = render_article(article, papers, "topic", None, verification, provenance)
+    md = render_markdown(article, papers, "topic", None, verification, provenance)
+
+    # Every quotable unit: abstract, body prose, key points, Box 1.
+    check("html flags the figure inside the key points",
+          '0.66<sup class="flag"' in h[h.index('<aside class="key-points"'):])
+    check("html flags the figure inside Box 1",
+          '1.24<sup class="flag"' in h[h.index('<aside class="display box"'):])
+    check("html flags the abstract's figure",
+          '0.66<sup class="flag"' in h[:h.index("<h2>Introduction")])
+    check("markdown flags key points and Box 1",
+          "0.66†" in md and "1.24‡" in md and "RR 1.24‡" in md)
+
+    # Two categories, two marks, and the mark links to the paragraph that
+    # explains it.
+    check("unverified and misattributed are distinguishable",
+          '0.66<sup class="flag" title="This figure could not be located' in h
+          and '1.24<sup class="flag" title="This figure was found only' in h)
+    check("the mark links to the Limitations paragraph",
+          'href="#limitations"' in h and 'id="limitations"' in h)
+    check("and Limitations names the mark",
+          "marked †" in h and "marked ‡" in h)
+
+    # A number that was never flagged must not pick up a mark, and a flagged
+    # figure must not be found inside a longer number or inside a citation
+    # marker — "12" would otherwise match inside "[12]".
+    check("unflagged numbers are untouched",
+          "112%" in h and '112%<sup class="flag"' not in h)
+    cited_only = dict(article, key_points=["Twelve sources [12]."])
+    h12 = render_article(cited_only, papers, "topic", None,
+                         {"unverified": ["12"], "total": 1}, provenance)
+    check("a flagged figure is not found inside a citation marker",
+          '12<sup class="flag"' not in h12)
+
+    # The grounding line under Key points, so the copied block carries it.
+    note_at = h.index('class="key-points-note"')
+    check("the grounding note sits above the points", note_at < h.index("<ul>", note_at))
+    check("and names both marks", "† marks" in h and "‡ marks" in h)
+    check("markdown carries the note too",
+          md.index("Every figure in this review was checked") < md.index("- Odds ratio"))
+
+    # Derived, never assumed — the same rule as every other provenance
+    # statement. No verification means no claim that anything was checked.
+    check("a clean check says so",
+          "Every figure in this review was located in"
+          in render._grounding_note({"unverified": [], "misattributed": [], "total": 4}, False))
+    check("no verification means no grounding claim",
+          render._grounding_note(None, False) == ""
+          and render._grounding_note({"unverified": [], "total": 0}, False) == "")
+    check("and the wording follows what was read",
+          "open-access full text" in render._grounding_note({"unverified": [], "total": 2}, True))
+
+
 def test_clinical_directives_are_an_error() -> None:
     """Reporting what studies found is the job; instructing a clinician is not.
 
@@ -3332,6 +3415,7 @@ def main() -> int:
         test_display_items_are_selected_once_for_both_formats,
         test_failed_style_gate_is_visible_in_the_article,
         test_evidence_assessment_is_wholly_deterministic,
+        test_unverified_figures_are_marked_inline,
         test_clinical_directives_are_an_error,
         test_api_key_is_session_only_by_default,
         test_house_style_is_fixed_not_a_preference,

@@ -109,6 +109,20 @@ hold, so they cannot be hallucinated:
 In the body, Fig. 1 follows the Introduction and Box 1 follows the first
 thematic section.
 
+**Figure flags travel with the figure.** A number the statistical check could
+not ground carries a dagger (`†`) where it appears; one found only in a source
+other than the one cited carries a double dagger (`‡`). Both link to the
+Limitations paragraph, which names the mark. The Key points block also carries
+a one-line grounding statement directly under its heading.
+
+This is a deliberate departure from journal convention, where footnote marks
+belong to tables. The reason is that the Key points are the part that gets
+copied into an email: a caveat that lives only in a Limitations paragraph
+ninety lines below the number does not travel with it, and the number carries a
+superscript citation — the strongest "this came from that paper" signal on the
+page (#92). Marks are added in `_prose` after escaping and before citation
+linking, so a flagged figure of "12" is never found inside a `[12]` marker.
+
 ### 7. Citations are superscript numerals, numbered by first appearance
 
 Nature style: superscript, after the punctuation, consecutive runs collapsed to a

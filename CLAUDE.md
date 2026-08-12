@@ -84,6 +84,14 @@ starts calling stages directly.
   quantity verifies on its number alone, because a source may write the same
   amount a different way. A missed figure is a warning the reader never sees; a
   false flag is a wrong warning printed in the article.
+- **A flagged figure is marked where it appears**, `†` unverified / `‡`
+  misattributed, linked to `#limitations`, plus a grounding line under the Key
+  points. The check used to reach the reader only as a clause ninety lines
+  below the number it retracted — and the Key points are the block people paste
+  into an email, so the numbers travelled and the caveats did not (#92). Marks
+  go in **after escaping, before citation linking**: at that point the only
+  brackets left are literal `[N]` markers, which `_flag_pattern` skips, so a
+  flagged figure of `12` is never found inside `[12]`.
 - **Statistic and style checking are deterministic, not LLM passes.** A model
   asked "is this grounded / is this journal style?" agrees with itself.
 - **Three display items are built deterministically in `render.py`**: `Box 1`
