@@ -1,22 +1,36 @@
 # Next session
 
-_Last handoff: 12 August 2026 — branch `main`, everything merged and deployed_
+_Last handoff: 12 August 2026 — branch `streamline`, PR open_
 
 ## Where this stopped
 
 `articlegen` turns a topic into a single-page HTML evidence review, formatted
-like a journal Review article, grounded in paper abstracts plus open-access
-full texts. It runs as a CLI and as a hosted web app (GitHub Pages front end →
-Render backend).
+like a journal Review article, grounded in paper abstracts plus open-access full
+texts. It runs as a CLI and as a hosted web app (GitHub Pages front end → Render
+backend).
 
-Nothing is in flight. Five PRs merged this session and all of it is live:
-**#91** (published drafts), **#93** (cost figures), **#94** (CI) are closed,
-plus a front-end build stamp and a narrowing of the web app to OpenRouter only.
-The working tree is clean and `main` is deployed.
+This session was a streamlining pass. Four commits on `streamline`, one PR,
+nothing else in flight:
 
-The session's two substantial additions: **CI now exists** — the tests run on
-every push and gate the Pages deploy — and **you can draft on your Claude
-subscription** with `--model cli:opus`, which needs no API key.
+1. **Groq removed.** It was the default provider, unverified for months (#110),
+   and the reason a whole token-ceiling apparatus existed:
+   `prompt_budget_chars()`, the abstract-trimming path in `_format_sources`, and
+   a gate that skipped full-text fetching entirely on Groq. **Every draft is now
+   grounded in full text where one exists**, instead of that depending on which
+   provider was picked. `DEFAULT_PROVIDER` is now `openrouter`.
+2. **The reader iframe is sandboxed** (#100). It ran same-origin with the
+   OpenRouter key in localStorage while being fed model-written — and via
+   `#read=`/`#p=` links, attacker-chosen — HTML. `render_article` grew a
+   `standalone` flag so the app's copy carries no scripts and no toolbar; the
+   sandbox then costs nothing. Verified in Chromium: injected script blocked.
+3. **The two draft libraries are one.** Same articles, two storage keys, ~250
+   lines of duplicate UI, and saving stored a second full copy of the HTML.
+   Now one list with a star. Fixed two real bugs on the way — a bare `setItem`
+   that silently lost articles on a full quota, and `openDraftFromGallery`,
+   which was called from the list and defined nowhere.
+4. **`CLAUDE.md` trimmed** 37KB → 22KB, and corrected: it named the wrong
+   workflow file, three FULLTEXT constants that no longer exist, and an
+   incomplete `SUBSTANCE_RULES`.
 
 ## Resume with
 
@@ -27,80 +41,57 @@ cd /c/claudeOS/Projects/articlegenerator && git status --short && python tests/t
 Prints `ALL PASS` then `ALL CONVENTIONS MET`. No keys, no network. Verified at
 handoff.
 
-Is the live site current? Compare these two:
-
-```bash
-git rev-parse --short=7 HEAD
-curl -s https://bartholomewtj.github.io/article-generator/ | grep -o 'build <code>[a-f0-9]*'
-```
-
-Same = you are seeing the current build. Different = browser or CDN cache,
-hard-refresh. This is new; before it, "the site isn't updating" and "the deploy
-failed" were indistinguishable without diffing the served bytes.
+To drive the front end, `articlegen web --port 8765` and point Playwright at it
+(`playwright-core` + the cached Chromium under `$LOCALAPPDATA/ms-playwright`,
+`chromium.launch({ channel: 'chromium' })`).
 
 ## Next thing to do
 
-1. **#110 — check whether Groq still works.** It is `DEFAULT_PROVIDER`, it is
-   what a fresh clone with no keys uses, and the README calls it the free place
-   to start. Nobody has verified it in a long time and there is no key on this
-   machine to try. Free key at console.groq.com, run one draft. Ten minutes,
-   and everything else about the README's "start here" advice depends on it.
-2. **#100 — add `sandbox` to the article iframe.** One attribute. Model-written
-   HTML currently runs same-origin with the API key in browser storage.
-3. **#111 or more articles.** `drafts/` holds **one** article, so the published
-   queue reads as a sample rather than a portfolio. Generating two or three more
-   costs ~4½ minutes each on `cli:opus` and nothing in money. #111 is the
-   related question of what a visitor with no paid key is meant to do.
-
-After that the list turns into real work: #101 and #102 are both substantive
-clinical-safety changes to verification and to what the writer is allowed to say.
+1. **Merge the PR.** Nothing else can be built on top until it lands.
+2. **#111 — what does a visitor with no paid key do?** Removing Groq sharpened
+   this: there is now no free path in the web app at all. The CLI has
+   `--model cli:opus`, which the hosted app can never offer.
+3. **More articles.** `drafts/` still holds one, so the published queue reads as
+   a sample rather than a portfolio. ~4½ minutes each on `cli:opus`, no money.
+4. **#101 and #102** are the real work — both substantive clinical-safety
+   changes to verification and to what the writer is allowed to say.
 
 ## Open
 
-- **No open PRs.** Nothing is waiting on you.
-- **#110, #111** — filed at this handoff, see above.
-- **#100** — article iframe has no `sandbox`; model HTML runs same-origin with
-  stored keys. Cheapest real security fix left.
+- **#110 is obsolete** — Groq is gone, so "does Groq still work" no longer
+  matters. Close it, referencing the removal commit.
+- **#100 is done** in this branch; close it when the PR merges.
 - **#101** — `check_statistics` accepts a figure found in *any* source, so
   misattribution passes as verified.
 - **#102** — nothing stops the writer producing dose and titration instructions.
 - **#104** — the Unpaywall lookup fails silently and `/api/diag` does not probe it.
-- **#92, #95, #96, #97, #98, #99** — council-review findings, roughly in priority
-  order. #97 and #98 both grew new detail this session; read the comments.
-- **#84, #85** — both now carry real measurements from this session and are
-  probably closeable after one more run each. See the comments before redoing work.
+- **#97** — the `CLAUDE.md` full-text section was wrong; fixed here, so close it.
+- **#92, #95, #96, #98, #99** — council-review findings, roughly in priority
+  order. Read #98's comments before starting it.
+- **#84, #85** — both carry real measurements; probably closeable after one run
+  each. See the comments before redoing work.
 
 ## Watch out for
 
-- **`CLAUDE.md` is still wrong in the full-text section** (#97). It names
-  `FULLTEXT_TARGET` and `MAX_FULLTEXT_REQUESTS` only; the code also has
-  `FULLTEXT_PREFERRED_TARGET` (5), `FULLTEXT_MINIMUM_DESIRED` (3) and
-  `MAX_FULLTEXT_FETCHES`. Trust `pipeline.py:35-47` over the doc.
-- **`CLAUDE.md` says model ids live in two parallel places.** Still true but
-  misleading now: `PROVIDERS` in `index.html` holds one entry (OpenRouter)
-  while `llm.py` has four providers.
-- **Do not squash-merge a stacked PR and delete its base branch.** Doing that
-  this session auto-closed the stacked PR, and GitHub will not reopen a PR whose
-  base is gone — it had to be re-created as a new one. Merge the base without
-  `--delete-branch` if something is stacked on it.
-- **`claude-cli` cannot enforce a JSON schema**, unlike the three API providers.
-  It asks, retries once, then gives up on the article. Right for drafting at your
-  desk, wrong for anything automated. It is also local-only and deliberately
-  absent from `web.ALLOWED_MODELS` — Render has no `claude` binary.
-- **`claude` on Windows is a `.cmd` shim**, so its command line goes through
-  cmd.exe: the ceiling is **8,191** characters, not 32,767. Anything that scales
-  with the sources or the schema must go on stdin. A test pins argv under 2,000.
-- **The web app requires a paid key now** (#109/#111). There is no free path for
-  a visitor.
-- **Every provenance statement must be derived, never hardcoded** — including
-  the new disclosure banner, which counts full texts the same way Table 1 does.
-  Breaking this shipped an article claiming both "7 full texts retrieved" and
-  "prepared from abstracts alone" (#75).
+- **The sandbox is `allow-same-origin` and must never gain `allow-scripts`.**
+  That one flag would hand back everything #100 closed. `allow-same-origin` on
+  its own does not run scripts — it is what keeps `contentDocument` reachable
+  for the theme sync, edit mode and save.
+- **Don't reinstate a source char budget.** It only ever existed for Groq's
+  per-minute ceiling. Nothing left has one, and reinstating it would silently
+  take full text away from every draft again.
+- **Do not squash-merge a stacked PR and delete its base branch.** GitHub will
+  not reopen a PR whose base is gone — it has to be re-created.
+- **`claude-cli` cannot enforce a JSON schema**, unlike OpenRouter and
+  Anthropic. It asks, retries once, then gives up. Right for drafting at your
+  desk, wrong for anything automated. Local-only and deliberately absent from
+  `web.ALLOWED_MODELS`.
+- **`claude` on Windows is a `.cmd` shim**, so argv goes through cmd.exe: the
+  ceiling is **8,191** characters, not 32,767. Anything scaling with the sources
+  must go on stdin.
 - **`/api/diag` is the only trustworthy answer** on which scholarly source works
-  right now — never write it down, it flips. Semantic Scholar 429s almost
-  permanently from Render's IP; OpenAlex and Europe PMC both answered all session.
+  right now — never write it down, it flips.
 - **Searches are cached 24h** (refusals 2 min). Testing fetch changes needs
   `sources.clear_search_cache()` or `ARTICLEGEN_SEARCH_CACHE_TTL=0`.
-- Everything structural — module map, style-gate calibration, deployment
-  constraints, provider quirks — is in `CLAUDE.md`. This file only carries what
-  changed hands at the session boundary.
+- Everything structural is in `CLAUDE.md`. This file only carries what changed
+  hands at the session boundary.
