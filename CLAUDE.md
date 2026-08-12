@@ -27,7 +27,8 @@ articlegen/
   cli.py       subcommands (ideas / draft / queue / demo / web); file output only
   pipeline.py  THE draft pipeline — generate_draft(); every caller goes through it
   web.py       HTTP server + REST API for the web app UI
-  llm.py       provider layer: ONE generate_json(); OpenRouter, Anthropic, claude-cli
+  llm.py       provider layer: ONE generate_json(); OpenRouter, Anthropic,
+               claude-cli, gemini-cli
   ideas.py     LLM: theme -> shortlist of article ideas
   writer.py    LLM: plan_queries -> curate_sources -> write_article
   sources.py   Semantic Scholar + OpenAlex + Europe PMC fetch, 24h cache, dedupe,
@@ -104,6 +105,17 @@ copy because the front end shows it in a **sandboxed** iframe; files written to
 and keeps the revision only if it reduces the error count *and* leaves citations
 and sections intact.
 
+- **The revision is a patch, not a new article.** `revise_prose` asks for a list
+  of `{where, replacement}` edits — keyed on the `where` that `check_style`
+  already reports — and `writer.apply_revisions` merges them into a copy. It
+  still *returns* a whole article, so callers are unchanged. Rewriting 3,586
+  words to fix three sentences cost 26,632 output tokens against the 24,191 that
+  wrote the article; a patch emitted 333 where a rewrite emitted 1,341 on the
+  same draft. **An unknown `where` is skipped, never appended** — a heading the
+  model invented means it restructured the article, which a style pass may not
+  do. `too-few-sections` is the one failure that still buys a whole rewrite
+  (`rewrite_whole=True`), because a patch can only replace a block that exists.
+
 - **Errors**: second person, contractions, rhetorical questions, exclamations,
   boosters, claims of proof, first person outside the `here we review` frame,
   under-hedging (`MIN_HEDGES_PER_SENTENCE = 0.20`).
@@ -114,7 +126,12 @@ and sections intact.
   rule. These fail a draft for saying too little. When one fires,
   `revision_brief()` **inverts**: it tells the model to pull specific findings
   from the sources, and `enforce_style` passes `papers`/`curation` through so it
-  has something to pull from.
+  has something to pull from. **That is the only case where the sources travel
+  with a revision.** A register failure is told to reword and add nothing, so
+  shipping it 20 abstracts and 60,000 characters of full text was ~30,000 input
+  tokens the model was forbidden to use: measured, 95,042 → 30,540. The split is
+  keyed on `SUBSTANCE_RULES` in both places, so changing one without the other
+  is what `test_revision_carries_sources_only_when_they_can_be_used` catches.
 - **The two corpora are the guard against a rule being wrong.**
   `tests/real_abstracts.json` and `tests/style_corpus.json` (20 abstracts, 20
   journals, stratified by article type × domain). **Add to a corpus before
@@ -155,6 +172,15 @@ and sections intact.
   spending a request per paper. **Tangential sources are never fetched**, even
   when the target goes unmet — 12,000 characters of an off-topic paper is the
   drift the relevance gate exists to stop.
+- **Tangential sources never reach the writer either.** `write_article` omits
+  them from the prompt (`_format_sources(..., omit=...)`). They are background by
+  the curation prompt's own definition, and they were arriving with a full
+  abstract each. **They are dropped by number, never re-packed**: the SOURCE
+  index *is* the citation scheme, so SOURCE 7 stays the seventh paper whether or
+  not SOURCE 6 was dropped, and `render`/`verify` still resolve. The prompt says
+  how many were withheld and that the numbering has gaps — the tally above it
+  counts them, and a prompt that misdescribes its own inputs teaches the model to
+  ignore it. If curation returned no labels at all, nothing is dropped.
 - **Don't trust `paper.pmcid` alone.** Only the Europe PMC *search* returns
   pmcid/inEPMC, so anything from OpenAlex arrives empty regardless of licence.
   An empty pmcid means nobody asked. `sources.resolve_pmcid` looks the DOI up
@@ -191,9 +217,11 @@ and sections intact.
   threaded and the environment is process-global, so an env-var handoff lets one
   request's pipeline pick up another request's key and bill it. Guarded by
   `test_per_request_api_key`.
-- **Three providers: OpenRouter (default), Anthropic, and `claude-cli`.**
-  Defaults: `anthropic/claude-opus-5` / `claude-fable-5` / `cli:opus`, plus
-  `OPENROUTER_REFUSAL_FALLBACK = anthropic/claude-sonnet-5`.
+- **Four providers: OpenRouter (default), Anthropic, `claude-cli`, `gemini-cli`.**
+  Defaults: `anthropic/claude-opus-5` / `claude-fable-5` / `cli:opus` /
+  `agy:gemini-3.6-flash-high`, plus
+  `OPENROUTER_REFUSAL_FALLBACK = anthropic/claude-sonnet-5`. Both CLI providers
+  are local-only and absent from `web.ALLOWED_MODELS`.
 - **Groq was removed.** Its free tier metered 12,000 tokens/**minute** counting
   reserved output, which is why `prompt_budget_chars()` and the abstract-trimming
   path in `_format_sources` existed, and why Groq drafts were abstracts-only.
@@ -281,6 +309,40 @@ and sections intact.
 - `--effort high` always; subscription time is not metered per token. `deep` and
   `api_key` are ignored, and neither is an oversight.
 
+### `gemini-cli` — drafting on a Gemini subscription
+
+The Antigravity CLI (`agy`) driven non-interactively. `--model
+agy:gemini-3.6-flash-high` — the name after `agy:` goes to `agy --model`
+verbatim, and `agy models` lists them — or `ARTICLEGEN_PROVIDER=gemini-cli`.
+
+- **Opt-in and local-only, for the same reason as `claude-cli`**: it answers as
+  whoever is signed in on this machine. Absent from `web.ALLOWED_MODELS`;
+  `test_gemini_cli_provider` pins that.
+- **`agy` is the only working route to a Gemini subscription here.** The Google
+  `gemini` CLI refuses to authenticate at all — `IneligibleTierError`, Code
+  Assist for individuals is retired in favour of Antigravity.
+- **`--json-schema` genuinely enforces the schema** and returns the parsed
+  object in the envelope's `structured_output`. This is the one CLI path as
+  reliable as the API ones; the brace-matching recovery is a fallback here, not
+  the main road.
+- **`agy` ignores stdin.** The prompt goes over as `-p "@<file>"` with
+  `--add-dir`, which the CLI inlines verbatim — tested at 98KB. The article
+  prompt is ~95,000 characters against a 32,767-character Windows command line,
+  so argv is not an option either. Asking the agent to *open* a file instead is
+  worse: it costs a tool round-trip and once answered from a different file in
+  the same directory.
+- **Every call runs the model the operator named — do not step the shallow ones
+  down a tier.** It is a one-line change and it looks free (both cheap tiers
+  report `thinking=0`), but at `-low` curation agreed with `-high` on only 14 of
+  20 relevance labels and collapsed everything toward "related" — that is the
+  gate that stops topic drift. `plan_queries` emits run-on queries at `-low`
+  *and* `-medium`. The measurement is in `llm.py` above `GEMINI_CLI_DEFAULT_MODEL`.
+- **~21,600 tokens of agent scaffolding per call**, ~39% of a run's input, and
+  no flag suppresses it. The metered API providers pay none of it.
+- On this provider **88% of output tokens are thinking**, so changes that reduce
+  emitted *text* barely move the bill. Measure output against `thinking_tokens`,
+  not against word count.
+
 ## Web app (`index.html` + `web.py`)
 
 - **The reader iframe is sandboxed** `allow-same-origin` — deliberately **not**
@@ -291,6 +353,14 @@ and sections intact.
   sync, in-place edit and save. Articles for the app are rendered
   `standalone=False` so there is no dead toolbar behind the sandbox; older draft
   files on disk still have one and `hideArticleToolbar()` hides it.
+- **The article shape is not a preference.** Tone, length and evidence depth are
+  constants in `index.html` (`TONE_LABEL`, `LENGTH_LABEL`, `DEPTH_LABEL`), not
+  selectors. Every article is an in-depth longform review at a strict empirical
+  focus. The options that were removed all asked for prose `style.py` then
+  failed: a ~500-word draft has no room to report what each study did, in whom
+  and what it found, and the narrative depth asked for storytelling over methods.
+  Output language is the only choice left.
+  `test_house_style_is_fixed_not_a_preference` fails if a selector comes back.
 - **One article library**, `articlegen_library`, with a star for "keep this".
   There were two stores holding the same articles, and saving to the second
   wrote a second full copy of ~65KB of HTML. All writes go through
