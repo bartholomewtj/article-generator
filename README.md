@@ -17,7 +17,7 @@ Open the working web app directly in your browser:
 ## Use it from your phone (recommended)
 
 1. **Open the site:** [https://bartholomewtj.github.io/article-generator/](https://bartholomewtj.github.io/article-generator/) (or run `articlegen web --open` locally).
-2. **Add a key:** Open Settings (⚙️) and paste an [OpenRouter API key](https://openrouter.ai/keys). It stays in your browser and is sent only with the request you make. Articles cost roughly 50c–$1 each. The web app offers OpenRouter only; the CLI below also supports Anthropic and a Claude subscription.
+2. **Add a key:** Open Settings (⚙️) and paste an [OpenRouter API key](https://openrouter.ai/keys). It stays in your browser and is sent only with the request you make — never stored on the server. By default it is kept for that browser tab only; see [Where your key is kept](#where-your-key-is-kept) before you tick **Remember this key**. Articles cost roughly 50c–$1 each. The web app offers OpenRouter only; the CLI below also supports Anthropic and a Claude subscription.
 3. **Type a theme:** Enter your topic (e.g. `renewable energy storage`) and optional audience/style notes.
 4. **Choose a draft:** Tap any generated **Draft Idea Card** to launch the evidence-grounded research pipeline.
 5. **Read & Share:** View the rendered article and tap **Share**, **Copy Link**, or **QR Code**.
@@ -29,6 +29,25 @@ same relevance gate, prose-style enforcement and statistic verification as one
 generated from the terminal. The hosted backend keeps nothing: it renders your
 article, returns it, and forgets it. Your drafts live in your own browser.
 See [`deploy/`](deploy/README.md) to host the backend yourself.
+
+### Where your key is kept
+
+The backend never stores your key. The browser does, and where it puts it
+matters more than it looks:
+
+- **Default — this tab only.** The key goes in `sessionStorage` and is gone when
+  you close the tab. You paste it again next visit. Nothing persistent is left
+  behind.
+- **"Remember this key" — the whole domain.** The key goes in `localStorage`,
+  which browsers scope to the **origin**, not to the path. Every GitHub Pages
+  site published under `bartholomewtj.github.io` shares that one origin, so a
+  remembered key is readable by any other project published there — including
+  ones added years from now — and by anyone with push access to those repos.
+
+This is a paid key with no daily cap, so a leak is a real bill. If you use the
+hosted page on a shared or public machine, leave the box unticked, and revoke
+the key at [openrouter.ai/keys](https://openrouter.ai/keys) if you have any
+doubt. Running `articlegen web` locally avoids the shared origin entirely.
 
 **Provider key setup:**
 

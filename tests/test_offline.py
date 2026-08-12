@@ -1171,6 +1171,56 @@ def test_rules_do_not_reject_real_journal_prose() -> None:
         check(f"not first person: {text[:38]!r}", "first-person" not in fired)
 
 
+def test_api_key_is_session_only_by_default() -> None:
+    """The stored key must not silently outlive the tab, and the page must say why.
+
+    localStorage is scoped to the origin, not the path, and every GitHub Pages
+    site under bartholomewtj.github.io shares one origin — so a remembered key
+    is readable by any other project published there, now or later (issue
+    #113). The sandbox fix in #100 does nothing about this: different threat,
+    different boundary.
+
+    Asserted on the *wording and the calls a reader can check*, not on the
+    helper names, because the defect was a true-about-the-network claim that
+    was misleading about the origin.
+    """
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    page = open(os.path.join(root, "index.html"), encoding="utf-8").read()
+    readme = open(os.path.join(root, "README.md"), encoding="utf-8").read()
+
+    check("the opt-in checkbox exists", 'id="rememberKey"' in page)
+    check("and is not checked in the markup, so a new key is tab-only",
+          'id="rememberKey"' in page
+          and "checked" not in page[page.index('id="rememberKey"'):
+                                    page.index('id="rememberKey"') + 120])
+
+    # The reader has to try sessionStorage first or a tab-only key is invisible.
+    active = page[page.index("function activeKey"):]
+    active = active[:active.index("\n  }")]
+    check("activeKey reads the session store first",
+          active.index("sessionStorage") < active.index("localStorage"))
+
+    # Unticking the box has to *remove* the persistent copy. Leaving it behind
+    # is the one outcome the checkbox exists to prevent.
+    save = page[page.index("function saveApiKey"):]
+    save = save[:save.index("\n  }")]
+    check("saving clears both stores before writing",
+          "localStorage.removeItem(cfg.store)" in save
+          and "sessionStorage.removeItem(cfg.store)" in save)
+    check("and writes to exactly one of them",
+          "(remember ? localStorage : sessionStorage).setItem(cfg.store, k)" in save)
+
+    # The claim that started this: true about the network, misleading about the
+    # origin. It must not come back.
+    check("the settings text no longer claims the key is shared with nobody",
+          "never shared with anyone else" not in page)
+    check("the settings text names the shared-origin exposure",
+          "bartholomewtj.github.io" in page and "Remember this key" in page)
+    check("README documents where the key is kept",
+          "Where your key is kept" in readme
+          and "scope" in readme and "bartholomewtj.github.io" in readme)
+
+
 def test_the_front_end_has_one_article_list() -> None:
     """One library, one storage key, one renderer.
 
@@ -3193,6 +3243,7 @@ def main() -> int:
         test_display_items_are_selected_once_for_both_formats,
         test_failed_style_gate_is_visible_in_the_article,
         test_evidence_assessment_is_wholly_deterministic,
+        test_api_key_is_session_only_by_default,
         test_house_style_is_fixed_not_a_preference,
         test_register_rules_are_scoped_to_the_synthesis_voice,
         test_hedging_floor_is_calibrated_against_body_prose,
