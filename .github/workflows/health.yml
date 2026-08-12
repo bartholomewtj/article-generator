@@ -19,6 +19,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          # Always main, never the ref this run was triggered on. The question
+          # is "is the deployment serving current main", which does not change
+          # depending on where someone dispatched the run from — and comparing
+          # against a feature branch's HEAD would report a failure that is
+          # really just the branch not being deployed.
+          ref: main
 
       - name: Backend is awake and reports its build
         id: health
