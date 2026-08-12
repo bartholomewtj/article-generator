@@ -516,7 +516,26 @@ index.html on GitHub Pages  ──POST /api/draft──▶  backend on Render
 
 - `pip install -e .` (a SessionStart hook in `.claude/settings.json` runs
   `.claude/setup.sh` in web sessions).
-- `python tests/test_offline.py` — pure logic, no keys or network.
+- `python tests/test_offline.py` — pure logic, no keys or network. Each test is
+  wrapped, so one crash no longer aborts the rest against a dirty environment.
+- `python tests/test_offline.py --live` — one real `generate_json` and one
+  `gather_evidence` query. Spends credit and quota, so it is opt-in and lives
+  behind `workflow_dispatch` in `.github/workflows/live-smoke.yml`. **Every
+  production failure on record happened on the seam the offline suite fakes**
+  (#77 ceiling, #79 refusal, #81 routing), so run it after touching a model id,
+  a ceiling, the routing or `sources.py`.
+- **Provider tests assert on the payload, not on the source text.** `'"type":
+  "json_schema"' in src` passes if the string sits in a comment and breaks on a
+  refactor (#98). `_capture_openrouter` returns what a fake `requests.post`
+  received; `_FakeAnthropic` goes into `sys.modules` because
+  `_anthropic_generate` imports the SDK inside the function. The ceiling
+  assertions follow `OPENROUTER_DEFAULT_MODEL` rather than named models —
+  pinning names is how #77 stayed green while live requests truncated.
+- **The key-leak guard is behavioural.** It greps *all* seven modules with a
+  regex covering `[...]=`, `.update(` and `.setdefault(`, then runs a real call
+  through a fake transport and asserts `os.environ` is byte-identical. The old
+  version checked one exact spelling in two modules, on the project's most
+  security-relevant invariant.
 - `python tests/test_journal_conformance.py` — every convention in
   `docs/journal-style.md` over five fixtures. Run after any render change; add a
   convention here when you add one there.

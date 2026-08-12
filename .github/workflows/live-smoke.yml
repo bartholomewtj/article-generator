@@ -1,0 +1,39 @@
+name: Live smoke
+
+# The offline suites fake every transport, which is the right default — and it
+# is exactly what makes provider drift undetectable. Every production failure
+# on record happened on the live provider / scholarly-API seam: an output
+# ceiling too small for a thinking model (#77), an unhandled refusal (#79),
+# OpenRouter routing to an endpoint that rejects structured outputs (#81).
+# A green offline run says nothing about any of them.
+#
+# So this exists, and it is deliberately manual. It spends real OpenRouter
+# credit and a real request against the shared scholarly quota, so it is not
+# on push, not on PR, and not on a schedule. Run it after changing a model id,
+# a ceiling, the routing, or anything in `sources.py` that touches an API.
+on:
+  workflow_dispatch:
+
+jobs:
+  live-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install -e .
+
+      # One cheap generate_json plus one gather_evidence query. If the secret
+      # is absent the run fails with "live: a key is available", which is the
+      # honest outcome — a live check that silently skips is worse than none.
+      - name: Live smoke
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENALEX_MAILTO: ${{ secrets.OPENALEX_MAILTO }}
+        run: python tests/test_offline.py --live

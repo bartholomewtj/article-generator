@@ -11,8 +11,10 @@ verify those with a live `theme:` issue on GitHub.
 
 from __future__ import annotations
 
+import json
 import os
 import sys
+import traceback
 
 # Ensure the repo root is importable when run as `python tests/test_offline.py`.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -86,12 +88,384 @@ def test_per_request_api_key() -> None:
     ):
         check(f"{fn.__name__} accepts api_key", "api_key" in inspect.signature(fn).parameters)
 
-    src = inspect.getsource(llm) + inspect.getsource(web)
-    check("no module assigns into os.environ",
-          'os.environ["OPENROUTER_API_KEY"] =' not in src
-          and 'os.environ["ANTHROPIC_API_KEY"] =' not in src)
+    # The guard used to be a grep for one exact spelling in two modules, on the
+    # project's most security-relevant invariant: single quotes, a different
+    # key name, `os.environ.update`, or an assignment in writer.py all passed
+    # it (issue #98). Both halves below are behavioural, and cover every module
+    # that can see a key.
+    import re as _re
+
+    from articlegen import cli, pipeline, sources
+
+    modules = (llm, web, writer, ideas, pipeline, cli, sources)
+    assign = _re.compile(
+        r"os\.environ\s*(?:\[[^\]]*\]\s*=(?!=)|\.update\s*\(|\.setdefault\s*\()")
+    for module in modules:
+        hits = [
+            line.strip()
+            for line in inspect.getsource(module).splitlines()
+            if assign.search(line) and not line.strip().startswith("#")
+        ]
+        check(f"{module.__name__} never writes into os.environ", not hits)
+
+    # And the real thing: run a call with a fake transport and prove the
+    # environment is untouched, whatever the code happens to look like.
+    import requests
+
+    snapshot = dict(os.environ)
+    real_post = requests.post
+    saved_anthropic = sys.modules.get("anthropic")
+    try:
+        requests.post = lambda *a, **kw: _FakeHTTP()
+        llm.generate_json("p", {"type": "object"}, model="anthropic/claude-opus-5",
+                          api_key="sk-or-v1-secret")
+        _FakeAnthropic.install(_FakeAnthropic._Message(text="{}"))
+        llm.generate_json("p", {"type": "object"}, model="claude-fable-5",
+                          api_key="sk-ant-secret")
+    except Exception:
+        pass
+    finally:
+        requests.post = real_post
+        if saved_anthropic is not None:
+            sys.modules["anthropic"] = saved_anthropic
+        else:
+            sys.modules.pop("anthropic", None)
+
+    check("a per-call key never reaches the environment", dict(os.environ) == snapshot)
+    for var in ("OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "GROQ_API_KEY"):
+        check(f"{var} is not set by a call that was given a key",
+              os.environ.get(var) == snapshot.get(var))
     check("openrouter key still falls back to the environment",
           'os.environ.get("OPENROUTER_API_KEY")' in inspect.getsource(llm._openrouter_generate))
+
+
+class _FakeAnthropic:
+    """Enough of the Anthropic SDK to drive `_anthropic_generate` offline.
+
+    `_anthropic_generate` imports `anthropic` inside the function, so putting
+    this in `sys.modules` is all it takes. Everything the real client is asked
+    for is here: the constructor's `api_key`, `beta.messages.create`, the
+    streaming context manager the deep path uses, and the kwargs of each call.
+    """
+
+    calls: list[dict] = []
+    reply = None          # the response object the next call returns
+    keys: list = []       # api_key seen by each constructor
+
+    class _Message:
+        def __init__(self, stop_reason="end_turn", text='{"ok": true}', category=None):
+            self.stop_reason = stop_reason
+            self.content = ([_FakeAnthropic._Block(text)] if text else [])
+            if category:
+                self.stop_details = type("D", (), {"category": category})()
+
+    class _Block:
+        def __init__(self, text):
+            self.type, self.text = "text", text
+
+    class _Stream:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get_final_message(self):
+            return _FakeAnthropic.reply
+
+    class _Messages:
+        def create(self, **kwargs):
+            _FakeAnthropic.calls.append(kwargs)
+            return _FakeAnthropic.reply
+
+        def stream(self, **kwargs):
+            _FakeAnthropic.calls.append(kwargs)
+            return _FakeAnthropic._Stream()
+
+    class Anthropic:
+        def __init__(self, api_key=None):
+            _FakeAnthropic.keys.append(api_key)
+            self.beta = type("B", (), {"messages": _FakeAnthropic._Messages()})()
+
+    @classmethod
+    def install(cls, reply):
+        cls.calls, cls.keys, cls.reply = [], [], reply
+        sys.modules["anthropic"] = cls
+        return cls
+
+
+def test_anthropic_generate_behaviour() -> None:
+    """The direct Anthropic path, exercised rather than grepped.
+
+    Every production failure on record happened on the provider seam, and two
+    of the three provider functions were covered only by reading their source
+    (issue #98). A #77 (truncation) or #79 (refusal) class failure here would
+    have passed a green run.
+    """
+    from articlegen import llm
+
+    saved = sys.modules.get("anthropic")
+    try:
+        # -- happy path: the parsed object comes back, and the key is passed
+        #    as an argument rather than reaching the environment ------------
+        before = dict(os.environ)
+        _FakeAnthropic.install(_FakeAnthropic._Message(text='{"title": "t"}'))
+        out = llm._anthropic_generate("p", {"type": "object"}, "sys",
+                                      "claude-fable-5", False, api_key="sk-ant-test")
+        check("a good reply is parsed", out == {"title": "t"})
+        check("the key goes to the client, not the environment",
+              _FakeAnthropic.keys == ["sk-ant-test"] and dict(os.environ) == before)
+        check("the schema is pinned as structured output",
+              _FakeAnthropic.calls[0]["output_config"]["format"]
+              == {"type": "json_schema", "schema": {"type": "object"}})
+        check("the system prompt is sent separately from the user prompt",
+              _FakeAnthropic.calls[0]["system"] == "sys"
+              and _FakeAnthropic.calls[0]["messages"][0]["content"] == "p")
+
+        # -- refusal (#79). This arrives as a normal 200 with no text block,
+        #    so without the explicit check it surfaced as a bare StopIteration.
+        _FakeAnthropic.install(
+            _FakeAnthropic._Message(stop_reason="refusal", text="", category="bio"))
+        try:
+            llm._anthropic_generate("p", {}, None, "claude-opus-5", False)
+            refusal_msg = ""
+        except RuntimeError as exc:
+            refusal_msg = str(exc)
+        check("a refusal raises rather than dying on StopIteration",
+              "declined this request" in refusal_msg)
+        check("and names the category and a model without the classifier",
+              "bio" in refusal_msg and "claude-sonnet-5" in refusal_msg)
+
+        # -- truncation (#77). A truncated reply is invalid JSON, not a short
+        #    one, so it must be named here rather than surfacing as a parse
+        #    error nowhere near its cause.
+        _FakeAnthropic.install(
+            _FakeAnthropic._Message(stop_reason="max_tokens", text='{"title": "unfinis'))
+        try:
+            llm._anthropic_generate("p", {}, None, "claude-fable-5", False)
+            truncation_msg = ""
+        except RuntimeError as exc:
+            truncation_msg = str(exc)
+        check("truncation is reported as truncation, not as bad JSON",
+              "output limit" in truncation_msg)
+
+        # -- an empty reply with an unremarkable stop_reason ----------------
+        _FakeAnthropic.install(_FakeAnthropic._Message(text=""))
+        try:
+            llm._anthropic_generate("p", {}, None, "claude-fable-5", False)
+            empty_msg = ""
+        except RuntimeError as exc:
+            empty_msg = str(exc)
+        check("an empty reply names the stop reason", "stop_reason=end_turn" in empty_msg)
+
+        # -- malformed JSON from a model that claims to have finished -------
+        _FakeAnthropic.install(_FakeAnthropic._Message(text="Here is your article!"))
+        try:
+            llm._anthropic_generate("p", {}, None, "claude-fable-5", False)
+            malformed = False
+        except json.JSONDecodeError:
+            malformed = True
+        except RuntimeError:
+            malformed = True
+        check("prose where JSON was demanded fails loudly", malformed)
+
+        # -- the deep path uses the streaming API, and reserves more room ---
+        _FakeAnthropic.install(_FakeAnthropic._Message(text="{}"))
+        llm._anthropic_generate("p", {}, None, "claude-opus-5", True)
+        deep_kwargs = _FakeAnthropic.calls[0]
+        check("the deep call reserves more than the shallow one",
+              deep_kwargs["max_tokens"] > 16000)
+        check("and asks for adaptive thinking",
+              deep_kwargs["thinking"] == {"type": "adaptive"})
+        # Opus/Fable opt into the server-side refusal fallback by model prefix;
+        # older models reject the beta outright.
+        check("a fallback-eligible model carries the beta",
+              deep_kwargs.get("fallbacks") == "default")
+        _FakeAnthropic.install(_FakeAnthropic._Message(text="{}"))
+        llm._anthropic_generate("p", {}, None, "claude-3-haiku", False)
+        check("an older model does not", "fallbacks" not in _FakeAnthropic.calls[0])
+    finally:
+        if saved is not None:
+            sys.modules["anthropic"] = saved
+        else:
+            sys.modules.pop("anthropic", None)
+
+
+def _capture_openrouter(monkey_response, model="anthropic/claude-opus-5", deep=False):
+    """Run `_openrouter_generate` against a fake transport; return sent payloads."""
+    import requests
+
+    from articlegen import llm
+
+    sent: list[dict] = []
+    real_post = requests.post
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        sent.append(json)
+        return monkey_response(len(sent), json)
+
+    os.environ["OPENROUTER_API_KEY"] = "sk-or-v1-test"
+    try:
+        requests.post = fake_post
+        try:
+            llm._openrouter_generate("p", {"type": "object"}, "sys", model, deep)
+        except Exception:
+            pass          # the caller asserts on what was sent, not on the result
+    finally:
+        requests.post = real_post
+        os.environ.pop("OPENROUTER_API_KEY", None)
+    return sent
+
+
+class _FakeHTTP:
+    def __init__(self, status=200, body=None, text=""):
+        self.status_code = status
+        self._body = body if body is not None else {
+            "choices": [{"finish_reason": "stop",
+                         "message": {"content": '{"title": "t"}'}}]}
+        self.text = text or "{}"
+
+    def json(self):
+        return self._body
+
+
+def test_openrouter_request_is_asserted_on_the_payload() -> None:
+    """Assert on what goes over the wire, not on the text of the function.
+
+    `'"type": "json_schema"' in src` passes if the string sits in a comment or
+    a dead branch, and breaks on a harmless refactor. These were the guards on
+    the seam where #77, #79 and #81 all happened (issue #98).
+    """
+    from articlegen import llm
+
+    sent = _capture_openrouter(lambda n, payload: _FakeHTTP())
+    check("exactly one request when it succeeds", len(sent) == 1)
+    payload = sent[0]
+    check("structured output is demanded",
+          payload["response_format"]["type"] == "json_schema")
+    check("in strict mode", payload["response_format"]["json_schema"]["strict"] is True)
+    check("and the schema travels with it",
+          payload["response_format"]["json_schema"]["schema"] == {"type": "object"})
+    # `require_parameters` filters on what a provider *advertises*, and the
+    # advertisement can be wrong — OpenRouter listed an Azure endpoint as
+    # supporting structured outputs and it returned 400 (#81).
+    check("providers that ignore response_format are filtered out",
+          payload["provider"]["require_parameters"] is True)
+    check("and Anthropic slugs are pinned to Anthropic's own endpoint",
+          payload["provider"]["only"] == ["anthropic"])
+
+    llama = _capture_openrouter(lambda n, payload: _FakeHTTP(),
+                                model="meta-llama/llama-3.3-70b-instruct")
+    check("other vendors keep open routing", "only" not in llama[0]["provider"])
+
+    # A reasoning model exposes no `temperature`, and `require_parameters`
+    # demands every sent parameter — so sending it 404s with "No endpoints
+    # found". The retry must drop temperature and keep the routing: giving up
+    # `provider` instead would reach an endpoint that answers in prose.
+    def temperature_404(n, payload):
+        if n == 1:
+            return _FakeHTTP(status=404, text="No endpoints found matching temperature")
+        return _FakeHTTP()
+
+    retried = _capture_openrouter(temperature_404)
+    check("a temperature 404 is retried", len(retried) == 2)
+    check("the retry drops temperature", "temperature" not in retried[1])
+    check("and keeps the provider routing",
+          retried[1]["provider"] == retried[0]["provider"])
+    check("and keeps the schema", "response_format" in retried[1])
+
+    # A refusal can arrive mid-reply with partial content. That fragment is
+    # discarded, or it resurfaces as "invalid JSON" pointing at the model's own
+    # half-written sentence (#79).
+    def refusal_then_ok(n, payload):
+        if n == 1:
+            return _FakeHTTP(body={"choices": [{
+                "finish_reason": "content_filter",
+                "native_finish_reason": "refusal",
+                "message": {"content": '{"title": "I cannot'}}]})
+        return _FakeHTTP()
+
+    fell_back = _capture_openrouter(refusal_then_ok)
+    check("a refusal is retried on the fallback model", len(fell_back) == 2)
+    check("and the fallback is a model without elevated classifiers",
+          fell_back[1]["model"] == llm.OPENROUTER_REFUSAL_FALLBACK)
+
+    # The failure messages, taken from the failures rather than from the
+    # source. Telling them apart is the whole value: topping up credit does
+    # nothing about a per-key spending cap, and they are different pages.
+    def raised(response_factory) -> str:
+        import requests
+
+        real_post = requests.post
+        os.environ["OPENROUTER_API_KEY"] = "sk-or-v1-test"
+        try:
+            requests.post = lambda *a, **kw: response_factory()
+            try:
+                llm._openrouter_generate("p", {"type": "object"}, None,
+                                         "anthropic/claude-opus-5", False)
+            except Exception as exc:
+                return str(exc)
+            return ""
+        finally:
+            requests.post = real_post
+            os.environ.pop("OPENROUTER_API_KEY", None)
+
+    credit = raised(lambda: _FakeHTTP(status=402, text="insufficient credit"))
+    check("running out of credit is named",
+          "402" in credit or "credit" in credit.lower())
+    cap = raised(lambda: _FakeHTTP(status=403, text="key spending limit exceeded"))
+    check("a per-key spending cap is named separately from spent credit",
+          "limit" in cap.lower())
+    check("and the two messages differ", credit != cap and cap != "")
+    # A 200 can still carry an error body, which is why the status code is not
+    # the only thing checked.
+    body_error = raised(lambda: _FakeHTTP(body={"error": {"message": "upstream exploded"}}))
+    check("an error body behind a 200 is still an error", body_error != "")
+    truncated = raised(lambda: _FakeHTTP(body={"choices": [
+        {"finish_reason": "length", "message": {"content": '{"title": "unfinis'}}]}))
+    check("a truncated reply names the ceiling, not the JSON",
+          "output limit" in truncated.lower() or "max_tokens" in truncated.lower())
+
+
+def test_output_ceilings_follow_the_default_model() -> None:
+    """The ceiling must be right for the model actually in use.
+
+    #77 happened because #74 repointed the default without resizing the
+    ceiling, and the test pinned named models rather than the default — so it
+    stayed green while live requests truncated (issue #98).
+    """
+    from articlegen import llm
+
+    default = llm.OPENROUTER_DEFAULT_MODEL
+    fallback = llm.OPENROUTER_REFUSAL_FALLBACK
+    for name, model in (("default", default), ("refusal fallback", fallback)):
+        deep = llm._openrouter_max_tokens(model, True)
+        shallow = llm._openrouter_max_tokens(model, False)
+        # Whatever the default becomes, it is a reasoning model unless someone
+        # deliberately changes that, and reasoning is spent from this budget.
+        check(f"the {name} model gets the reasoning-sized ceiling",
+              deep == llm.OPENROUTER_REASONING_DEEP_OUTPUT
+              and shallow == llm.OPENROUTER_REASONING_OUTPUT)
+        check(f"and the deep call gets more room than the shallow one ({name})",
+              deep > shallow)
+
+    # The published per-vendor maxima. Raising a ceiling past one trades a
+    # truncation bug for a rejected request.
+    ANTHROPIC_CEILING, LLAMA_CEILING = 128_000, 16_384
+    llama = "meta-llama/llama-3.3-70b-instruct"
+    for deep in (False, True):
+        check(f"the default stays inside its vendor limit (deep={deep})",
+              llm._openrouter_max_tokens(default, deep) <= ANTHROPIC_CEILING)
+        check(f"Llama stays inside its own limit (deep={deep})",
+              llm._openrouter_max_tokens(llama, deep) <= LLAMA_CEILING)
+        check(f"a thinking model gets more room than one that doesn't (deep={deep})",
+              llm._openrouter_max_tokens(default, deep)
+              > llm._openrouter_max_tokens(llama, deep))
+    check("the shallow ceiling matches what the direct Anthropic path reserves",
+          llm._openrouter_max_tokens(default, False) == 16000)
+    check("an unrecognised vendor keeps the conservative pair",
+          llm._openrouter_max_tokens("mistralai/mistral-large", False)
+          == llm._openrouter_max_tokens(llama, False))
 
 
 def test_openrouter_routing() -> None:
@@ -126,75 +500,6 @@ def test_openrouter_routing() -> None:
 
     for var in ("ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "ARTICLEGEN_PROVIDER"):
         os.environ.pop(var, None)
-
-
-def test_openrouter_request_shape() -> None:
-    """The request has to pin structured output, or the article comes back as prose."""
-    import inspect
-    from articlegen import llm
-
-    src = inspect.getsource(llm._openrouter_generate)
-    check("asks for a json_schema response", '"type": "json_schema"' in src)
-    check("in strict mode", '"strict": True' in src)
-    check("names the per-key spending cap separately from running out of credit",
-          '"limit" in res.text.lower()' in src)
-
-    # Provider routing lives in its own function now, so assert on behaviour
-    # rather than on the text of the payload.
-    opus = llm._openrouter_provider_routing("anthropic/claude-opus-5")
-    llama_routing = llm._openrouter_provider_routing("meta-llama/llama-3.3-70b-instruct")
-    check("and only routes to providers that honour structured output",
-          opus["require_parameters"] is True and llama_routing["require_parameters"] is True)
-    # OpenRouter re-sells the Anthropic models from nine endpoints and lists
-    # Azure as supporting structured outputs; the workspace behind it returns
-    # 400 "structured_outputs not supported in your workspace" (issue #81). So
-    # the advertised capability that `require_parameters` filters on is not
-    # always true, and Anthropic slugs go to Anthropic's own endpoint.
-    check("Anthropic models are pinned to Anthropic's own endpoint",
-          opus.get("only") == ["anthropic"])
-    check("other vendors keep open routing", "only" not in llama_routing)
-    check("reads the key from OPENROUTER_API_KEY", 'os.environ.get("OPENROUTER_API_KEY")' in src)
-    check("names the out-of-credit case", "402" in src)
-    check("checks for an error body behind a 200", 'data.get("error")' in src)
-    check("treats a truncated reply as an error", '"length"' in src)
-    # Reasoning models (anthropic/claude-sonnet-5) expose no `temperature`, and
-    # `require_parameters` demands every sent parameter — so sending it 404s
-    # with "No endpoints found". The retry drops temperature, not the schema.
-    check("retries a parameter 404 without temperature",
-          'res.status_code == 404 and "temperature" in payload' in src)
-    # The retry drops exactly one key. Giving up `provider` instead would let
-    # the request reach an endpoint that ignores `response_format` and answers
-    # in prose, which is the failure the routing exists to prevent.
-    check("and the retry gives up temperature, never the provider routing",
-          'if k != "temperature"' in src and '"provider"' not in src.split("retry = ")[1][:200])
-    check("also treats the provider's own truncation word as truncation",
-          "native_finish_reason" in src)
-
-    # Ceilings are per-model because the models disagree about what they allow,
-    # and because thinking is spent from the same budget as the reply. Sizing
-    # these for a non-reasoning model is what broke the ideas call on Fable
-    # (issue #77): a truncated reply is invalid JSON, not a short one.
-    #
-    # The upper bounds are OpenRouter's published max_completion_tokens. Raising
-    # a ceiling past one of them trades a truncation bug for a rejected request,
-    # so the assertions are on the real limits rather than the current values.
-    ANTHROPIC_CEILING, LLAMA_CEILING = 128_000, 16_384
-    fable, llama = "anthropic/claude-fable-5", "meta-llama/llama-3.3-70b-instruct"
-    for deep in (False, True):
-        check(f"Fable stays inside its own limit (deep={deep})",
-              llm._openrouter_max_tokens(fable, deep) <= ANTHROPIC_CEILING)
-        check(f"Llama stays inside its own limit (deep={deep})",
-              llm._openrouter_max_tokens(llama, deep) <= LLAMA_CEILING)
-        check(f"a thinking model gets more room than one that doesn't (deep={deep})",
-              llm._openrouter_max_tokens(fable, deep)
-              > llm._openrouter_max_tokens(llama, deep))
-    check("the deep call gets more room than the shallow one",
-          llm._openrouter_max_tokens(fable, True) > llm._openrouter_max_tokens(fable, False))
-    check("the shallow ceiling matches what the direct Anthropic path reserves",
-          llm._openrouter_max_tokens(fable, False) == 16000)
-    check("an unrecognised vendor keeps the conservative pair",
-          llm._openrouter_max_tokens("mistralai/mistral-large", False)
-          == llm._openrouter_max_tokens(llama, False))
 
 
 def test_openrouter_refusal_falls_back() -> None:
@@ -3663,10 +3968,76 @@ def test_unpaywall_fallback_in_resolve_pmcid() -> None:
         sources.clear_search_cache()
 
 
-def main() -> int:
+def _validate(instance, schema: dict, path: str = "") -> list[str]:
+    """The slice of JSON Schema `_ARTICLE_SCHEMA` actually uses.
+
+    A dependency for this would be a third one in a project with two, and the
+    schema is deliberately plain: object, array, string, integer, required.
+    """
+    errors: list[str] = []
+    kind = schema.get("type")
+    types = {"object": dict, "array": list, "string": str,
+             "integer": int, "number": (int, float), "boolean": bool}
+    if kind in types and not isinstance(instance, types[kind]):
+        return [f"{path or '<root>'}: expected {kind}, got {type(instance).__name__}"]
+    if kind == "object":
+        for key in schema.get("required", []):
+            if key not in instance:
+                errors.append(f"{path}.{key}: required, missing")
+        for key, sub in (schema.get("properties") or {}).items():
+            if key in instance:
+                errors += _validate(instance[key], sub, f"{path}.{key}")
+    elif kind == "array" and schema.get("items"):
+        for i, item in enumerate(instance):
+            errors += _validate(item, schema["items"], f"{path}[{i}]")
+    return errors
+
+
+def test_real_articles_still_match_the_schema() -> None:
+    """Every article the pipeline has to render must satisfy the writer's schema.
+
+    Fixtures encode yesterday's payloads: each replays one observed shape, so a
+    model that stops honouring `_ARTICLE_SCHEMA` is structurally undetectable
+    (issue #98). Nothing validated any real article output against the schema
+    it was generated from — so schema and renderer could drift apart silently,
+    which is how a legacy field ends up load-bearing without anyone noticing.
+    """
+    from articlegen import demo
+    from articlegen.writer import _ARTICLE_SCHEMA
+
+    articles = [("demo.SAMPLE_ARTICLE", demo.SAMPLE_ARTICLE)]
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import test_journal_conformance as conformance
+
+        articles += [(name, article) for name, article, *_ in conformance.fixtures()]
+    except Exception as exc:      # the conformance suite is a sibling, not a dep
+        check(f"conformance fixtures are readable ({exc})", False)
+
+    for name, article in articles:
+        errors = _validate(article, _ARTICLE_SCHEMA)
+        check(f"{name} matches the article schema", not errors)
+        if errors:
+            for e in errors[:5]:
+                print("     " + e)
+
+    # The legacy fields render but are gone from the schema. That is deliberate
+    # and documented; this pins the direction so a future schema change does
+    # not quietly resurrect one as required.
+    required = set(_ARTICLE_SCHEMA.get("required", []))
+    for legacy in ("standfirst", "key_takeaways", "pull_quote"):
+        check(f"{legacy} is not required by the schema", legacy not in required)
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
     for fn in (
         test_provider_resolution, test_per_request_api_key,
-        test_openrouter_routing, test_openrouter_request_shape,
+        test_anthropic_generate_behaviour,
+        test_openrouter_request_is_asserted_on_the_payload,
+        test_output_ceilings_follow_the_default_model,
+        test_real_articles_still_match_the_schema,
+        test_openrouter_routing,
         test_openrouter_refusal_falls_back,
         test_refusal_fallbacks,
         test_pipeline_is_shared, test_dead_sources_fail_before_the_caller_is_billed,
@@ -3709,9 +4080,68 @@ def main() -> int:
         test_demo_and_index, test_web_server,
     ):
         print(f"\n# {fn.__name__}")
-        fn()
+        # One crash used to abort the whole run. Several tests mutate shared
+        # state — env vars, `sources.search_*`, `requests.post` — and not all
+        # restore it, so an early crash left the rest running against a dirty
+        # environment or not running at all (issue #98). The conformance suite
+        # already wraps each predicate; this matches it.
+        try:
+            fn()
+        except Exception as exc:
+            print(f"FAIL {fn.__name__} raised {type(exc).__name__}: {exc}")
+            traceback.print_exc()
+            FAILURES.append(f"{fn.__name__} raised {type(exc).__name__}")
+
+    if "--live" in argv:
+        print("\n# live_smoke")
+        live_smoke()
+
     print(f"\n{'FAILED: ' + ', '.join(FAILURES) if FAILURES else 'ALL PASS'}")
     return 1 if FAILURES else 0
+
+
+def live_smoke() -> None:
+    """One real call to each seam. Opt-in: `python tests/test_offline.py --live`.
+
+    Everything above fakes the transport, which is the right default — but the
+    faking is exactly what makes provider drift undetectable, and every
+    production failure on record happened on this seam (issue #98). This is the
+    smallest thing that would have caught them: one cheap `generate_json` and
+    one `gather_evidence` query.
+
+    Costs a few cents of real credit and one request against the shared
+    scholarly quota, so it never runs in the default suite.
+    """
+    from articlegen import llm
+    from articlegen.sources import gather_evidence
+
+    if not (os.environ.get("OPENROUTER_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")):
+        check("live: a key is available", False)
+        return
+    schema = {"type": "object",
+              "properties": {"answer": {"type": "string"}},
+              "required": ["answer"]}
+    try:
+        out = llm.generate_json(
+            "Reply with {\"answer\": \"ok\"} and nothing else.", schema,
+            system="You return JSON matching the schema.", deep=False)
+        check("live: the provider honours the schema",
+              isinstance(out, dict) and isinstance(out.get("answer"), str))
+    except Exception as exc:
+        check(f"live: generate_json succeeded ({type(exc).__name__}: {exc})", False)
+
+    outcomes: list[dict] = []
+    try:
+        papers = gather_evidence(["shift work sleep"], max_papers=3, per_query=3,
+                                 topic="shift work sleep", outcomes=outcomes,
+                                 use_cache=False)
+        check(f"live: at least one scholarly API answered ({len(papers)} papers)",
+              any(not o["error"] for o in outcomes))
+        for outcome in outcomes:
+            if outcome["error"]:
+                print(f"     {outcome['source']}: {outcome['error']}")
+    except Exception as exc:
+        check(f"live: gather_evidence succeeded ({type(exc).__name__}: {exc})", False)
 
 
 if __name__ == "__main__":
