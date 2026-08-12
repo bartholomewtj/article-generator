@@ -1,19 +1,18 @@
-"""Provider layer: one `generate_json()` call, backed by Groq, Anthropic (Claude),
-OpenRouter, or a Claude subscription via the Claude Code CLI.
+"""Provider layer: one `generate_json()` call, backed by OpenRouter, Anthropic
+(Claude), or a Claude subscription via the Claude Code CLI.
 
 Provider resolution, in priority order:
 1. The model name, when given: `cli:*` -> the Claude Code CLI, a `vendor/model`
-   slug -> OpenRouter, `claude-*` -> Anthropic, `llama*`/`mixtral*`/`groq*` ->
-   Groq. `cli:` is checked first because it is an explicit instruction and its
-   suffix is a bare alias ("opus") that matches nothing else. The slash is
-   checked before the `claude` prefix because OpenRouter re-sells the other
-   providers' models under names like `anthropic/claude-sonnet-5`, which must
-   not route to Anthropic directly.
+   slug -> OpenRouter, `claude-*` -> Anthropic. `cli:` is checked first because
+   it is an explicit instruction and its suffix is a bare alias ("opus") that
+   matches nothing else. The slash is checked before the `claude` prefix
+   because OpenRouter re-sells the other providers' models under names like
+   `anthropic/claude-sonnet-5`, which must not route to Anthropic directly.
 2. An explicitly passed `api_key`, by its prefix: `sk-ant-` -> Anthropic,
-   `gsk_` -> Groq, `sk-or-` -> OpenRouter.
-3. ARTICLEGEN_PROVIDER env var ("anthropic", "groq", "openrouter", "claude-cli").
-4. Whichever API key is present: GROQ_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY.
-5. Fallback: Groq (the default provider).
+   `sk-or-` -> OpenRouter.
+3. ARTICLEGEN_PROVIDER env var ("openrouter", "anthropic", "claude-cli").
+4. Whichever API key is present: OPENROUTER_API_KEY, ANTHROPIC_API_KEY.
+5. Fallback: OpenRouter (the default provider).
 
 **`claude-cli` is never reached by steps 2 or 4, only by 1 or 3.** It has no
 API key to detect, so there is nothing to auto-detect it *by* — and that
@@ -27,11 +26,17 @@ setting a caller's key there lets one request's pipeline pick up another's key
 several seconds later. `api_key=None` falls back to the environment, which is
 what the CLI wants and what a single-user local run has always done.
 
-Groq is the default provider: with GROQ_API_KEY set it's used automatically.
-Claude is opt-in — set ARTICLEGEN_PROVIDER=anthropic, pass a `claude-*` --model, or run with only an Anthropic key.
-OpenRouter is opt-in the same way, and is the option to reach for when Groq's
-free daily cap is the binding constraint: it is prepaid credit rather than a
-quota, so a run never fails because the day's allowance is spent.
+OpenRouter is the default: it is what the web app offers, it bills prepaid
+credit rather than a daily quota, and any catalogue model is reachable with
+`--model`. Anthropic is opt-in — set ARTICLEGEN_PROVIDER=anthropic, pass a
+`claude-*` --model, or run with only an Anthropic key.
+
+**Groq was removed** (see the notes on `_format_sources` in `writer.py`). Its
+free tier metered 12,000 tokens/minute *including the reserved output*, which
+is why this module once carried a `prompt_budget_chars()` and the writer
+trimmed abstracts to fit. No remaining provider has a per-minute ceiling, so
+the whole trimming path went with it and every draft can now be grounded in
+full text. Don't reinstate a char budget without a provider that needs one.
 """
 
 from __future__ import annotations
@@ -41,7 +46,6 @@ import os
 import sys
 import time
 
-GROQ_DEFAULT_MODEL = "llama-3.3-70b-versatile"
 # Claude Fable 5 is the top of the Claude 5 family, above Opus in capability.
 # `claude-opus-5` and `claude-opus-4-8` still work if you pass them with
 # --model. Keep this in step with the Settings dropdown in index.html: the web
@@ -66,7 +70,7 @@ OPENROUTER_DEFAULT_MODEL = "anthropic/claude-opus-5"
 # carries no elevated bio/cyber classifiers — falling back from one
 # elevated-classifier model to another would reproduce the refusal.
 OPENROUTER_REFUSAL_FALLBACK = "anthropic/claude-sonnet-5"
-DEFAULT_PROVIDER = "groq"
+DEFAULT_PROVIDER = "openrouter"
 
 # ---- the Claude Code CLI, i.e. "run this on my Claude subscription" --------
 #
@@ -99,48 +103,7 @@ CLAUDE_CLI_BASE_ARGS = (
 CLAUDE_CLI_EFFORT = "high"
 CLAUDE_CLI_TIMEOUT = 900
 
-# Groq's free tier meters tokens per minute, and it counts the *reserved* output
-# against that budget as well as the prompt. The article call used to reserve
-# 16000 output tokens against a 12000 TPM limit, which cannot succeed no matter
-# how short the prompt is:
-#
-#   413 ... on tokens per minute (TPM): Limit 12000, Requested 20916
-#
-# So the reservation has to fit inside the limit with room for the prompt. A
-# 1600-word article in JSON runs about 2500-3000 tokens, so 5000 is generous.
-GROQ_FREE_TPM = 12000
-GROQ_DEEP_OUTPUT = 5000
-GROQ_OUTPUT = 4000
-
-# Academic text average (dense scientific terminology, numbers, DOIs tokenise
-# at ~3 chars/token, denser than plain English 4 chars/token).
-CHARS_PER_TOKEN = 3
-
-
-def prompt_budget_chars(model: str | None = None, api_key: str | None = None) -> int | None:
-    """How many characters of source material this provider can take, or None for no limit.
-
-    Anthropic's and OpenRouter's limits are far above anything this pipeline
-    produces, so only Groq needs trimming. OpenRouter meters prepaid credit
-    rather than tokens per minute, so the same Llama 3.3 70B that has to be
-    trimmed on Groq's free tier can take the full source payload here.
-    """
-    provider, _ = resolve_provider(model, api_key)
-    if provider != "groq":
-        return None
-    # Everything except the sources — system prompt, instructions, schema — runs
-    # to roughly 1500 tokens; leave that plus the output reservation. The margin
-    # matters because CHARS_PER_TOKEN is an estimate: technical abstracts full of
-    # long words and numbers tokenize worse than plain English, and being over
-    # the limit costs the whole run rather than a bit of quality.
-    overhead_tokens = 1500
-    safety_margin_tokens = 1500
-    spare = GROQ_FREE_TPM - GROQ_DEEP_OUTPUT - overhead_tokens - safety_margin_tokens
-    return int(max(spare, 1000) * CHARS_PER_TOKEN)
-
-
 _PROVIDER_DEFAULT_MODELS = {
-    "groq": GROQ_DEFAULT_MODEL,
     "anthropic": ANTHROPIC_DEFAULT_MODEL,
     "openrouter": OPENROUTER_DEFAULT_MODEL,
     "claude-cli": CLAUDE_CLI_DEFAULT_MODEL,
@@ -153,7 +116,7 @@ def resolve_provider(model: str | None = None, api_key: str | None = None) -> tu
         # Checked before everything else, including the slash: `cli:` is an
         # explicit routing instruction from the operator, and the name after it
         # is a CLI alias ("opus", "sonnet") that would otherwise fall through to
-        # the default provider and be silently drafted by Llama.
+        # the default provider under a name it does not recognise.
         if model.startswith(CLAUDE_CLI_PREFIX):
             return "claude-cli", model[len(CLAUDE_CLI_PREFIX):] or CLAUDE_CLI_DEFAULT_MODEL
         # Checked before the `claude` prefix: OpenRouter re-sells other
@@ -164,26 +127,29 @@ def resolve_provider(model: str | None = None, api_key: str | None = None) -> tu
             return "openrouter", model
         if model.startswith("claude"):
             return "anthropic", model
+        # A bare Groq-era model name. Without this it falls through to
+        # OpenRouter, which has no such slug, and the run dies several seconds
+        # later on a 404 that names neither the removed provider nor the fix.
         if model.startswith(("llama", "mixtral", "gemma", "deepseek", "qwen", "groq")):
-            return "groq", model
+            raise RuntimeError(
+                f"'{model}' is a bare model name with no provider. Groq has been "
+                "removed; reach the same model through OpenRouter with a "
+                "vendor/model slug, e.g. --model meta-llama/llama-3.3-70b-instruct."
+            )
 
     forced = os.environ.get("ARTICLEGEN_PROVIDER", "").strip().lower()
     if api_key and api_key.startswith("sk-ant-"):
         provider = "anthropic"
     elif api_key and api_key.startswith("sk-or-"):
         provider = "openrouter"
-    elif api_key and api_key.startswith("gsk_"):
-        provider = "groq"
     elif forced in _PROVIDER_DEFAULT_MODELS:
         provider = forced
-    elif os.environ.get("GROQ_API_KEY"):
-        provider = "groq"
-    elif os.environ.get("ANTHROPIC_API_KEY"):
-        provider = "anthropic"
     elif os.environ.get("OPENROUTER_API_KEY"):
         provider = "openrouter"
+    elif os.environ.get("ANTHROPIC_API_KEY"):
+        provider = "anthropic"
     else:
-        provider = DEFAULT_PROVIDER  # Groq by default
+        provider = DEFAULT_PROVIDER  # OpenRouter by default
 
     return provider, model or _PROVIDER_DEFAULT_MODELS[provider]
 
@@ -207,13 +173,29 @@ def generate_json(
     """
     provider, model = resolve_provider(model, api_key)
     print(f"[articlegen] using provider={provider} model={model}", file=sys.stderr, flush=True)
-    if provider == "groq":
-        return _groq_generate(prompt, schema, system, model, deep, api_key)
     if provider == "openrouter":
         return _openrouter_generate(prompt, schema, system, model, deep, api_key)
     if provider == "claude-cli":
         return _claude_cli_generate(prompt, schema, system, model)
     return _anthropic_generate(prompt, schema, system, model, deep, api_key)
+
+
+# -------------------------------------------------- shared response handling
+
+def _clean_json_text(text: str) -> str:
+    """Strip a markdown code fence from a reply that should be a bare object.
+
+    Used by the OpenRouter and CLI paths. Both can come back fenced: OpenRouter
+    fronts many providers and the weaker ones treat `response_format` as a hint,
+    and the CLI has no `response_format` at all.
+    """
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.lower().startswith("json"):
+            text = text[4:]
+        text = text.strip()
+    return text
 
 
 # ---------------------------------------------------------------- claude cli
@@ -322,7 +304,7 @@ def _claude_cli_generate(prompt: str, schema: dict, system: str | None, model: s
         "--system-prompt", contract,
     ]
 
-    # Same belt-and-braces as the Groq and OpenRouter paths, and here it is the
+    # Same belt-and-braces as the OpenRouter path, and here it is the
     # only brace there is: the CLI exposes no response_format, so nothing but
     # the prompt constrains the shape of what comes back.
     preamble = (
@@ -483,7 +465,8 @@ def _anthropic_generate(prompt, schema, system, model, deep, api_key=None) -> di
         category = getattr(detail, "category", None) or "unspecified"
         raise RuntimeError(
             f"The model declined this request ({category}). Rephrase the topic, "
-            "or generate it with Groq instead."
+            "or try --model claude-sonnet-5, which carries no elevated "
+            "bio/cyber classifiers."
         )
     if response.stop_reason == "max_tokens":
         raise RuntimeError(
@@ -497,85 +480,13 @@ def _anthropic_generate(prompt, schema, system, model, deep, api_key=None) -> di
     return json.loads(text)
 
 
-# ---------------------------------------------------------------- groq
-
-def _clean_json_text(text: str) -> str:
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.strip("`")
-        if text.lower().startswith("json"):
-            text = text[4:]
-        text = text.strip()
-    return text
-
-
-def _groq_generate(
-    prompt: str, schema: dict, system: str | None, model: str, deep: bool, api_key: str | None = None
-) -> dict:
-    api_key = api_key or os.environ.get("GROQ_API_KEY")
-    if not api_key:
-        raise RuntimeError(
-            "GROQ_API_KEY environment variable is not set. "
-            "Get a free key at https://console.groq.com/keys and set GROQ_API_KEY."
-        )
-
-    system_instruction = (
-        (system or "") +
-        "\n\nIMPORTANT: You must respond ONLY with a valid JSON object matching this schema. "
-        "Do NOT enclose in backticks or markdown fences. Do NOT output any conversational text or commentary.\n"
-        f"JSON Schema:\n{json.dumps(schema)}"
-    )
-
-    messages = [
-        {"role": "system", "content": system_instruction},
-        {"role": "user", "content": prompt},
-    ]
-
-    text_response = ""
-    try:
-        from groq import Groq
-        client = Groq(api_key=api_key)
-        completion = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            response_format={"type": "json_object"},
-            temperature=0.2,
-            max_completion_tokens=GROQ_DEEP_OUTPUT if deep else GROQ_OUTPUT,
-        )
-        text_response = completion.choices[0].message.content or ""
-    except ImportError:
-        import requests
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": model,
-            "messages": messages,
-            "response_format": {"type": "json_object"},
-            "temperature": 0.2,
-            "max_tokens": GROQ_DEEP_OUTPUT if deep else GROQ_OUTPUT,
-        }
-        res = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=120)
-        res.raise_for_status()
-        data = res.json()
-        text_response = data["choices"][0]["message"]["content"] or ""
-
-    cleaned = _clean_json_text(text_response)
-    try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Groq returned invalid JSON: {exc}\nRaw response:\n{text_response[:500]}") from exc
-
-
 # ---------------------------------------------------------------- openrouter
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# No tokens-per-minute ceiling to fit inside, unlike Groq — OpenRouter bills
-# the tokens actually generated, not the reservation — so a generous ceiling is
-# free when it goes unused. It only has to be big enough for the reply, and no
-# bigger than the model itself permits.
+# OpenRouter bills the tokens actually generated, not the reservation, so a
+# generous ceiling is free when it goes unused. It only has to be big enough
+# for the reply, and no bigger than the model itself permits.
 #
 # Reasoning models (claude-fable-5, claude-sonnet-5) think inside `max_tokens`,
 # and a truncated reply is invalid JSON, not a short one, so the failure lands
@@ -644,7 +555,7 @@ def _openrouter_generate(
             "Create a key at https://openrouter.ai/keys and set OPENROUTER_API_KEY."
         )
 
-    # Belt and braces, exactly as on the Groq path: `response_format` is the
+    # Belt and braces: `response_format` is the
     # real constraint, but OpenRouter fronts many providers and the weaker ones
     # treat a schema as a hint, so the schema goes in the prompt too.
     system_instruction = (
@@ -756,7 +667,8 @@ def _openrouter_generate(
         # model already was the fallback — either way there is nothing left to try.
         raise RuntimeError(
             f"{model} declined this request on safety grounds. Rephrase the "
-            "topic, or generate it with Groq instead."
+            f"topic, or try --model {OPENROUTER_REFUSAL_FALLBACK}, which "
+            "carries no elevated bio/cyber classifiers."
         )
 
     if finish == "length" or native_finish in ("length", "max_tokens", "MAX_TOKENS"):

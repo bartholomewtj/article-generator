@@ -17,7 +17,7 @@ Open the working web app directly in your browser:
 ## Use it from your phone (recommended)
 
 1. **Open the site:** [https://bartholomewtj.github.io/article-generator/](https://bartholomewtj.github.io/article-generator/) (or run `articlegen web --open` locally).
-2. **Add a key:** Open Settings (⚙️) and paste an [OpenRouter API key](https://openrouter.ai/keys). It stays in your browser and is sent only with the request you make. Articles cost roughly 50c–$1 each. The web app offers OpenRouter only for now; the CLI below still supports Groq, Anthropic and a Claude subscription.
+2. **Add a key:** Open Settings (⚙️) and paste an [OpenRouter API key](https://openrouter.ai/keys). It stays in your browser and is sent only with the request you make. Articles cost roughly 50c–$1 each. The web app offers OpenRouter only; the CLI below also supports Anthropic and a Claude subscription.
 3. **Type a theme:** Enter your topic (e.g. `renewable energy storage`) and optional audience/style notes.
 4. **Choose a draft:** Tap any generated **Draft Idea Card** to launch the evidence-grounded research pipeline.
 5. **Read & Share:** View the rendered article and tap **Share**, **Copy Link**, or **QR Code**.
@@ -32,58 +32,53 @@ See [`deploy/`](deploy/README.md) to host the backend yourself.
 
 **Provider key setup:**
 
-- **Groq** (the default; free tier, fast inference): create a key at
-  https://console.groq.com/keys and set `GROQ_API_KEY`.
-- **OpenRouter** (opt-in; no daily cap; **roughly 50c–$1 an article**): create a
-  key at https://openrouter.ai/keys and set `OPENROUTER_API_KEY`.
-- **Claude** (opt-in; best writing quality; **roughly $1–2 an article**): set
-  `ANTHROPIC_API_KEY`.
-- **Your Claude subscription** (opt-in; no key at all): if you already pay for
-  Claude and have [Claude Code](https://claude.com/claude-code) installed and
-  signed in, `--model cli:opus` or `--model cli:sonnet` drafts through it. A
-  Claude.ai subscription does not come with an API key, and this is the way to
-  use one anyway. Command line only — see the caveats below.
+- **OpenRouter** (the default; **roughly 50c–$1 an article**): create a key at
+  https://openrouter.ai/keys and set `OPENROUTER_API_KEY`.
+- **Claude** (opt-in; **roughly $1–2 an article**): set `ANTHROPIC_API_KEY`.
+- **Your Claude subscription** (opt-in; **no key and no per-article cost**): if
+  you already pay for Claude and have
+  [Claude Code](https://claude.com/claude-code) installed and signed in,
+  `--model cli:opus` or `--model cli:sonnet` drafts through it. A Claude.ai
+  subscription does not come with an API key, and this is the way to use one
+  anyway. Command line only — see the caveats below.
 
-**Groq is used by default** — with a `GROQ_API_KEY` set it runs
-automatically, and it takes priority even if the other keys are also present.
-To use another provider, set `ARTICLEGEN_PROVIDER=openrouter` (or `anthropic`,
-or `claude-cli`). Models: `llama-3.3-70b-versatile` on Groq,
-`anthropic/claude-opus-5` on OpenRouter, `claude-fable-5` on
-Anthropic, `cli:opus` on your subscription, all overridable with `--model`.
+**OpenRouter is used by default** — with an `OPENROUTER_API_KEY` set it runs
+automatically, and it takes priority if an Anthropic key is also present. To use
+another provider, set `ARTICLEGEN_PROVIDER=anthropic` (or `claude-cli`). Models:
+`anthropic/claude-opus-5` on OpenRouter, `claude-fable-5` on Anthropic,
+`cli:opus` on your subscription, all overridable with `--model`.
 
 **This block is the single place the defaults are described in prose.** Change a
 default in `llm.py` and change it here; nowhere else should restate them.
 
+**Groq was removed.** It used to be the free default, on a 100,000 tokens/day
+tier that allowed 4–7 articles. Its real cost was a 12,000 tokens/**minute**
+ceiling that counted the reserved output as well as the prompt, so a Groq draft
+could never be shown a single open-access full text — the abstracts had to be
+trimmed to fit. Every draft is now grounded in full text where one exists. If
+you want the same Llama model, `--model meta-llama/llama-3.3-70b-instruct`
+reaches it through OpenRouter for well under a cent an article, untrimmed.
 
 **About `cli:` — what you give up.** It costs nothing beyond the subscription
 you already pay for, and it is the only option that needs no key. Two real
 trade-offs. It runs on your machine only: the hosted web app cannot use it,
 because a shared server has no Claude Code and no subscription to draw on. And
-the other three providers can *force* the model to return correctly-shaped
-data, which this cannot — it can only ask. When a reply comes back as prose
-instead, `articlegen` asks once more and then gives up on that article. It is
-the right pick for drafting at your own desk, and the wrong one for anything
-automated.
+both API providers can *force* the model to return correctly-shaped data, which
+this cannot — it can only ask. When a reply comes back as prose instead,
+`articlegen` asks once more and then gives up on that article. It is the right
+pick for drafting at your own desk, and the wrong one for anything automated.
 
-**Groq's free tier allows roughly 4–7 articles a day** (100,000 tokens/day; one
-article costs 14–23k, and failed attempts still count). It's the right choice
-for trying this out, and it's the only one that costs nothing.
+**Both API providers cost real money, so read this before pasting a key.**
+OpenRouter's default is Claude Opus 5, at roughly **50c–$1 an article**. The
+Anthropic default is Fable 5, at roughly **$1–2**. Those are per article, and a
+failed run still bills you. Neither has a daily cap, which is the point — but it
+also means nothing stops a bad afternoon costing $20.
 
-**Everything else here costs real money, so read this before pasting a paid
-key.** OpenRouter's default is Claude Opus 5, at roughly **50c–$1 an article**.
-The Anthropic default is Fable 5, at roughly **$1–2**. Those are per article,
-and a failed run still bills you. Neither has a daily cap, which is the point —
-but it also means nothing stops a bad afternoon costing $20.
+Cheaper options, if writing quality is not what you're trying to fix:
 
-Cheaper ways to leave Groq's cap behind, if quality is not what you're trying
-to fix:
-
-- `--model meta-llama/llama-3.3-70b-instruct` runs the *same* Llama as Groq
-  through OpenRouter credit, for well under a cent an article. This fixes the
-  quota, not the writing.
-- `--model anthropic/claude-sonnet-5` is a cheaper Claude than either default.
-- `--model cli:opus` costs nothing beyond a Claude subscription you already
-  pay for.
+- `--model meta-llama/llama-3.3-70b-instruct` — well under a cent an article.
+- `--model anthropic/claude-sonnet-5` — a cheaper Claude than either default.
+- `--model cli:opus` — free, on a Claude subscription you already pay for.
 
 Any OpenRouter catalogue model works with `--model`.
 
@@ -148,14 +143,13 @@ title ──▶ the model plans search queries
 pip install -r requirements.txt      # or: pip install -e .
 ```
 
-Set credentials for either provider:
+Set credentials for one provider:
 
 ```bash
-export GROQ_API_KEY=gsk_...           # Groq — free key at https://console.groq.com/keys
-# or
 export OPENROUTER_API_KEY=sk-or-v1-...  # OpenRouter — https://openrouter.ai/keys
 # or
 export ANTHROPIC_API_KEY=sk-ant-...   # Claude (or: ant auth login)
+# or neither — draft on a Claude subscription with: --model cli:opus
 ```
 
 The scholarly APIs need no key, but you can raise their rate limits:
@@ -208,11 +202,10 @@ Markdown, for easy editing), and refreshes `index.html` (your review queue).
   it sounds: the free tiers refuse often enough that a second attempt at the
   same query is likelier to fail than to find anything new.
 - The article is AI-written from **abstracts, plus the open-access full texts**
-  of the most relevant sources when Europe PMC can serve them (on Claude or
-  OpenRouter; Groq's free-tier token ceiling keeps it abstracts-only). The
-  Methods section and Table 1's Read column state exactly how deeply each
-  source was read. Treat it as a well-sourced starting point: follow the
-  source links before relying on any specific claim.
+  of the most relevant sources when Europe PMC can serve them. The Methods
+  section and Table 1's Read column state exactly how deeply each source was
+  read. Treat it as a well-sourced starting point: follow the source links
+  before relying on any specific claim.
 
 ## Layout
 
@@ -221,7 +214,7 @@ articlegen/
   cli.py       subcommands (ideas / draft / queue / demo / web)
   pipeline.py  the draft pipeline — every caller, CLI and web, runs this one
   web.py       HTTP server + JSON API behind the web front end
-  llm.py       provider layer: Groq, OpenRouter or Claude, auto-detected from keys
+  llm.py       provider layer: OpenRouter or Claude, auto-detected from keys
   ideas.py     LLM call: theme -> shortlist of article ideas
   writer.py    LLM calls: plan queries, write the article (structured JSON)
   sources.py   Semantic Scholar + OpenAlex fetching, dedupe, ranking
