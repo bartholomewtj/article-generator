@@ -28,6 +28,7 @@ import requests
 SEMANTIC_SCHOLAR_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
 OPENALEX_URL = "https://api.openalex.org/works"
 EUROPE_PMC_URL = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+UNPAYWALL_URL = "https://api.unpaywall.org/v2/{doi}"
 
 # How each source is named in an article's Methods section. Keyed by the
 # `source` value gather_evidence records in its outcomes.
@@ -496,11 +497,14 @@ def resolve_pmcid(paper: Paper, use_cache: bool = True) -> bool:
     Europe PMC serves perfectly well. Measured on one real run, that cost 9 of
     11 available full texts: 2 were fetched where 11 could have been.
 
+    If Europe PMC does not yield an open-access PMCID copy, a secondary lookup
+    against Unpaywall is performed.
+
     Returns True when the paper now has a fetchable open-access full text. One
     HTTP call per unseen DOI, so callers must bound how many they make.
     """
     doi = (paper.doi or "").removeprefix("https://doi.org/").strip()
-    if paper.pmcid or not doi:
+    if (paper.pmcid and paper.is_open_access) or not doi:
         return bool(paper.pmcid and paper.is_open_access)
 
     now = time.time()
@@ -532,8 +536,45 @@ def resolve_pmcid(paper: Paper, use_cache: bool = True) -> bool:
         # throttled Europe PMC is not asked the same question twice a run.
         pass
 
+    if not (pmcid and open_access):
+        try:
+            unpaywall_resp = _get_with_retry(
+                UNPAYWALL_URL.format(doi=doi),
+                # Unpaywall requires a real contact and blocks addresses that
+                # bounce, so never send a made-up one. It accepts a project URL
+                # when no address is configured.
+                params={"email": os.environ.get(
+                    "OPENALEX_MAILTO",
+                    "https://github.com/bartholomewtj/article-generator",
+                )},
+                headers={},
+            )
+            data = unpaywall_resp.json()
+            if isinstance(data, dict) and data.get("is_oa") is True and data.get("best_oa_location"):
+                best_oa = data.get("best_oa_location") or {}
+                extracted_pmcid = best_oa.get("pmcid") or data.get("pmcid")
+                if not extracted_pmcid:
+                    pmc_match = re.search(
+                        r"PMC\d+",
+                        str(best_oa.get("url") or "")
+                        + " "
+                        + str(best_oa.get("url_for_pdf") or "")
+                        + " "
+                        + str(best_oa.get("pmh_id") or ""),
+                    )
+                    if pmc_match:
+                        extracted_pmcid = pmc_match.group(0)
+                if extracted_pmcid:
+                    extracted_pmcid = str(extracted_pmcid).strip()
+                    if extracted_pmcid and not extracted_pmcid.startswith("PMC") and extracted_pmcid.isdigit():
+                        extracted_pmcid = f"PMC{extracted_pmcid}"
+                    pmcid = extracted_pmcid
+                open_access = True
+        except SearchFailure:
+            pass
+
     if _CACHE_TTL > 0:
-        ttl = _CACHE_TTL if pmcid else _CACHE_FAILURE_TTL
+        ttl = _CACHE_TTL if (pmcid or open_access) else _CACHE_FAILURE_TTL
         with _cache_lock:
             _pmcid_cache[doi] = (now + ttl, pmcid, open_access)
 

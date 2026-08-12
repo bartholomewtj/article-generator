@@ -2300,6 +2300,64 @@ def test_pmcid_is_resolved_by_doi() -> None:
          pipeline.enforce_style, pipeline.prompt_budget_chars) = saved
 
 
+def test_unpaywall_fallback_in_resolve_pmcid() -> None:
+    """When Europe PMC does not yield an open-access PMCID copy, Unpaywall is queried."""
+    from articlegen import sources
+    from articlegen.sources import Paper
+
+    class FakeResp:
+        def __init__(self, data=None):
+            self._data = data
+        def json(self):
+            return self._data
+
+    calls: list[str] = []
+
+    def fake_get(url, params, headers):
+        calls.append(url)
+        if "api.unpaywall.org" in url:
+            if "10.1000/unpaywall-pmcid" in url:
+                return FakeResp({
+                    "is_oa": True,
+                    "best_oa_location": {
+                        "pmcid": "PMC9876543",
+                        "url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9876543",
+                    },
+                })
+            elif "10.1000/unpaywall-oa-no-pmcid" in url:
+                return FakeResp({
+                    "is_oa": True,
+                    "best_oa_location": {
+                        "url": "https://journal.org/paper.pdf",
+                    },
+                })
+            elif "10.1000/unpaywall-closed" in url:
+                return FakeResp({"is_oa": False, "best_oa_location": None})
+        return FakeResp({"resultList": {"result": []}})
+
+    real = sources._get_with_retry
+    try:
+        sources._get_with_retry = fake_get
+        sources.clear_search_cache()
+
+        p1 = Paper(title="t1", abstract="a", doi="10.1000/unpaywall-pmcid")
+        check("Unpaywall fallback resolves open-access paper with PMCID", sources.resolve_pmcid(p1))
+        check("PMCID extracted from Unpaywall", p1.pmcid == "PMC9876543")
+        check("is_open_access set to True", p1.is_open_access is True)
+
+        p2 = Paper(title="t2", abstract="a", doi="10.1000/unpaywall-oa-no-pmcid")
+        check("Unpaywall without PMCID returns False for fetchable fulltext", not sources.resolve_pmcid(p2))
+        check("is_open_access set to True for OA paper without PMCID", p2.is_open_access is True)
+        check("PMCID remains empty", p2.pmcid == "")
+
+        p3 = Paper(title="t3", abstract="a", doi="10.1000/unpaywall-closed")
+        check("Closed access paper returns False", not sources.resolve_pmcid(p3))
+        check("is_open_access remains False", p3.is_open_access is False)
+    finally:
+        sources._get_with_retry = real
+        sources.clear_search_cache()
+
+
 def main() -> int:
     for fn in (
         test_provider_resolution, test_per_request_api_key,
@@ -2314,6 +2372,7 @@ def main() -> int:
         test_ungrounded_citations_leave_no_trace,
         test_full_text_grounding, test_pipeline_fetches_full_text,
         test_pmcid_is_resolved_by_doi,
+        test_unpaywall_fallback_in_resolve_pmcid,
         test_methods_names_only_sources_that_answered,
         test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
