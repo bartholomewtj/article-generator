@@ -403,6 +403,24 @@ verbatim, and `agy models` lists them — or `ARTICLEGEN_PROVIDER=gemini-cli`.
   about this. `test_api_key_is_session_only_by_default` pins it, including the
   Settings and README wording — "never shared with anyone else" was true about
   the network and misleading about the origin.
+- **Nothing that needs a key may cost a round trip to discover it.** A first
+  visitor typed a theme, tapped, sat out the ~50s Render cold start and got the
+  server's 400 as a raw `alert()` pointing at an unlabelled gear icon (#95).
+  `requireKey()` gates `requestIdeas` and `selectDraft` *before* the fetch, a
+  `setupCard` on the landing view says a key is needed, `warmBackend()` starts
+  the cold start on page load, and `whileWaking()` swaps in the explanation
+  after 8s — the copy existed but only in `apiError`, so it appeared after a
+  failure and never during the wait it explains. **No `alert()` anywhere**:
+  failures land in `#progressError` with a Try again that repeats `lastAction`.
+  `test_first_visit_does_not_dead_end` pins all of it, including that the
+  progress timeline runs past 30s (a run takes 60-90s and the screen used to
+  stop changing at 30).
+- **A visitor never sees a raw exception.** `_unexpected()` logs the detail
+  server-side and returns a sentence, unless the message names something the
+  caller can act on (`_ACTIONABLE` — key, credit, rate limit). Someone was once
+  shown `RuntimeError(... invalid JSON ...)` plus 500 characters of raw JSON on
+  their phone. `NoPapersFound` is passed through deliberately: its text is
+  written for the visitor.
 - **The article shape is not a preference.** Tone, length and evidence depth are
   constants in `index.html` (`TONE_LABEL`, `LENGTH_LABEL`, `DEPTH_LABEL`), not
   selectors. Every article is an in-depth longform review at a strict empirical

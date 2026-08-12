@@ -218,6 +218,24 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         )
         return True
 
+    # Messages that name a cause the caller can act on. Everything else is an
+    # internal fault and gets the generic sentence — a visitor was once shown
+    # `RuntimeError("... returned invalid JSON: ..." + 500 characters of raw
+    # JSON)` on their phone (#95). The full text still goes to the server log,
+    # which is where it is useful.
+    _ACTIONABLE = ("api key", "credit", "rate limit", "quota", "spending limit",
+                   "refused", "content_filter", "too long", "unsupported model")
+
+    def _unexpected(self, doing: str, exc: Exception) -> str:
+        """A sentence for the visitor; the detail goes to the log."""
+        detail = f"{type(exc).__name__}: {exc}"
+        self._log_stage(f"ERROR while {doing}: {detail}")
+        lowered = str(exc).lower()
+        if any(hint in lowered for hint in self._ACTIONABLE):
+            return str(exc)
+        return (f"Something went wrong {doing}, and it was not your request's fault. "
+                "Try again — if it keeps happening, the backend log has the detail.")
+
     def _over_rate_limit(self) -> bool:
         """Charge the throttle for a request that is about to do real work.
 
@@ -358,7 +376,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
                                    model=_requested_model(payload))
             self._send_json({"theme": theme, "ideas": ideas})
         except Exception as exc:
-            self._send_json({"error": str(exc)}, status=500)
+            self._send_json({"error": self._unexpected("generating ideas", exc)}, status=500)
 
     def _handle_draft(self, payload: dict) -> None:
         topic = (payload.get("topic") or "").strip()
@@ -387,7 +405,8 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
             self._send_json({"error": str(exc)}, status=503 if exc.sources_failed else 422)
             return
         except Exception as exc:
-            self._send_json({"error": str(exc)}, status=500)
+            self._send_json({"error": self._unexpected("writing the article", exc)},
+                            status=500)
             return
 
         render_args = (

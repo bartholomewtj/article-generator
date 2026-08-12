@@ -1474,6 +1474,75 @@ def test_clinical_directives_are_an_error() -> None:
           "clinical-directive" in render._STYLE_FAILURE_WORDING)
 
 
+def test_first_visit_does_not_dead_end() -> None:
+    """The longest possible wait must not end in "you needed a key".
+
+    A stranger opened the site, saw nothing about a key, typed a theme, tapped,
+    sat through the ~50s Render cold start, and got the server's 400 as a raw
+    browser alert() telling them to open a gear icon among five icon buttons
+    (issue #95).
+    """
+    import inspect
+    import re as _re
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    page = open(os.path.join(root, "index.html"), encoding="utf-8").read()
+
+    # 1. The key check happens before the request, in both entry points.
+    for fn in ("requestIdeas", "selectDraft"):
+        body = page[page.index(f"async function {fn}("):]
+        body = body[:body.index("\n  }\n")]
+        check(f"{fn} checks for a key", "requireKey()" in body)
+        check(f"{fn} checks before it fetches",
+              body.index("requireKey()") < body.index("fetch(apiUrl"))
+
+    # 2. The backend is woken on load, and a slow request says why it is slow.
+    #    The cold-start explanation already existed — but only in apiError, so
+    #    it appeared after a failure and never during the wait it explains.
+    check("the backend is warmed on page load",
+          "warmBackend()" in page and "/api/health" in page)
+    check("a slow request explains itself while it is still running",
+          "whileWaking(" in page and "Waking the free server" in page)
+
+    # 3. No alert() anywhere; failures land in the page with something to press.
+    code = "\n".join(_re.findall(r"<script>(.*?)</script>", page, _re.S))
+    code = _re.sub(r"//[^\n]*", "", code)
+    check("no browser alert() survives", "alert(" not in code)
+    check("failures land in the progress card",
+          'id="progressError"' in page and "showProgressError(" in page)
+    check("and offer a retry that repeats the same action",
+          "retryLastAction()" in page and "lastAction = function ()" in page)
+
+    # 4. The landing view says setup is needed, and the version badge is gone.
+    check("the landing view explains the setup",
+          'id="setupCard"' in page and "Set up — about 2 minutes" in page)
+    check("the explainer hides once a key is set", "refreshSetupCard()" in page)
+    check("the settings panel says what an API key is",
+          "An API key is a password" in page)
+    check("the version badge is gone", "SyncFix" not in page and "v2.3" not in page)
+
+    # 5. The timeline covers the whole plausible run, not just the first 30s.
+    marks = sorted(int(m) for m in _re.findall(r"\}, (\d{4,6})\)", page))
+    check("progress messages continue past 30 seconds",
+          any(m >= 55000 for m in marks) and any(m >= 80000 for m in marks))
+
+    # Server side: an unexpected fault gets a sentence, not a stack trace. A
+    # visitor was once shown 500 characters of raw JSON on their phone.
+    from articlegen.web import ArticleGenHandler
+
+    for fn in (ArticleGenHandler._handle_ideas, ArticleGenHandler._handle_draft):
+        # Only the catch-all matters. `NoPapersFound` carries a message written
+        # for the visitor and is deliberately passed through as it is.
+        generic = inspect.getsource(fn)
+        generic = generic[generic.index("except Exception"):]
+        check(f"{fn.__name__} does not return the raw exception",
+              "_unexpected(" in generic and "str(exc)" not in generic)
+
+    unexpected = inspect.getsource(ArticleGenHandler._unexpected)
+    check("the raw detail still reaches the log", "_log_stage(" in unexpected)
+    check("but an actionable message is passed through", "_ACTIONABLE" in unexpected)
+
+
 def test_api_key_is_session_only_by_default() -> None:
     """The stored key must not silently outlive the tab, and the page must say why.
 
@@ -3551,6 +3620,7 @@ def main() -> int:
         test_evidence_assessment_is_wholly_deterministic,
         test_unverified_figures_are_marked_inline,
         test_clinical_directives_are_an_error,
+        test_first_visit_does_not_dead_end,
         test_api_key_is_session_only_by_default,
         test_house_style_is_fixed_not_a_preference,
         test_register_rules_are_scoped_to_the_synthesis_voice,
