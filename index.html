@@ -712,31 +712,33 @@
       </div>
       
       <div style="margin-bottom: 1.25rem;">
-        <label class="input-label" for="providerSelect">Writing model</label>
+        <label class="input-label">Writing model</label>
         <p style="font-size:0.8rem; color:var(--muted); margin-top:-0.2rem; margin-bottom:0.6rem;">
-          Groq is free and fast, but capped at a few articles a day. Claude writes
-          noticeably better articles &mdash; more specific, less repetitive &mdash;
-          via OpenRouter prepaid credit or a paid Anthropic key.
+          Articles are written by <strong>Claude Opus 5</strong>, paid from OpenRouter
+          prepaid credit. There is no daily cap, so a run never fails because the
+          day&rsquo;s quota is spent.
         </p>
-        <select id="providerSelect" class="theme-input" onchange="onProviderChange()">
-          <option value="groq">Groq &mdash; Llama 3.3 70B (free)</option>
-          <option value="openrouter">OpenRouter &mdash; Claude Opus 5 (credit, no daily cap)</option>
-          <option value="anthropic">Claude (paid Anthropic key)</option>
+        <!-- Only OpenRouter is offered for now. The select stays in the DOM, with
+             its single option, so onProviderChange() and saveApiKey() keep working
+             unchanged and restoring a provider is a matter of adding its <option>
+             and its PROVIDERS entry back. -->
+        <select id="providerSelect" class="theme-input" onchange="onProviderChange()" style="display:none;">
+          <option value="openrouter">OpenRouter &mdash; Claude Opus 5</option>
         </select>
       </div>
 
       <div style="margin-bottom: 1.25rem;">
-        <label class="input-label" for="apiKeyInput"><span id="apiKeyLabel">Groq API Key</span></label>
+        <label class="input-label" for="apiKeyInput"><span id="apiKeyLabel">OpenRouter API Key</span></label>
         <p style="font-size:0.8rem; color:var(--muted); margin-top:-0.2rem; margin-bottom:0.6rem;" id="apiKeyHelp">
-          Get a free key from <a href="https://console.groq.com/keys" target="_blank" style="color:var(--accent);">console.groq.com</a>.
+          Create a key at <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--accent);">openrouter.ai/keys</a>.
         </p>
-        <input type="password" id="apiKeyInput" name="groq_key_token" class="theme-input" placeholder="gsk_..." autocomplete="new-password" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
+        <input type="password" id="apiKeyInput" name="provider_key_token" class="theme-input" placeholder="sk-or-v1-..." autocomplete="new-password" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
         <p style="font-size:0.75rem; color:var(--muted); margin-top:0.5rem; line-height:1.5;">
           Your key stays in this browser's local storage and is sent only to the
           article generator backend for the request you asked for. It is never
           stored on the server and never shared with anyone else. Anyone with
           access to this device can read it &mdash; revoke it at
-          <a href="https://console.groq.com/keys" target="_blank" style="color:var(--accent);">console.groq.com/keys</a>
+          <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--accent);">openrouter.ai/keys</a>
           if you use a shared computer.
         </p>
       </div>
@@ -822,19 +824,22 @@
     if (resp.status >= 500 && /api key/i.test(detail)) {
       return 'The backend could not use that API key. Check it in Settings (⚙️).';
     }
-    // Groq's free tier is 100,000 tokens/day and one article costs 14-23k, so
-    // this is the failure a new user is most likely to hit — and its raw form
-    // ("rate_limit_exceeded ... TPD") reads like a bug rather than a quota.
+    // Both of these used to end "switch to Groq/Claude in Settings", which is
+    // now advice to use a provider the Settings panel no longer offers. With
+    // one provider there is nowhere to switch to, so they have to say what to
+    // actually do instead.
     if (/insufficient credit|402/i.test(detail)) {
-      return 'Your OpenRouter credit is exhausted. Top up at openrouter.ai/credits, ' +
-             'or switch to Groq in Settings (⚙️) to keep going for free.';
+      return 'Your OpenRouter credit is exhausted. Top it up at openrouter.ai/credits ' +
+             'and try again.';
+    }
+    // A 403 mentioning a limit is a per-key spending cap, not spent credit —
+    // different page, different fix, and topping up credit does nothing.
+    if (/403/.test(detail) && /limit|cap/i.test(detail)) {
+      return 'That OpenRouter key has hit its own spending cap. Raise or clear it at ' +
+             'openrouter.ai/keys — adding credit will not help.';
     }
     if (/rate.?limit|quota|tokens per day|TPD|429/i.test(detail)) {
-      return currentProvider() === 'groq'
-        ? 'Your Groq free-tier allowance is used up — it allows roughly 4-7 articles ' +
-          'a day and resets every 24 hours. Wait, or switch to OpenRouter or Claude in ' +
-          'Settings (⚙️) — neither has a daily article cap.'
-        : 'The writing model is rate-limited right now. Wait a moment and try again.';
+      return 'The writing model is rate-limited right now. Wait a moment and try again.';
     }
     return detail || ('Request failed (' + resp.status + ').');
   }
@@ -985,17 +990,12 @@
   // Each provider keeps its own key slot, so switching between them doesn't
   // discard the other. The model id is sent to the backend, which accepts it
   // only if it matches one it actually supports.
+  // Only OpenRouter for now. Groq and Anthropic were removed from the UI, not
+  // from the backend: web.ALLOWED_MODELS still accepts their models, so the CLI
+  // is unaffected and restoring one here is a matter of adding its entry and its
+  // <option> back. Their stored keys are left in localStorage untouched, so
+  // anyone who had one keeps it if a provider comes back.
   const PROVIDERS = {
-    groq: {
-      model: 'llama-3.3-70b-versatile',
-      store: 'articlegen_key',
-      label: 'Groq API Key',
-      placeholder: 'gsk_...',
-      help: 'Free, and fine for trying this out — but the free tier allows roughly ' +
-            '<strong>4&ndash;7 articles a day</strong> and failed attempts still count. ' +
-            'Get a key from <a href="https://console.groq.com/keys" target="_blank" style="color:var(--accent);">console.groq.com</a>. ' +
-            'If you hit the daily limit, switch to Claude above.'
-    },
     openrouter: {
       model: 'anthropic/claude-opus-5',
       store: 'articlegen_key_openrouter',
@@ -1005,21 +1005,19 @@
             'never fails because the day&rsquo;s quota is spent. Roughly ' +
             '<strong>50c&ndash;$1 per article</strong>. Create a key at ' +
             '<a href="https://openrouter.ai/keys" target="_blank" style="color:var(--accent);">openrouter.ai/keys</a>.'
-    },
-    anthropic: {
-      model: 'claude-fable-5',
-      store: 'articlegen_key_anthropic',
-      label: 'Anthropic API Key',
-      placeholder: 'sk-ant-...',
-      help: 'Best writing quality and no daily article cap, at the highest price here: ' +
-            '<strong>roughly $1&ndash;2 per article</strong>, billed to your Anthropic account. ' +
-            'Create a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:var(--accent);">console.anthropic.com</a>.'
     }
   };
 
+  const DEFAULT_PROVIDER = 'openrouter';
+
   function currentProvider() {
-    const p = localStorage.getItem('articlegen_provider') || 'groq';
-    return PROVIDERS[p] ? p : 'groq';
+    // The fallback is load-bearing now rather than defensive: anyone who used
+    // this before carries articlegen_provider = 'groq' or 'anthropic' in local
+    // storage, and those keys no longer exist in PROVIDERS. Without this they
+    // would land on `undefined` and every activeKey()/activeModel() call would
+    // throw on page load.
+    const p = localStorage.getItem('articlegen_provider');
+    return (p && PROVIDERS[p]) ? p : DEFAULT_PROVIDER;
   }
 
   function activeKey() {
@@ -1031,8 +1029,8 @@
   }
 
   function onProviderChange() {
-    const chosen = document.getElementById('providerSelect')?.value || 'groq';
-    const cfg = PROVIDERS[chosen] || PROVIDERS.groq;
+    const chosen = document.getElementById('providerSelect')?.value || DEFAULT_PROVIDER;
+    const cfg = PROVIDERS[chosen] || PROVIDERS[DEFAULT_PROVIDER];
     localStorage.setItem('articlegen_provider', chosen);
 
     const label = document.getElementById('apiKeyLabel');
@@ -1048,7 +1046,7 @@
 
   function saveApiKey() {
     const chosen = document.getElementById('providerSelect')?.value || currentProvider();
-    const cfg = PROVIDERS[chosen] || PROVIDERS.groq;
+    const cfg = PROVIDERS[chosen] || PROVIDERS[DEFAULT_PROVIDER];
     const k = document.getElementById('apiKeyInput')?.value.trim() || '';
 
     localStorage.setItem('articlegen_provider', chosen);

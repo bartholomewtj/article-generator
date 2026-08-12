@@ -680,10 +680,27 @@ def test_front_end_models_match_the_allowlist() -> None:
         page = f.read()
 
     offered = re.findall(r"^\s*model: '([^']+)'", page, re.MULTILINE)
-    check("the front end offers a model at all", len(offered) >= 2)
+    # One provider is offered right now (OpenRouter), so this floor is 1 rather
+    # than 2. The assertion that matters is the next one — the direction of the
+    # check is front end ⊆ server, so *narrowing* the front end is always safe
+    # and only adding an unknown model can break it.
+    check("the front end offers a model at all", len(offered) >= 1)
     for model in offered:
         check(f"index.html offers {model}, which the server accepts",
               model in ALLOWED_MODELS)
+
+    # Every provider the picker lists must have a PROVIDERS entry, or selecting
+    # it yields `undefined` and activeKey()/activeModel() throw on page load.
+    # Removing a provider means editing two places in one file; this is what
+    # notices when only one of them was done.
+    # Scoped to the provider picker: the page has other <select>s (article
+    # length, style) whose options are not provider names.
+    picker = re.search(r"<select id=\"providerSelect\".*?</select>", page, re.DOTALL)
+    check("the provider picker exists", picker is not None)
+    listed = set(re.findall(r"<option value=\"([a-z_]+)\"", picker.group(0) if picker else ""))
+    configured = set(re.findall(r"^    ([a-z_]+): \{$", page, re.MULTILINE))
+    check(f"every offered provider {sorted(listed)} is configured {sorted(configured)}",
+          bool(listed) and listed <= configured)
 
 
 def test_search_cache() -> None:
