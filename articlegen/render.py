@@ -135,10 +135,89 @@ def _plain_citations(text: str) -> str:
     return _CITATION_RE.sub(replace, text)
 
 
-def _prose(text: str, cite_map: dict[int, int], valid_numbers: set[int]) -> str:
-    """Full text pipeline: renumber -> punctuation-first -> escape -> superscripts."""
+# Figure flags. `verify` knows which numbers it could not ground, but that used
+# to reach the reader only as a clause in the Limitations paragraph, thousands
+# of words below the number it retracts and with no way to tell which figure it
+# meant. Meanwhile the number carried a superscript citation — the strongest
+# "this came from that paper" signal on the page. Someone copies the Key points
+# into an email; the numbers travel and every qualification stays behind (#92).
+#
+# So the flag travels with the figure. A dagger is the journal convention for a
+# footnote mark and needs no legend to read as "there is a caveat here".
+UNVERIFIED_MARK = "†"
+MISATTRIBUTED_MARK = "‡"
+
+_MARK_TITLES = {
+    UNVERIFIED_MARK: "This figure could not be located in the sources cited for it.",
+    MISATTRIBUTED_MARK: "This figure was found only in a source other than the one cited.",
+}
+
+
+def _figure_flags(verification: dict | None) -> dict[str, str]:
+    """{figure string -> mark}. Unverified wins if a figure is somehow in both."""
+    v = verification or {}
+    flags = {f: MISATTRIBUTED_MARK for f in (v.get("misattributed") or [])}
+    flags.update({f: UNVERIFIED_MARK for f in (v.get("unverified") or [])})
+    return {f: m for f, m in flags.items() if f}
+
+
+def _flag_pattern(flags: dict[str, str]) -> re.Pattern | None:
+    """Match a flagged figure, but never one inside a citation marker.
+
+    The alternation is longest-first so "7,000 lux" is tried before "7,000",
+    and the boundaries stop "12%" matching inside "112%" or "0.66" inside
+    "0.665". The `cite` branch exists because at the point this runs the
+    citation markers are still literal `[12]`, and a flagged figure of "12"
+    would otherwise be found inside one.
+    """
+    if not flags:
+        return None
+    alts = "|".join(re.escape(f) for f in sorted(flags, key=len, reverse=True))
+    return re.compile(
+        r"(?P<cite>\[[\d,\s]+\])"
+        r"|(?P<fig>(?<![\w.,])(?:" + alts + r")(?![\d,]))"
+    )
+
+
+def _apply_flags(text: str, flags: dict[str, str], render_mark) -> str:
+    """Append each flagged figure's mark where the figure occurs."""
+    pattern = _flag_pattern(flags)
+    if pattern is None:
+        return text
+
+    def replace(match: re.Match) -> str:
+        if match.group("cite"):
+            return match.group(0)
+        found = match.group("fig")
+        return found + render_mark(flags[found])
+
+    return pattern.sub(replace, text)
+
+
+def _mark_html(escaped: str, flags: dict[str, str]) -> str:
+    return _apply_flags(
+        escaped,
+        {html.escape(f): m for f, m in flags.items()},
+        lambda mark: f'<sup class="flag" title="{_MARK_TITLES[mark]}">'
+                     f'<a href="#limitations">{mark}</a></sup>',
+    )
+
+
+def _mark_plain(text: str, flags: dict[str, str]) -> str:
+    return _apply_flags(text, flags, lambda mark: mark)
+
+
+def _prose(text: str, cite_map: dict[int, int], valid_numbers: set[int],
+           flags: dict[str, str] | None = None) -> str:
+    """Full text pipeline: renumber -> punctuation-first -> escape -> flag -> superscripts.
+
+    Flagging runs *after* escaping (so the inserted markup survives) and
+    *before* citation linking (so the only brackets in the string are still the
+    literal `[N]` markers `_flag_pattern` knows to skip).
+    """
     remapped = _shift_markers_after_punctuation(_remap_citations(text, cite_map))
-    return _link_citations(html.escape(remapped), valid_numbers)
+    escaped = _mark_html(html.escape(remapped), flags or {})
+    return _link_citations(escaped, valid_numbers)
 
 
 # --------------------------------------------------------------------------
@@ -282,14 +361,16 @@ def _unverified_sentence(unverified: list[str], full_text_read: bool = False) ->
     where = _searched_phrase(full_text_read)
     if len(unverified) == 1:
         return (
-            f"One numerical value reported above ({shown}) could not be located in "
-            f"{where}. It may originate in a part of a source that was not read, or may "
-            "be unreliable, and should be verified before being quoted."
+            f"One numerical value reported above ({shown}), marked {UNVERIFIED_MARK} where "
+            f"it appears, could not be located in {where}. It may originate in a part of a "
+            "source that was not read, or may be unreliable, and should be verified before "
+            "being quoted."
         )
     return (
-        f"{len(unverified)} numerical values reported above ({shown}{more}) could not be "
-        f"located in {where}. They may originate in a part of a source that was not read, "
-        "or may be unreliable, and should be verified before being quoted."
+        f"{len(unverified)} numerical values reported above ({shown}{more}), each marked "
+        f"{UNVERIFIED_MARK} where it appears, could not be located in {where}. They may "
+        "originate in a part of a source that was not read, or may be unreliable, and "
+        "should be verified before being quoted."
     )
 
 
@@ -306,17 +387,46 @@ def _misattributed_sentence(misattributed: list[str]) -> str:
     more = "" if len(misattributed) <= 6 else f" and {len(misattributed) - 6} other(s)"
     if len(misattributed) == 1:
         return (
-            f"One numerical value reported above ({shown}) appears in a cited source "
-            "other than the one its sentence credits. The figure is present in the "
-            "evidence base, but the attribution does not hold and should be checked "
-            "before it is quoted."
+            f"One numerical value reported above ({shown}), marked {MISATTRIBUTED_MARK} "
+            "where it appears, is found in a cited source other than the one its sentence "
+            "credits. The figure is present in the evidence base, but the attribution does "
+            "not hold and should be checked before it is quoted."
         )
     return (
-        f"{len(misattributed)} numerical values reported above ({shown}{more}) appear in "
-        "cited sources other than the ones their sentences credit. The figures are present "
-        "in the evidence base, but the attributions do not hold and should be checked "
-        "before they are quoted."
+        f"{len(misattributed)} numerical values reported above ({shown}{more}), each marked "
+        f"{MISATTRIBUTED_MARK} where it appears, are found in cited sources other than the "
+        "ones their sentences credit. The figures are present in the evidence base, but the "
+        "attributions do not hold and should be checked before they are quoted."
     )
+
+
+def _grounding_note(verification: dict | None, full_text_read: bool) -> str:
+    """One line under the Key points, so no quotable unit travels uncaveated.
+
+    The Key points are the part that gets copied into an email, and until this
+    existed the numbers travelled while every qualification stayed behind in a
+    Limitations paragraph ninety lines down (#92).
+
+    Derived, never assumed, like every other provenance statement: no
+    verification means no claim that anything was checked, and an article with
+    no figures in it gets no line at all.
+    """
+    v = verification or {}
+    if not v or not v.get("total"):
+        return ""
+    n_unverified = len(v.get("unverified") or [])
+    n_misattributed = len(v.get("misattributed") or [])
+    where = _searched_phrase(full_text_read)
+    if not n_unverified and not n_misattributed:
+        return f"Every figure in this review was located in {where}."
+    clauses = []
+    if n_unverified:
+        clauses.append(f"{UNVERIFIED_MARK} marks a figure that could not be found there")
+    if n_misattributed:
+        clauses.append(
+            f"{MISATTRIBUTED_MARK} marks one found only in a source other than the one cited")
+    return (f"Every figure in this review was checked against {where}. "
+            + "; ".join(clauses) + ". See Limitations.")
 
 
 def _display_relevance(cite_map: dict[int, int], curation: dict | None) -> dict[int, str]:
@@ -440,7 +550,8 @@ _BOX_SELECTION_NOTE = (
 )
 
 
-def _box_html(article: dict, papers: list[Paper], cite_map: dict[int, int]) -> str:
+def _box_html(article: dict, papers: list[Paper], cite_map: dict[int, int],
+              flags: dict[str, str] | None = None) -> str:
     """Box 1 — the most relevant source, as a self-contained boxed display item."""
     parts = _box_parts(article, papers, cite_map)
     if not parts:
@@ -448,14 +559,20 @@ def _box_html(article: dict, papers: list[Paper], cite_map: dict[int, int]) -> s
     paper, fs = parts["paper"], parts
     display = parts["reference"]
     ref = f'<sup class="cite"><a href="#ref-{display}">{display}</a></sup>' if display else ""
+
+    # Box 1 is a quotable unit too, and `verify` checks the featured study's
+    # method and results along with the rest of the article.
+    def field(name: str) -> str:
+        return _mark_html(html.escape(fs[name]), flags or {})
+
     rows = []
     if fs.get("method"):
-        rows.append(f'<p><span class="run-in">Method.</span> {html.escape(fs["method"])}</p>')
+        rows.append(f'<p><span class="run-in">Method.</span> {field("method")}</p>')
     if fs.get("results"):
-        rows.append(f'<p><span class="run-in">Results.</span> {html.escape(fs["results"])}</p>')
+        rows.append(f'<p><span class="run-in">Results.</span> {field("results")}</p>')
     if fs.get("limitations"):
         rows.append(
-            f'<p><span class="run-in">Limitations.</span> {html.escape(fs["limitations"])}</p>')
+            f'<p><span class="run-in">Limitations.</span> {field("limitations")}</p>')
     return (
         '<aside class="display box" aria-labelledby="box-1">\n'
         f'<p class="di-caption" id="box-1"><span class="di-label">Box 1 |</span> '
@@ -927,7 +1044,10 @@ def _assessment_html(
     parts = _assessment_paragraphs(cited, counts, verification, style_report, html.escape)
     body = [
         "<p>" + parts["opening"] + "</p>",
-        '<p><span class="run-in">Limitations.</span> ' + " ".join(parts["limitations"]) + "</p>",
+        # The id is the target of every inline figure flag, so a reader who taps
+        # a dagger lands on the paragraph that explains it.
+        '<p id="limitations"><span class="run-in">Limitations.</span> '
+        + " ".join(parts["limitations"]) + "</p>",
     ]
     return '<section class="back-section">\n<h2>Evidence assessment</h2>\n' + "\n".join(body) + "\n</section>"
 
@@ -1083,11 +1203,12 @@ def render_article(
     valid_numbers = set(range(1, len(cited) + 1))
     labels = _display_relevance(cite_map, curation)
     counts = _relevance_counts(cite_map, curation)
+    flags = _figure_flags(verification)
 
     sections_html = []
     for section in article.get("sections", []):
         paragraphs = "\n".join(
-            f"<p>{_prose(para, cite_map, valid_numbers)}</p>"
+            f"<p>{_prose(para, cite_map, valid_numbers, flags)}</p>"
             for para in section.get("paragraphs", [])
         )
         sections_html.append(
@@ -1100,15 +1221,21 @@ def render_article(
     # lives in the back matter with Methods and the reference list rather than
     # interrupting the prose. Key points sit at the end of the body, directly
     # before the conclusions, as the bridge from evidence to verdict.
-    box = _box_html(article, papers, cite_map)
+    box = _box_html(article, papers, cite_map, flags)
     figure = _figure_html(cited, labels)
     table = _table_html(cited, labels)
 
     key_points = "\n".join(
-        f"<li>{_prose(point, cite_map, valid_numbers)}</li>" for point in _key_points(article)
+        f"<li>{_prose(point, cite_map, valid_numbers, flags)}</li>"
+        for point in _key_points(article)
     )
+    # The grounding line sits directly under the heading, above the points, so
+    # a reader who copies the block copies the caveat with it.
+    note = _grounding_note(verification, bool(_full_text_count(cited)))
+    note_html = f'<p class="key-points-note">{html.escape(note)}</p>\n' if note else ""
     key_points_html = (
-        '<aside class="key-points">\n<h2>Key points</h2>\n<ul>\n'
+        '<aside class="key-points">\n<h2>Key points</h2>\n'
+        f'{note_html}<ul>\n'
         f"{key_points}\n</ul>\n</aside>" if key_points else ""
     )
 
@@ -1167,7 +1294,7 @@ def render_article(
             title=html.escape(article["title"]),
             subject=html.escape(topic),
             meta_line=" &middot; ".join(html.escape(b) for b in meta_bits),
-            abstract=_prose(_summary_text(article), cite_map, valid_numbers),
+            abstract=_prose(_summary_text(article), cite_map, valid_numbers, flags),
             keywords=keywords_html,
             body="\n\n".join(body),
             methods=_methods_html(provenance, len(papers), len(cited), topic),
@@ -1308,6 +1435,10 @@ _CSS = """
     font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
   }
   aside.key-points ul { margin: 0; padding-left: 1.1rem; }
+  .key-points-note { color: var(--muted); font-size: 0.78rem !important;
+                     font-style: italic; margin: 0 0 0.7rem 0 !important; }
+  sup.flag { font-size: 0.72em; line-height: 0; vertical-align: super; }
+  sup.flag a { color: var(--muted); text-decoration: none; font-weight: 700; }
   aside.key-points li { margin-bottom: 0.5rem; font-size: 0.95rem; line-height: 1.55; }
   aside.key-points li:last-child { margin-bottom: 0; }
 
@@ -1560,9 +1691,14 @@ def render_markdown(
     today = datetime.date.today().strftime("%d %B %Y").lstrip("0")
     span = _year_range(cited)
 
+    flags = _figure_flags(verification)
+
     def prose(text: str) -> str:
+        # Flagging runs before citation collapsing, while the only brackets in
+        # the string are still the literal [N] markers the pattern skips.
         return _plain_citations(
-            _shift_markers_after_punctuation(_remap_citations(text, cite_map))
+            _mark_plain(
+                _shift_markers_after_punctuation(_remap_citations(text, cite_map)), flags)
         )
 
     lines = [
@@ -1590,13 +1726,16 @@ def render_markdown(
     # first thematic section, key points directly before the conclusions, and
     # Table 1 in the back matter rather than interrupting the prose.
     points = _key_points(article)
+    note = _grounding_note(verification, bool(_full_text_count(cited)))
     key_points_md = (
-        "\n".join(["## Key points", ""] + [f"- {prose(p)}" for p in points])
+        "\n".join(["## Key points", ""]
+                  + ([f"*{note}*", ""] if note else [])
+                  + [f"- {prose(p)}" for p in points])
         if points else ""
     )
 
     sections = article.get("sections", [])
-    box_md = _box_markdown(article, papers, cite_map)
+    box_md = _box_markdown(article, papers, cite_map, flags)
     figure_md = _figure_markdown(cited, labels)
     table_md = _table_markdown(cited, labels)
     positions = {1: figure_md, 2: box_md}
@@ -1661,7 +1800,8 @@ def render_markdown(
     return "\n".join(lines)
 
 
-def _box_markdown(article: dict, papers: list[Paper], cite_map: dict[int, int]) -> str:
+def _box_markdown(article: dict, papers: list[Paper], cite_map: dict[int, int],
+                  flags: dict[str, str] | None = None) -> str:
     parts = _box_parts(article, papers, cite_map)
     if not parts:
         return ""
@@ -1671,12 +1811,10 @@ def _box_markdown(article: dict, papers: list[Paper], cite_map: dict[int, int]) 
            f"> {_short_author(paper)} ({paper.year or 'n.d.'})"
            + (f", {paper.venue}" if paper.venue else "") + ref
            + (f" <{paper.link}>" if paper.link else "")]
-    if parts["method"]:
-        out.append(f"> **Method.** {parts['method']}")
-    if parts["results"]:
-        out.append(f"> **Results.** {parts['results']}")
-    if parts["limitations"]:
-        out.append(f"> **Limitations.** {parts['limitations']}")
+    for label in ("method", "results", "limitations"):
+        if parts[label]:
+            out.append(f"> **{label.capitalize()}.** "
+                       + _mark_plain(parts[label], flags or {}))
     out.append(">")
     out.append(f"> _{_BOX_SELECTION_NOTE}_")
     return "\n".join(out)
