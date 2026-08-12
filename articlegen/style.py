@@ -199,7 +199,10 @@ MAX_HEDGE_SHARE = 0.40           # no single hedge may be this much of the total
 # is a draft that hedges heavily using one stock phrase, which needs volume.
 MIN_HEDGES_FOR_MONOTONY = 8
 MAX_OPENER_REPEATS = 2           # same three-word sentence opening, at most twice
-REPEATED_PHRASE_WORDS = 8        # a shared run this long is recycled text
+# A shared verbatim run this long (10+ words) is genuine recycled text. Short 8-word
+# clinical terms of art ("randomized double-blind placebo-controlled clinical trial") are
+# excluded to prevent false positives on domain vocabulary.
+REPEATED_PHRASE_WORDS = 10
 MIN_SENTENCES_FOR_VARIETY = 10   # below this, repetition counts are noise
 
 # The abstract, the key points and the Introduction are three different jobs, and
