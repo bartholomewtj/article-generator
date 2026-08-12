@@ -35,11 +35,15 @@ nothing else in flight:
 ## Resume with
 
 ```bash
-cd /c/claudeOS/Projects/articlegenerator && git status --short && python tests/test_offline.py && python tests/test_journal_conformance.py
+cd /c/claudeOS/Projects/articlegenerator && git branch --show-current && git status --short && python tests/test_offline.py && python tests/test_journal_conformance.py
 ```
 
-Prints `ALL PASS` then `ALL CONVENTIONS MET`. No keys, no network. Verified at
-handoff.
+Should print `main`, no file list, then `ALL PASS` and `ALL CONVENTIONS MET`.
+No keys, no network. Verified at handoff.
+
+**Branch and dirtiness come first on purpose** (#97): the tests print a green
+`ALL PASS` even when they are running an uncommitted working tree on the wrong
+branch, so a returning session gets reassured before it gets informed.
 
 To drive the front end, `articlegen web --port 8765` and point Playwright at it
 (`playwright-core` + the cached Chromium under `$LOCALAPPDATA/ms-playwright`,
