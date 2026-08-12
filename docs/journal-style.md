@@ -128,12 +128,11 @@ records were screened versus included.
 search strings, the number of records screened, the number cited, and how
 deeply the sources were read: either that only abstracts were read, or that the
 open-access full texts of a stated number of sources were retrieved from Europe
-PMC and read alongside them — in which case Table 1 itemises which sources
-those were in a **Read** column. Both claims come from provenance recorded at
-draft time, never from a constant. Full text is only ever attempted for
-sources Europe PMC can serve (a PMCID plus open-access flags), which skews the
-deeply-read subset toward open-access journals — a selection bias the reader
-can see per-source in Table 1 rather than having to guess.
+PMC and read alongside them. In all drafts, **Table 1 (Evidence Assessment Table)**
+explicitly itemises whether full text or abstract was accessed for every cited source
+in a mandatory **Read** column (`Full text` vs `Abstract`), ensuring full-text vs
+abstract grounding is 100% transparent. Both claims come from provenance recorded at
+draft time, never from a constant.
 
 ### 10. Limitations are stated in the article's own voice, in back matter
 
