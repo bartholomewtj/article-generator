@@ -345,7 +345,9 @@ def generate_draft(
             continue
         if not paper.pmcid and paper.doi:
             requests_spent += 1
-            resolve_pmcid(paper)
+            # The logger matters: both lookups inside fail soft, and without it
+            # a blocked Unpaywall halves full-text coverage invisibly (#104).
+            resolve_pmcid(paper, log=log)
         if not (paper.pmcid and paper.is_open_access):
             continue
         requests_spent += 1

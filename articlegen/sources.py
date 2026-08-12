@@ -486,7 +486,48 @@ _fulltext_cache: dict[str, tuple[float, str]] = {}
 _pmcid_cache: dict[str, tuple[float, str, bool]] = {}
 
 
-def resolve_pmcid(paper: Paper, use_cache: bool = True) -> bool:
+def _unpaywall_email() -> str:
+    """The contact Unpaywall requires. Never a made-up address — it blocks those."""
+    return os.environ.get(
+        "OPENALEX_MAILTO", "https://github.com/bartholomewtj/article-generator")
+
+
+def probe_unpaywall(doi: str = "10.1371/journal.pone.0000308") -> dict:
+    """Can this host reach Unpaywall right now?
+
+    The full-text path grew a fourth keyless external dependency (#103) and it
+    fails soft: if Unpaywall rate-limits, blocks the contact address or changes
+    its response shape, every article silently drops to abstracts-only. Soft
+    failure is right for the reader and useless for the operator, so it has to
+    be visible from outside — the same reason `/api/diag` exists at all.
+
+    The default DOI is a PLOS ONE paper that has been open access since 2007;
+    an answer that says otherwise means the response shape changed, which is
+    exactly one of the failures worth catching.
+    """
+    result = {"source": "unpaywall", "doi": doi, "email_set":
+              bool(os.environ.get("OPENALEX_MAILTO")), "error": ""}
+    try:
+        resp = _get_with_retry(UNPAYWALL_URL.format(doi=doi),
+                               params={"email": _unpaywall_email()}, headers={})
+        data = resp.json()
+    except SearchFailure as exc:
+        result["error"] = str(exc)
+        return result
+    except Exception as exc:
+        result["error"] = f"{type(exc).__name__}: {exc}"
+        return result
+    if not isinstance(data, dict) or "is_oa" not in data:
+        result["error"] = "unexpected response shape (no is_oa field)"
+        return result
+    result["is_oa"] = bool(data.get("is_oa"))
+    result["has_oa_location"] = bool(data.get("best_oa_location"))
+    if not result["is_oa"]:
+        result["error"] = "answered, but reports this known open-access DOI as closed"
+    return result
+
+
+def resolve_pmcid(paper: Paper, use_cache: bool = True, log=lambda msg: None) -> bool:
     """Look a paper's DOI up in Europe PMC to fill in `pmcid` / `is_open_access`.
 
     Only the Europe PMC *search* returns those two fields, so before this
@@ -531,10 +572,12 @@ def resolve_pmcid(paper: Paper, use_cache: bool = True) -> bool:
             # Both flags, for the same reason as in `search_europe_pmc`:
             # isOpenAccess without inEPMC means the copy is somewhere else.
             open_access = item.get("isOpenAccess") == "Y" and item.get("inEPMC") == "Y"
-    except SearchFailure:
+    except SearchFailure as exc:
         # A refused lookup is cached briefly, like a refused search, so a
         # throttled Europe PMC is not asked the same question twice a run.
-        pass
+        # Soft-failing is right for the reader; failing *silently* left the
+        # operator with halved full-text coverage and nothing to look at (#104).
+        log(f"  europe_pmc DOI lookup failed for {doi}: {exc}")
 
     if not (pmcid and open_access):
         try:
@@ -543,10 +586,7 @@ def resolve_pmcid(paper: Paper, use_cache: bool = True) -> bool:
                 # Unpaywall requires a real contact and blocks addresses that
                 # bounce, so never send a made-up one. It accepts a project URL
                 # when no address is configured.
-                params={"email": os.environ.get(
-                    "OPENALEX_MAILTO",
-                    "https://github.com/bartholomewtj/article-generator",
-                )},
+                params={"email": _unpaywall_email()},
                 headers={},
             )
             data = unpaywall_resp.json()
@@ -570,8 +610,11 @@ def resolve_pmcid(paper: Paper, use_cache: bool = True) -> bool:
                         extracted_pmcid = f"PMC{extracted_pmcid}"
                     pmcid = extracted_pmcid
                 open_access = True
-        except SearchFailure:
-            pass
+        except SearchFailure as exc:
+            # Same reasoning as above, and this is the one the issue was
+            # actually about: a blocked contact address here halves full-text
+            # coverage across every article and looks like nothing at all.
+            log(f"  unpaywall lookup failed for {doi}: {exc}")
 
     if _CACHE_TTL > 0:
         ttl = _CACHE_TTL if (pmcid or open_access) else _CACHE_FAILURE_TTL
