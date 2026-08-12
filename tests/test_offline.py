@@ -1945,6 +1945,21 @@ def test_first_visit_does_not_dead_end() -> None:
           "An API key is a password" in page)
     check("the version badge is gone", "SyncFix" not in page and "v2.3" not in page)
 
+    # There is no free way to *generate* anything since the provider list
+    # narrowed to OpenRouter, so a stranger sent this link has to open a
+    # payments account before they can see it work (#111). drafts/ is already
+    # public and already deployed by the Pages workflow, so the output can be
+    # shown for nothing — and it has to come *before* the key prompt, or the
+    # first impression is still "paste a credential".
+    readme = open(os.path.join(root, "README.md"), encoding="utf-8").read()
+    check("the landing view offers a read-only path",
+          'class="demo-band"' in page and 'href="drafts/"' in page)
+    check("and it sits above the key prompt",
+          page.index('class="demo-band"') < page.index('id="setupCard"'))
+    check("it says outright that no key is needed", "no key, no" in page)
+    check("README points at it too",
+          "Read a finished article" in readme and "no account needed" in readme)
+
     # 5. The timeline covers the whole plausible run, not just the first 30s.
     marks = sorted(int(m) for m in _re.findall(r"\}, (\d{4,6})\)", page))
     check("progress messages continue past 30 seconds",

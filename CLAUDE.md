@@ -342,6 +342,13 @@ and sections intact.
   what keeps `contentDocument` reachable for the theme sync, in-place edit and
   save. Older draft files on disk still carry a toolbar and
   `hideArticleToolbar()` hides it.
+- **The read-only path comes before the key prompt.** There is no free way to
+  *generate* anything since the provider list narrowed to OpenRouter, so a
+  stranger sent this link would otherwise have to open a payments account
+  before seeing the thing work at all (#111). `drafts/` is public and already
+  deployed by the Pages workflow (`path: '.'`), so `.demo-band` on the landing
+  view points at it — above `#setupCard`, because a first impression of "paste
+  a credential" is the thing worth avoiding. Don't reorder them.
 - **A visitor never sees a raw exception.** `_unexpected()` logs the detail
   server-side and returns a sentence, unless the message names something the
   caller can act on (`_ACTIONABLE` — key, credit, rate limit). `NoPapersFound`
