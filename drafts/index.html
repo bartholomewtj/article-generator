@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Draft review queue</title>
+<script>
+  (function() {
+    var saved = localStorage.getItem('articlegen_theme') || 'system';
+    if (saved === 'dark' || saved === 'light') {
+      document.documentElement.setAttribute('data-theme', saved);
+    }
+  })();
+</script>
+<style>
+  :root, html[data-theme="light"] { --bg:#fff; --ink:#14171a; --muted:#6a7178; --accent:#17457f; --link:#1b5aa8; --rule:#dfdfda; --card:#f7f7f5; color-scheme: light; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg:#14150f; --ink:#f2f1ea; --muted:#9d9d94; --accent:#9dc4f5; --link:#86b6ef; --rule:#33342f; --card:#1e1f1c; color-scheme: dark; }
+  }
+  html[data-theme="dark"] { --bg:#14150f; --ink:#f2f1ea; --muted:#9d9d94; --accent:#9dc4f5; --link:#86b6ef; --rule:#33342f; --card:#1e1f1c; color-scheme: dark; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; line-height:1.5; }
+  main { max-width:clamp(44rem, 72vw, 58rem); margin:0 auto; padding:2.5rem 1.25rem 5rem; }
+  .header-row { display:flex; align-items:baseline; justify-content:space-between;
+    border-top:3px solid var(--ink); padding-top:0.8rem; margin-bottom:0.3rem; }
+  h1 { font-size:1.3rem; margin:0; letter-spacing:-0.01em; }
+  .theme-toggle-btn { background:transparent; border:1px solid var(--rule); color:var(--ink);
+    border-radius:2px; padding:0.3rem 0.6rem; cursor:pointer; font-size:0.78rem; }
+  .sub { color:var(--muted); margin:0 0 2rem; font-size:0.8rem; }
+  ul { list-style:none; margin:0; padding:0; }
+  li { border-bottom:1px solid var(--rule); padding:0.9rem 0; }
+  li a { color:var(--ink); text-decoration:none; font-size:1.02rem; font-weight:600;
+    font-family:"Iowan Old Style","Charter",Georgia,serif; }
+  li a:hover { color:var(--link); }
+  .meta { color:var(--muted); font-size:0.78rem; margin-top:0.3rem; }
+  .meta a { color:var(--link); text-decoration:none; }
+  .empty { color:var(--muted); }
+  .idx-disclosure { font-size:0.92rem; font-weight:600; color:var(--ink);
+    background:var(--card); border-left:3px solid var(--ink);
+    padding:0.6rem 0.8rem; margin:0 0 1rem; line-height:1.45; }
+</style>
+</head>
+<body>
+<main>
+  <div class="header-row">
+    <h1>Draft review queue</h1>
+    <button class="theme-toggle-btn" onclick="toggleIndexTheme()"><span id="idxThemeIcon">&#9789;</span> Theme</button>
+  </div>
+  <p class="idx-disclosure">Every article listed here was written by a language
+  model from published research. No human author wrote or checked any of them,
+  and none has been peer reviewed.</p>
+  <p class="sub">2 draft(s) · newest first</p>
+  <ul>
+    <li><a href="2026-08-12-safety-planning-ed-sonnet-5.html">Safety planning in the emergency department reduces suicidal behavior in adults but evidence in youth remains limited</a><div class="meta">Aug 12, 2026 13:20 · <a href="2026-08-12-safety-planning-ed-sonnet-5.html">open</a> · <a href="2026-08-12-safety-planning-ed-sonnet-5.md">markdown</a></div></li>
+    <li><a href="2026-08-12-safety-planning-ed-opus-5.html">Safety planning with structured follow-up after an emergency department visit is associated with reduced suicidal behaviour in adults but not in adolescents</a><div class="meta">Aug 12, 2026 13:17 · <a href="2026-08-12-safety-planning-ed-opus-5.html">open</a> · <a href="2026-08-12-safety-planning-ed-opus-5.md">markdown</a></div></li>
+  </ul>
+</main>
+<script>
+function toggleIndexTheme() {
+  var cur = document.documentElement.getAttribute('data-theme');
+  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var effective = cur || (isSysDark ? 'dark' : 'light');
+  var next = effective === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('articlegen_theme', next);
+  updateIndexThemeIcon();
+}
+function updateIndexThemeIcon() {
+  var icon = document.getElementById('idxThemeIcon');
+  if (!icon) return;
+  var cur = document.documentElement.getAttribute('data-theme');
+  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var effective = cur || (isSysDark ? 'dark' : 'light');
+  icon.innerHTML = effective === 'dark' ? '&#9789;' : '&#9788;';
+}
+document.addEventListener('DOMContentLoaded', updateIndexThemeIcon);
+</script>
+</body>
+</html>

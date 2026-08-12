@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Safety planning with structured follow-up after an emergency department visit is associated with reduced suicidal behaviour in adults but not in adolescents</title>
+<script>
+  (function() {
+    var saved = localStorage.getItem('articlegen_theme') || 'system';
+    if (saved === 'dark' || saved === 'light') {
+      document.documentElement.setAttribute('data-theme', saved);
+    }
+  })();
+</script>
+<style>
+  :root, html[data-theme="light"] {
+    --bg: #ffffff;
+    --surface: #f7f7f5;
+    --ink: #14171a;
+    --ink-2: #3c4249;
+    --muted: #6a7178;
+    --accent: #17457f;
+    --link: #1b5aa8;
+    --rule: #dfdfda;
+    --rule-strong: #b9bab5;
+    --seg-direct: #184f95;
+    --seg-related: #2a78d6;
+    --seg-tangential: #86b6ef;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14150f;
+      --surface: #1e1f1c;
+      --ink: #f2f1ea;
+      --ink-2: #cfcec5;
+      --muted: #9d9d94;
+      --accent: #9dc4f5;
+      --link: #86b6ef;
+      --rule: #33342f;
+      --rule-strong: #4c4d47;
+      --seg-direct: #86b6ef;
+      --seg-related: #3987e5;
+      --seg-tangential: #184f95;
+      color-scheme: dark;
+    }
+  }
+  html[data-theme="dark"] {
+    --bg: #14150f;
+    --surface: #1e1f1c;
+    --ink: #f2f1ea;
+    --ink-2: #cfcec5;
+    --muted: #9d9d94;
+    --accent: #9dc4f5;
+    --link: #86b6ef;
+    --rule: #33342f;
+    --rule-strong: #4c4d47;
+    --seg-direct: #86b6ef;
+    --seg-related: #3987e5;
+    --seg-tangential: #184f95;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Iowan Old Style", "Charter", Georgia, "Times New Roman", serif;
+    font-size: 1.02rem;
+    line-height: 1.62;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Fluid column: phones keep the viewport width exactly as before (the 40rem
+     floor only binds once the screen exceeds it); desktops scale with the
+     window up to 52rem. The wide-screen font bump below grows the rem, so the
+     ceiling is ~985px of column while the measure stays near 75 characters —
+     wider than this stops being readable prose, which is why journals cap it. */
+  main { max-width: clamp(40rem, 72vw, 52rem); margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+  @media (min-width: 1200px) {
+    html { font-size: 112.5%; }
+  }
+  .sans, .meta-line, .subject-line, .keywords, .di-caption, .fig-legend, .key-points,
+  .refs ol, .toolbar, .colophon, table, .meta-label {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+
+  /* ---- masthead ---------------------------------------------------- */
+  header.masthead { border-top: 3px solid var(--ink); padding-top: 0.9rem; margin-bottom: 2rem; }
+  .article-type {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 0.9rem;
+  }
+  h1 {
+    font-size: clamp(1.7rem, 4.2vw, 2.3rem);
+    line-height: 1.22; font-weight: 700; letter-spacing: -0.005em;
+    margin: 0 0 0.9rem;
+  }
+  /* Full contrast, body-text size, above the fold. The point of issue #91 is
+     that a disclosure in muted 0.78rem type is not a disclosure. */
+  .ai-disclosure {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.92rem; font-weight: 600; line-height: 1.45; color: var(--ink);
+    margin: 0 0 0.9rem; padding: 0.6rem 0.8rem;
+    background: var(--surface); border-left: 3px solid var(--ink);
+  }
+  .meta-line {
+    font-size: 0.78rem; color: var(--muted); margin: 0 0 0.35rem;
+    padding-bottom: 0.9rem; border-bottom: 1px solid var(--rule);
+  }
+  .subject-line { font-size: 0.78rem; color: var(--muted); margin: 0 0 0.9rem; }
+  .meta-label {
+    font-size: 0.68rem; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted); margin-right: 0.4rem;
+  }
+
+  /* ---- abstract & key points --------------------------------------- */
+  .abstract { margin: 0 0 1.2rem; }
+  .abstract p { margin: 0; font-size: 1.06rem; line-height: 1.6; color: var(--ink-2); }
+  .abstract .run-in-head {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink); margin-right: 0.5rem;
+  }
+  .keywords { font-size: 0.8rem; color: var(--muted); margin: 0 0 2rem; }
+  aside.key-points {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    padding: 1.1rem 1.3rem 1.2rem; margin: 0 0 2.2rem; border-radius: 3px;
+  }
+  aside.key-points h2 {
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 0.7rem;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  aside.key-points ul { margin: 0; padding-left: 1.1rem; }
+  aside.key-points li { margin-bottom: 0.5rem; font-size: 0.95rem; line-height: 1.55; }
+  aside.key-points li:last-child { margin-bottom: 0; }
+
+  /* ---- body -------------------------------------------------------- */
+  h2 {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 1.02rem; font-weight: 700; letter-spacing: 0.01em;
+    margin: 2.2rem 0 0.7rem; color: var(--ink);
+  }
+  p { margin: 0 0 1rem; }
+  .body-section p + p { text-indent: 1.2em; }
+  .run-in { font-weight: 700; font-style: italic; }
+  a { color: var(--link); }
+  sup.cite { font-size: 0.68em; line-height: 0; font-weight: 600; letter-spacing: 0.02em; }
+  sup.cite a { color: var(--link); text-decoration: none; padding: 0 0.02em; }
+  sup.cite a:hover { text-decoration: underline; }
+
+  /* ---- display items ----------------------------------------------- */
+  .display { margin: 1.8rem 0 2rem; }
+  .di-caption {
+    font-size: 0.8rem; line-height: 1.5; color: var(--muted); margin: 0.7rem 0 0;
+  }
+  .di-label { font-weight: 700; color: var(--ink); }
+  aside.box {
+    background: var(--surface); border: 1px solid var(--rule-strong);
+    padding: 1.1rem 1.3rem 1.2rem; border-radius: 3px;
+  }
+  aside.box .di-caption { margin: 0 0 0.7rem; font-size: 0.92rem; color: var(--ink); }
+  aside.box p { font-size: 0.95rem; line-height: 1.55; margin: 0 0 0.6rem; }
+  aside.box p:last-child { margin-bottom: 0; }
+  .box-cite { color: var(--muted); font-size: 0.85rem !important; }
+  figure.figure { margin: 1.8rem 0 2rem; padding: 1rem 0 0; border-top: 1px solid var(--rule); }
+  .fig-svg { width: 100%; height: auto; display: block; }
+  .fig-grid { stroke: var(--rule); stroke-width: 1; }
+  .fig-axis { stroke: var(--rule-strong); stroke-width: 1; }
+  .fig-tick { fill: var(--muted); font-size: 11px;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .fig-value { fill: var(--ink-2); font-size: 11px; font-weight: 600;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .fig-axis-title { fill: var(--muted); font-size: 11px; letter-spacing: 0.04em;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .seg-direct { fill: var(--seg-direct); }
+  .seg-related { fill: var(--seg-related); }
+  .seg-tangential { fill: var(--seg-tangential); }
+  .seg-cited { fill: var(--seg-related); }
+  .fig-legend {
+    display: flex; flex-wrap: wrap; gap: 0.3rem 1.1rem; list-style: none;
+    margin: 0.6rem 0 0; padding: 0; font-size: 0.78rem; color: var(--muted);
+  }
+  .fig-legend li { display: flex; align-items: center; gap: 0.4rem; }
+  .swatch {
+    display: inline-block; width: 0.68rem; height: 0.68rem; border-radius: 2px;
+    margin-right: 0.35rem; vertical-align: -0.05rem;
+  }
+  .swatch-direct { background: var(--seg-direct); }
+  .swatch-related { background: var(--seg-related); }
+  .swatch-tangential { background: var(--seg-tangential); }
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; min-width: 32rem; border-collapse: collapse; font-size: 0.82rem; }
+  tbody td:nth-child(5) { white-space: nowrap; }
+  thead th {
+    text-align: left; font-weight: 700; color: var(--ink);
+    border-top: 1px solid var(--rule-strong); border-bottom: 1px solid var(--rule-strong);
+    padding: 0.45rem 0.5rem; white-space: nowrap;
+  }
+  tbody td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--rule); color: var(--ink-2); }
+  tbody tr:last-child td { border-bottom: 1px solid var(--rule-strong); }
+  .t-num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .t-venue { color: var(--muted); }
+
+  /* ---- back matter -------------------------------------------------- */
+  .back-section { margin-top: 2.2rem; }
+  .back-section > h2:first-child, .refs h2 { margin-top: 0; }
+  .back-section p { font-size: 0.92rem; line-height: 1.58; color: var(--ink-2); }
+  .glossary dl { margin: 0; }
+  .gloss-row { display: flex; gap: 0.75rem; padding: 0.4rem 0; border-bottom: 1px solid var(--rule); }
+  .gloss-row dt { flex: 0 0 9.5rem; font-weight: 700; font-size: 0.92rem; }
+  .gloss-row dd { margin: 0; font-size: 0.92rem; color: var(--ink-2); }
+  .gloss-row:last-child { border-bottom: none; }
+  .refs { margin-top: 2.4rem; border-top: 2px solid var(--ink); padding-top: 1.1rem; }
+  .refs ol { margin: 0; padding-left: 1.5rem; font-size: 0.82rem; line-height: 1.5; }
+  .refs li { margin-bottom: 0.55rem; color: var(--ink-2); }
+  .refs li:target { background: var(--surface); border-radius: 2px; }
+  .refs a { color: var(--link); text-decoration: none; }
+  .refs a:hover { text-decoration: underline; }
+  .ref-authors { color: var(--ink); }
+  .ref-cites { color: var(--muted); }
+  footer.colophon {
+    margin-top: 2.4rem; padding-top: 1rem; border-top: 1px solid var(--rule);
+    font-size: 0.78rem; line-height: 1.55; color: var(--muted);
+  }
+
+  /* ---- toolbar ------------------------------------------------------ */
+  .toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0 2rem; }
+  .tool-btn {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    background: transparent; color: var(--ink-2);
+    border: 1px solid var(--rule-strong); border-radius: 2px;
+    padding: 0.35rem 0.7rem; font-size: 0.78rem; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+  }
+  .tool-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .share-toast { font-size: 0.78rem; color: var(--accent); align-self: center; display: none; }
+
+  @media (max-width: 34rem) {
+    .gloss-row { display: block; }
+    .gloss-row dt { margin-bottom: 0.15rem; }
+    .body-section p + p { text-indent: 0; }
+  }
+  @media print {
+    body { font-size: 10.5pt; background: #fff; color: #000; }
+    .toolbar { display: none; }
+    a, sup.cite a { color: #000; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <article>
+  <header class="masthead">
+    <p class="article-type">Evidence Review</p>
+    <h1>Safety planning with structured follow-up after an emergency department visit is associated with reduced suicidal behaviour in adults but not in adolescents</h1>
+    <p class="ai-disclosure">Written by a language model from the cited research, from 5 full texts and the abstracts of the other 15. No human author wrote or checked this text. Not peer reviewed.</p>
+    <p class="meta-line">Generated 12 August 2026 &middot; 20 sources cited, 2018–2026 &middot; Full text read for 5 of 20 sources &middot; Not peer reviewed</p>
+    <p class="subject-line"><span class="meta-label">Subject</span>Safety planning interventions for suicide risk in emergency departments</p>
+
+    <div class="toolbar">
+      <button class="tool-btn" onclick="shareArticle()">Share</button>
+      <button class="tool-btn" onclick="copyArticleLink()">Copy link</button>
+      <button class="tool-btn" onclick="toggleArticleTheme()"><span id="themeIcon">&#9789;</span> Theme</button>
+      <span id="shareToast" class="share-toast">Link copied</span>
+    </div>
+
+    <div class="abstract">
+      <p><span class="run-in-head">Abstract</span>Suicide prevention in acute care has converged on brief, low-cost interventions that can be delivered during a single unplanned contact. The Safety Planning Intervention, a collaboratively written hierarchy of warning signs, coping strategies, support contacts and steps to restrict access to lethal means, has become routine practice in many emergency departments and is recommended by several national guidelines. The weeks after discharge carry elevated risk of repeat suicidal behaviour, so whether a plan written in the department alters that trajectory carries substantial public health weight. Here we review the evidence for safety planning delivered at or around an emergency visit. The strongest signals come from a large non-randomized cohort comparison in veterans and from a multisite quality improvement trial, both reporting approximately a halving of the odds of subsequent suicide-related events, with structured follow-up contact bundled into the intervention. Pooled evidence in adolescents does not appear to support safety planning used on its own, and several adequately powered randomized trials remain in progress. Delivery models now extend to nurses, peers with lived experience and telehealth consultants, though comparative effectiveness data are sparse. The field still lacks setting-specific randomized evidence isolating the plan from the follow-up that usually accompanies it.</p>
+    </div>
+    <p class="keywords"><span class="meta-label">Keywords</span> safety planning intervention; emergency department; suicide prevention; suicidal behaviour; follow-up contact; lethal means counselling; stepped-wedge cluster randomized trial; self-harm</p>
+  </header>
+
+  <section class="body-section">
+<h2>Introduction</h2>
+<p>The Safety Planning Intervention (SPI) is a brief, collaboratively written document that sets out, in escalating order, the personal warning signs of a suicidal crisis, internal coping strategies, distracting social settings and contacts, people who can be asked for help, professional and crisis services, and steps to restrict access to lethal means.<sup class="cite"><a href="#ref-1">1</a></sup> Developed as a component of cognitive therapy for suicidal adults, it is now used as a standalone treatment across emergency departments, inpatient psychiatric units, outpatient services and crisis lines.<sup class="cite"><a href="#ref-2">2</a></sup> Its appeal is largely practical: it typically takes minutes rather than sessions, and it can usually be completed by staff already present at the point of contact.</p>
+<p>The emergency department (ED) is where much of this work falls. In England, roughly 220,000 episodes of self-harm by about 150,000 people are managed by EDs each year, alongside rising presentations for suicidal ideation without self-injury.<sup class="cite"><a href="#ref-3">3</a></sup> Analysis of two French national registries covering approximately 136,000 people estimated that 12.4% of those who attempted suicide reattempted within the following year, with risk apparently concentrated in the first months after discharge.<sup class="cite"><a href="#ref-1">1</a></sup> A brief intervention that shifted even part of that risk would matter at population scale.</p>
+<p>Uptake has run ahead of the evidence in part because the plan is cheap, brief and acceptable to staff, and in part because guideline bodies in the United Kingdom and the United States recommend it.<sup class="cite"><a href="#ref-1">1</a></sup> Whether that recommendation rests on trials conducted in the settings where the plan is now used is a separate question, and one an umbrella review of liaison psychiatry services identifies as an urgent priority given the scale of implementation already under way.<sup class="cite"><a href="#ref-4">4</a></sup></p>
+<p>Here we consider what is established about safety planning initiated in or around an emergency visit, organised by outcome domain, by population, by who delivers the plan, and by what implementation and cost data exist. A caveat applies throughout: much of the directly applicable material consists of trial protocols whose outcome data have not yet been reported, including a telehealth consultation model tested by stepped-wedge design<sup class="cite"><a href="#ref-5">5</a></sup> and a comparative effectiveness trial in youths.<sup class="cite"><a href="#ref-6">6</a></sup> The completed effectiveness studies that do exist appear to be mostly non-randomized or quasi-experimental, and this review labels the design of each finding accordingly.</p>
+</section>
+
+<figure class="display figure">
+<svg class="fig-svg" viewBox="0 0 660 250" role="img" aria-label="Cited sources by publication year, segmented by relevance"><line class="fig-grid" x1="40.0" x2="648.0" y1="206.0" y2="206.0"></line><text class="fig-tick" x="32.0" y="209.5" text-anchor="end">0</text><line class="fig-grid" x1="40.0" x2="648.0" y1="145.3" y2="145.3"></line><text class="fig-tick" x="32.0" y="148.8" text-anchor="end">2</text><line class="fig-grid" x1="40.0" x2="648.0" y1="84.7" y2="84.7"></line><text class="fig-tick" x="32.0" y="88.2" text-anchor="end">4</text><line class="fig-grid" x1="40.0" x2="648.0" y1="24.0" y2="24.0"></line><text class="fig-tick" x="32.0" y="27.5" text-anchor="end">6</text><rect class="fig-seg seg-direct" x="55.2" y="175.7" width="45.6" height="28.3"><title>2018: 1 direct</title></rect><path class="fig-seg seg-related" d="M55.2,173.7 L55.2,149.3 Q55.2,145.3 59.2,145.3 L96.8,145.3 Q100.8,145.3 100.8,149.3 L100.8,173.7 Z"><title>2018: 1 related</title></path><text class="fig-value" x="78.0" y="139.3" text-anchor="middle">2</text><text class="fig-tick" x="78.0" y="224.0" text-anchor="middle">2018</text><path class="fig-seg seg-related" d="M131.2,204.0 L131.2,179.7 Q131.2,175.7 135.2,175.7 L172.8,175.7 Q176.8,175.7 176.8,179.7 L176.8,204.0 Z"><title>2019: 1 related</title></path><text class="fig-value" x="154.0" y="169.7" text-anchor="middle">1</text><text class="fig-tick" x="154.0" y="224.0" text-anchor="middle">2019</text><rect class="fig-seg seg-related" x="207.2" y="175.7" width="45.6" height="28.3"><title>2021: 1 related</title></rect><path class="fig-seg seg-tangential" d="M207.2,173.7 L207.2,149.3 Q207.2,145.3 211.2,145.3 L248.8,145.3 Q252.8,145.3 252.8,149.3 L252.8,173.7 Z"><title>2021: 1 background</title></path><text class="fig-value" x="230.0" y="139.3" text-anchor="middle">2</text><text class="fig-tick" x="230.0" y="224.0" text-anchor="middle">2021</text><path class="fig-seg seg-direct" d="M283.2,204.0 L283.2,179.7 Q283.2,175.7 287.2,175.7 L324.8,175.7 Q328.8,175.7 328.8,179.7 L328.8,204.0 Z"><title>2022: 1 direct</title></path><text class="fig-value" x="306.0" y="169.7" text-anchor="middle">1</text><text class="fig-tick" x="306.0" y="224.0" text-anchor="middle">2022</text><path class="fig-seg seg-direct" d="M359.2,204.0 L359.2,179.7 Q359.2,175.7 363.2,175.7 L400.8,175.7 Q404.8,175.7 404.8,179.7 L404.8,204.0 Z"><title>2023: 1 direct</title></path><text class="fig-value" x="382.0" y="169.7" text-anchor="middle">1</text><text class="fig-tick" x="382.0" y="224.0" text-anchor="middle">2023</text><path class="fig-seg seg-direct" d="M435.2,204.0 L435.2,179.7 Q435.2,175.7 439.2,175.7 L476.8,175.7 Q480.8,175.7 480.8,179.7 L480.8,204.0 Z"><title>2024: 1 direct</title></path><text class="fig-value" x="458.0" y="169.7" text-anchor="middle">1</text><text class="fig-tick" x="458.0" y="224.0" text-anchor="middle">2024</text><rect class="fig-seg seg-direct" x="511.2" y="145.3" width="45.6" height="58.7"><title>2025: 2 direct</title></rect><path class="fig-seg seg-related" d="M511.2,143.3 L511.2,28.0 Q511.2,24.0 515.2,24.0 L552.8,24.0 Q556.8,24.0 556.8,28.0 L556.8,143.3 Z"><title>2025: 4 related</title></path><text class="fig-value" x="534.0" y="18.0" text-anchor="middle">6</text><text class="fig-tick" x="534.0" y="224.0" text-anchor="middle">2025</text><rect class="fig-seg seg-direct" x="587.2" y="175.7" width="45.6" height="28.3"><title>2026: 1 direct</title></rect><rect class="fig-seg seg-related" x="587.2" y="84.7" width="45.6" height="89.0"><title>2026: 3 related</title></rect><path class="fig-seg seg-tangential" d="M587.2,82.7 L587.2,28.0 Q587.2,24.0 591.2,24.0 L628.8,24.0 Q632.8,24.0 632.8,28.0 L632.8,82.7 Z"><title>2026: 2 background</title></path><text class="fig-value" x="610.0" y="18.0" text-anchor="middle">6</text><text class="fig-tick" x="610.0" y="224.0" text-anchor="middle">2026</text><line class="fig-axis" x1="40.0" x2="648.0" y1="206.0" y2="206.0"></line><text class="fig-axis-title" x="330.0" y="242.0" text-anchor="middle">Year of publication</text><text class="fig-axis-title" x="-115.0" y="12" text-anchor="middle" transform="rotate(-90)">Cited sources</text></svg>
+<ul class="fig-legend"><li><span class="swatch swatch-direct"></span>Direct</li><li><span class="swatch swatch-related"></span>Related</li><li><span class="swatch swatch-tangential"></span>Background</li></ul>
+<figcaption class="di-caption"><span class="di-label">Fig. 1 |</span> Composition of the evidence base. Cited sources by year of publication, segmented by how directly each addresses the review question. Bar labels give the number of sources in each period; the underlying records are listed in Table 1.</figcaption>
+</figure>
+
+<section class="body-section">
+<h2>Suicidal behaviour and treatment engagement in adults</h2>
+<p>The largest completed evaluation in an emergency setting is a cohort comparison across nine Veterans Health Administration EDs.<sup class="cite"><a href="#ref-7">7</a></sup> Patients at five intervention sites received the SPI together with at least two structured telephone follow-up contacts, while patients at four comparison sites received usual care. Over six months, suicidal behaviour occurred in 3.03% of the intervention group and 5.29% of the comparison group, an odds ratio of 0.56 (95% CI, 0.33-0.95), and intervention patients had more than double the odds of attending at least one outpatient mental health visit (odds ratio, 2.06; 95% CI, 1.57-2.71).<sup class="cite"><a href="#ref-7">7</a></sup> Because allocation followed site rather than patient, and because the groups were unequal in size and predominantly male, the investigators of a later French trial treat this as evidence of limited quality despite its size.<sup class="cite"><a href="#ref-1">1</a></sup></p>
+<p>A stepped-wedge cluster randomized trial with an interrupted time series design, ED-SAFE 2, tested a department-wide process improvement package in which continuous quality improvement teams at eight US EDs reworked screening and implemented collaborative safety planning for discharged at-risk patients.<sup class="cite"><a href="#ref-8">8</a></sup> Among 2761 encounters of adults screening positive on a validated risk screener, the composite of suicide death or suicide-related acute care visit occurred in 21% at baseline, 22% during implementation and 15.3% during maintenance, giving an adjusted odds ratio of 0.57 (95% CI, 0.43-0.74) in maintenance relative to baseline.<sup class="cite"><a href="#ref-8">8</a></sup> Nine of the 546 composite events were deaths by suicide, so the composite is driven almost entirely by acute care visits.<sup class="cite"><a href="#ref-8">8</a></sup> The absence of any improvement during the implementation phase itself may be informative: benefit, if causal, appears to require workflows that have already bedded in.</p>
+<p>Systematic syntheses place these results in a wider and more cautious frame. A systematic review of brief psychological interventions for suicidal presentations screened over 17,000 records and found only four controlled studies meeting its criteria, all conducted after ED attendance and together enrolling 3412 participants, with individual samples ranging from 49 to 1867.<sup class="cite"><a href="#ref-9">9</a></sup> Two trials measuring suicidal ideation found no impact, whereas two reported fewer suicide attempts, one reported fewer suicides and one an effect on depression.<sup class="cite"><a href="#ref-9">9</a></sup> All four combined early therapeutic engagement, information provision, safety planning and follow-up contact sustained for at least twelve months, which makes the contribution of the plan itself difficult to isolate; the studies were judged too heterogeneous in their outcomes to pool.<sup class="cite"><a href="#ref-9">9</a></sup></p>
+<p>Meta-analytic evidence assembled outside these reviews points in the same direction while carrying similar caveats. A meta-analysis of six studies totalling 3,536 participants supported the use of the SPI, but compared 2,096 intervention and 1,440 control participants with only 348 suicide attempt events between them, and only one of the six studies carried a low risk of bias; funnel plot inspection suggested publication bias, so null studies may be missing from the record.<sup class="cite"><a href="#ref-1">1</a></sup> A separate systematic review of 26 articles reported positive associations for the SPI in general adult and veteran populations across suicidal ideation and behaviour, depression, hopelessness, hospital admission and treatment adherence.<sup class="cite"><a href="#ref-1">1</a></sup></p>
+</section>
+
+<aside class="display box" aria-labelledby="box-1">
+<p class="di-caption" id="box-1"><span class="di-label">Box 1 |</span> Key study: Comparison of the Safety Planning Intervention With Follow-up vs Usual Care of Suicidal Patients Treated in the Emergency Department</p>
+<p class="box-cite">Stanley et al. (2018) · JAMA Psychiatry<sup class="cite"><a href="#ref-7">7</a></sup> · <a href="https://doi.org/10.1001/jamapsychiatry.2018.1776">doi:10.1001/jamapsychiatry.2018.1776</a></p>
+<p><span class="run-in">Method.</span> A cohort comparison design with six-month follow-up across nine Veterans Health Administration emergency departments, in which five sites delivered the Safety Planning Intervention plus at least two structured telephone follow-up contacts and four sites delivered usual care; suicidal behaviour and behavioural health visits were extracted from medical records for 1640 adults presenting with a suicide-related concern who did not require inpatient admission.</p>
+<p><span class="run-in">Results.</span> Suicidal behaviour was recorded in 3.03% of the 1186 intervention patients versus 5.29% of the 454 comparison patients over six months, corresponding to 45% fewer suicidal behaviours and an odds ratio of 0.56 (95% CI, 0.33-0.95; P = .03). Intervention patients had more than double the odds of attending at least one outpatient mental health visit (odds ratio, 2.06; 95% CI, 1.57-2.71; P &lt; .001).</p>
+<p><span class="run-in">Limitations.</span> Allocation was by site rather than by patient, so the design cannot rule out confounding between intervention and comparison hospitals, and the groups differed substantially in size. The sample was drawn almost entirely from male veterans, which limits generalisation to general-hospital emergency populations.</p>
+</aside>
+
+<section class="body-section">
+<h2>Divergent findings in adolescents and young people</h2>
+<p>The adult signal does not appear to carry over to younger patients. A systematic review and meta-analysis of safety planning used as a standalone treatment identified ten studies including 1002 adolescents (mean age 15.0 years; 76.0% female), of which five (n = 619) entered the meta-analysis.<sup class="cite"><a href="#ref-2">2</a>,<a href="#ref-10">10</a></sup> No significant association emerged with suicide ideation (Hedges g = 0.11; 95% CI, 0.01-0.21), suicide-related behaviour (Hedges g = -0.09; 95% CI, -0.20 to 0.02), suicide attempts (risk ratio, 1.03; 95% CI, 0.12-8.88) or suicide-related re-presentation (risk ratio, 0.99; 95% CI, 0.29-3.35), with risk of bias moderate to high in most included studies.<sup class="cite"><a href="#ref-2">2</a>,<a href="#ref-10">10</a></sup> Half of the ten studies were randomized clinical trials and half used non-randomized designs, all were conducted in the United States, and all were published from 2011 onward.<sup class="cite"><a href="#ref-2">2</a></sup> The contrast with the adult literature may reflect the isolation of the plan from follow-up rather than a true developmental difference, since the adult studies with positive findings bundled repeated contact into the intervention.</p>
+<p>One reason the pooled estimates remain imprecise is that earlier syntheses excluded this age group altogether. An adult-focused meta-analysis that set out to cover all ages returned no studies of children or adolescents, apparently because it required a control condition, and a scoping review covering 2008 to 2020 described effectiveness narratively without providing effect magnitudes.<sup class="cite"><a href="#ref-2">2</a></sup> The 2025 meta-analysis was therefore designed to admit uncontrolled designs, which broadened coverage at the cost of study quality.<sup class="cite"><a href="#ref-2">2</a>,<a href="#ref-10">10</a></sup></p>
+<p>A pilot sequential multiple assignment randomized trial in 80 psychiatrically hospitalized adolescents aged 13 to 17 offers mechanistic rather than outcome evidence, and comes from an inpatient rather than an emergency population, so its application to ED practice is extrapolation.<sup class="cite"><a href="#ref-11">11</a></sup> Adolescents randomized to a motivational-interviewing-enhanced safety plan plus text-based support showed improvement in daily safety plan use, self-efficacy to refrain from suicidal action and coping by support seeking, and reported higher coping self-efficacy at one and three months.<sup class="cite"><a href="#ref-11">11</a></sup> Effects on suicide attempts were exploratory and imprecise (hazard ratio 0.30; 95% CI, 0.06-1.48), and augmentation with booster telephone calls did not appear to have a meaningful overall effect, though boosters seemed to benefit those already assigned to text-based support.<sup class="cite"><a href="#ref-11">11</a></sup></p>
+<p>Two ongoing trials are designed to settle the question that the pooled adolescent data cannot. SAFE STEPS is a multisite single-blinded randomized comparative effectiveness trial in 1600 young people aged 13 to 24 presenting with suicidal ideation or attempts, comparing ED care enhanced by developmentally tailored safety planning against the same care supplemented by twelve months of brief therapeutic contacts with youths and parents, with suicide attempts and linkage to outpatient care as primary outcomes at follow-ups to twelve months.<sup class="cite"><a href="#ref-6">6</a></sup> The SASH intervention, combining therapeutic assessment, an enhanced safety plan and solution-focused brief therapy over up to six sessions, randomized 154 young people across nine EDs in three NHS Trusts between May 2023 and March 2025; the published case-study analysis of four young people and one carer describes intervention mechanisms, such as improved recognition of the link between mood change and self-harm, rather than effectiveness.<sup class="cite"><a href="#ref-13">13</a></sup></p>
+<p>Practice guidance for youth continues to place safety planning within a stepped pathway rather than treating it as a discrete treatment. A clinical review of paediatric suicide risk management describes brief screening of about twenty seconds using the four-item Ask Suicide-Screening Questions tool, which identified 97% of at-risk youth aged 10 to 21 years in one National Institute of Mental Health study, followed by a brief suicide safety assessment of roughly ten to fifteen minutes and a disposition decision in which safety planning, lethal means counselling and crisis resources are assigned to patients at moderate or mild risk.<sup class="cite"><a href="#ref-12">12</a></sup> Screening tools of this kind have uncovered suicide risk in about 20% of medical or surgical patients and about half of psychiatric patients in paediatric EDs.<sup class="cite"><a href="#ref-12">12</a></sup> That framing is consistent with the null pooled findings: the plan is one component of a disposition decision, not a treatment in itself.</p>
+</section>
+
+<section class="body-section">
+<h2>Who delivers the plan, and how</h2>
+<p>Workforce constraints have driven experimentation with delivery models, in part because few ED clinicians report being prepared to assess suicide risk or to guide a patient through writing a plan.<sup class="cite"><a href="#ref-14">14</a></sup> A pilot randomized controlled trial in a general ED assigned patients at risk for suicide to safety planning delivered either by mental health providers or by peers with lived experience of a suicide attempt or severe ideation and no medical training; data from 31 participants were analysed.<sup class="cite"><a href="#ref-14">14</a></sup> Peer-delivered planning produced similar ED lengths of stay and similar patient satisfaction, higher safety plan completeness and quality, and significantly fewer ED visits in the following three months relative to the preceding three months.<sup class="cite"><a href="#ref-14">14</a></sup> The sample is very small and the comparison unblinded, so this may support feasibility rather than effectiveness.</p>
+<p>Nurse delivery is being tested at scale in France, where nursing roles in suicide prevention are already established in Ireland, England and Japan.<sup class="cite"><a href="#ref-1">1</a></sup> PROTECT is a multicentre stepped-wedge cluster randomized trial in which emergency nurses deliver the SPI before discharge to 2387 people who have attempted suicide across 20 EDs and 11 centres, on top of the existing VigilanS recontact programme of resource cards, letters to the care network and telephone follow-up in the first month and at six months.<sup class="cite"><a href="#ref-1">1</a></sup> Five clusters cross from a control phase to an intervention phase across six four-month periods, giving a total duration of 24 months; the primary outcome is a composite of suicide reattempt and death by suicide at six months, with secondary evaluation of completion quality, acceptability among staff and patients, care adherence and repeat ED use.<sup class="cite"><a href="#ref-1">1</a></sup> Acceptability of the plan itself appears high: 93% of 471 US veterans offered the SPI in an earlier study agreed to receive it.<sup class="cite"><a href="#ref-1">1</a></sup></p>
+<p>Where EDs lack the staff to deliver safety planning at all, telehealth offers a workaround. A stepped-wedge cluster randomized trial will compare SPI with follow-up delivered by expert clinicians in a centralised Suicide Prevention Consultation Center against enhanced usual care delivered by ED-based clinicians, across eight EDs crossing over in blocks of two at three-month intervals and covering approximately 13,320 adults discharged after a suicide-related visit.<sup class="cite"><a href="#ref-5">5</a></sup> Effectiveness outcomes draw on electronic health records, administrative claims and the National Death Index, alongside cost offsets and preliminary implementation measures of reach, adoption, fidelity, acceptability and feasibility gathered from patient, clinician and health-system leader interviews.<sup class="cite"><a href="#ref-5">5</a></sup></p>
+<p>In the United Kingdom, the ASSURED trial randomized 620 patients across 14 acute hospital sites in London, Devon, Somerset and the Midlands to usual care or to a rapid intervention combining a narrative interview, an enhanced safety plan, three solution-focused follow-up sessions over eight weeks and personalised letters over nine months.<sup class="cite"><a href="#ref-3">3</a></sup> The primary outcome is ED re-attendance with referral to liaison psychiatry within 18 months, with recruitment completed in December 2024.<sup class="cite"><a href="#ref-3">3</a></sup> Notably, the trial abandoned its original cluster design during the pandemic because ED workload prevented researchers from consenting patients before their psychosocial assessment, moving the first session to roughly two weeks after attendance.<sup class="cite"><a href="#ref-3">3</a></sup> A practice-oriented review of ED safety planning for youth sets out the implementation levers that these trials assume: clinical pathways, staff training, reimbursement arrangements and integration of templates and resources into the electronic medical record.<sup class="cite"><a href="#ref-15">15</a></sup> None of these levers appears to have been evaluated against suicide outcomes in isolation.</p>
+</section>
+
+<section class="body-section">
+<h2>Lethal means counselling, documentation and cost</h2>
+<p>Restriction of access to lethal means is a component of the plan whose delivery can be audited directly. A retrospective analysis of Veterans Health Administration electronic health records covering ED and urgent care encounters from January 2021 to October 2022 examined 17,194 patients discharged home after a structured suicide risk evaluation.<sup class="cite"><a href="#ref-16">16</a></sup> Firearm access was documented in 15.2%, access to other lethal means in 8.5%, no access in 68.8% and unknown access in 7.4%.<sup class="cite"><a href="#ref-16">16</a></sup> Of the 2624 patients recorded as having firearm access, 80.6% received at least one safety intervention: 88.6% of those reviewed or completed a plan, 56.8% received lethal means safety counselling and 13.2% were given a firearm cable lock.<sup class="cite"><a href="#ref-16">16</a></sup> The authors interpret the low documented prevalence of firearm access as an ascertainment problem rather than a true population estimate, which suggests that the denominator for counselling may be considerably larger than the record shows.</p>
+<p>System-level programmes that include safety planning have been evaluated outside the ED, and the following is extrapolation from an outpatient risk-modelling programme rather than direct ED evidence. A cohort study of 173,313 veterans evaluated REACH VET, in which clinicians reevaluate treatment and conduct outreach for those in the top 0.1% predicted suicide risk tier, using triple-difference comparisons against a pre-programme cohort and against subthreshold tiers.<sup class="cite"><a href="#ref-17">17</a></sup> The programme was associated with increases in completed outpatient appointments (adjusted triple difference, 0.31; 95% CI, 0.06-0.55) and in new safety plan documentation (0.08; 95% CI, 0.06-0.10), alongside reductions in mental health admissions, ED visits and non-fatal suicide attempts (-0.05; 95% CI, -0.06 to -0.03).<sup class="cite"><a href="#ref-17">17</a></sup> Subcohort analyses identified no difference in suicide or all-cause mortality, which serves as a reminder that documentation and attempt outcomes may move without detectable change in deaths.<sup class="cite"><a href="#ref-17">17</a></sup></p>
+<p>Economic data remain thin. A cost-effectiveness analysis of the original ED-SAFE interventions, which sequentially implemented universal screening and then screening plus a twelve-month telephone intervention across eight US EDs recruiting between August 2010 and November 2013, estimated average per-patient costs of the combined package at $1063 per month from the provider perspective, approximately $500 more than screening added to treatment as usual.<sup class="cite"><a href="#ref-18">18</a></sup> The combined package appeared more effective in preventing suicides than either screening alone or usual care, although the authors note that the choice depends on the value a decision-maker places on the outcome.<sup class="cite"><a href="#ref-18">18</a></sup> Whether the same conclusion holds for safety planning without telephone follow-up has not been tested.</p>
+<p>Adaptation to settings with limited emergency infrastructure has begun but has produced no outcome data. An application of the ADAPT-ITT framework in Lilongwe, Malawi, drew on interviews with adolescents living with HIV who reported suicidal ideation or behaviour, their caregivers, facility leadership and police, plus focus groups with staff, community and religious leaders and teachers.<sup class="cite"><a href="#ref-19">19</a></sup> The resulting programme integrates one safety planning session with five problem-solving sessions and six peer support sessions, revising the written plan to account for limited emergency services and modifying protocols for engaging guardians.<sup class="cite"><a href="#ref-19">19</a></sup> This work is formative and does not bear on effectiveness.</p>
+</section>
+
+<aside class="key-points">
+<h2>Key points</h2>
+<ul>
+<li>In a cohort comparison across nine Veterans Health Administration emergency departments, safety planning plus at least two telephone follow-up contacts was associated with suicidal behaviour in 3.03% of 1186 intervention patients versus 5.29% of 454 comparison patients over six months (odds ratio, 0.56; 95% CI, 0.33-0.95).<sup class="cite"><a href="#ref-7">7</a></sup></li>
+<li>In the ED-SAFE 2 stepped-wedge trial across eight US emergency departments, the suicide composite fell only in the maintenance phase (15.3%) relative to baseline (21%) and implementation (22%), giving an adjusted odds ratio of 0.57 (95% CI, 0.43-0.74) and indicating that benefit followed embedded rather than newly introduced workflows.<sup class="cite"><a href="#ref-8">8</a></sup></li>
+<li>A meta-analysis of five studies (n = 619) within a systematic review of ten studies in 1002 adolescents found no significant association between standalone safety planning and suicide ideation (Hedges g = 0.11), behaviour (Hedges g = -0.09), attempts or re-presentation, with most studies at moderate to high risk of bias.<sup class="cite"><a href="#ref-2">2</a>,<a href="#ref-10">10</a></sup></li>
+<li>A pilot randomized trial of 31 ED patients found that safety plans written with peers who had lived experience of suicidality, and no medical training, were more complete and of higher quality than those written by mental health providers, with no increase in ED length of stay.<sup class="cite"><a href="#ref-14">14</a></sup></li>
+<li>Among 17,194 veterans discharged home after a structured suicide risk evaluation in emergency or urgent care, firearm access was documented in 15.2%, and of those, 56.8% received lethal means counselling while only 13.2% were given a firearm cable lock.<sup class="cite"><a href="#ref-16">16</a></sup></li>
+<li>An umbrella review of 23 systematic reviews covering more than 450,000 participants identified brief contact interventions incorporating safety planning and follow-up as the approach most consistently linked to lower suicide attempt rates, while judging the underlying trial evidence methodologically suboptimal and short of setting-specific studies.<sup class="cite"><a href="#ref-4">4</a></sup></li>
+</ul>
+</aside>
+
+<section class="body-section">
+<h2>Conclusions and outlook</h2>
+<p>Two findings appear reasonably well established for adults. Safety planning combined with structured telephone follow-up after an ED visit was associated with roughly halved odds of suicidal behaviour and roughly doubled odds of outpatient attendance in a large veteran cohort comparison,<sup class="cite"><a href="#ref-7">7</a></sup> and a department-wide process improvement package including collaborative safety planning was followed by a significant reduction in a suicide composite once the changes were sustained.<sup class="cite"><a href="#ref-8">8</a></sup> Both designs remain vulnerable to secular trends and site-level confounding, and neither randomized individual patients to the plan itself.</p>
+<p>Three questions remain open. First, the independent contribution of the written plan, separate from the follow-up contact that usually accompanies it, does not appear to have been isolated in any controlled study identified here; the syntheses that pool these interventions treat them as a package.<sup class="cite"><a href="#ref-4">4</a>,<a href="#ref-9">9</a></sup> Second, standalone safety planning does not yet show benefit in adolescents, where pooled estimates were null across ideation, behaviour, attempts and re-presentation, with wide confidence intervals and moderate to high risk of bias.<sup class="cite"><a href="#ref-2">2</a>,<a href="#ref-10">10</a></sup> Third, comparative delivery data appear limited to a pilot of 31 patients,<sup class="cite"><a href="#ref-14">14</a></sup> so whether nurses, peers or remote consultants achieve equivalent outcomes remains unknown. A methodological review of 20 adult effectiveness studies found participants drawn mainly from veteran and ED populations, wide variation in outcomes and measures, explicit theoretical grounding in only three studies, and little work targeting specific at-risk groups.<sup class="cite"><a href="#ref-20">20</a></sup></p>
+<p>The evidence that would settle these questions is already in the field. Adequately powered stepped-wedge and individually randomized trials of nurse-delivered,<sup class="cite"><a href="#ref-1">1</a></sup> telehealth-delivered<sup class="cite"><a href="#ref-5">5</a></sup> and follow-up-augmented<sup class="cite"><a href="#ref-3">3</a>,<a href="#ref-6">6</a></sup> safety planning are enrolling or have completed recruitment, with suicidal behaviour, service use and cost as prespecified outcomes; the umbrella review of liaison psychiatry evidence argues that setting-specific trials with genuine patient involvement are the main gap these should fill.<sup class="cite"><a href="#ref-4">4</a></sup> Until they report, safety planning in the ED is perhaps best described as a plausible, low-cost and well-accepted practice supported mainly by quasi-experimental adult data, whose effect in younger patients and whose active ingredients remain unresolved.</p>
+</section>
+
+  <section class="back-section">
+<h2>Methods</h2>
+<p><span class="run-in">Search strategy.</span> Candidate records were retrieved on 12 August 2026 from OpenAlex and Europe PMC, using the search strings ‘safety planning intervention suicide emergency department’; ‘Safety Planning Intervention Stanley Brown randomized trial’; ‘suicide risk brief intervention ED discharge follow-up contact’; ‘emergency department suicide prevention crisis response planning’. Records without a retrievable abstract were discarded, leaving 20 for screening. Each remaining record was assessed for how directly it addresses Safety planning interventions for suicide risk in emergency departments and labelled direct, related or background; 20 were cited here and are listed in Table 1.</p>
+<p><span class="run-in">Evidence handling.</span> Titles and abstracts were read for every record, and the open-access full texts of 5 sources were retrieved from Europe PMC and read alongside them (marked in Table 1); claims resting on the remaining sources draw on no data beyond an abstract. Every numerical value in the text was checked automatically against exactly the material shown to the model — the abstracts plus those full-text excerpts — and any figure that could not be located is flagged under Limitations.</p>
+<p><span class="run-in">Generation.</span> Search planning, source curation and drafting were performed by a large language model (opus). Source retrieval, relevance tabulation, citation numbering, Table 1, Fig. 1 and the statistical check are deterministic and were not model-generated.</p>
+</section>
+
+  <section class="back-section">
+<h2>Evidence assessment</h2>
+<p>Of the 20 sources cited, 7 address the review question directly, 10 are related and 3 provide background only; they were published in 2018–2026. The composition of the evidence base is shown in Fig. 1.</p>
+<p><span class="run-in">Limitations.</span> This synthesis was prepared from the open-access full texts of 5 cited sources and the abstracts of the remaining 15. Where only an abstract was available, effect estimates, methodological detail, and the limitations that authors report only in a full text were unavailable, so the strength of those studies could not be appraised here. An automated check of the writing against journal prose conventions was not satisfied by this draft: it reuses phrasing between sections. A revision was attempted and did not resolve this, so the text below should be read as a working draft rather than a finished review.</p>
+</section>
+
+  <div class="display table-wrap" aria-labelledby="table-1">
+<p class="di-caption" id="table-1"><span class="di-label">Table 1 |</span> Characteristics of the cited evidence. Relevance is the curation label for how directly each source addresses the review question; citation counts are as reported by the indexing database. Read records whether the model saw the source's open-access full text or its abstract only.</p>
+<div class="table-scroll"><table>
+<thead><tr><th>Ref.</th><th>Study</th><th>Year</th><th>Source</th><th>Relevance</th><th>Read</th><th>Cited by</th></tr></thead>
+<tbody><tr><td class="t-num"><a href="#ref-1">1</a></td><td>Chalancon et al.</td><td class="t-num">2025</td><td class="t-venue">BMC nursing</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Full text</td><td class="t-num">1</td></tr><tr><td class="t-num"><a href="#ref-2">2</a></td><td>Albaum et al.</td><td class="t-num">2025</td><td class="t-venue">Archives of Pediatrics and Adolescent Medicine</td><td><span class="swatch swatch-related"></span>Related</td><td>Full text</td><td class="t-num">22</td></tr><tr><td class="t-num"><a href="#ref-3">3</a></td><td>McCabe et al.</td><td class="t-num">2026</td><td class="t-venue">Trials</td><td><span class="swatch swatch-related"></span>Related</td><td>Full text</td><td class="t-num">—</td></tr><tr><td class="t-num"><a href="#ref-4">4</a></td><td>Quinlivan et al.</td><td class="t-num">2025</td><td class="t-venue">BMC psychiatry</td><td><span class="swatch swatch-related"></span>Related</td><td>Full text</td><td class="t-num">—</td></tr><tr><td class="t-num"><a href="#ref-5">5</a></td><td>Brown et al.</td><td class="t-num">2024</td><td class="t-venue">Contemporary clinical trials</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td><td class="t-num">3</td></tr><tr><td class="t-num"><a href="#ref-6">6</a></td><td>Asarnow et al.</td><td class="t-num">2026</td><td class="t-venue">Contemporary clinical trials</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td><td class="t-num">—</td></tr><tr><td class="t-num"><a href="#ref-7">7</a></td><td>Stanley et al.</td><td class="t-num">2018</td><td class="t-venue">JAMA Psychiatry</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td><td class="t-num">635</td></tr><tr><td class="t-num"><a href="#ref-8">8</a></td><td>Boudreaux et al.</td><td class="t-num">2023</td><td class="t-venue">JAMA Psychiatry</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td><td class="t-num">41</td></tr><tr><td class="t-num"><a href="#ref-9">9</a></td><td>McCabe et al.</td><td class="t-num">2018</td><td class="t-venue">BMC Psychiatry</td><td><span class="swatch swatch-related"></span>Related</td><td>Full text</td><td class="t-num">102</td></tr><tr><td class="t-num"><a href="#ref-10">10</a></td><td>Albaum et al.</td><td class="t-num">2025</td><td class="t-venue">JAMA pediatrics</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">6</td></tr><tr><td class="t-num"><a href="#ref-11">11</a></td><td>Czyz et al.</td><td class="t-num">2021</td><td class="t-venue">Journal of Child Psychology and Psychiatry</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">55</td></tr><tr><td class="t-num"><a href="#ref-12">12</a></td><td>McNamara et al.</td><td class="t-num">2026</td><td class="t-venue">—</td><td><span class="swatch swatch-tangential"></span>Background</td><td>Abstract</td><td class="t-num">2</td></tr><tr><td class="t-num"><a href="#ref-13">13</a></td><td>McCabe et al.</td><td class="t-num">2026</td><td class="t-venue">Healthcare (Basel, Switzerland)</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">—</td></tr><tr><td class="t-num"><a href="#ref-14">14</a></td><td>Wilson et al.</td><td class="t-num">2022</td><td class="t-venue">Psychiatric Services</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td><td class="t-num">22</td></tr><tr><td class="t-num"><a href="#ref-15">15</a></td><td>Foster et al.</td><td class="t-num">2025</td><td class="t-venue">Journal of the American College of Emergency Physicians open</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td><td class="t-num">—</td></tr><tr><td class="t-num"><a href="#ref-16">16</a></td><td>Simonetti et al.</td><td class="t-num">2026</td><td class="t-venue">The western journal of emergency medicine</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">—</td></tr><tr><td class="t-num"><a href="#ref-17">17</a></td><td>McCarthy et al.</td><td class="t-num">2021</td><td class="t-venue">JAMA Network Open</td><td><span class="swatch swatch-tangential"></span>Background</td><td>Abstract</td><td class="t-num">97</td></tr><tr><td class="t-num"><a href="#ref-18">18</a></td><td>Dunlap et al.</td><td class="t-num">2019</td><td class="t-venue">Psychiatric Services</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">59</td></tr><tr><td class="t-num"><a href="#ref-19">19</a></td><td>Stockton et al.</td><td class="t-num">2026</td><td class="t-venue">Global mental health (Cambridge, England)</td><td><span class="swatch swatch-tangential"></span>Background</td><td>Abstract</td><td class="t-num">—</td></tr><tr><td class="t-num"><a href="#ref-20">20</a></td><td>Rainbow et al.</td><td class="t-num">2025</td><td class="t-venue">The British journal of clinical psychology</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">—</td></tr></tbody>
+</table></div>
+</div>
+
+  <section class="back-section glossary">
+<h2>Glossary</h2>
+<dl><div class="gloss-row"><dt>Safety Planning Intervention (SPI)</dt><dd>A short written plan made jointly by a clinician and a patient, listing warning signs, coping steps, people and services to contact, and ways to limit access to methods of suicide.</dd></div><div class="gloss-row"><dt>Stepped-wedge cluster randomized trial</dt><dd>A trial in which whole sites, rather than individual patients, switch from usual care to the intervention at randomly assigned times, so every site eventually receives it.</dd></div><div class="gloss-row"><dt>Lethal means counselling</dt><dd>A conversation aimed at reducing a person&#x27;s access to the methods they might use to harm themselves, such as firearms or stockpiled medication.</dd></div><div class="gloss-row"><dt>Hedges g</dt><dd>A standardised measure of the size of a difference between two groups, where values near zero indicate no meaningful difference.</dd></div><div class="gloss-row"><dt>Liaison psychiatry</dt><dd>Mental health teams based in general hospitals who assess and support patients presenting with psychological problems alongside physical care.</dd></div></dl>
+</section>
+
+  <section class="refs">
+    <h2>References</h2>
+    <ol>
+      <li id="ref-1"><span class="ref-authors">Chalancon, B. et al.</span> <a href="https://doi.org/10.1186/s12912-025-03121-w">Implementing a nurse-led safety planning intervention in emergency departments to prevent suicide reattempts: a stepped-wedge randomized controlled trial protocol (French multicentre randomized controlled trial with a stepped-wedge design).</a> <em>BMC nursing</em> (2025). <span class="ref-cites">Cited by 1</span></li>
+<li id="ref-2"><span class="ref-authors">Albaum, C. et al.</span> <a href="https://doi.org/10.1001/jamapediatrics.2025.1012">Safety Planning Interventions for Suicide Prevention in Children and Adolescents.</a> <em>Archives of Pediatrics and Adolescent Medicine</em> (2025). <span class="ref-cites">Cited by 22</span></li>
+<li id="ref-3"><span class="ref-authors">McCabe, R. et al.</span> <a href="https://doi.org/10.1186/s13063-025-09411-7">Improving outcomes in adult patients who self-harm-evaluating a brief psychological intervention in emergency departments (ASSURED): protocol of a randomised controlled clinical trial.</a> <em>Trials</em> (2026).</li>
+<li id="ref-4"><span class="ref-authors">Quinlivan, L. et al.</span> <a href="https://doi.org/10.1186/s12888-025-07142-2">Psychosocial interventions for self-harm and suicide prevention in liaison psychiatry: an overview of systematic reviews.</a> <em>BMC psychiatry</em> (2025).</li>
+<li id="ref-5"><span class="ref-authors">Brown, G. K. et al.</span> <a href="https://doi.org/10.1016/j.cct.2024.107492">Safety planning intervention and follow-up: A telehealth service model for suicidal individuals in emergency department settings: Study design and protocol.</a> <em>Contemporary clinical trials</em> (2024). <span class="ref-cites">Cited by 3</span></li>
+<li id="ref-6"><span class="ref-authors">Asarnow, J. R. et al.</span> <a href="https://doi.org/10.1016/j.cct.2026.108325">Safe treatment for emergency presentation for suicidal ideation and behavior (SAFE STEPS): Protocol for randomized controlled trial.</a> <em>Contemporary clinical trials</em> (2026).</li>
+<li id="ref-7"><span class="ref-authors">Stanley, B. et al.</span> <a href="https://doi.org/10.1001/jamapsychiatry.2018.1776">Comparison of the Safety Planning Intervention With Follow-up vs Usual Care of Suicidal Patients Treated in the Emergency Department.</a> <em>JAMA Psychiatry</em> (2018). <span class="ref-cites">Cited by 635</span></li>
+<li id="ref-8"><span class="ref-authors">Boudreaux, E. D. et al.</span> <a href="https://doi.org/10.1001/jamapsychiatry.2023.1304">Effect of an Emergency Department Process Improvement Package on Suicide Prevention.</a> <em>JAMA Psychiatry</em> (2023). <span class="ref-cites">Cited by 41</span></li>
+<li id="ref-9"><span class="ref-authors">McCabe, R. et al.</span> <a href="https://doi.org/10.1186/s12888-018-1663-5">Effectiveness of brief psychological interventions for suicidal presentations: a systematic review.</a> <em>BMC Psychiatry</em> (2018). <span class="ref-cites">Cited by 102</span></li>
+<li id="ref-10"><span class="ref-authors">Albaum, C. et al.</span> <a href="https://doi.org/10.1001/jamapediatrics.2025.1012">Safety Planning Interventions for Suicide Prevention in Children and Adolescents: A Systematic Review and Meta-Analysis.</a> <em>JAMA pediatrics</em> (2025). <span class="ref-cites">Cited by 6</span></li>
+<li id="ref-11"><span class="ref-authors">Czyz, E. K. et al.</span> <a href="https://doi.org/10.1111/jcpp.13383">Adaptive intervention for prevention of adolescent suicidal behavior after hospitalization: a pilot sequential multiple assignment randomized trial.</a> <em>Journal of Child Psychology and Psychiatry</em> (2021). <span class="ref-cites">Cited by 55</span></li>
+<li id="ref-12"><span class="ref-authors">McNamara, S., Patra, K. P. &amp; Aslam, S. P.</span> <a href="https://europepmc.org/article/MED/35015441">Suicide Risk in Children and Adolescents: Assessment and Management.</a> (2026). <span class="ref-cites">Cited by 2</span></li>
+<li id="ref-13"><span class="ref-authors">McCabe, R., O&#x27;Keeffe, S. &amp; Long, M.</span> <a href="https://doi.org/10.3390/healthcare14020168">The &quot;Supporting Adolescents with Self Harm&quot; (SASH) Intervention Supporting Young People (And Carers) Presenting to the Emergency Department with Self-Harm: Therapeutic Assessment, Safety Planning, and Solution-Focused Brief Therapy.</a> <em>Healthcare (Basel, Switzerland)</em> (2026).</li>
+<li id="ref-14"><span class="ref-authors">Wilson, M. P., Waliski, A. &amp; Thompson, R. G.</span> <a href="https://doi.org/10.1176/appi.ps.202100561">Feasibility of Peer-Delivered Suicide Safety Planning in the Emergency Department: Results From a Pilot Trial.</a> <em>Psychiatric Services</em> (2022). <span class="ref-cites">Cited by 22</span></li>
+<li id="ref-15"><span class="ref-authors">Foster, A. A. et al.</span> <a href="https://doi.org/10.1016/j.acepjo.2025.100275">Safety Planning for Youth in the Emergency Department Who Have Suicide Risk.</a> <em>Journal of the American College of Emergency Physicians open</em> (2025).</li>
+<li id="ref-16"><span class="ref-authors">Simonetti, J. A. et al.</span> <a href="https://doi.org/10.5811/westjem.50852">Clinician-documented Firearm Access and Safety Interventions for Veterans Receiving Suicide Risk Evaluation in VA Emergency Care Settings.</a> <em>The western journal of emergency medicine</em> (2026).</li>
+<li id="ref-17"><span class="ref-authors">McCarthy, J. F. et al.</span> <a href="https://doi.org/10.1001/jamanetworkopen.2021.29900">Evaluation of the Recovery Engagement and Coordination for Health–Veterans Enhanced Treatment Suicide Risk Modeling Clinical Program in the Veterans Health Administration.</a> <em>JAMA Network Open</em> (2021). <span class="ref-cites">Cited by 97</span></li>
+<li id="ref-18"><span class="ref-authors">Dunlap, L. J. et al.</span> <a href="https://doi.org/10.1176/appi.ps.201800445">Screening and Intervention for Suicide Prevention: A Cost-Effectiveness Analysis of the ED-SAFE Interventions.</a> <em>Psychiatric Services</em> (2019). <span class="ref-cites">Cited by 59</span></li>
+<li id="ref-19"><span class="ref-authors">Stockton, M. A. et al.</span> <a href="https://doi.org/10.1017/gmh.2026.10181">Integrating safety planning, problem-solving therapy and peer support for suicide prevention among adolescents living with HIV in Malawi: An application of the ADAPT-ITT adaptation framework.</a> <em>Global mental health (Cambridge, England)</em> (2026).</li>
+<li id="ref-20"><span class="ref-authors">Rainbow, E., Russell, A. &amp; Melia, R.</span> <a href="https://doi.org/10.1111/bjc.70030">Safety planning interventions to address suicidality in adults: A systematic review of the methodological characteristics of safety planning effectiveness research.</a> <em>The British journal of clinical psychology</em> (2025).</li>
+    </ol>
+  </section>
+
+  <section class="back-section">
+<h2>Additional information</h2>
+<p><span class="run-in">Data availability.</span> No new data were generated. All evidence cited is published and openly indexed; 20 of the 20 cited records resolve through the links in the reference list.</p>
+<p><span class="run-in">Author contributions.</span> Search planning, source curation and drafting were carried out by an automated pipeline (articlegen, opus). No human author wrote or verified the text before publication of this draft.</p>
+<p><span class="run-in">Competing interests.</span> None declared.</p>
+<p><span class="run-in">Peer review.</span> This article has not been peer reviewed and is not a publication of record.</p>
+</section>
+
+  <footer class="colophon">
+    <strong>Not medical or clinical advice.</strong> This is a machine-generated summary of the cited journal articles, 5 of 20 read in full, the rest from their abstracts, for background only. It is not a substitute for professional judgement, primary sources, or clinical guidelines. Verify every claim, figure, and dose against the cited papers before acting on it.
+  </footer>
+  </article>
+</main>
+<script>
+function shareArticle() {
+  if (navigator.share) {
+    navigator.share({ title: document.title, url: window.location.href }).catch(function() {});
+  } else {
+    copyArticleLink();
+  }
+}
+function copyArticleLink() {
+  navigator.clipboard.writeText(window.location.href).then(function() {
+    var t = document.getElementById('shareToast');
+    if (t) {
+      t.style.display = 'inline';
+      setTimeout(function() { t.style.display = 'none'; }, 2500);
+    }
+  }).catch(function() {});
+}
+function toggleArticleTheme() {
+  var cur = document.documentElement.getAttribute('data-theme');
+  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var effective = cur || (isSysDark ? 'dark' : 'light');
+  var next = effective === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('articlegen_theme', next);
+  updateArticleThemeIcon();
+}
+function updateArticleThemeIcon() {
+  var icon = document.getElementById('themeIcon');
+  if (!icon) return;
+  var cur = document.documentElement.getAttribute('data-theme');
+  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var effective = cur || (isSysDark ? 'dark' : 'light');
+  icon.innerHTML = effective === 'dark' ? '&#9789;' : '&#9788;';
+}
+document.addEventListener('DOMContentLoaded', updateArticleThemeIcon);
+</script>
+</body>
+</html>
