@@ -1310,6 +1310,130 @@ def test_openalex_reaches_for_recent_work_as_well() -> None:
           sum(1 for a in attempts if a) == 1)
 
 
+def test_claude_cli_provider() -> None:
+    """Drafting on a Claude subscription, which issues no API key.
+
+    The invariant worth pinning is that this provider stays opt-in. It answers
+    as whoever is signed into the CLI on the machine, so auto-selecting it on a
+    threaded server would answer every visitor's request from the host's own
+    seat — and no deployment host has a `claude` binary anyway.
+    """
+    import json as _json
+
+    from articlegen import llm, web
+
+    saved = {v: os.environ.get(v) for v in
+             ("ANTHROPIC_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY", "ARTICLEGEN_PROVIDER")}
+    try:
+        for v in saved:
+            os.environ.pop(v, None)
+
+        check("cli: prefix routes to the CLI, stripped to the alias",
+              llm.resolve_provider("cli:sonnet") == ("claude-cli", "sonnet"))
+        check("a bare cli: takes the default model",
+              llm.resolve_provider("cli:") == ("claude-cli", llm.CLAUDE_CLI_DEFAULT_MODEL))
+        check("ARTICLEGEN_PROVIDER can select it",
+              (os.environ.update({"ARTICLEGEN_PROVIDER": "claude-cli"}) or
+               llm.resolve_provider()) == ("claude-cli", llm.CLAUDE_CLI_DEFAULT_MODEL))
+        os.environ.pop("ARTICLEGEN_PROVIDER")
+
+        # The point of the whole guard: nothing about the environment should
+        # ever land a caller here by accident.
+        os.environ["ANTHROPIC_API_KEY"] = "sk-ant-x"
+        check("a present Anthropic key does not select the CLI",
+              llm.resolve_provider()[0] == "anthropic")
+        os.environ.pop("ANTHROPIC_API_KEY")
+        check("no keys at all still falls back to Groq, not the CLI",
+              llm.resolve_provider()[0] == "groq")
+        check("an sk-ant- key routes to the API, never the subscription",
+              llm.resolve_provider(api_key="sk-ant-x")[0] == "anthropic")
+
+        check("the CLI model is not offered to the web app",
+              llm.CLAUDE_CLI_DEFAULT_MODEL not in web.ALLOWED_MODELS
+              and not any(m.startswith(llm.CLAUDE_CLI_PREFIX) for m in web.ALLOWED_MODELS))
+        check("the web app drops a cli: model rather than honouring it",
+              web._requested_model({"model": "cli:opus"}) is None)
+
+        # -- the subprocess contract -------------------------------------
+        captured = {}
+
+        class FakeProc:
+            returncode = 0
+            stderr = ""
+            stdout = _json.dumps({
+                "type": "result", "subtype": "success", "is_error": False,
+                "duration_ms": 1200, "usage": {"input_tokens": 3, "output_tokens": 9},
+                "result": '```json\n{"ok": true}\n```',
+            })
+
+        def fake_run(args, **kwargs):
+            captured["args"], captured["kwargs"] = args, kwargs
+            return FakeProc()
+
+        import subprocess
+        real_run, real_which = subprocess.run, __import__("shutil").which
+        try:
+            subprocess.run = fake_run
+            __import__("shutil").which = lambda name: "/fake/claude"
+            out = llm.generate_json("PROMPT", {"type": "object"},
+                                    system="SYS", model="cli:sonnet", deep=True)
+        finally:
+            subprocess.run = real_run
+            __import__("shutil").which = real_which
+
+        args = captured["args"]
+        check("fenced JSON from the CLI is still parsed", out == {"ok": True})
+        check("the alias is passed, not the cli: name",
+              "sonnet" in args and "cli:sonnet" not in args)
+        check("effort is set high, since subscription time is not per-token",
+              args[args.index("--effort") + 1] == llm.CLAUDE_CLI_EFFORT)
+        check("the schema rides in the system prompt, the CLI enforcing none",
+              "JSON Schema:" in args[args.index("--system-prompt") + 1]
+              and "SYS" in args[args.index("--system-prompt") + 1])
+        check("MCP servers are suppressed, a measured 10x prompt-token tax",
+              "--strict-mcp-config" in args
+              and args[args.index("--mcp-config") + 1] == '{"mcpServers":{}}')
+        check("no tools, so the model answers instead of working",
+              args[args.index("--tools") + 1] == "")
+        check("the prompt goes on stdin, not the 32k-capped command line",
+              captured["kwargs"]["input"] == "PROMPT" and "PROMPT" not in args)
+        check("it runs outside the repo, so no CLAUDE.md is auto-discovered",
+              captured["kwargs"]["cwd"] and "articlegen" not in captured["kwargs"]["cwd"])
+
+        # A refusal is a successful invocation carrying an apology. It has to
+        # fail here, not later as "invalid JSON" pointing at that apology.
+        class RefusedProc(FakeProc):
+            stdout = _json.dumps({"type": "result", "subtype": "error_during_execution",
+                                  "is_error": True, "result": "I can't help with that."})
+
+        try:
+            subprocess.run = lambda args, **kw: RefusedProc()
+            __import__("shutil").which = lambda name: "/fake/claude"
+            llm.generate_json("P", {"type": "object"}, model="cli:opus")
+            check("a refusal raises rather than parsing as JSON", False)
+        except RuntimeError as exc:
+            check("a refusal raises rather than parsing as JSON",
+                  "error_during_execution" in str(exc))
+        finally:
+            subprocess.run = real_run
+            __import__("shutil").which = real_which
+
+        try:
+            __import__("shutil").which = lambda name: None
+            llm.generate_json("P", {"type": "object"}, model="cli:opus")
+            check("a missing binary names the fix", False)
+        except RuntimeError as exc:
+            check("a missing binary names the fix", "not on PATH" in str(exc))
+        finally:
+            __import__("shutil").which = real_which
+    finally:
+        for var, val in saved.items():
+            if val is None:
+                os.environ.pop(var, None)
+            else:
+                os.environ[var] = val
+
+
 def test_disclosure_is_above_the_fold_and_derived() -> None:
     """Issue #91: six published pages carried no AI disclosure at all, and the
     masthead's only hint was "Not peer reviewed" in the smallest grey type on
@@ -2438,6 +2562,7 @@ def main() -> int:
         test_prose_style_check, test_rules_do_not_reject_real_journal_prose,
         test_health_reports_which_build_is_running,
         test_openalex_reaches_for_recent_work_as_well,
+        test_claude_cli_provider,
         test_disclosure_is_above_the_fold_and_derived,
         test_display_items_are_selected_once_for_both_formats,
         test_failed_style_gate_is_visible_in_the_article,
