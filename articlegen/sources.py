@@ -221,13 +221,19 @@ def search_semantic_scholar(query: str, limit: int = 15) -> list[Paper]:
 
 
 def _rebuild_abstract(inverted_index: dict[str, list[int]] | None) -> str:
-    if not inverted_index:
+    if not isinstance(inverted_index, dict) or not inverted_index:
         return ""
     positions: dict[int, str] = {}
     for word, indexes in inverted_index.items():
+        if not word or not isinstance(indexes, list):
+            continue
         for i in indexes:
-            positions[i] = word
-    return " ".join(positions[i] for i in sorted(positions))
+            if isinstance(i, int) and i >= 0:
+                positions[i] = word
+    if not positions:
+        return ""
+    max_pos = max(positions.keys())
+    return " ".join(positions.get(i, "") for i in range(max_pos + 1)).strip()
 
 
 # How far back the recency-biased companion query reaches. Eight years is wide
