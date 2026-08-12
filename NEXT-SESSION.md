@@ -1,6 +1,6 @@
 # Next session
 
-_Last handoff: 12 August 2026 — `main` @ `f24e7f9`, plus one PR open for review_
+_Last handoff: 12 August 2026 — `main` @ `f6e6015`, everything merged, nothing in flight_
 
 ## Where this stopped
 
@@ -9,7 +9,8 @@ like a journal Review article, grounded in paper abstracts plus open-access full
 texts. It runs as a CLI and as a hosted web app (GitHub Pages front end → Render
 backend).
 
-Two things landed this session, both merged:
+Three things landed this session, all merged. **Nothing is in flight** —
+working tree clean, one branch (`main`), local and remote in sync.
 
 1. **The web app's article options are gone.** Every article is now an in-depth
    longform review at a strict empirical focus — `TONE_LABEL`, `LENGTH_LABEL`
@@ -18,8 +19,8 @@ Two things landed this session, both merged:
    block and gained five bullet steps for getting an OpenRouter key.
 2. **A token-efficiency pass, and a new provider** (PR #115). Three changes cut
    what a draft spends; a fourth was measured and rejected.
-
-**PR #118 is open and unreviewed** — the `CLAUDE.md` corrections and this note.
+3. **`CLAUDE.md` reconciled** (PR #118) — the first two drifted six passages of
+   it.
 
 ## Resume with
 
@@ -51,16 +52,14 @@ The backend sleeps after 15 min idle and takes ~50s to wake.
 
 ## Next thing to do
 
-1. **Merge or close PR #118.** It only touches `CLAUDE.md` and this file.
-2. **Replace the OpenRouter key.** `.env` holds a dead one, so the default
+1. **Replace the OpenRouter key.** `.env` holds a dead one, so the default
    provider path cannot be run or tested locally until it is swapped. Visitors
    to the deployed app use their own keys and are unaffected.
-3. **#101 and #102** remain the substantive work — both clinical-safety changes,
+2. **#101 and #102** remain the substantive work — both clinical-safety changes,
    to what `check_statistics` will accept and to what the writer may say.
 
 ## Open
 
-- **PR #118** — `CLAUDE.md` reconciliation + this note. Waiting on your review.
 - **#116, #117** (filed this session) — the `gemini-cli` revision call
   costs far more context than its prompt explains; and curating on truncated
   abstracts would save ~24k input tokens but needs the relevance gate
