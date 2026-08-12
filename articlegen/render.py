@@ -416,10 +416,9 @@ def _table_html(cited: list[Paper], labels: dict[int, str]) -> str:
     """Table 1 — characteristics of the cited evidence, one row per source."""
     if not cited:
         return ""
-    # The Read column only appears when it distinguishes anything: in an
-    # abstracts-only draft every row would say "Abstract", which is already
-    # what the Methods section states once.
-    show_read = any(p.full_text for p in cited)
+    # Rule: Always render the Read column to explicitly indicate whether
+    # full text or abstract was accessed for every cited paper.
+    show_read = True
     rows = []
     for row in _table_rows(cited, labels):
         relevance = (
@@ -432,27 +431,22 @@ def _table_html(cited: list[Paper], labels: dict[int, str]) -> str:
             f'<td class="t-num">{row["year"]}</td>'
             f'<td class="t-venue">{html.escape(row["venue"])}</td>'
             f"<td>{relevance}</td>"
-            + (f'<td>{row["read"]}</td>' if show_read else "")
-            + f'<td class="t-num">{row["cited_by"]}</td></tr>'
+            f'<td>{row["read"]}</td>'
+            f'<td class="t-num">{row["cited_by"]}</td></tr>'
         )
     caption = (
         "Characteristics of the cited evidence. Relevance is the curation label for how "
         "directly each source addresses the review question; citation counts are as "
-        "reported by the indexing database."
+        "reported by the indexing database. Read records whether the model saw the "
+        "source's open-access full text or its abstract only."
     )
-    if show_read:
-        caption += (
-            " Read records whether the model saw the source's open-access full text "
-            "or its abstract only."
-        )
     return (
         '<div class="display table-wrap" aria-labelledby="table-1">\n'
         '<p class="di-caption" id="table-1"><span class="di-label">Table 1 |</span> '
         f"{caption}</p>\n"
         '<div class="table-scroll"><table>\n'
         "<thead><tr><th>Ref.</th><th>Study</th><th>Year</th><th>Source</th>"
-        "<th>Relevance</th>" + ("<th>Read</th>" if show_read else "")
-        + "<th>Cited by</th></tr></thead>\n"
+        "<th>Relevance</th><th>Read</th><th>Cited by</th></tr></thead>\n"
         "<tbody>" + "".join(rows) + "</tbody>\n</table></div>\n</div>"
     )
 
@@ -1542,20 +1536,17 @@ def _box_markdown(article: dict, papers: list[Paper], cite_map: dict[int, int]) 
 def _table_markdown(cited: list[Paper], labels: dict[int, str]) -> str:
     if not cited:
         return ""
-    show_read = any(p.full_text for p in cited)
     rows = [
         "**Table 1 | Characteristics of the cited evidence.**",
         "",
-        "| Ref. | Study | Year | Source | Relevance | "
-        + ("Read | " if show_read else "") + "Cited by |",
-        "| --- | --- | --- | --- | --- | " + ("--- | " if show_read else "") + "--- |",
+        "| Ref. | Study | Year | Source | Relevance | Read | Cited by |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     for row in _table_rows(cited, labels):
         rows.append(
             f"| {row['n']} | {row['study']} | {row['year']} | "
-            f"{row['venue']} | {row['relevance']} | "
-            + (f"{row['read']} | " if show_read else "")
-            + f"{row['cited_by']} |"
+            f"{row['venue']} | {row['relevance']} | {row['read']} | "
+            f"{row['cited_by']} |"
         )
     return "\n".join(rows)
 

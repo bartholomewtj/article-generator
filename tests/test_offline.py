@@ -2087,8 +2087,8 @@ def test_full_text_grounding() -> None:
           "<th>Read</th>" in table and "Full text" in table and "Abstract" in table)
     plain_table = render._table_html(
         [Paper(title="a", abstract="x", year=2020)], {1: "direct"})
-    check("no Read column when everything is abstract-only",
-          "<th>Read</th>" not in plain_table)
+    check("Read column is always present in Table 1",
+          "<th>Read</th>" in plain_table and "Abstract" in plain_table)
     md = render._table_markdown(ft_cited, {1: "direct", 2: "related"})
     check("markdown table matches", "Read |" in md and "Full text |" in md)
 

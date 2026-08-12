@@ -32,9 +32,9 @@ Logger = Callable[[str], None]
 # `sources.full_text_excerpts` allows 12,000 characters per paper inside a
 # 60,000-character total, so the sixth full text is truncated and the seventh
 # gets nothing. Fetching more than the excerpt budget can display is pure cost.
-# The old ceiling of 8 was above that budget and still never reached, which
-# disguised the real limiter — see `sources.resolve_pmcid`.
-FULLTEXT_TARGET = 5
+FULLTEXT_PREFERRED_TARGET = 5  # Preferred target: 5+ open-access full texts
+FULLTEXT_MINIMUM_DESIRED = 3   # Minimum desired: 3 open-access full texts
+FULLTEXT_TARGET = FULLTEXT_PREFERRED_TARGET
 
 # Every candidate now costs up to two Europe PMC requests (a DOI lookup, then
 # the fetch), where before a paper with no pmcid cost nothing. A topic whose
@@ -251,11 +251,15 @@ def generate_draft(
         log(f"  full text retrieved for {len(fetched)} source(s)"
             + (f": {fetched}" if fetched else " (none open access)")
             + f" in {requests_spent} request(s)")
-        if len(fetched) < FULLTEXT_TARGET:
-            # Not a failure: open access is a property of the literature, not of
-            # this code. Say so plainly rather than let it read as a bug.
-            log(f"  (target is {FULLTEXT_TARGET}; the rest of the cited sources have "
-                "no open-access copy Europe PMC can serve)")
+        if len(fetched) >= FULLTEXT_PREFERRED_TARGET:
+            log(f"  (preferred target of {FULLTEXT_PREFERRED_TARGET}+ open-access full texts achieved)")
+        elif len(fetched) >= FULLTEXT_MINIMUM_DESIRED:
+            log(f"  (retrieved {len(fetched)} open-access full text(s); meets minimum threshold of {FULLTEXT_MINIMUM_DESIRED})")
+        else:
+            # Qualifier: open access is a property of the literature, not of this code.
+            # If fewer than 3 full texts are available, the draft still passes cleanly.
+            log(f"  (retrieved {len(fetched)} open-access full text(s); target is {FULLTEXT_PREFERRED_TARGET}+, minimum desired is {FULLTEXT_MINIMUM_DESIRED}. "
+                "The remaining cited sources have no open-access copy in Europe PMC; draft passes cleanly with abstract grounding.)")
 
     log("Writing the article (this can take a few minutes)...")
     article = write_article(
