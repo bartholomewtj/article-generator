@@ -392,6 +392,16 @@ verbatim, and `agy models` lists them — or `ARTICLEGEN_PROVIDER=gemini-cli`.
   *and* `-medium`. The measurement is in `llm.py` above `GEMINI_CLI_DEFAULT_MODEL`.
 - **~21,600 tokens of agent scaffolding per call**, ~39% of a run's input, and
   no flag suppresses it. The metered API providers pay none of it.
+- **The revision call's input is unexplained and still open (#116).** 135,273
+  fresh plus 440,871 cached for a ~20,000-character prompt — ~27,000 expected.
+  `turns=1`, so it is not an agent loop. All three providers now log
+  `sent[chars=… ~tok=…]` beside what they were charged, in one line shape, so a
+  single run answers the ratio instead of it being re-derived by hand. The
+  standing hypothesis is that the prompt is reachable **three ways** — inlined
+  by `-p @prompt_path`, exposed by `--add-dir scratch`, and sitting in `cwd` —
+  which is why the schema's size is logged too. Confirm or kill it with a real
+  `agy` run before changing any of those flags; removing `--add-dir` on a guess
+  breaks the provider.
 - On this provider **88% of output tokens are thinking**, so changes that reduce
   emitted *text* barely move the bill. Measure output against `thinking_tokens`,
   not against word count.

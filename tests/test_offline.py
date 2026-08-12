@@ -427,6 +427,48 @@ def test_openrouter_request_is_asserted_on_the_payload() -> None:
           "output limit" in truncated.lower() or "max_tokens" in truncated.lower())
 
 
+def test_every_provider_reports_what_it_sent() -> None:
+    """Reported input has to be comparable against what was actually sent.
+
+    The gemini-cli revision call reports 135,273 fresh input plus 440,871
+    cached for a prompt of roughly 20,000 characters — ~27,000 tokens expected
+    against 135,273 seen, with `turns=1` ruling out an agent loop taking extra
+    passes (issue #116). Nobody has identified the cause, and it was not
+    measurable: the log printed what was charged and never what was sent, so
+    the comparison meant re-deriving the prompt by hand.
+
+    This does not fix the overcount. It makes the next real run answer it.
+    """
+    import inspect
+    import re as _re
+
+    from articlegen import llm
+
+    check("a prompt's size is reported in both units",
+          llm._prompt_size("x" * 4000) == "chars=4000 ~tok=1000")
+
+    for fn in (llm._gemini_cli_generate, llm._claude_cli_generate,
+               llm._openrouter_generate):
+        src = inspect.getsource(fn)
+        check(f"{fn.__name__} logs what it sent beside what it was charged",
+              "sent[" in src and "_prompt_size(" in src)
+        # One shape for all three, so a single grep collects a whole run.
+        check(f"{fn.__name__} uses the shared log prefix",
+              _re.search(r"\[articlegen\] (gemini-cli|claude-cli|openrouter)", src)
+              is not None)
+
+    # The metered provider is the baseline: its accounting is independently
+    # verifiable, which is exactly what the CLI providers' is not.
+    check("the metered path reports its input count too",
+          "prompt_tokens" in inspect.getsource(llm._openrouter_generate))
+    # The gemini path also reports the other file in its scratch directory:
+    # both are reachable three ways — inlined by `@prompt_path`, exposed by
+    # `--add-dir scratch`, and sitting in `cwd` — which is the standing
+    # hypothesis for the overcount.
+    check("the gemini path reports the schema it also exposes",
+          "json.dumps(schema)" in inspect.getsource(llm._gemini_cli_generate))
+
+
 def test_output_ceilings_follow_the_default_model() -> None:
     """The ceiling must be right for the model actually in use.
 
@@ -4036,6 +4078,7 @@ def main(argv: list[str] | None = None) -> int:
         test_anthropic_generate_behaviour,
         test_openrouter_request_is_asserted_on_the_payload,
         test_output_ceilings_follow_the_default_model,
+        test_every_provider_reports_what_it_sent,
         test_real_articles_still_match_the_schema,
         test_openrouter_routing,
         test_openrouter_refusal_falls_back,
