@@ -27,22 +27,35 @@ def check(name: str, cond: bool) -> None:
 
 
 def test_provider_resolution() -> None:
-    for var in ("ANTHROPIC_API_KEY", "GROQ_API_KEY", "ARTICLEGEN_PROVIDER"):
+    for var in ("ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "ARTICLEGEN_PROVIDER"):
         os.environ.pop(var, None)
-    from articlegen.llm import resolve_provider, GROQ_DEFAULT_MODEL, ANTHROPIC_DEFAULT_MODEL
+    from articlegen.llm import (
+        resolve_provider, OPENROUTER_DEFAULT_MODEL, ANTHROPIC_DEFAULT_MODEL,
+    )
 
-    check("no keys -> groq default", resolve_provider() == ("groq", GROQ_DEFAULT_MODEL))
+    check("no keys -> openrouter default",
+          resolve_provider() == ("openrouter", OPENROUTER_DEFAULT_MODEL))
     os.environ["ANTHROPIC_API_KEY"] = "x"
     check("only anthropic -> anthropic", resolve_provider() == ("anthropic", ANTHROPIC_DEFAULT_MODEL))
-    os.environ["GROQ_API_KEY"] = "y"
-    check("both keys -> groq wins", resolve_provider()[0] == "groq")
+    os.environ["OPENROUTER_API_KEY"] = "y"
+    check("both keys -> openrouter wins", resolve_provider()[0] == "openrouter")
     check("claude-* model name forces anthropic", resolve_provider("claude-opus-5")[0] == "anthropic")
     check("superseded claude-* names still route",
           resolve_provider("claude-opus-4-8")[0] == "anthropic")
-    check("llama-* model name forces groq", resolve_provider("llama-3.3-70b-versatile")[0] == "groq")
+    # Groq is gone. A bare Groq-era name must fail loudly here rather than
+    # reaching OpenRouter as a slug it has never heard of and 404ing seconds
+    # later, which names neither the removed provider nor the fix.
+    try:
+        resolve_provider("llama-3.3-70b-versatile")
+        bare_llama_raises = False
+    except RuntimeError as exc:
+        bare_llama_raises = "meta-llama/llama-3.3-70b-instruct" in str(exc)
+    check("a bare Groq-era name errors and names the replacement", bare_llama_raises)
+    check("the resold llama slug is the supported route",
+          resolve_provider("meta-llama/llama-3.3-70b-instruct")[0] == "openrouter")
     os.environ["ARTICLEGEN_PROVIDER"] = "anthropic"
     check("provider override respected", resolve_provider()[0] == "anthropic")
-    for var in ("ANTHROPIC_API_KEY", "GROQ_API_KEY", "ARTICLEGEN_PROVIDER"):
+    for var in ("ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "ARTICLEGEN_PROVIDER"):
         os.environ.pop(var, None)
 
 
@@ -52,16 +65,15 @@ def test_per_request_api_key() -> None:
     The web server is threaded; an env-var handoff lets one request's pipeline
     pick up another request's key several seconds later, and bill it.
     """
-    for var in ("ANTHROPIC_API_KEY", "GROQ_API_KEY", "ARTICLEGEN_PROVIDER"):
+    for var in ("ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "ARTICLEGEN_PROVIDER"):
         os.environ.pop(var, None)
     from articlegen.llm import resolve_provider
 
-    check("gsk_ key -> groq", resolve_provider(None, "gsk_abc")[0] == "groq")
     check("sk-ant- key -> anthropic", resolve_provider(None, "sk-ant-abc")[0] == "anthropic")
     check("sk-or- key -> openrouter", resolve_provider(None, "sk-or-v1-abc")[0] == "openrouter")
     check(
         "explicit model still beats the key prefix",
-        resolve_provider("claude-opus-5", "gsk_abc")[0] == "anthropic",
+        resolve_provider("claude-opus-5", "sk-or-v1-abc")[0] == "anthropic",
     )
 
     # The whole point: a passed key must not leak into the environment.
@@ -75,24 +87,24 @@ def test_per_request_api_key() -> None:
         check(f"{fn.__name__} accepts api_key", "api_key" in inspect.signature(fn).parameters)
 
     src = inspect.getsource(llm) + inspect.getsource(web)
-    check("no module assigns into os.environ", 'os.environ["GROQ_API_KEY"] =' not in src)
-    check("groq key still falls back to the environment",
-          "os.environ.get(\"GROQ_API_KEY\")" in inspect.getsource(llm._groq_generate))
+    check("no module assigns into os.environ",
+          'os.environ["OPENROUTER_API_KEY"] =' not in src
+          and 'os.environ["ANTHROPIC_API_KEY"] =' not in src)
+    check("openrouter key still falls back to the environment",
+          'os.environ.get("OPENROUTER_API_KEY")' in inspect.getsource(llm._openrouter_generate))
 
 
 def test_openrouter_routing() -> None:
-    """OpenRouter is the escape hatch from Groq's daily cap — it must not steal
-    the other providers' traffic, and must not hand their own model ids back to
-    them prefixed.
+    """OpenRouter is the default provider — it must not steal the other
+    providers' traffic, and must not hand their own model ids back to them
+    prefixed.
 
     The slash is the whole discriminator: OpenRouter re-sells Claude as
     `anthropic/claude-sonnet-5`, which routed to Anthropic's SDK would 404.
     """
-    for var in ("ANTHROPIC_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY", "ARTICLEGEN_PROVIDER"):
+    for var in ("ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "ARTICLEGEN_PROVIDER"):
         os.environ.pop(var, None)
-    from articlegen.llm import (
-        OPENROUTER_DEFAULT_MODEL, prompt_budget_chars, resolve_provider,
-    )
+    from articlegen.llm import OPENROUTER_DEFAULT_MODEL, resolve_provider
 
     check("vendor/model slug -> openrouter",
           resolve_provider("meta-llama/llama-3.3-70b-instruct")[0] == "openrouter")
@@ -102,23 +114,17 @@ def test_openrouter_routing() -> None:
           resolve_provider("anthropic/claude-sonnet-5")[1] == "anthropic/claude-sonnet-5")
     check("bare claude name still goes direct to anthropic",
           resolve_provider("claude-opus-5")[0] == "anthropic")
-    check("bare llama name still goes direct to groq",
-          resolve_provider("llama-3.3-70b-versatile")[0] == "groq")
 
     os.environ["OPENROUTER_API_KEY"] = "sk-or-v1-x"
     check("openrouter key alone selects it", resolve_provider()[0] == "openrouter")
     check("and supplies its default model", resolve_provider()[1] == OPENROUTER_DEFAULT_MODEL)
-    os.environ["GROQ_API_KEY"] = "gsk_x"
-    check("groq still wins when both keys are set", resolve_provider()[0] == "groq")
-    os.environ.pop("GROQ_API_KEY", None)
+    os.environ["ANTHROPIC_API_KEY"] = "sk-ant-x"
+    check("openrouter wins when both keys are set", resolve_provider()[0] == "openrouter")
+    os.environ.pop("ANTHROPIC_API_KEY", None)
     os.environ["ARTICLEGEN_PROVIDER"] = "openrouter"
     check("provider override accepts openrouter", resolve_provider()[0] == "openrouter")
 
-    # Groq trims the source payload to fit a 12k tokens/minute ceiling that
-    # OpenRouter does not have; trimming there would cost breadth for nothing.
-    check("openrouter takes the full source payload",
-          prompt_budget_chars("meta-llama/llama-3.3-70b-instruct") is None)
-    for var in ("ANTHROPIC_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY", "ARTICLEGEN_PROVIDER"):
+    for var in ("ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "ARTICLEGEN_PROVIDER"):
         os.environ.pop(var, None)
 
 
@@ -571,50 +577,6 @@ def test_substance_checks() -> None:
           "do not introduce new claims or numbers" in reg_brief)
 
 
-def test_groq_token_budget() -> None:
-    """Prompts must fit Groq's free-tier tokens-per-minute limit.
-
-    Groq counts the reserved output against TPM as well as the prompt, so
-    reserving 16000 output tokens against a 12000 limit failed every article
-    call regardless of prompt size:
-
-        413 ... on tokens per minute (TPM): Limit 12000, Requested 20916
-    """
-    from articlegen import llm
-    from articlegen.writer import _format_sources
-    from articlegen.sources import Paper
-
-    check("deep output reservation fits the free tier",
-          llm.GROQ_DEEP_OUTPUT < llm.GROQ_FREE_TPM)
-    check("standard output reservation fits too", llm.GROQ_OUTPUT < llm.GROQ_FREE_TPM)
-
-    budget = llm.prompt_budget_chars(model=llm.GROQ_DEFAULT_MODEL)
-    check("groq gets a finite prompt budget", isinstance(budget, int) and budget > 0)
-    check("anthropic is unlimited",
-          llm.prompt_budget_chars(model=llm.ANTHROPIC_DEFAULT_MODEL) is None)
-    check("reservation plus prompt stays under the limit",
-          llm.GROQ_DEEP_OUTPUT + budget / llm.CHARS_PER_TOKEN < llm.GROQ_FREE_TPM)
-
-    # 20 papers with long abstracts — the shape that produced the 413.
-    papers = [
-        Paper(title=f"Study {i}", abstract="word " * 400, year=2024, venue="Journal")
-        for i in range(1, 21)
-    ]
-    unbounded = _format_sources(papers)
-    trimmed = _format_sources(papers, None, budget)
-    check("an unbounded prompt really does exceed the budget", len(unbounded) > budget)
-    check("the trimmed prompt fits", len(trimmed) <= budget)
-    check("trimming keeps every paper rather than dropping them",
-          trimmed.count("SOURCE ") == len(papers))
-
-    # Only when shortening every abstract still cannot fit does it drop papers.
-    tiny = _format_sources(papers, None, 1500)
-    check("a tiny budget still yields something usable", 0 < tiny.count("SOURCE ") < len(papers))
-    check("a tiny budget is still respected", len(tiny) <= 1500)
-
-    check("no budget means no trimming", _format_sources(papers, None, None) == unbounded)
-
-
 def test_source_failures_are_distinguishable() -> None:
     """An API refusing must not be reported as the topic having no literature.
 
@@ -988,12 +950,6 @@ def test_methods_names_only_sources_that_answered() -> None:
          sources.search_europe_pmc) = real
 
 
-def test_groq_json_cleaning() -> None:
-    from articlegen.llm import _clean_json_text
-    check("clean simple fence", _clean_json_text("```json\n{\"a\": 1}\n```") == '{"a": 1}')
-    check("clean raw json", _clean_json_text('{"b": 2}') == '{"b": 2}')
-
-
 def test_citation_renumbering() -> None:
     from articlegen.render import _citation_map, _remap_citations
     from articlegen.sources import Paper
@@ -1340,7 +1296,7 @@ def test_claude_cli_provider() -> None:
     from articlegen import llm, web
 
     saved = {v: os.environ.get(v) for v in
-             ("ANTHROPIC_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY", "ARTICLEGEN_PROVIDER")}
+             ("ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "ARTICLEGEN_PROVIDER")}
     try:
         for v in saved:
             os.environ.pop(v, None)
@@ -1360,8 +1316,8 @@ def test_claude_cli_provider() -> None:
         check("a present Anthropic key does not select the CLI",
               llm.resolve_provider()[0] == "anthropic")
         os.environ.pop("ANTHROPIC_API_KEY")
-        check("no keys at all still falls back to Groq, not the CLI",
-              llm.resolve_provider()[0] == "groq")
+        check("no keys at all still falls back to OpenRouter, not the CLI",
+              llm.resolve_provider()[0] == "openrouter")
         check("an sk-ant- key routes to the API, never the subscription",
               llm.resolve_provider(api_key="sk-ant-x")[0] == "anthropic")
 
@@ -2301,12 +2257,12 @@ def test_full_text_grounding() -> None:
     two = [Paper(title="ft", abstract="A1.", full_text="Full body text 12.5% here."),
            Paper(title="ab", abstract="A2.")]
     shown = full_text_excerpts(two)
-    block = writer._format_sources(two, None, None, shown)
+    block = writer._format_sources(two, None, shown)
     check("full text rides along under its source", "Full text (open access" in block
           and "Full body text 12.5% here." in block)
     check("abstract-only sources say so", "no open-access full text" in block)
-    budgeted = writer._format_sources(two, None, 5000, shown)
-    check("a char budget (Groq) drops the excerpts", "Full body text" not in budgeted)
+    check("no excerpts means no full-text notes at all",
+          "Full text (open access" not in writer._format_sources(two))
 
     # -- the system prompt tells the truth about its inputs -----------------
     for old, new in writer._FULLTEXT_SUBSTITUTIONS:
@@ -2376,7 +2332,8 @@ def test_full_text_grounding() -> None:
               "Full text read for 1 of 2 sources" in out)
 
     # The abstracts-only wording must survive untouched — it is the truthful one
-    # whenever nothing was read in full, which is every Groq draft.
+    # whenever nothing was read in full, which is any topic with no open-access
+    # literature.
     abs_cited = [Paper(title="a", abstract="x", year=2020)]
     art_abs = dict(art_ft, references=[1])
     html_abs = render.render_article(art_abs, abs_cited, "night shift work",
@@ -2387,8 +2344,12 @@ def test_full_text_grounding() -> None:
 
 def test_pipeline_fetches_full_text() -> None:
     """The pipeline stage itself: fetch only direct/related sources, respect the
-    cap, record provenance, and skip the whole step on Groq (whose token budget
-    cannot fit a full text)."""
+    cap, and record provenance.
+
+    The step used to be skipped entirely on Groq, whose per-minute token ceiling
+    could not fit a full text. Groq is gone, so it runs on every draft and the
+    only thing that stops a source being fetched is its relevance label.
+    """
     from articlegen import pipeline
     from articlegen.sources import Paper
 
@@ -2402,8 +2363,7 @@ def test_pipeline_fetches_full_text() -> None:
     fetched_pmcids: list[str] = []
 
     saved = (pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
-             pipeline.write_article, pipeline.fetch_full_text, pipeline.enforce_style,
-             pipeline.prompt_budget_chars)
+             pipeline.write_article, pipeline.fetch_full_text, pipeline.enforce_style)
     try:
         pipeline.plan_queries = lambda topic, **kw: (["q"], "core")
         def fake_gather(queries, **kw):
@@ -2417,7 +2377,6 @@ def test_pipeline_fetches_full_text() -> None:
             lambda p, use_cache=True: (fetched_pmcids.append(p.pmcid), "body text")[1])
         pipeline.enforce_style = lambda a, **kw: (a, {"issues": [], "stats": {}})
 
-        pipeline.prompt_budget_chars = lambda model=None, api_key=None: None
         draft = pipeline.generate_draft("topic")
         check("direct and related sources are fetched, tangential is not",
               fetched_pmcids == ["PMC1", "PMC3", "PMC4"])
@@ -2425,17 +2384,20 @@ def test_pipeline_fetches_full_text() -> None:
         check("provenance records which sources were read in full",
               draft.provenance["full_text_sources"] == [1, 3, 4])
 
+        # Curation returning nothing usable is the other way the step comes back
+        # empty. It must fetch none rather than fall back to fetching everything:
+        # unlabelled sources have not passed the relevance gate.
         for p in papers:
             p.full_text = ""
         fetched_pmcids.clear()
-        pipeline.prompt_budget_chars = lambda model=None, api_key=None: 30000  # Groq
+        pipeline.curate_sources = lambda topic, p, **kw: {
+            "relevance": {}, "most_relevant_index": None, "counts": {}}
         draft = pipeline.generate_draft("topic")
-        check("Groq's token budget disables the full-text step entirely",
+        check("no relevance labels means no full text is fetched",
               fetched_pmcids == [] and draft.provenance["full_text_sources"] == [])
     finally:
         (pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
-         pipeline.write_article, pipeline.fetch_full_text, pipeline.enforce_style,
-         pipeline.prompt_budget_chars) = saved
+         pipeline.write_article, pipeline.fetch_full_text, pipeline.enforce_style) = saved
 
 
 def test_pmcid_is_resolved_by_doi() -> None:
@@ -2511,7 +2473,7 @@ def test_pmcid_is_resolved_by_doi() -> None:
 
     saved = (pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
              pipeline.write_article, pipeline.fetch_full_text, pipeline.resolve_pmcid,
-             pipeline.enforce_style, pipeline.prompt_budget_chars)
+             pipeline.enforce_style)
     try:
         pipeline.plan_queries = lambda topic, **kw: (["q"], "core")
         def fake_gather(queries, **kw):
@@ -2522,7 +2484,6 @@ def test_pmcid_is_resolved_by_doi() -> None:
         pipeline.curate_sources = lambda topic, p, **kw: curation
         pipeline.write_article = lambda topic, p, **kw: dict(article)
         pipeline.enforce_style = lambda a, **kw: (a, {"issues": [], "stats": {}})
-        pipeline.prompt_budget_chars = lambda model=None, api_key=None: None
 
         def fake_resolve(paper, use_cache=True):
             resolved.append(paper.doi)
@@ -2554,7 +2515,7 @@ def test_pmcid_is_resolved_by_doi() -> None:
     finally:
         (pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
          pipeline.write_article, pipeline.fetch_full_text, pipeline.resolve_pmcid,
-         pipeline.enforce_style, pipeline.prompt_budget_chars) = saved
+         pipeline.enforce_style) = saved
 
 
 def test_unpaywall_fallback_in_resolve_pmcid() -> None:
@@ -2623,7 +2584,7 @@ def main() -> int:
         test_refusal_fallbacks,
         test_pipeline_is_shared, test_draft_summary, test_rate_limit,
         test_keepalive_connection_reuse, test_substance_checks,
-        test_groq_token_budget, test_source_failures_are_distinguishable,
+        test_source_failures_are_distinguishable,
         test_search_cache, test_front_end_models_match_the_allowlist,
         test_polite_pool_identification, test_europe_pmc_parsing,
         test_ungrounded_citations_leave_no_trace,
@@ -2631,7 +2592,6 @@ def main() -> int:
         test_pmcid_is_resolved_by_doi,
         test_unpaywall_fallback_in_resolve_pmcid,
         test_methods_names_only_sources_that_answered,
-        test_groq_json_cleaning,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
         test_prose_style_check, test_rules_do_not_reject_real_journal_prose,
         test_health_reports_which_build_is_running,

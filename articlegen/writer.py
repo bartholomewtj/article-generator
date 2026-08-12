@@ -1,7 +1,8 @@
 """LLM calls: plan queries, assess source relevance, then write a grounded article.
 
-Works with either provider via articlegen.llm (Groq by default, or Claude when an
-ANTHROPIC_API_KEY is the available credential — see llm.resolve_provider).
+Works with any provider via articlegen.llm (OpenRouter by default, or Claude
+when an ANTHROPIC_API_KEY is the available credential — see
+llm.resolve_provider).
 
 The pipeline is deliberately honest about evidence:
 - `curate_sources` scores each fetched paper for how directly it addresses the
@@ -16,7 +17,7 @@ from __future__ import annotations
 
 import json
 
-from .llm import generate_json, prompt_budget_chars
+from .llm import generate_json
 from .sources import Paper, full_text_excerpts
 
 _QUERY_SCHEMA = {
@@ -360,23 +361,20 @@ def plan_queries(
 def _format_sources(
     papers: list[Paper],
     relevance: dict[int, str] | None = None,
-    budget_chars: int | None = None,
     excerpts: dict[int, str] | None = None,
 ) -> str:
-    """Render the sources for the prompt, trimmed to `budget_chars` if given.
-
-    Trimming shortens long abstracts before it drops any paper. Breadth is what
-    stops the article restating the same few findings, so losing the tail of a
-    verbose abstract costs less than losing a whole study. Papers arrive already
-    ranked, so anything that must go is the least relevant.
+    """Render the sources for the prompt.
 
     `excerpts` (from `sources.full_text_excerpts`) appends each paper's
-    open-access full text below its abstract. Full text and a char budget are
-    mutually exclusive: the budget exists because Groq meters tokens per
-    minute, and no full text fits inside that — so a budget drops the excerpts.
+    open-access full text below its abstract.
+
+    There is no character budget any more. Until Groq was removed this function
+    also trimmed abstracts — shortest-cap-first, then dropping the lowest-ranked
+    papers — to fit a 12,000 tokens/minute ceiling that counted the reserved
+    output as well as the prompt. `sources.full_text_excerpts` already bounds
+    the payload (12,000 chars per paper inside a 60,000 total), and no remaining
+    provider meters per minute, so the trimming was cost without benefit.
     """
-    if budget_chars is not None:
-        excerpts = None
 
     def render(paper: Paper, index: int, abstract: str) -> str:
         tag = f" [{relevance[index]} to topic]" if relevance and index in relevance else ""
@@ -395,28 +393,7 @@ def _format_sources(
             block += "\n(Abstract only — no open-access full text was available.)"
         return block
 
-    blocks = [render(p, i, p.abstract) for i, p in enumerate(papers, start=1)]
-    if budget_chars is None or sum(len(b) for b in blocks) <= budget_chars:
-        return "\n\n".join(blocks)
-
-    # Shorten abstracts, most generous cap first, until the whole set fits.
-    for cap in (1200, 900, 700, 500, 350):
-        blocks = [
-            render(p, i, p.abstract[:cap] + ("…" if len(p.abstract) > cap else ""))
-            for i, p in enumerate(papers, start=1)
-        ]
-        if sum(len(b) for b in blocks) + 2 * len(blocks) <= budget_chars:
-            return "\n\n".join(blocks)
-
-    # Still over: drop from the bottom of the ranking.
-    kept: list[str] = []
-    used = 0
-    for block in blocks:
-        if used + len(block) + 2 > budget_chars:
-            break
-        kept.append(block)
-        used += len(block) + 2
-    return "\n\n".join(kept)
+    return "\n\n".join(render(p, i, p.abstract) for i, p in enumerate(papers, start=1))
 
 
 def curate_sources(
@@ -430,7 +407,7 @@ def curate_sources(
     try:
         result = generate_json(
             f"Topic: {topic}\n\nRate each source's relevance to that exact topic.\n\n"
-            + _format_sources(papers, budget_chars=prompt_budget_chars(model, api_key)),
+            + _format_sources(papers),
             _CURATE_SCHEMA,
             system=_CURATE_SYSTEM,
             model=model,
@@ -486,13 +463,12 @@ def write_article(
         context += "\n\n"
     if mri:
         context += f"Suggested study to feature (most relevant): SOURCE {mri}.\n\n"
-    budget = prompt_budget_chars(model, api_key)
     excerpts = full_text_excerpts(papers)
-    use_full_text = bool(excerpts) and budget is None
+    use_full_text = bool(excerpts)
     context += (
         "Here are the candidate sources with their relevance labels. Choose the ones "
         "that genuinely support the article and write it.\n\n"
-        + _format_sources(papers, relevance, budget, excerpts)
+        + _format_sources(papers, relevance, excerpts)
     )
     return generate_json(
         context,
@@ -524,20 +500,13 @@ def revise_prose(
         # Without these the model can only reshuffle what it already wrote, so a
         # draft that failed for thinness comes back thin. The sources are the
         # only material it may legitimately add.
-        #
-        # This is the tightest prompt in the pipeline — it carries the whole
-        # draft as well as the sources — so the draft's own length comes out of
-        # the source budget rather than being added on top of it.
         relevance = (curation or {}).get("relevance") or {}
-        budget = prompt_budget_chars(model, api_key)
-        if budget is not None:
-            budget = max(budget - len(draft_json), 1000)
         excerpts = full_text_excerpts(papers)
-        use_full_text = bool(excerpts) and budget is None
+        use_full_text = bool(excerpts)
         context += (
             "SOURCES — the material this article must be grounded in. Anything you "
             "add must come from here and be cited by its SOURCE number:\n\n"
-            + _format_sources(papers, relevance, budget, excerpts)
+            + _format_sources(papers, relevance, excerpts)
             + "\n\n"
         )
     else:

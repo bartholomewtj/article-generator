@@ -47,7 +47,6 @@ DRAFTS_DIR = "drafts"
 # Models a caller may ask for by name. Anything else is ignored and the provider
 # layer picks from the key it was given.
 ALLOWED_MODELS = frozenset({
-    llm.GROQ_DEFAULT_MODEL,
     llm.ANTHROPIC_DEFAULT_MODEL,
     llm.OPENROUTER_DEFAULT_MODEL,
 })
@@ -150,19 +149,20 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
     def _missing_key(self, api_key: str | None) -> bool:
         """Reject a keyless request in the caller's language, not the server's.
 
-        Without this the provider layer raises "GROQ_API_KEY environment variable
-        is not set", which is true and useless to someone using the web app —
-        they have no environment to set. A locally-run server with its own key
-        configured needs no key in the request, so only fail when both are absent.
+        Without this the provider layer raises "OPENROUTER_API_KEY environment
+        variable is not set", which is true and useless to someone using the web
+        app — they have no environment to set. A locally-run server with its own
+        key configured needs no key in the request, so only fail when both are
+        absent.
         """
         if api_key or any(
             os.environ.get(var)
-            for var in ("GROQ_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY")
+            for var in ("OPENROUTER_API_KEY", "ANTHROPIC_API_KEY")
         ):
             return False
         self._send_json(
-            {"error": "No API key set. Open Settings (⚙️), choose a writing model, and "
-                      "paste its key — Groq keys are free at console.groq.com/keys."},
+            {"error": "No API key set. Open Settings (⚙️) and paste an OpenRouter "
+                      "key — create one at openrouter.ai/keys."},
             status=400,
         )
         return True

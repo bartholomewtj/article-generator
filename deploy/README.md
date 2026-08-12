@@ -43,7 +43,7 @@ curl https://articlegen-api.onrender.com/api/health
 `{"ok": true, "stateless": true}` means it's up, and `stateless: true` confirms
 it isn't writing articles to disk. Allow up to a minute if it's been idle.
 
-Then open the web app, paste a Groq key into Settings, and generate one article.
+Then open the web app, paste an OpenRouter key into Settings, and generate one article.
 That's the only test that exercises the whole chain.
 
 ## Configuration
@@ -70,7 +70,7 @@ the visitor is already committed to. The front end says as much if a request
 can't get through.
 
 **512 MB RAM and 0.1 CPU** is enough, because the pipeline is I/O-bound. It
-spends nearly all its time waiting on Groq and the scholarly APIs rather than
+spends nearly all its time waiting on the model provider and the scholarly APIs rather than
 computing.
 
 ## Why stateless

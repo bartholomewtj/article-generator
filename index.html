@@ -990,11 +990,12 @@
   // Each provider keeps its own key slot, so switching between them doesn't
   // discard the other. The model id is sent to the backend, which accepts it
   // only if it matches one it actually supports.
-  // Only OpenRouter for now. Groq and Anthropic were removed from the UI, not
-  // from the backend: web.ALLOWED_MODELS still accepts their models, so the CLI
-  // is unaffected and restoring one here is a matter of adding its entry and its
-  // <option> back. Their stored keys are left in localStorage untouched, so
-  // anyone who had one keeps it if a provider comes back.
+  // Only OpenRouter. Anthropic was removed from the UI but not from the
+  // backend — web.ALLOWED_MODELS still accepts its model, so the CLI is
+  // unaffected and restoring it here is a matter of adding its entry and its
+  // <option> back. Groq is gone everywhere, backend included. Stored keys for
+  // both are left in localStorage untouched, so anyone who had an Anthropic
+  // key keeps it if that provider comes back.
   const PROVIDERS = {
     openrouter: {
       model: 'anthropic/claude-opus-5',
