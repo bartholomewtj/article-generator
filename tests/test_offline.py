@@ -4053,17 +4053,38 @@ def test_claude_md_still_describes_this_code() -> None:
     import re as _re
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    doc = open(os.path.join(root, "CLAUDE.md"), encoding="utf-8").read()
+    # Both halves of the split (#99). CLAUDE.md holds the invariants,
+    # docs/decisions.md the settled history — and drift is as bad in the
+    # second: a post-mortem naming a function that no longer exists sends the
+    # next reader looking for it.
+    doc = "\n".join(
+        open(os.path.join(root, name), encoding="utf-8").read()
+        for name in ("CLAUDE.md", "docs/decisions.md")
+    )
 
     # 1. Paths. Anything backticked that looks like a repo file must be one.
     #    This is the check that would have caught `pages.yml`.
+    #
+    #    ...except where the docs are *quoting* the wrong name, which is what
+    #    the #114 post-mortem does: "it named `pages.yml` (the file is
+    #    `deploy-pages.yml`)". Same shape as the Groq rule below — a
+    #    retrospective marker on the line is what separates a record of the
+    #    error from a claim about the code.
     searched = ("", "articlegen", "tests", "docs", ".github/workflows", "deploy")
-    for path in sorted(set(_re.findall(
-            r"`([\w./-]+\.(?:py|md|yml|yaml|html|json|txt|sh))`", doc))):
+    retrospective = ("the file is", "no longer", "used to", "was renamed",
+                     "renamed", "it named", "removed")
+    lines_for = {}
+    for line in doc.splitlines():
+        for path in _re.findall(r"`([\w./-]+\.(?:py|md|yml|yaml|html|json|txt|sh))`", line):
+            lines_for.setdefault(path, []).append(line.lower())
+
+    for path, lines in sorted(lines_for.items()):
         if path.startswith(("http", "~")):
             continue
+        if all(any(m in ln for m in retrospective) for ln in lines):
+            continue     # only ever mentioned as a thing that changed
         found = any(os.path.exists(os.path.join(root, d, path)) for d in searched)
-        check(f"CLAUDE.md names a file that exists: {path}", found)
+        check(f"the docs name a file that exists: {path}", found)
 
     # 2. Test names. The doc cites guard tests by name; a renamed test leaves
     #    the sentence pointing at nothing, and prose that points at nothing
