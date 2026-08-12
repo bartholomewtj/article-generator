@@ -7,6 +7,18 @@ Not the story of how each one was found — that lives in the git history and th
 issues. `docs/journal-style.md` owns the writing conventions and their sources;
 this file does not restate them.
 
+**This file is checked, twice.** `.github/workflows/docs-current.yml` fails a PR
+that touches `articlegen/**` without touching this file — satisfied either by
+editing it or by writing `Docs: n/a - <why>` in the PR body, so opting out is a
+sentence someone wrote rather than a box someone clicked.
+`test_claude_md_still_describes_this_code` then checks that every file, guard
+test and constant named here still exists. It was written against four real
+errors that survived until someone went looking: a workflow filename that had
+been renamed, three FULLTEXT constants that no longer matched, a rule list
+missing an entry, and Groq described as the default provider after it was
+deleted (#114). A wrong line here costs more than a missing one — every session
+loads this file and trusts it on sight.
+
 ## What this is
 
 `articlegen` turns a topic into a **single-page HTML evidence review, formatted

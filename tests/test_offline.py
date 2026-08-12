@@ -4035,6 +4035,88 @@ def _validate(instance, schema: dict, path: str = "") -> list[str]:
     return errors
 
 
+def test_claude_md_still_describes_this_code() -> None:
+    """Every file, test and constant CLAUDE.md names must still exist.
+
+    The doc says "Read this first" and is loaded into every session, so it is
+    trusted on sight — which makes a wrong line worse than a missing one. By
+    the audit on 12 August it named `.github/workflows/pages.yml` (the file is
+    `deploy-pages.yml`), documented three FULLTEXT constants that no longer
+    matched the code, listed `SUBSTANCE_RULES` without `under-length`, and
+    described Groq as the default provider after Groq had been removed in the
+    same session (issue #114).
+
+    The CI gate makes someone *think* about the doc on every code PR. This
+    catches the drift that survives thinking about it: a rename lands, the doc
+    still names the old thing, and nobody re-reads the paragraph around it.
+    """
+    import re as _re
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    doc = open(os.path.join(root, "CLAUDE.md"), encoding="utf-8").read()
+
+    # 1. Paths. Anything backticked that looks like a repo file must be one.
+    #    This is the check that would have caught `pages.yml`.
+    searched = ("", "articlegen", "tests", "docs", ".github/workflows", "deploy")
+    for path in sorted(set(_re.findall(
+            r"`([\w./-]+\.(?:py|md|yml|yaml|html|json|txt|sh))`", doc))):
+        if path.startswith(("http", "~")):
+            continue
+        found = any(os.path.exists(os.path.join(root, d, path)) for d in searched)
+        check(f"CLAUDE.md names a file that exists: {path}", found)
+
+    # 2. Test names. The doc cites guard tests by name; a renamed test leaves
+    #    the sentence pointing at nothing, and prose that points at nothing
+    #    stops being a pointer and becomes folklore.
+    suites = ""
+    for name in ("test_offline.py", "test_journal_conformance.py"):
+        suites += open(os.path.join(root, "tests", name), encoding="utf-8").read()
+    for test_name in sorted(set(_re.findall(r"`(test_\w+)`", doc))):
+        check(f"CLAUDE.md cites a test that exists: {test_name}",
+              f"def {test_name}(" in suites)
+
+    # 3. Named constants. Same argument, and the FULLTEXT trio is the case that
+    #    actually drifted while the paragraph around it read as authoritative.
+    import inspect
+
+    from articlegen import llm, pipeline, sources, style, web
+
+    modules = (llm, pipeline, sources, style, web)
+    # Env vars and front-end constants are not module attributes, so a plain
+    # `hasattr` sweep would fail on a dozen names that are perfectly current.
+    # Falling back to "appears anywhere in the code" still catches the case
+    # that matters: a constant renamed or deleted appears nowhere at all.
+    haystack = "".join(inspect.getsource(m) for m in modules)
+    haystack += open(os.path.join(root, "index.html"), encoding="utf-8").read()
+    for const in sorted(set(_re.findall(r"`([A-Z][A-Z0-9_]{4,})`", doc))):
+        if const in ("CLAUDE", "README", "SOURCE", "HTTP", "TODO", "JATS"):
+            continue
+        check(f"CLAUDE.md names a constant that exists: {const}",
+              any(hasattr(m, const) for m in modules) or const in haystack)
+
+    # 4. A removed provider must not read as *current*. Groq was described as
+    #    the default provider throughout the doc for a whole session after it
+    #    was deleted from the code. Explaining why it went is exactly what the
+    #    doc is for, so only present-tense currency is banned.
+    from articlegen.llm import _PROVIDER_DEFAULT_MODELS
+
+    check("groq really is gone from the code", "groq" not in _PROVIDER_DEFAULT_MODELS)
+    currency = ("is the default", "default provider", "currently the default",
+                "we use groq", "runs on groq")
+    # Recounting the error is legitimate — "Groq described as the default after
+    # it was deleted" is a sentence this file should contain. A retrospective
+    # marker anywhere on the line is what separates the history from a claim.
+    retrospective = ("was", "were", "had", "after", "until", "used to", "removed",
+                     "gone", "no longer", "era", "reinstate", "old")
+    for line in doc.splitlines():
+        lowered = line.lower()
+        if "groq" in lowered and any(m in lowered for m in currency):
+            check(f"CLAUDE.md does not call groq current: {line.strip()[:56]!r}",
+                  any(m in lowered for m in retrospective))
+    check("and the doc says outright that it was removed",
+          "groq was removed" in doc.lower())
+
+
 def test_real_articles_still_match_the_schema() -> None:
     """Every article the pipeline has to render must satisfy the writer's schema.
 
@@ -4079,6 +4161,7 @@ def main(argv: list[str] | None = None) -> int:
         test_openrouter_request_is_asserted_on_the_payload,
         test_output_ceilings_follow_the_default_model,
         test_every_provider_reports_what_it_sent,
+        test_claude_md_still_describes_this_code,
         test_real_articles_still_match_the_schema,
         test_openrouter_routing,
         test_openrouter_refusal_falls_back,

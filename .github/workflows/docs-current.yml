@@ -1,0 +1,69 @@
+name: Docs current
+
+# CLAUDE.md says "Read this first" and is loaded into every session, so a
+# session trusts it. It drifted anyway: by the audit on 12 August it named a
+# workflow file that did not exist, documented three FULLTEXT constants that no
+# longer matched the code, listed SUBSTANCE_RULES without `under-length`, and
+# described Groq as the default provider after Groq had been removed. None were
+# hard to fix; all four survived until someone went looking, and a wrong doc
+# costs more than a missing one (#114).
+#
+# The known objection to a gate like this is that plenty of code changes
+# genuinely need no doc edit, and a check that is routinely overridden trains
+# you to override it. So the override is explicit and written down rather than
+# silent: put a line in the PR body saying why, and it passes with that reason
+# echoed into the log where a reviewer sees it.
+on:
+  pull_request:
+    paths:
+      - "articlegen/**"
+
+jobs:
+  docs-current:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # Need the base branch to diff against, and PR checkouts are shallow.
+          fetch-depth: 0
+
+      - name: CLAUDE.md keeps up with the code
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          changed=$(git diff --name-only "$BASE" "$HEAD")
+          echo "Changed files:"
+          echo "$changed" | sed 's/^/  /'
+
+          code=$(echo "$changed" | grep -c '^articlegen/' || true)
+          docs=$(echo "$changed" | grep -c '^CLAUDE.md$' || true)
+
+          if [ "$code" -eq 0 ] || [ "$docs" -gt 0 ]; then
+            echo "OK: CLAUDE.md was updated alongside the code."
+            exit 0
+          fi
+
+          # The escape hatch. `Docs: n/a - <reason>` in the PR body, with a
+          # reason of real length, so opting out is a sentence someone wrote
+          # rather than a box someone clicked.
+          reason=$(printf '%s' "$BODY" | grep -iEo 'Docs: *n/a *[-—:] *.+' | head -1 || true)
+          if [ -n "$reason" ]; then
+            echo "OK: docs deliberately untouched."
+            echo "  $reason"
+            exit 0
+          fi
+
+          echo "::error::This PR changes articlegen/** but not CLAUDE.md."
+          echo ""
+          echo "CLAUDE.md is loaded into every session and is trusted on sight, so"
+          echo "stale text there is worse than no text. Either:"
+          echo ""
+          echo "  * update CLAUDE.md, or"
+          echo "  * add a line to the PR body: 'Docs: n/a - <why>'"
+          echo ""
+          echo "The second is fine and often correct. It just has to be a"
+          echo "decision someone wrote down."
+          exit 1
