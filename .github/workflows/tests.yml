@@ -1,0 +1,36 @@
+name: Tests
+
+# Both suites are pure logic: no API keys, no network, no services. That is
+# what makes them safe to run on every push and every PR — and running them
+# here is also the only evidence that the "fully offline" claim is true, since
+# a suite that quietly needed a key would fail on a runner that has none.
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  offline-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install -e .
+
+      # Both scripts already exit non-zero on failure, so no test runner is
+      # needed and none is added: the repo has no pytest dependency and this is
+      # not the place to introduce one.
+      - name: Offline tests
+        run: python tests/test_offline.py
+
+      - name: Journal format conformance
+        run: python tests/test_journal_conformance.py

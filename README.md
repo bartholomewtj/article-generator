@@ -1,5 +1,8 @@
 # articlegen
 
+[![Tests](https://github.com/bartholomewtj/article-generator/actions/workflows/tests.yml/badge.svg)](https://github.com/bartholomewtj/article-generator/actions/workflows/tests.yml)
+[![Deployment health](https://github.com/bartholomewtj/article-generator/actions/workflows/health.yml/badge.svg)](https://github.com/bartholomewtj/article-generator/actions/workflows/health.yml)
+
 A **three-stage workflow** for going from a vague interest to a review-ready
 article: **generate ideas → research collated automatically → draft prepared for
 your review** — as a self-contained single-page HTML file (plus Markdown),
@@ -31,9 +34,10 @@ See [`deploy/`](deploy/README.md) to host the backend yourself.
 
 - **Groq** (the default; free tier, fast inference): create a key at
   https://console.groq.com/keys and set `GROQ_API_KEY`.
-- **OpenRouter** (opt-in; same model as Groq, no daily cap): create a key at
-  https://openrouter.ai/keys and set `OPENROUTER_API_KEY`.
-- **Claude** (opt-in; best writing quality, paid API): set `ANTHROPIC_API_KEY`.
+- **OpenRouter** (opt-in; no daily cap; **roughly 50c–$1 an article**): create a
+  key at https://openrouter.ai/keys and set `OPENROUTER_API_KEY`.
+- **Claude** (opt-in; best writing quality; **roughly $1–2 an article**): set
+  `ANTHROPIC_API_KEY`.
 - **Your Claude subscription** (opt-in; no key at all): if you already pay for
   Claude and have [Claude Code](https://claude.com/claude-code) installed and
   signed in, `--model cli:opus` or `--model cli:sonnet` drafts through it. A
@@ -44,8 +48,11 @@ See [`deploy/`](deploy/README.md) to host the backend yourself.
 automatically, and it takes priority even if the other keys are also present.
 To use another provider, set `ARTICLEGEN_PROVIDER=openrouter` (or `anthropic`,
 or `claude-cli`). Models: `llama-3.3-70b-versatile` on Groq,
-`meta-llama/llama-3.3-70b-instruct` on OpenRouter, `claude-fable-5` on
+`anthropic/claude-opus-5` on OpenRouter, `claude-fable-5` on
 Anthropic, `cli:opus` on your subscription, all overridable with `--model`.
+
+**This block is the single place the defaults are described in prose.** Change a
+default in `llm.py` and change it here; nowhere else should restate them.
 
 **About `cli:` — what you give up.** It costs nothing beyond the subscription
 you already pay for, and it is the only option that needs no key. Two real
@@ -59,13 +66,25 @@ automated.
 
 **Groq's free tier allows roughly 4–7 articles a day** (100,000 tokens/day; one
 article costs 14–23k, and failed attempts still count). It's the right choice
-for trying this out. Once that cap is the thing stopping you, OpenRouter runs
-the *same* Llama 3.3 70B from prepaid credit with no daily allowance, for well
-under a cent per article — it fixes the quota, not the writing. Claude is the
-one to pick when the prose quality is what you want to improve; it also has no
-daily cap. Any OpenRouter catalogue model works with `--model`, so
-`--model anthropic/claude-sonnet-5` runs Claude billed through your OpenRouter
-credit instead of a separate Anthropic account.
+for trying this out, and it's the only one that costs nothing.
+
+**Everything else here costs real money, so read this before pasting a paid
+key.** OpenRouter's default is Claude Opus 5, at roughly **50c–$1 an article**.
+The Anthropic default is Fable 5, at roughly **$1–2**. Those are per article,
+and a failed run still bills you. Neither has a daily cap, which is the point —
+but it also means nothing stops a bad afternoon costing $20.
+
+Cheaper ways to leave Groq's cap behind, if quality is not what you're trying
+to fix:
+
+- `--model meta-llama/llama-3.3-70b-instruct` runs the *same* Llama as Groq
+  through OpenRouter credit, for well under a cent an article. This fixes the
+  quota, not the writing.
+- `--model anthropic/claude-sonnet-5` is a cheaper Claude than either default.
+- `--model cli:opus` costs nothing beyond a Claude subscription you already
+  pay for.
+
+Any OpenRouter catalogue model works with `--model`.
 
 Optional extras: a `SEMANTIC_SCHOLAR_API_KEY` secret and an `OPENALEX_MAILTO`
 environment variable raise the scholarly APIs' rate limits.
