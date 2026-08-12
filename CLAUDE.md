@@ -368,6 +368,15 @@ verbatim, and `agy models` lists them — or `ARTICLEGEN_PROVIDER=gemini-cli`.
   sync, in-place edit and save. Articles for the app are rendered
   `standalone=False` so there is no dead toolbar behind the sandbox; older draft
   files on disk still have one and `hideArticleToolbar()` hides it.
+- **The API key is tab-only unless the visitor opts in.** `localStorage` is
+  scoped to the *origin*, and every Pages site under `bartholomewtj.github.io`
+  shares one — a remembered key is readable by any other project published
+  there, now or years from now (#113). So a new key goes to `sessionStorage`,
+  `activeKey()` reads session first, and `saveApiKey` clears **both** stores
+  before writing one. The sandbox (#100) is a different threat and does nothing
+  about this. `test_api_key_is_session_only_by_default` pins it, including the
+  Settings and README wording — "never shared with anyone else" was true about
+  the network and misleading about the origin.
 - **The article shape is not a preference.** Tone, length and evidence depth are
   constants in `index.html` (`TONE_LABEL`, `LENGTH_LABEL`, `DEPTH_LABEL`), not
   selectors. Every article is an in-depth longform review at a strict empirical

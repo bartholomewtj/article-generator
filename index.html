@@ -704,13 +704,26 @@
           <li>Copy the key (it starts with <code>sk-or-v1-</code>) and paste it above.</li>
           <li>Press <strong>Save Settings</strong>.</li>
         </ul>
+        <label style="display:flex; align-items:flex-start; gap:0.5rem; font-size:0.8rem; color:var(--muted); margin-top:0.9rem; line-height:1.5; cursor:pointer;">
+          <input type="checkbox" id="rememberKey" style="margin-top:0.15rem; flex:none;">
+          <span>Remember this key on this browser. Leave it off and the key is
+          kept for this tab only, and you paste it again next visit.</span>
+        </label>
+
+        <p style="font-size:0.75rem; color:var(--muted); margin-top:0.9rem; line-height:1.5;">
+          Your key is sent only to the article generator backend for the request
+          you asked for. It is never stored on the server.
+        </p>
         <p style="font-size:0.75rem; color:var(--muted); margin-top:0.5rem; line-height:1.5;">
-          Your key stays in this browser's local storage and is sent only to the
-          article generator backend for the request you asked for. It is never
-          stored on the server and never shared with anyone else. Anyone with
-          access to this device can read it &mdash; revoke it at
+          <strong>Where it is kept.</strong> Anyone with access to this device
+          can read it. If you tick <em>Remember this key</em>, it is also
+          readable by <strong>every other site published under
+          bartholomewtj.github.io</strong> &mdash; browsers scope stored data to
+          the whole domain, not to this one app, and that domain hosts other
+          projects. Untick the box to keep the key in this tab only. Either way,
+          revoke it at
           <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--accent);">openrouter.ai/keys</a>
-          if you use a shared computer.
+          if you have any doubt &mdash; it is a paid key with no daily cap.
         </p>
       </div>
 
@@ -1009,8 +1022,28 @@
     return (p && PROVIDERS[p]) ? p : DEFAULT_PROVIDER;
   }
 
+  // A key lives in exactly one of two stores, never both.
+  //
+  // localStorage is scoped to the ORIGIN, not the path, and every GitHub Pages
+  // site under bartholomewtj.github.io shares one origin. A remembered key is
+  // therefore readable by any other Pages site the account publishes — now, or
+  // years from now — and by anyone with push access to those repos (#113). The
+  // sandboxed reader iframe (#100) does nothing about this: different threat,
+  // different boundary, and no amount of sandboxing changes where the browser
+  // files the key.
+  //
+  // So sessionStorage is the default and the box is unticked for a new key: it
+  // dies with the tab and leaves no persistent credential behind. Ticking the
+  // box is an informed choice the Settings text spells out. An existing
+  // remembered key keeps working and shows the box ticked, because that is the
+  // truth about where it is.
+  function keyName() {
+    return PROVIDERS[currentProvider()].store;
+  }
+
   function activeKey() {
-    return localStorage.getItem(PROVIDERS[currentProvider()].store) || '';
+    const name = keyName();
+    return sessionStorage.getItem(name) || localStorage.getItem(name) || '';
   }
 
   function activeModel() {
@@ -1027,22 +1060,30 @@
     if (label) label.textContent = cfg.label;
     if (input) {
       input.placeholder = cfg.placeholder;
-      input.value = localStorage.getItem(cfg.store) || '';
+      input.value = sessionStorage.getItem(cfg.store) || localStorage.getItem(cfg.store) || '';
     }
+    const remember = document.getElementById('rememberKey');
+    if (remember) remember.checked = !!localStorage.getItem(cfg.store);
   }
 
   function saveApiKey() {
     const chosen = document.getElementById('providerSelect')?.value || currentProvider();
     const cfg = PROVIDERS[chosen] || PROVIDERS[DEFAULT_PROVIDER];
     const k = document.getElementById('apiKeyInput')?.value.trim() || '';
+    const remember = !!document.getElementById('rememberKey')?.checked;
 
     localStorage.setItem('articlegen_provider', chosen);
-    if (k) localStorage.setItem(cfg.store, k);
-    else localStorage.removeItem(cfg.store);
+    // Clear both stores before writing. Unticking the box has to actually
+    // remove the persistent copy — otherwise "don't remember this key" would
+    // leave the credential exactly where it already was, which is the one
+    // outcome the checkbox exists to prevent.
+    localStorage.removeItem(cfg.store);
+    sessionStorage.removeItem(cfg.store);
+    if (k) (remember ? localStorage : sessionStorage).setItem(cfg.store, k);
 
     if (typeof savePreferences === 'function') savePreferences();
 
-    showToast('Settings saved!');
+    showToast(k && !remember ? 'Saved for this tab only' : 'Settings saved!');
     closeModal('settingsModal');
   }
 
