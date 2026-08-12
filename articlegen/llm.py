@@ -1,15 +1,25 @@
-"""Provider layer: one `generate_json()` call, backed by Groq, Anthropic (Claude) or OpenRouter.
+"""Provider layer: one `generate_json()` call, backed by Groq, Anthropic (Claude),
+OpenRouter, or a Claude subscription via the Claude Code CLI.
 
 Provider resolution, in priority order:
-1. The model name, when given: a `vendor/model` slug -> OpenRouter, `claude-*` ->
-   Anthropic, `llama*`/`mixtral*`/`groq*` -> Groq. The slash is checked first
-   because OpenRouter re-sells the other providers' models under names like
-   `anthropic/claude-sonnet-5`, which must not route to Anthropic directly.
+1. The model name, when given: `cli:*` -> the Claude Code CLI, a `vendor/model`
+   slug -> OpenRouter, `claude-*` -> Anthropic, `llama*`/`mixtral*`/`groq*` ->
+   Groq. `cli:` is checked first because it is an explicit instruction and its
+   suffix is a bare alias ("opus") that matches nothing else. The slash is
+   checked before the `claude` prefix because OpenRouter re-sells the other
+   providers' models under names like `anthropic/claude-sonnet-5`, which must
+   not route to Anthropic directly.
 2. An explicitly passed `api_key`, by its prefix: `sk-ant-` -> Anthropic,
    `gsk_` -> Groq, `sk-or-` -> OpenRouter.
-3. ARTICLEGEN_PROVIDER env var ("anthropic", "groq" or "openrouter").
+3. ARTICLEGEN_PROVIDER env var ("anthropic", "groq", "openrouter", "claude-cli").
 4. Whichever API key is present: GROQ_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY.
 5. Fallback: Groq (the default provider).
+
+**`claude-cli` is never reached by steps 2 or 4, only by 1 or 3.** It has no
+API key to detect, so there is nothing to auto-detect it *by* — and that
+suits it, because it is the one provider that must stay opt-in. It answers as
+whoever is signed into the CLI on the machine, and it needs a `claude` binary
+that no deployment host has.
 
 Keys are passed **per call**, never through `os.environ`. The server handles
 concurrent requests on different threads, and the environment is process-global:
@@ -58,6 +68,37 @@ OPENROUTER_DEFAULT_MODEL = "anthropic/claude-opus-5"
 OPENROUTER_REFUSAL_FALLBACK = "anthropic/claude-sonnet-5"
 DEFAULT_PROVIDER = "groq"
 
+# ---- the Claude Code CLI, i.e. "run this on my Claude subscription" --------
+#
+# A Claude.ai subscription issues no API key, so none of the three providers
+# above can use one. `claude -p` can: it is the same subscription seat, driven
+# non-interactively. Opt in with `--model cli:opus` (or `cli:sonnet`), or
+# ARTICLEGEN_PROVIDER=claude-cli.
+#
+# **Local runs only, and deliberately not in web.ALLOWED_MODELS.** The Render
+# host has no `claude` binary and no seat to authenticate against, so offering
+# this in the web app's Settings dropdown would advertise a provider that
+# cannot work there. Drafting on the subscription is a CLI activity.
+CLAUDE_CLI_DEFAULT_MODEL = "opus"
+CLAUDE_CLI_PREFIX = "cli:"
+# The CLI loads every configured MCP server's tool schemas into the system
+# prompt of each invocation. Measured on this machine: 22,944 prompt tokens
+# with them, 2,363 without, for the same trivial call — a 10x tax, paid per
+# call, roughly eight times an article, for servers the model is not allowed
+# to use anyway (`--tools ""`). An empty config with --strict-mcp-config is
+# what actually suppresses them; --tools alone does not.
+CLAUDE_CLI_BASE_ARGS = (
+    "--print",
+    "--output-format", "json",
+    "--tools", "",
+    "--strict-mcp-config",
+    "--mcp-config", '{"mcpServers":{}}',
+)
+# Subscription time is not billed per token, so there is no reason to buy a
+# cheaper answer — unlike the metered paths, where effort is a cost decision.
+CLAUDE_CLI_EFFORT = "high"
+CLAUDE_CLI_TIMEOUT = 900
+
 # Groq's free tier meters tokens per minute, and it counts the *reserved* output
 # against that budget as well as the prompt. The article call used to reserve
 # 16000 output tokens against a 12000 TPM limit, which cannot succeed no matter
@@ -102,12 +143,19 @@ _PROVIDER_DEFAULT_MODELS = {
     "groq": GROQ_DEFAULT_MODEL,
     "anthropic": ANTHROPIC_DEFAULT_MODEL,
     "openrouter": OPENROUTER_DEFAULT_MODEL,
+    "claude-cli": CLAUDE_CLI_DEFAULT_MODEL,
 }
 
 
 def resolve_provider(model: str | None = None, api_key: str | None = None) -> tuple[str, str]:
     """Return (provider, model). `model` may be empty -> use the provider's default."""
     if model:
+        # Checked before everything else, including the slash: `cli:` is an
+        # explicit routing instruction from the operator, and the name after it
+        # is a CLI alias ("opus", "sonnet") that would otherwise fall through to
+        # the default provider and be silently drafted by Llama.
+        if model.startswith(CLAUDE_CLI_PREFIX):
+            return "claude-cli", model[len(CLAUDE_CLI_PREFIX):] or CLAUDE_CLI_DEFAULT_MODEL
         # Checked before the `claude` prefix: OpenRouter re-sells other
         # providers' models as `vendor/model`, and `anthropic/claude-sonnet-5`
         # sent to Anthropic's own SDK is a 404. The slash is what makes a name
@@ -163,7 +211,210 @@ def generate_json(
         return _groq_generate(prompt, schema, system, model, deep, api_key)
     if provider == "openrouter":
         return _openrouter_generate(prompt, schema, system, model, deep, api_key)
+    if provider == "claude-cli":
+        return _claude_cli_generate(prompt, schema, system, model)
     return _anthropic_generate(prompt, schema, system, model, deep, api_key)
+
+
+# ---------------------------------------------------------------- claude cli
+
+def _extract_json_object(text: str) -> str:
+    """Pull the first complete JSON object out of a reply that also has prose.
+
+    Only the CLI path needs this. The three API providers are given a
+    `response_format`, so the whole reply is the object; here the schema is
+    only ever a request, and the first thing this provider actually did was
+    answer a JSON-schema prompt in YAML.
+
+    Brace-matching rather than a regex because the article payload nests
+    several levels deep, and string-aware because abstracts contain braces and
+    escaped quotes.
+    """
+    start = text.find("{")
+    if start == -1:
+        return text
+    depth, in_string, escaped = 0, False, False
+    for i, ch in enumerate(text[start:], start):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+    return text
+
+
+# Appended to the end of the user prompt, not just the system prompt. The
+# system prompt already said "JSON only" when Sonnet replied in YAML — with a
+# long source payload in between, the instruction nearest the end of the
+# context is the one that survives.
+_CLI_JSON_DEMAND = (
+    "\n\n---\n"
+    "OUTPUT FORMAT — this overrides any formatting implied above.\n"
+    "Reply with one JSON object and nothing else. The first character of your "
+    "reply must be `{` and the last must be `}`. No prose, no preamble, no "
+    "explanation, no markdown fences, no YAML."
+)
+
+_CLI_JSON_RETRY = (
+    "Your previous reply was not valid JSON, so it could not be used. "
+    "Send the same content again as a single raw JSON object matching the "
+    "schema — starting with `{`, ending with `}`, with nothing before or "
+    "after it.\n\n"
+)
+
+
+def _claude_cli_generate(prompt: str, schema: dict, system: str | None, model: str) -> dict:
+    """Generate via `claude -p`, so the call is drawn from a Claude subscription.
+
+    No `api_key` parameter, and that is not an oversight: this path has no key
+    to pass. It authenticates as whoever is signed into the CLI on this
+    machine, which makes it single-tenant by construction — the one provider
+    the threaded server must never offer, since every request would be billed
+    to, and answered as, the host's own seat.
+
+    `deep` is ignored too. The other three paths use it to size an output
+    ceiling; the CLI has no such parameter, and effort is set high regardless
+    (see CLAUDE_CLI_EFFORT).
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    exe = shutil.which("claude")
+    if not exe:
+        raise RuntimeError(
+            "The `claude` CLI is not on PATH, so provider claude-cli cannot run. "
+            "Install Claude Code (npm i -g @anthropic-ai/claude-code) and sign in, "
+            "or pick a provider that takes an API key."
+        )
+
+    # Everything big goes on stdin; only small fixed flags go in `args`.
+    #
+    # `claude` on Windows is a .cmd shim, so the command line is built by
+    # cmd.exe — whose limit is 8,191 characters, not the 32,767 of a native
+    # CreateProcess call. _WRITER_SYSTEM (8,168) plus the article schema
+    # (3,102) is ~11KB, so passing the system prompt as an argument failed
+    # with "The command line is too long" at the article stage, four calls and
+    # several minutes into a run. There is no --system-prompt-file to reach
+    # for, so the caller's system text is delivered as a preamble on stdin
+    # instead, and --system-prompt carries only the short fixed contract below.
+    contract = (
+        "You are a JSON API. You reply with exactly one JSON object and nothing else: "
+        "no prose, no preamble, no explanation, no markdown fences, no YAML. "
+        "The first character of every reply is `{` and the last is `}`. "
+        "Your instructions and the schema you must satisfy arrive in the message."
+    )
+    args = [
+        exe, *CLAUDE_CLI_BASE_ARGS,
+        "--model", model,
+        "--effort", CLAUDE_CLI_EFFORT,
+        "--system-prompt", contract,
+    ]
+
+    # Same belt-and-braces as the Groq and OpenRouter paths, and here it is the
+    # only brace there is: the CLI exposes no response_format, so nothing but
+    # the prompt constrains the shape of what comes back.
+    preamble = (
+        (f"{system}\n\n" if system else "")
+        + "You must respond ONLY with a valid JSON object matching this schema. "
+        "Every required property must be present, spelled exactly as the schema "
+        "spells it.\n"
+        f"JSON Schema:\n{json.dumps(schema)}\n\n---\n\n"
+    )
+
+    def _run(stdin_text: str) -> tuple[dict, str]:
+        # Two reasons for a scratch cwd. The CLI auto-discovers CLAUDE.md from
+        # the working directory, and running inside this repo would prepend
+        # articlegen's own project memory — several thousand tokens about how
+        # the pipeline works — to a call whose job is to write a paragraph
+        # about clinical evidence. It also keeps the subprocess pointed away
+        # from the repo it is being run from.
+        #
+        # The prompt goes on stdin, not in `args`: the source payload runs to
+        # tens of kilobytes, and Windows caps a command line at 32,767 chars.
+        try:
+            with tempfile.TemporaryDirectory() as scratch:
+                proc = subprocess.run(
+                    args, input=stdin_text, cwd=scratch, capture_output=True,
+                    text=True, encoding="utf-8", timeout=CLAUDE_CLI_TIMEOUT,
+                )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(
+                f"`claude -p` did not answer within {CLAUDE_CLI_TIMEOUT}s (model {model}). "
+                "Long articles at high effort are slow; retry, or use a metered provider."
+            ) from None
+
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"`claude -p` exited {proc.returncode} (model {model}): "
+                f"{(proc.stderr or proc.stdout or '').strip()[:500]}"
+            )
+
+        try:
+            envelope = json.loads(proc.stdout)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"`claude -p` did not return a JSON envelope (model {model}): {exc}\n"
+                f"First 500 chars: {proc.stdout[:500]!r}"
+            ) from exc
+
+        # A declined request is a successful invocation carrying a refusal,
+        # exactly as on the Anthropic path — surfaced here rather than left to
+        # fail later as "invalid JSON" pointing at the model's own apology.
+        if envelope.get("is_error") or envelope.get("subtype") not in (None, "success"):
+            raise RuntimeError(
+                f"`claude -p` reported an error (model {model}, "
+                f"subtype={envelope.get('subtype')}, stop_reason={envelope.get('stop_reason')}): "
+                f"{str(envelope.get('result'))[:500]}"
+            )
+
+        usage = envelope.get("usage") or {}
+        print(
+            f"[articlegen] claude-cli in={usage.get('input_tokens', 0)} "
+            f"cached={usage.get('cache_read_input_tokens', 0)} "
+            f"out={usage.get('output_tokens', 0)} "
+            f"({envelope.get('duration_ms', 0) / 1000:.1f}s)",
+            file=sys.stderr, flush=True,
+        )
+        return envelope, _extract_json_object(_clean_json_text(envelope.get("result") or ""))
+
+    # One retry, because format compliance is the failure mode this provider
+    # actually has. The API paths get `response_format` and cannot produce
+    # prose; here the first real call answered a JSON-schema prompt in YAML,
+    # which cost the whole run at the first of eight stages. This is not the
+    # refusal retry the OpenRouter path does — a refusal raises above and is
+    # not retried, since asking the same model again gets the same answer.
+    envelope, cleaned = _run(preamble + prompt + _CLI_JSON_DEMAND)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        print(
+            f"[articlegen] claude-cli {model} replied with non-JSON; retrying once",
+            file=sys.stderr, flush=True,
+        )
+
+    envelope, cleaned = _run(_CLI_JSON_RETRY + preamble + prompt + _CLI_JSON_DEMAND)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"{model} did not return valid JSON via the CLI, twice (stop_reason="
+            f"{envelope.get('stop_reason')}): {exc}\n"
+            "The CLI cannot enforce a response schema the way the API providers can, "
+            "so a conversational reply lands here.\n"
+            f"First 500 chars: {cleaned[:500]!r}"
+        ) from exc
 
 
 # ---------------------------------------------------------------- anthropic

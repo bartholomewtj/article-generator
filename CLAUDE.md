@@ -281,10 +281,44 @@ this gets used for) is the durable answer rather than more header tuning.
   `generate_json(..., api_key=...)` and every wrapper takes it; `None` falls back
   to the environment, which is what the CLI uses. Guarded by
   `test_per_request_api_key`.
-- **Three providers: Groq, OpenRouter, Anthropic.** Groq is the default (free
+- **Three API providers: Groq, OpenRouter, Anthropic** — plus `claude-cli`,
+  which is a different kind of thing (below). Groq is the default (free
   tier / fast inference); `GROQ_API_KEY` is used automatically and wins even if
   the others are also set. The web app offers all three in Settings, storing a
   key per provider.
+- **`claude-cli` drafts on a Claude *subscription*, via `claude -p`.** A
+  Claude.ai subscription issues no API key, so the three providers above
+  cannot use one; this shells out to the Claude Code CLI, which is that same
+  seat driven non-interactively. `--model cli:opus` / `cli:sonnet`, or
+  `ARTICLEGEN_PROVIDER=claude-cli`.
+  - **It is opt-in only, and must stay that way.** With no key to detect there
+    is nothing to auto-detect it *by*, which is the point: it answers as
+    whoever is signed into the CLI on this machine, so a threaded server would
+    answer every visitor from the host's own seat. Deliberately absent from
+    `web.ALLOWED_MODELS` — Render has no `claude` binary and no seat, so
+    offering it in Settings would advertise a provider that cannot work there.
+    `test_claude_cli_provider` pins both.
+  - **The CLI enforces no response schema**, unlike all three API paths. This
+    is the whole difficulty. The first real run died at stage one of eight:
+    given a JSON schema, Sonnet answered in YAML. Three defences now, and they
+    are all load-bearing — the format demand is repeated at the *end* of the
+    user prompt (the system prompt's copy loses to tens of kilobytes of
+    sources in between), a fenced or prose-wrapped object is recovered by
+    string-aware brace matching, and a still-unparseable reply is retried once
+    with the failure named. A **refusal** is not retried: same model, same
+    answer.
+  - **Suppress MCP servers or pay a 10x prompt tax.** The CLI loads every
+    configured server's tool schemas into each invocation's system prompt:
+    measured at 22,944 tokens with them against 2,363 without, for the same
+    trivial call, for servers `--tools ""` already forbids. Only
+    `--strict-mcp-config` with an empty `--mcp-config` suppresses them.
+  - **It runs in a scratch cwd**, because the CLI auto-discovers `CLAUDE.md`
+    from the working directory — running in this repo would prepend *this
+    file* to every call.
+  - `--effort high` on every call. Subscription time is not metered per token,
+    so unlike the paid paths there is no cheaper answer worth buying.
+  - `deep` and `api_key` are both ignored, and neither is an oversight: there
+    is no output-ceiling parameter to size, and no key to pass.
 - **OpenRouter's default is Claude Opus 5** (`anthropic/claude-opus-5`, $5/$25
   per million tokens, roughly 50c–$1 an article). It used to be the same Llama
   3.3 70B as Groq, but the #63/#64 test pinned the quality problems on the

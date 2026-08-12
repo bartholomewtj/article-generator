@@ -1310,6 +1310,246 @@ def test_openalex_reaches_for_recent_work_as_well() -> None:
           sum(1 for a in attempts if a) == 1)
 
 
+def test_claude_cli_provider() -> None:
+    """Drafting on a Claude subscription, which issues no API key.
+
+    The invariant worth pinning is that this provider stays opt-in. It answers
+    as whoever is signed into the CLI on the machine, so auto-selecting it on a
+    threaded server would answer every visitor's request from the host's own
+    seat — and no deployment host has a `claude` binary anyway.
+    """
+    import json as _json
+
+    from articlegen import llm, web
+
+    saved = {v: os.environ.get(v) for v in
+             ("ANTHROPIC_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY", "ARTICLEGEN_PROVIDER")}
+    try:
+        for v in saved:
+            os.environ.pop(v, None)
+
+        check("cli: prefix routes to the CLI, stripped to the alias",
+              llm.resolve_provider("cli:sonnet") == ("claude-cli", "sonnet"))
+        check("a bare cli: takes the default model",
+              llm.resolve_provider("cli:") == ("claude-cli", llm.CLAUDE_CLI_DEFAULT_MODEL))
+        check("ARTICLEGEN_PROVIDER can select it",
+              (os.environ.update({"ARTICLEGEN_PROVIDER": "claude-cli"}) or
+               llm.resolve_provider()) == ("claude-cli", llm.CLAUDE_CLI_DEFAULT_MODEL))
+        os.environ.pop("ARTICLEGEN_PROVIDER")
+
+        # The point of the whole guard: nothing about the environment should
+        # ever land a caller here by accident.
+        os.environ["ANTHROPIC_API_KEY"] = "sk-ant-x"
+        check("a present Anthropic key does not select the CLI",
+              llm.resolve_provider()[0] == "anthropic")
+        os.environ.pop("ANTHROPIC_API_KEY")
+        check("no keys at all still falls back to Groq, not the CLI",
+              llm.resolve_provider()[0] == "groq")
+        check("an sk-ant- key routes to the API, never the subscription",
+              llm.resolve_provider(api_key="sk-ant-x")[0] == "anthropic")
+
+        check("the CLI model is not offered to the web app",
+              llm.CLAUDE_CLI_DEFAULT_MODEL not in web.ALLOWED_MODELS
+              and not any(m.startswith(llm.CLAUDE_CLI_PREFIX) for m in web.ALLOWED_MODELS))
+        check("the web app drops a cli: model rather than honouring it",
+              web._requested_model({"model": "cli:opus"}) is None)
+
+        # -- the subprocess contract -------------------------------------
+        captured = {}
+
+        class FakeProc:
+            returncode = 0
+            stderr = ""
+            stdout = _json.dumps({
+                "type": "result", "subtype": "success", "is_error": False,
+                "duration_ms": 1200, "usage": {"input_tokens": 3, "output_tokens": 9},
+                "result": '```json\n{"ok": true}\n```',
+            })
+
+        def fake_run(args, **kwargs):
+            captured["args"], captured["kwargs"] = args, kwargs
+            return FakeProc()
+
+        import subprocess
+        real_run, real_which = subprocess.run, __import__("shutil").which
+        try:
+            subprocess.run = fake_run
+            __import__("shutil").which = lambda name: "/fake/claude"
+            out = llm.generate_json("PROMPT", {"type": "object"},
+                                    system="SYS", model="cli:sonnet", deep=True)
+        finally:
+            subprocess.run = real_run
+            __import__("shutil").which = real_which
+
+        args = captured["args"]
+        check("fenced JSON from the CLI is still parsed", out == {"ok": True})
+        check("the alias is passed, not the cli: name",
+              "sonnet" in args and "cli:sonnet" not in args)
+        check("effort is set high, since subscription time is not per-token",
+              args[args.index("--effort") + 1] == llm.CLAUDE_CLI_EFFORT)
+        check("the schema and the caller's system text ride on stdin, not in argv",
+              "JSON Schema:" in captured["kwargs"]["input"]
+              and "SYS" in captured["kwargs"]["input"]
+              and "JSON Schema:" not in " ".join(args)
+              and "SYS" not in " ".join(args))
+        # `claude` is a .cmd shim on Windows, so cmd.exe builds the command
+        # line and its ceiling is 8,191 characters, not the 32,767 of a native
+        # CreateProcess. _WRITER_SYSTEM (8,168) plus the article schema (3,102)
+        # busted it at the article stage, four calls into a run. Nothing that
+        # scales with the article, the schema or the sources may go in argv.
+        check("argv stays small enough for the cmd.exe 8,191-char ceiling",
+              len(" ".join(args)) < 2000)
+        check("MCP servers are suppressed, a measured 10x prompt-token tax",
+              "--strict-mcp-config" in args
+              and args[args.index("--mcp-config") + 1] == '{"mcpServers":{}}')
+        check("no tools, so the model answers instead of working",
+              args[args.index("--tools") + 1] == "")
+        check("the prompt goes on stdin, never in argv",
+              "PROMPT" in captured["kwargs"]["input"] and "PROMPT" not in " ".join(args))
+        check("the format demand is last, after the sources, not only up front",
+              captured["kwargs"]["input"].rstrip().endswith("no YAML."))
+        check("argv still carries the JSON-only contract",
+              "one JSON object" in args[args.index("--system-prompt") + 1])
+        check("it runs outside the repo, so no CLAUDE.md is auto-discovered",
+              captured["kwargs"]["cwd"] and "articlegen" not in captured["kwargs"]["cwd"])
+
+        # -- prose replies ------------------------------------------------
+        # The failure this provider actually has. The API paths are given a
+        # response_format and cannot return prose; the first real call here
+        # answered a JSON-schema prompt in YAML and cost the whole run at the
+        # first of eight stages.
+        check("a JSON object is recovered from a reply wrapped in prose",
+              llm._extract_json_object('Sure!\n```json\n{"a": {"b": 1}}\n```\nHope that helps')
+              == '{"a": {"b": 1}}')
+        check("braces and escaped quotes inside strings do not end the object",
+              llm._extract_json_object('{"a": "has } and \\" quote"} trailing')
+              == '{"a": "has } and \\" quote"}')
+        check("a reply with no object at all is passed through untouched",
+              llm._extract_json_object("core_entity: safety planning") ==
+              "core_entity: safety planning")
+
+        calls = []
+
+        def yaml_then_json(args_, **kwargs):
+            calls.append(kwargs["input"])
+
+            class P:
+                returncode, stderr = 0, ""
+                stdout = _json.dumps({
+                    "type": "result", "subtype": "success", "is_error": False,
+                    "usage": {}, "duration_ms": 1,
+                    "result": ('core_entity: safety planning\nqueries:\n  - a'
+                               if len(calls) == 1 else '{"recovered": true}'),
+                })
+            return P()
+
+        try:
+            subprocess.run = yaml_then_json
+            __import__("shutil").which = lambda name: "/fake/claude"
+            out = llm.generate_json("P", {"type": "object"}, model="cli:sonnet")
+        finally:
+            subprocess.run = real_run
+            __import__("shutil").which = real_which
+
+        check("a YAML reply is retried rather than losing the run",
+              out == {"recovered": True} and len(calls) == 2)
+        check("the retry tells the model its last reply was unusable",
+              "was not valid JSON" in calls[1] and "P" in calls[1])
+        check("the retry is not infinite", len(calls) == 2)
+
+        # A refusal is a successful invocation carrying an apology. It has to
+        # fail here, not later as "invalid JSON" pointing at that apology.
+        class RefusedProc(FakeProc):
+            stdout = _json.dumps({"type": "result", "subtype": "error_during_execution",
+                                  "is_error": True, "result": "I can't help with that."})
+
+        try:
+            subprocess.run = lambda args, **kw: RefusedProc()
+            __import__("shutil").which = lambda name: "/fake/claude"
+            llm.generate_json("P", {"type": "object"}, model="cli:opus")
+            check("a refusal raises rather than parsing as JSON", False)
+        except RuntimeError as exc:
+            check("a refusal raises rather than parsing as JSON",
+                  "error_during_execution" in str(exc))
+        finally:
+            subprocess.run = real_run
+            __import__("shutil").which = real_which
+
+        try:
+            __import__("shutil").which = lambda name: None
+            llm.generate_json("P", {"type": "object"}, model="cli:opus")
+            check("a missing binary names the fix", False)
+        except RuntimeError as exc:
+            check("a missing binary names the fix", "not on PATH" in str(exc))
+        finally:
+            __import__("shutil").which = real_which
+    finally:
+        for var, val in saved.items():
+            if val is None:
+                os.environ.pop(var, None)
+            else:
+                os.environ[var] = val
+
+
+def test_disclosure_is_above_the_fold_and_derived() -> None:
+    """Issue #91: six published pages carried no AI disclosure at all, and the
+    masthead's only hint was "Not peer reviewed" in the smallest grey type on
+    the page — which to a non-academic reads as *preprint*, a far higher trust
+    category than "a language model wrote this". The banner has to sit under
+    the <h1>, at full contrast, in both output formats and on the index.
+
+    Its grounding half is *derived* from the cited papers, never hardcoded —
+    the same no-fallback rule that issue #75 was filed over.
+    """
+    from articlegen import render
+    from articlegen.sources import Paper
+
+    art = {"title": "T", "abstract": "A.", "sections": [], "key_points": [],
+           "references": [1, 2], "keywords": []}
+    abstracts = [Paper(title="a", abstract="x", year=2020),
+                 Paper(title="b", abstract="x", year=2021)]
+    mixed = [Paper(title="a", abstract="x", full_text="body", year=2020),
+             Paper(title="b", abstract="x", year=2021)]
+    full = [Paper(title="a", abstract="x", full_text="body", year=2020),
+            Paper(title="b", abstract="x", full_text="body", year=2021)]
+
+    check("banner names the author when nothing is read in full",
+          render._disclosure_banner(abstracts)
+          == "Written by a language model from the cited research, from their "
+             "abstracts alone. No human author wrote or checked this text. "
+             "Not peer reviewed.")
+    check("banner counts full texts, and counts them like Table 1",
+          "from 1 full text and the abstracts of the other 1"
+          in render._disclosure_banner(mixed))
+    check("banner drops the abstract clause when every source was read in full",
+          "from their full texts" in render._disclosure_banner(full)
+          and "abstracts" not in render._disclosure_banner(full))
+
+    html_out = render.render_article(art, mixed, "night shift work",
+                                     curation={1: "direct", 2: "related"})
+    md_out = render.render_markdown(art, mixed, "night shift work",
+                                    curation={1: "direct", 2: "related"})
+    check("html banner sits directly under the h1",
+          html_out.index("</h1>") < html_out.index('class="ai-disclosure"')
+          < html_out.index('class="meta-line"'))
+    check("html banner is full contrast, not muted",
+          ".ai-disclosure {\n    font-family" in html_out
+          and "color: var(--ink); \n" not in html_out
+          and "font-size: 0.92rem; font-weight: 600" in html_out)
+    check("md banner is the second line of the header block",
+          md_out.index("# T") < md_out.index("No human author wrote or checked")
+          < md_out.index("Generated "))
+    for name, out in (("HTML", html_out), ("Markdown", md_out)):
+        check(f"{name} disclosure says a model wrote it, not that it was assisted",
+              "Written by a language model" in out and "AI assistance" not in out)
+
+    index_html = render._INDEX_TEMPLATE.format(count=0, items="")
+    check("index warns before the list, not after",
+          index_html.index("idx-disclosure") < index_html.index("<ul>"))
+    check("index says no human checked any of them",
+          "No human author wrote or checked any of them" in index_html)
+
+
 def test_display_items_are_selected_once_for_both_formats() -> None:
     """HTML and Markdown must not each decide what a display item contains.
 
@@ -2379,6 +2619,8 @@ def main() -> int:
         test_prose_style_check, test_rules_do_not_reject_real_journal_prose,
         test_health_reports_which_build_is_running,
         test_openalex_reaches_for_recent_work_as_well,
+        test_claude_cli_provider,
+        test_disclosure_is_above_the_fold_and_derived,
         test_display_items_are_selected_once_for_both_formats,
         test_failed_style_gate_is_visible_in_the_article,
         test_evidence_assessment_is_wholly_deterministic,

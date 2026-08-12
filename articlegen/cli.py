@@ -42,13 +42,24 @@ def _open_in_browser(path: str) -> None:
         pass  # headless / no browser — the path is already logged
 
 
-def _api_error(exc: Exception) -> int:
-    provider, model = resolve_provider()
-    _log(f"The {provider} API call failed (model {model}): {exc}")
-    _log(
-        "Set GROQ_API_KEY for Groq (free key at https://console.groq.com/keys), "
-        "or ANTHROPIC_API_KEY for Claude, and try again."
-    )
+def _api_error(exc: Exception, model: str | None = None) -> int:
+    # Resolve with the model the caller actually asked for. Without it this
+    # reported whatever the *default* provider would have been — so a failed
+    # `--model cli:sonnet` run blamed Groq and Llama, and advised setting a
+    # Groq key that would not have been used.
+    provider, resolved = resolve_provider(model)
+    _log(f"The {provider} call failed (model {resolved}): {exc}")
+    if provider == "claude-cli":
+        _log(
+            "This provider runs on your Claude subscription through the `claude` CLI. "
+            "Check `claude --version` works and that you are signed in, or pick a "
+            "provider that takes an API key."
+        )
+    else:
+        _log(
+            "Set GROQ_API_KEY for Groq (free key at https://console.groq.com/keys), "
+            "or ANTHROPIC_API_KEY for Claude, and try again."
+        )
     return 1
 
 
@@ -57,7 +68,7 @@ def cmd_ideas(args) -> int:
     try:
         ideas = generate_ideas(args.theme, n=args.n, model=args.model)
     except Exception as exc:
-        return _api_error(exc)
+        return _api_error(exc, args.model)
 
     os.makedirs(IDEAS_DIR, exist_ok=True)
     out_path = args.output or os.path.join(IDEAS_DIR, f"{_slugify(args.theme)}.md")
@@ -84,7 +95,7 @@ def cmd_draft(args) -> int:
         _log(str(exc))
         return 1
     except Exception as exc:
-        return _api_error(exc)
+        return _api_error(exc, args.model)
 
     os.makedirs(DRAFTS_DIR, exist_ok=True)
     date = datetime.date.today().isoformat()
@@ -162,9 +173,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--model", default=None,
         help=(
-            "Model to use; the name picks the provider (claude-* / llama-* / groq-*). "
-            "Default: auto — llama-3.3-70b-versatile (Groq is the default provider), "
-            "or claude-fable-5 when only an Anthropic key is set."
+            "Model to use; the name picks the provider. cli:opus / cli:sonnet run on "
+            "your Claude subscription through the Claude Code CLI (no API key, local "
+            "only); vendor/model -> OpenRouter; claude-* -> Anthropic; llama-* / groq-* "
+            "-> Groq. Default: auto — llama-3.3-70b-versatile (Groq is the default "
+            "provider), or claude-fable-5 when only an Anthropic key is set."
         ),
     )
     sub = parser.add_subparsers(dest="command", required=True)

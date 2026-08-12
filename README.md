@@ -34,13 +34,28 @@ See [`deploy/`](deploy/README.md) to host the backend yourself.
 - **OpenRouter** (opt-in; same model as Groq, no daily cap): create a key at
   https://openrouter.ai/keys and set `OPENROUTER_API_KEY`.
 - **Claude** (opt-in; best writing quality, paid API): set `ANTHROPIC_API_KEY`.
+- **Your Claude subscription** (opt-in; no key at all): if you already pay for
+  Claude and have [Claude Code](https://claude.com/claude-code) installed and
+  signed in, `--model cli:opus` or `--model cli:sonnet` drafts through it. A
+  Claude.ai subscription does not come with an API key, and this is the way to
+  use one anyway. Command line only — see the caveats below.
 
 **Groq is used by default** — with a `GROQ_API_KEY` set it runs
 automatically, and it takes priority even if the other keys are also present.
-To use another provider, set `ARTICLEGEN_PROVIDER=openrouter` (or `anthropic`).
-Models: `llama-3.3-70b-versatile` on Groq,
+To use another provider, set `ARTICLEGEN_PROVIDER=openrouter` (or `anthropic`,
+or `claude-cli`). Models: `llama-3.3-70b-versatile` on Groq,
 `meta-llama/llama-3.3-70b-instruct` on OpenRouter, `claude-fable-5` on
-Anthropic, all overridable with `--model`.
+Anthropic, `cli:opus` on your subscription, all overridable with `--model`.
+
+**About `cli:` — what you give up.** It costs nothing beyond the subscription
+you already pay for, and it is the only option that needs no key. Two real
+trade-offs. It runs on your machine only: the hosted web app cannot use it,
+because a shared server has no Claude Code and no subscription to draw on. And
+the other three providers can *force* the model to return correctly-shaped
+data, which this cannot — it can only ask. When a reply comes back as prose
+instead, `articlegen` asks once more and then gives up on that article. It is
+the right pick for drafting at your own desk, and the wrong one for anything
+automated.
 
 **Groq's free tier allows roughly 4–7 articles a day** (100,000 tokens/day; one
 article costs 14–23k, and failed attempts still count). It's the right choice
