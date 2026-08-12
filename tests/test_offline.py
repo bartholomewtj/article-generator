@@ -1474,6 +1474,83 @@ def test_clinical_directives_are_an_error() -> None:
           "clinical-directive" in render._STYLE_FAILURE_WORDING)
 
 
+def test_full_text_dependencies_fail_loudly_enough_to_diagnose() -> None:
+    """Soft failure is right for the reader and useless for the operator.
+
+    The full-text path depends on four keyless services — Europe PMC search,
+    Europe PMC fetch, DOI resolution and Unpaywall — each rate-limited against
+    Render's shared egress IP, each failing soft. When Unpaywall blocks the
+    contact address, every article silently drops to abstracts-only, Methods
+    correctly reports fewer full texts, and nothing anywhere points at the
+    cause (issue #104).
+    """
+    import inspect
+
+    from articlegen import pipeline as articlegen_pipeline
+    from articlegen import sources, web
+
+    # 1. The swallowed failures now say what happened, with the DOI.
+    src = inspect.getsource(sources.resolve_pmcid)
+    check("resolve_pmcid takes a logger", "log" in inspect.signature(sources.resolve_pmcid).parameters)
+    check("no failure is swallowed in silence",
+          src.count("except SearchFailure") == 2 and "except SearchFailure:\n            pass" not in src)
+    for service in ("europe_pmc DOI lookup failed", "unpaywall lookup failed"):
+        check(f"the log names the service: {service!r}", service in src)
+    check("and names the DOI", src.count("failed for {doi}") == 2)
+
+    # The pipeline has to pass the logger, or none of the above is reachable.
+    check("the pipeline passes its logger through",
+          "resolve_pmcid(paper, log=log)" in inspect.getsource(articlegen_pipeline.generate_draft))
+
+    # 2. /api/diag probes Unpaywall, which the three search probes never touch.
+    diag = inspect.getsource(web.ArticleGenHandler._handle_diag)
+    check("/api/diag probes the full-text dependency too", "probe_unpaywall()" in diag)
+    check("and reports it under its own key", '"full_text": unpaywall' in diag)
+
+    # The probe reports rather than raises: a diagnostic endpoint that 500s
+    # when the thing it diagnoses is down answers nothing.
+    real = sources._get_with_retry
+    try:
+        def refuse(*a, **kw):
+            raise sources.SearchFailure("HTTP 403 (blocked contact address)")
+        sources._get_with_retry = refuse
+        out = sources.probe_unpaywall()
+        check("a blocked probe reports instead of raising",
+              out["source"] == "unpaywall" and "403" in out["error"])
+
+        class FakeResp:
+            @staticmethod
+            def json():
+                return {"doi": "x"}          # no is_oa field
+
+        sources._get_with_retry = lambda *a, **kw: FakeResp()
+        out = sources.probe_unpaywall()
+        check("a changed response shape is caught, not read as a miss",
+              "unexpected response shape" in out["error"])
+
+        class ClosedResp:
+            @staticmethod
+            def json():
+                return {"is_oa": False}
+
+        sources._get_with_retry = lambda *a, **kw: ClosedResp()
+        out = sources.probe_unpaywall()
+        check("a known open-access DOI reported closed is an error",
+              "reports this known open-access DOI as closed" in out["error"])
+
+        class OkResp:
+            @staticmethod
+            def json():
+                return {"is_oa": True, "best_oa_location": {"url": "http://x"}}
+
+        sources._get_with_retry = lambda *a, **kw: OkResp()
+        out = sources.probe_unpaywall()
+        check("a healthy Unpaywall reports no error",
+              out["error"] == "" and out["is_oa"] is True)
+    finally:
+        sources._get_with_retry = real
+
+
 def test_first_visit_does_not_dead_end() -> None:
     """The longest possible wait must not end in "you needed a key".
 
@@ -3495,7 +3572,7 @@ def test_pmcid_is_resolved_by_doi() -> None:
         pipeline.write_article = lambda topic, p, **kw: dict(article)
         pipeline.enforce_style = lambda a, **kw: (a, {"issues": [], "stats": {}})
 
-        def fake_resolve(paper, use_cache=True):
+        def fake_resolve(paper, use_cache=True, log=None):
             resolved.append(paper.doi)
             paper.pmcid, paper.is_open_access = "PMC" + paper.doi[-1], True
             return True
@@ -3516,7 +3593,7 @@ def test_pmcid_is_resolved_by_doi() -> None:
             p.pmcid, p.is_open_access, p.full_text = "", False, ""
         resolved.clear()
         pipeline.resolve_pmcid = (
-            lambda paper, use_cache=True: (resolved.append(paper.doi), False)[1])
+            lambda paper, use_cache=True, log=None: (resolved.append(paper.doi), False)[1])
         draft = pipeline.generate_draft("topic")
         check("no open access means no full text",
               draft.provenance["full_text_sources"] == [])
@@ -3620,6 +3697,7 @@ def main() -> int:
         test_evidence_assessment_is_wholly_deterministic,
         test_unverified_figures_are_marked_inline,
         test_clinical_directives_are_an_error,
+        test_full_text_dependencies_fail_loudly_enough_to_diagnose,
         test_first_visit_does_not_dead_end,
         test_api_key_is_session_only_by_default,
         test_house_style_is_fixed_not_a_preference,

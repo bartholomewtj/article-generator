@@ -222,6 +222,18 @@ and sections intact.
   how many were withheld and that the numbering has gaps — the tally above it
   counts them, and a prompt that misdescribes its own inputs teaches the model to
   ignore it. If curation returned no labels at all, nothing is dropped.
+- **The full-text path has four keyless dependencies and all of them fail
+  soft.** Europe PMC search, Europe PMC fetch, DOI resolution, Unpaywall — each
+  metered against Render's shared egress IP. Soft failure is right for the
+  reader and useless for the operator: a blocked Unpaywall contact address
+  halves full-text coverage across every article, Methods correctly reports the
+  lower count, and nothing points at the cause (#104). So both `except
+  SearchFailure` branches in `resolve_pmcid` **log the DOI and the reason** —
+  the pipeline must pass `log=log` or none of it is reachable — and
+  `/api/diag` carries a `full_text` block from `sources.probe_unpaywall()`,
+  which reports rather than raises. Its default DOI is a PLOS ONE paper open
+  access since 2007, so "reports this known open-access DOI as closed" catches
+  a changed response shape rather than reading it as a miss.
 - **Don't trust `paper.pmcid` alone.** Only the Europe PMC *search* returns
   pmcid/inEPMC, so anything from OpenAlex arrives empty regardless of licence.
   An empty pmcid means nobody asked. `sources.resolve_pmcid` looks the DOI up
@@ -492,7 +504,9 @@ index.html on GitHub Pages  ──POST /api/draft──▶  backend on Render
 - **`GET /api/diag`** runs one keyless search and reports what *that host* gets
   from the scholarly APIs. Bypasses the cache (a cached answer can't tell you
   what the sources are doing now) and is therefore rate-limited — each call
-  spends real quota. Its per-source `cached` flag is always `false`.
+  spends real quota. Its per-source `cached` flag is always `false`. The
+  `full_text` block probes Unpaywall, which the three search probes never touch
+  (#104).
 - The `github-pages` **environment** carries its own branch allowlist, separate
   from the workflow's trigger list. A branch rename has to consider both.
 - **Hugging Face Spaces and Fly.io were tried and rejected** — both require a

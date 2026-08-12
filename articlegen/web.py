@@ -40,7 +40,7 @@ from . import llm
 from .ideas import generate_ideas
 from .pipeline import NoPapersFound, generate_draft
 from .render import _draft_title, build_index, render_article, render_markdown
-from .sources import gather_evidence
+from .sources import gather_evidence, probe_unpaywall
 
 DRAFTS_DIR = "drafts"
 
@@ -473,9 +473,19 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         except Exception as exc:
             count, outcomes = 0, [{"source": "gather_evidence", "query": "",
                                    "count": 0, "error": f"{type(exc).__name__}: {exc}"}]
+        # The full-text path depends on a fourth keyless service that the three
+        # search probes above never touch. It fails soft, so a block shows up
+        # only as quietly halved full-text coverage — right for the reader,
+        # invisible to the operator, and undiagnosable from outside (#104).
+        try:
+            unpaywall = probe_unpaywall()
+        except Exception as exc:
+            unpaywall = {"source": "unpaywall", "error": f"{type(exc).__name__}: {exc}"}
+
         self._send_json({
             "papers_found": count,
             "sources": outcomes,
+            "full_text": unpaywall,
             "openalex_mailto_set": bool(os.environ.get("OPENALEX_MAILTO")),
             "semantic_scholar_key_set": bool(os.environ.get("SEMANTIC_SCHOLAR_API_KEY")),
         })
