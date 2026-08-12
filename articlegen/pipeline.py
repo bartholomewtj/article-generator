@@ -110,6 +110,39 @@ _SOURCES_DOWN = (
 )
 
 
+def _read_subset_skew(papers: list[Paper], fetched: list[int]) -> str:
+    """How the deeply-read subset differs from the rest, in one line.
+
+    The open-access skew is *visible* — Table 1's Read column shows it per
+    source, and Limitations says the deeply read subset skews open access. It
+    has never been *measured*, so "the reader should weigh that" is advice
+    nobody can act on (#84). Median year and citation count are the two axes
+    the concern is usually about: newer, and lower-impact.
+
+    Deliberately descriptive. Two small samples cannot support a test, and a
+    p-value on n=4 would be worse than the raw numbers.
+    """
+    read = [p for i, p in enumerate(papers, start=1) if i in fetched]
+    rest = [p for i, p in enumerate(papers, start=1) if i not in fetched]
+    if not read or not rest:
+        return "read-subset skew: not comparable (nothing read, or everything was)"
+
+    def median(values: list[int]) -> str:
+        values = sorted(v for v in values if v is not None)
+        if not values:
+            return "?"
+        mid = len(values) // 2
+        return str(values[mid] if len(values) % 2 else
+                   (values[mid - 1] + values[mid]) // 2)
+
+    return (f"read-subset skew: read n={len(read)} "
+            f"median year {median([p.year for p in read])}, "
+            f"median citations {median([p.citation_count for p in read])}; "
+            f"abstract-only n={len(rest)} "
+            f"median year {median([p.year for p in rest])}, "
+            f"median citations {median([p.citation_count for p in rest])}")
+
+
 def _silent(message: str) -> None:
     pass
 
@@ -338,31 +371,51 @@ def generate_draft(
     # deliberately excluded even when that leaves the target unmet: they are
     # background, and handing the writer 12,000 characters of an off-topic
     # paper is exactly the topic drift the relevance gate exists to prevent.
+    # Why the loop stopped is a different question from how many it got, and
+    # they need completely different fixes: a request cap that bites is a
+    # tuning problem, while genuinely absent open access is a property of the
+    # literature and not fixable here at all. The old log reported only the
+    # count and then *asserted* availability, so the two were indistinguishable
+    # (#84). Each tally below is one of the exits.
+    eligible = no_open_access = fetch_failed = 0
+    stopped = "ran out of eligible sources"
     for index, paper in enumerate(papers, start=1):
-        if len(fetched) >= FULLTEXT_TARGET or requests_spent >= MAX_FULLTEXT_REQUESTS:
+        if len(fetched) >= FULLTEXT_TARGET:
+            stopped = f"target of {FULLTEXT_TARGET} reached"
+            break
+        if requests_spent >= MAX_FULLTEXT_REQUESTS:
+            stopped = f"request cap of {MAX_FULLTEXT_REQUESTS} reached"
             break
         if relevance.get(index) not in ("direct", "related"):
             continue
+        eligible += 1
         if not paper.pmcid and paper.doi:
             requests_spent += 1
             # The logger matters: both lookups inside fail soft, and without it
             # a blocked Unpaywall halves full-text coverage invisibly (#104).
             resolve_pmcid(paper, log=log)
         if not (paper.pmcid and paper.is_open_access):
+            no_open_access += 1
             continue
         requests_spent += 1
         text = fetch_full_text(paper)
         if text:
             paper.full_text = text
             fetched.append(index)
+        else:
+            fetch_failed += 1
     log(f"  full text retrieved for {len(fetched)} source(s)"
-        + (f": {fetched}" if fetched else " (none open access)")
+        + (f": {fetched}" if fetched else " (none)")
         + f" in {requests_spent} request(s)")
-    if len(fetched) < FULLTEXT_TARGET:
-        # Open access is a property of the literature, not of this code: a draft
-        # with fewer full texts than the target still passes cleanly.
-        log(f"  (target is {FULLTEXT_TARGET}; the remaining cited sources have no "
-            "open-access copy in Europe PMC, so they are grounded in their abstracts)")
+    log(f"  stopped because: {stopped}. Of {eligible} eligible source(s), "
+        f"{no_open_access} had no open-access copy and {fetch_failed} were "
+        "open access but returned no text.")
+    if stopped.startswith("request cap"):
+        # The one case where the code, not the literature, is the constraint.
+        log(f"  NOTE: the cap bound before the target. Raising "
+            f"MAX_FULLTEXT_REQUESTS would find more, at more requests against "
+            "the shared Europe PMC quota.")
+    log("  " + _read_subset_skew(papers, fetched))
 
     log("Writing the article (this can take a few minutes)...")
     article = write_article(

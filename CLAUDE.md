@@ -211,6 +211,17 @@ and sections intact.
   `MAX_FULLTEXT_REQUESTS` (18) stops a topic with no open-access literature
   spending a request per paper. **Tangential sources are never fetched**, even
   when the target goes unmet.
+- **Every run says *why* full-text fetching stopped.** "4 of 19" is not an
+  answer: a request cap that bit is a tuning problem, genuinely absent open
+  access is a property of the literature and not fixable here, and the log used
+  to report the count and then *assert* availability (#84). It now names the
+  exit — target reached / request cap reached / ran out of eligible sources —
+  with the eligible, no-open-access and fetched-but-empty tallies, and warns
+  explicitly when the cap bound before the target. It also prints the
+  **read-subset skew** (median year and citations, read vs abstract-only),
+  because Limitations tells the reader that subset skews and nobody had
+  measured how. **Never fetch paywalled full text** — the Methods section's
+  honesty depends on the open-access constraint.
 - **Tangential sources never reach the writer either**
   (`_format_sources(..., omit=...)`). **They are dropped by number, never
   re-packed**: the SOURCE index *is* the citation scheme, so SOURCE 7 stays the
