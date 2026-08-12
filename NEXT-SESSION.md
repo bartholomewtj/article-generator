@@ -1,6 +1,6 @@
 # Next session
 
-_Last handoff: 12 August 2026 — `main` @ `8b6e1ea`, everything merged and deployed_
+_Last handoff: 12 August 2026 — `main` @ `f24e7f9`, plus one PR open for review_
 
 ## Where this stopped
 
@@ -9,30 +9,17 @@ like a journal Review article, grounded in paper abstracts plus open-access full
 texts. It runs as a CLI and as a hosted web app (GitHub Pages front end → Render
 backend).
 
-**Nothing is in flight.** PR #112 merged, working tree clean, one branch (`main`),
-local and remote in sync. Pages and Render both serve `cd2cd28`.
+Two things landed this session, both merged:
 
-This was a streamlining pass. Four changes:
+1. **The web app's article options are gone.** Every article is now an in-depth
+   longform review at a strict empirical focus — `TONE_LABEL`, `LENGTH_LABEL`
+   and `DEPTH_LABEL` are constants in `index.html`, not selectors. Output
+   language is the only remaining choice. API Settings lost the writing-model
+   block and gained five bullet steps for getting an OpenRouter key.
+2. **A token-efficiency pass, and a new provider** (PR #115). Three changes cut
+   what a draft spends; a fourth was measured and rejected.
 
-1. **Groq removed.** It was the default provider and unverified for months. The
-   real cost was its 12,000 tokens/**minute** ceiling counting reserved output,
-   which is why `prompt_budget_chars()`, the abstract-trimming path in
-   `_format_sources`, and a gate that skipped full-text fetching all existed.
-   **Every draft is now grounded in full text where one exists**, instead of
-   that depending on which provider was picked. `DEFAULT_PROVIDER` is
-   `openrouter`.
-2. **The reader iframe is sandboxed** — `allow-same-origin`, no `allow-scripts`.
-   It ran same-origin with the OpenRouter key in localStorage while being fed
-   model-written and, via `#read=`/`#p=` links, attacker-chosen HTML.
-   `render_article` grew a `standalone` flag so the app's copy has no scripts
-   and no toolbar. Verified in Chromium: injected script blocked.
-3. **The two draft libraries are one**, with a star for "keep this". Fixed two
-   real bugs on the way — a bare `setItem` that silently lost articles at quota,
-   and `openDraftFromGallery`, which was called from the list and defined
-   nowhere.
-4. **`CLAUDE.md` trimmed** 37KB → 22KB and corrected — it had named the wrong
-   workflow file, three constants that no longer existed, and Groq as the
-   default.
+**PR #118 is open and unreviewed** — the `CLAUDE.md` corrections and this note.
 
 ## Resume with
 
@@ -40,14 +27,19 @@ This was a streamlining pass. Four changes:
 cd /c/claudeOS/Projects/articlegenerator && git branch --show-current && git status --short && python tests/test_offline.py && python tests/test_journal_conformance.py
 ```
 
-Prints `main`, no file list, then `ALL PASS` and `ALL CONVENTIONS MET`. No keys,
-no network. Verified at handoff.
+Prints the branch, no file list, then `ALL PASS` and `ALL CONVENTIONS MET`. No
+keys, no network. Verified at handoff. Branch and dirtiness come first on
+purpose (#97): the tests print green even on a dirty tree on the wrong branch.
 
-**Branch and dirtiness come first on purpose** (#97): the tests print a green
-`ALL PASS` even on a dirty tree on the wrong branch, so a returning session gets
-reassured before it gets informed.
+**Drafting needs a provider, and the default one is currently broken** — see
+"Watch out for". What works today:
 
-Is the live site current?
+```bash
+python -m articlegen --model agy:gemini-3.6-flash-high draft "your topic"   # Gemini subscription
+python -m articlegen --model cli:opus draft "your topic"                    # Claude subscription
+```
+
+A full run is ~4 minutes. Is the live site current?
 
 ```bash
 git rev-parse --short=7 HEAD
@@ -55,73 +47,65 @@ curl -s https://bartholomewtj.github.io/article-generator/ | grep -o 'build <cod
 curl -s -m 90 https://articlegen-api.onrender.com/api/health
 ```
 
-All three should agree. The backend sleeps after 15 min idle and takes ~50s to
-wake.
-
-To drive the front end: `articlegen web --port 8765`, then Playwright via
-`playwright-core` with the cached Chromium under `$LOCALAPPDATA/ms-playwright`
-(`chromium.launch({ channel: 'chromium' })`).
+The backend sleeps after 15 min idle and takes ~50s to wake.
 
 ## Next thing to do
 
-1. **#111 — a first-time visitor has no free path.** Removing Groq sharpened
-   this rather than causing it: the web app needs a paid OpenRouter key before
-   it does anything. The CLI has `--model cli:opus` on your subscription, which
-   a shared host can never offer. This is a product decision, not a bug.
-2. **#113 — the stored key is readable by every other Pages site** under
-   `bartholomewtj.github.io`, and the Settings panel says the opposite ("never
-   shared with anyone else"). Cheapest honest fix is disclosure plus a
-   session-only key option. Filed this session.
-3. **More articles.** `drafts/` holds one, so the published queue reads as a
-   sample rather than a portfolio. ~4½ minutes each on `cli:opus`, no money.
-4. **#101 and #102** are the substantive work — both clinical-safety changes to
-   verification and to what the writer is allowed to say.
+1. **Merge or close PR #118.** It only touches `CLAUDE.md` and this file.
+2. **Replace the OpenRouter key.** `.env` holds a dead one, so the default
+   provider path cannot be run or tested locally until it is swapped. Visitors
+   to the deployed app use their own keys and are unaffected.
+3. **#101 and #102** remain the substantive work — both clinical-safety changes,
+   to what `check_statistics` will accept and to what the writer may say.
 
 ## Open
 
-Closed this session: **#110** (obsolete, Groq gone), **#100** (sandbox),
-**#97** (doc drift). Read #100's closing comment before touching the sandbox —
-it was fixed the *opposite* way to what the issue proposed.
-
-- **#113** — stored key readable across the shared Pages origin. New.
-- **#114** — nothing in the PR process keeps `CLAUDE.md` up with the code. New;
-  it is a workflow decision, four options laid out, your call.
-- **#111** — no free path for a visitor.
+- **PR #118** — `CLAUDE.md` reconciliation + this note. Waiting on your review.
+- **#116, #117** (filed this session) — the `gemini-cli` revision call
+  costs far more context than its prompt explains; and curating on truncated
+  abstracts would save ~24k input tokens but needs the relevance gate
+  re-validated first.
+- **#113** — stored key readable across the shared Pages origin, and Settings
+  says the opposite.
+- **#111** — no free path for a first-time visitor.
 - **#101** — `check_statistics` accepts a figure found in *any* source, so
   misattribution passes as verified.
 - **#102** — nothing stops the writer producing dose and titration instructions.
-- **#104** — the Unpaywall lookup fails silently and `/api/diag` does not probe it.
-- **#99** — split `CLAUDE.md` into invariants and a decisions log. Partly
-  overtaken by the trim; see the comment added this session.
-- **#92, #95, #96, #98** — council-review findings, roughly in priority order.
-  Read #98's comments before starting it.
-- **#84, #85** — both carry real measurements; probably closeable after one run
-  each. Read the comments before redoing work.
+- **#114, #99** — `CLAUDE.md` upkeep. #114 was proved right this session: one
+  session's work drifted six passages, all corrected by hand in PR #118.
+- **#104, #92, #95, #96, #98, #84, #85** — unchanged. Read the comments on #84,
+  #85 and #98 before starting; they carry real measurements.
 
 ## Watch out for
 
+- **The `OPENROUTER_API_KEY` in `.env` is dead.** OpenRouter returns
+  `401 User not found`, meaning the key was revoked or its account removed.
+  Topping up will not help — issue a new one at openrouter.ai/keys. This is why
+  every run this session used `agy:`.
+- **`agy` is the only working route to Gemini on your subscription.** The Google
+  `gemini` CLI refuses to authenticate: `IneligibleTierError`, Code Assist for
+  individuals is retired in favour of Antigravity.
+- **Do not run the shallow stages at a cheaper reasoning tier.** It is a one-line
+  change, it looks free, and it was measured: at `-low` curation agreed with
+  `-high` on only 14 of 20 relevance labels and collapsed everything toward
+  "related" — that is the gate that stops topic drift. `plan_queries` emits
+  run-on queries at `-low` *and* `-medium`. Both tiers report `thinking=0`, which
+  is the tell. The measurement is in `llm.py` above `GEMINI_CLI_DEFAULT_MODEL`.
+- **On `gemini-cli`, 88% of output tokens are thinking.** Changes that reduce
+  emitted *text* barely move the bill. The patch-based revision cut emitted
+  content 75% and total output 6%. Measure against `thinking_tokens`, not word
+  count.
+- **The SOURCE numbering has gaps now.** `write_article` omits tangential
+  sources by number and never re-packs the list, because the index *is* the
+  citation scheme. Anything that renumbers to close a gap breaks `render` and
+  `verify` together.
 - **The sandbox must never gain `allow-scripts`.** That one flag hands back
-  everything #100 closed. `allow-same-origin` on its own does not run scripts —
-  it is what keeps `contentDocument` reachable for the theme sync, edit mode and
-  save. `test_article_in_the_web_app_cannot_run_scripts` fails if it is added.
+  everything #100 closed. `allow-same-origin` alone does not run scripts.
 - **Don't reinstate a source char budget.** It existed only for Groq's
-  per-minute ceiling. Nothing left has one, and reinstating it would silently
-  take full text away from every draft again.
-- **`feat/issue-94-ci` was deleted this session** with `-D`, because it was
-  squash-merged as #105 and so was never an ancestor of `main`. Verified fully
-  subsumed first — no unique files, every artifact present in `main`. If it is
-  ever wanted back: `git branch feat/issue-94-ci e32db2c`.
-- **Don't squash-merge a stacked PR and delete its base branch.** GitHub will
-  not reopen a PR whose base is gone.
-- **`claude-cli` cannot enforce a JSON schema**, unlike OpenRouter and
-  Anthropic. It asks, retries once, then gives up. Right for drafting at your
-  desk, wrong for anything automated. Local-only and deliberately absent from
-  `web.ALLOWED_MODELS`.
-- **`claude` on Windows is a `.cmd` shim**, so argv goes through cmd.exe: the
-  ceiling is **8,191** characters, not 32,767. Anything scaling with the sources
-  must go on stdin.
+  per-minute ceiling, and reinstating it takes full text away from every draft.
 - **`/api/diag` is the only trustworthy answer** on which scholarly source works
-  right now — never write it down, it flips.
+  right now — never write it down, it flips. Semantic Scholar 429'd on every run
+  this session; OpenAlex and Europe PMC carried them.
 - **Searches are cached 24h** (refusals 2 min). Testing fetch changes needs
   `sources.clear_search_cache()` or `ARTICLEGEN_SEARCH_CACHE_TTL=0`.
 - Everything structural is in `CLAUDE.md`. This file only carries what changed
