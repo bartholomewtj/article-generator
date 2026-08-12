@@ -495,6 +495,27 @@
   }
   .build-stamp code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.7rem; }
 
+  /* The read-only demo path (#111). Deliberately quieter than the primary
+     button but above the key prompt, so it reads as "here is the output"
+     rather than as a second call to action competing with generating one. */
+  .demo-band {
+    display: block; text-decoration: none; color: inherit;
+    border: 1px solid var(--border, rgba(128,128,128,0.3)); border-radius: 14px;
+    padding: 0.9rem 1.1rem; margin-bottom: 1rem;
+  }
+  .demo-band:hover { border-color: var(--accent); }
+  .demo-band-label {
+    display: block; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--accent); margin-bottom: 0.35rem;
+  }
+  .demo-band-text {
+    display: block; font-size: 0.87rem; line-height: 1.5; color: var(--muted);
+  }
+  .demo-band-go {
+    display: block; font-size: 0.87rem; font-weight: 600; color: var(--accent);
+    margin-top: 0.5rem;
+  }
+
   /* First-run explainer, and the in-page error state that replaced alert(). */
   .setup-card {
     border: 1px solid var(--accent); border-radius: 14px;
@@ -541,6 +562,23 @@
   <div id="themeView" class="view active">
     <h1 class="hero-title">Turn any theme into an evidence-grounded article</h1>
     <p class="hero-subtitle">Grounded in real peer-reviewed journal abstracts. Simple, fast, and mobile-first.</p>
+
+    <!-- The read-only path, and it comes first (#111).
+         Since the Settings panel narrowed to OpenRouter there is no free way to
+         generate anything here: a stranger sent this link has to open an account
+         on a payments provider and load credit before they can see the thing
+         work. Most will not — they open Settings and leave.
+         But drafts/ is already public and already deployed by the Pages
+         workflow, so the output can be shown to anyone for nothing, and showing
+         the output is the honest demo of what this is. It sits above the key
+         prompt because a first impression of "paste a credential" is the thing
+         worth avoiding. -->
+    <a class="demo-band" href="drafts/">
+      <span class="demo-band-label">See what it produces</span>
+      <span class="demo-band-text">Read a finished evidence review — no key, no
+        account, nothing to set up.</span>
+      <span class="demo-band-go">Open the published drafts →</span>
+    </a>
 
     <!-- The setup is mandatory and used to be invisible: nothing on this view
          said a key was needed, so a first-time visitor typed a theme, tapped,

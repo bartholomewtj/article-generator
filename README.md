@@ -12,6 +12,10 @@ grounded in real journal articles rather than the model's memory.
 Open the working web app directly in your browser:
 🔗 **[Live Article Generator Web Site](https://bartholomewtj.github.io/article-generator/)**
 
+📄 **[Read a finished article](https://bartholomewtj.github.io/article-generator/drafts/)**
+— no key and no account needed. Generating your own needs an OpenRouter key
+(roughly 50c–$1 an article); reading what it has already produced does not.
+
 ---
 
 ## Use it from your phone (recommended)
