@@ -54,6 +54,7 @@ Anthropic, `cli:opus` on your subscription, all overridable with `--model`.
 **This block is the single place the defaults are described in prose.** Change a
 default in `llm.py` and change it here; nowhere else should restate them.
 
+
 **About `cli:` — what you give up.** It costs nothing beyond the subscription
 you already pay for, and it is the only option that needs no key. Two real
 trade-offs. It runs on your machine only: the hosted web app cannot use it,
