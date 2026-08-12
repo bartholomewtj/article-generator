@@ -175,8 +175,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--model", default=None,
         help=(
             "Model to use; the name picks the provider. cli:opus / cli:sonnet run on "
-            "your Claude subscription through the Claude Code CLI (no API key, local "
-            "only); vendor/model -> OpenRouter; claude-* -> Anthropic. Default: auto "
+            "your Claude subscription through the Claude Code CLI, and "
+            "agy:gemini-3.6-flash-high on your Gemini subscription through the "
+            "Antigravity CLI (both need no API key and are local only); "
+            "vendor/model -> OpenRouter; claude-* -> Anthropic. Default: auto "
             "— anthropic/claude-opus-5 (OpenRouter is the default provider), or "
             "claude-fable-5 when only an Anthropic key is set."
         ),

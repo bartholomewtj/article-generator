@@ -103,10 +103,68 @@ CLAUDE_CLI_BASE_ARGS = (
 CLAUDE_CLI_EFFORT = "high"
 CLAUDE_CLI_TIMEOUT = 900
 
+# ---- the Antigravity CLI, i.e. "run this on my Gemini subscription" --------
+#
+# Same shape and the same reasoning as claude-cli above: a Gemini subscription
+# issues no API key, and `agy -p` is that seat driven non-interactively. Opt in
+# with `--model agy:gemini-3.6-flash-high`, or ARTICLEGEN_PROVIDER=gemini-cli.
+# **Local runs only, and deliberately not in web.ALLOWED_MODELS** — it answers
+# as whoever is signed in on this machine.
+#
+# The name after the prefix is passed to `agy --model` verbatim; `agy models`
+# lists them. Effort is part of the model name there (-high/-medium/-low), so
+# there is no separate effort flag to set.
+#
+# Two things this provider does that the Claude one does not:
+#
+# - `--json-schema` actually enforces the schema, and the parsed object comes
+#   back in the envelope's `structured_output`. That makes it the one CLI path
+#   that is as reliable as the API paths, so the brace-matching recovery below
+#   is a fallback rather than the main road.
+# - The prompt is handed over as `@<file>`, which the CLI inlines verbatim
+#   before the model is called. `agy` does not read stdin — it ignores it — and
+#   the article prompt runs to ~95,000 characters against a 32,767-character
+#   Windows command line, so a file reference is the only transport that fits.
+#   Asking the agent to *open* a file instead is not equivalent: it costs a
+#   tool round-trip and, on one test, it opened a different file in the same
+#   directory and answered from that.
+GEMINI_CLI_DEFAULT_MODEL = "gemini-3.6-flash-high"
+GEMINI_CLI_PREFIX = "agy:"
+GEMINI_CLI_TIMEOUT = 900
+
+# **Every call runs the model the operator named. Do not step the shallow ones
+# down a tier.** Reasoning effort is a suffix on the model id here (`agy models`
+# lists `gemini-3.6-flash-high/-medium/-low`), so it is a one-line change to
+# make and it looks free: on a measured run 57,687 of 65,383 output tokens were
+# thinking, and the two `deep=False` stages were most of the cheap-looking half
+# of that. It was tried and measured, and it costs more than it saves.
+#
+# `curate_sources` at -low: 827 output tokens against 8,684, and 14 of 20
+# relevance labels agreeing with -high. The disagreements all ran one way —
+# everything collapses toward "related". It called two papers related that were
+# squarely on topic (level of care after an overdose *with self-harm intent*;
+# alcohol intoxication in *suicidal patients*, in a review of ED length of stay
+# for self-harm) and two more related that were background (homelessness;
+# injury mechanism in TBI). That is the relevance gate, which is what stops
+# topic drift: under-calling `direct` lowers `style._required_sections` so a
+# thinner article passes, and under-calling `tangential` puts background
+# abstracts back into the writer's prompt.
+#
+# `plan_queries` at -low and at -medium: both emit a run-on fourth query with
+# two queries concatenated into one string, and -medium also returns a whole
+# sentence where `core_entity` wants a term. Four well-formed queries from -high
+# cost ~1,100 extra output tokens, and they decide which papers the run ever
+# sees.
+#
+# Both cheap tiers report thinking=0 on these prompts, which is the tell: the
+# saving is entirely "it stopped thinking", and these two calls are where the
+# thinking was doing something.
+
 _PROVIDER_DEFAULT_MODELS = {
     "anthropic": ANTHROPIC_DEFAULT_MODEL,
     "openrouter": OPENROUTER_DEFAULT_MODEL,
     "claude-cli": CLAUDE_CLI_DEFAULT_MODEL,
+    "gemini-cli": GEMINI_CLI_DEFAULT_MODEL,
 }
 
 
@@ -119,6 +177,8 @@ def resolve_provider(model: str | None = None, api_key: str | None = None) -> tu
         # the default provider under a name it does not recognise.
         if model.startswith(CLAUDE_CLI_PREFIX):
             return "claude-cli", model[len(CLAUDE_CLI_PREFIX):] or CLAUDE_CLI_DEFAULT_MODEL
+        if model.startswith(GEMINI_CLI_PREFIX):
+            return "gemini-cli", model[len(GEMINI_CLI_PREFIX):] or GEMINI_CLI_DEFAULT_MODEL
         # Checked before the `claude` prefix: OpenRouter re-sells other
         # providers' models as `vendor/model`, and `anthropic/claude-sonnet-5`
         # sent to Anthropic's own SDK is a 404. The slash is what makes a name
@@ -177,6 +237,8 @@ def generate_json(
         return _openrouter_generate(prompt, schema, system, model, deep, api_key)
     if provider == "claude-cli":
         return _claude_cli_generate(prompt, schema, system, model)
+    if provider == "gemini-cli":
+        return _gemini_cli_generate(prompt, schema, system, model)
     return _anthropic_generate(prompt, schema, system, model, deep, api_key)
 
 
@@ -395,6 +457,138 @@ def _claude_cli_generate(prompt: str, schema: dict, system: str | None, model: s
             f"{envelope.get('stop_reason')}): {exc}\n"
             "The CLI cannot enforce a response schema the way the API providers can, "
             "so a conversational reply lands here.\n"
+            f"First 500 chars: {cleaned[:500]!r}"
+        ) from exc
+
+
+# ---------------------------------------------------------------- gemini cli
+
+def _gemini_cli_generate(prompt: str, schema: dict, system: str | None, model: str) -> dict:
+    """Generate via `agy -p`, so the call is drawn from a Gemini subscription.
+
+    No `api_key` and no `deep`, for the same reasons as `_claude_cli_generate`:
+    there is no key to pass, and the CLI has no output ceiling to size. Effort
+    is not varied per call either — see the note above `GEMINI_CLI_DEFAULT_MODEL`
+    for the measurement that settled it.
+
+    Unlike that path, the schema is enforced rather than requested — `agy
+    --json-schema` returns the parsed object in the envelope's
+    `structured_output`. The text fallback below is for the case where a future
+    version stops populating it, not for the ordinary path.
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    exe = shutil.which("agy")
+    if not exe:
+        raise RuntimeError(
+            "The `agy` CLI is not on PATH, so provider gemini-cli cannot run. "
+            "Install the Antigravity CLI and sign in, or pick a provider that "
+            "takes an API key."
+        )
+
+    preamble = (
+        (f"{system}\n\n" if system else "")
+        + "Respond with a single JSON object matching the schema you were given. "
+        "Every required property must be present, spelled exactly as the schema "
+        "spells it.\n\n---\n\n"
+    )
+
+    def _run(prompt_text: str) -> tuple[dict, str, dict | None]:
+        # A scratch cwd for the same reason as the Claude path: keep the
+        # subprocess pointed away from this repo and its project memory.
+        with tempfile.TemporaryDirectory() as scratch:
+            prompt_path = os.path.join(scratch, "prompt.txt")
+            schema_path = os.path.join(scratch, "schema.json")
+            with open(prompt_path, "w", encoding="utf-8") as f:
+                f.write(prompt_text)
+            with open(schema_path, "w", encoding="utf-8") as f:
+                json.dump(schema, f)
+
+            args = [
+                exe,
+                # The whole prompt arrives as an inlined file. See the note at
+                # GEMINI_CLI_PREFIX for why neither stdin nor a plain argument
+                # can carry it.
+                "-p", f"@{prompt_path}",
+                "--add-dir", scratch,
+                "--model", model,
+                "--output-format", "json",
+                "--json-schema", schema_path,
+                # Sources are arbitrary text and a paragraph can begin with a
+                # slash; nothing in a prompt should be read as a command.
+                "--disable-slash-commands",
+            ]
+            try:
+                proc = subprocess.run(
+                    args, cwd=scratch, capture_output=True, text=True,
+                    encoding="utf-8", timeout=GEMINI_CLI_TIMEOUT,
+                )
+            except subprocess.TimeoutExpired:
+                raise RuntimeError(
+                    f"`agy -p` did not answer within {GEMINI_CLI_TIMEOUT}s (model {model}). "
+                    "Retry, or use a metered provider."
+                ) from None
+
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"`agy -p` exited {proc.returncode} (model {model}): "
+                f"{(proc.stderr or proc.stdout or '').strip()[:500]}"
+            )
+
+        try:
+            envelope = json.loads(proc.stdout)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"`agy -p` did not return a JSON envelope (model {model}): {exc}\n"
+                f"First 500 chars: {proc.stdout[:500]!r}"
+            ) from exc
+
+        if envelope.get("status") != "SUCCESS":
+            raise RuntimeError(
+                f"`agy -p` reported status={envelope.get('status')} (model {model}): "
+                f"{str(envelope.get('response'))[:500]}"
+            )
+
+        usage = envelope.get("usage") or {}
+        print(
+            f"[articlegen] gemini-cli {model} in={usage.get('input_tokens', 0)} "
+            f"cached={usage.get('cache_read_tokens', 0)} "
+            f"out={usage.get('output_tokens', 0)} "
+            f"thinking={usage.get('thinking_tokens', 0)} "
+            # `agy` is an agent, not a completion endpoint: it may take several
+            # internal turns, and each one re-sends the context. A call that
+            # costs far more than its prompt explains is a multi-turn call, and
+            # without this the only symptom is an input count nobody can account
+            # for.
+            f"turns={envelope.get('num_turns', 1)} "
+            f"({envelope.get('duration_seconds', 0):.1f}s)",
+            file=sys.stderr, flush=True,
+        )
+        structured = envelope.get("structured_output")
+        text = _extract_json_object(_clean_json_text(envelope.get("response") or ""))
+        return envelope, text, structured if isinstance(structured, dict) else None
+
+    envelope, cleaned, structured = _run(preamble + prompt + _CLI_JSON_DEMAND)
+    if structured:
+        return structured
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        print(
+            f"[articlegen] gemini-cli {model} replied with non-JSON; retrying once",
+            file=sys.stderr, flush=True,
+        )
+
+    envelope, cleaned, structured = _run(_CLI_JSON_RETRY + preamble + prompt + _CLI_JSON_DEMAND)
+    if structured:
+        return structured
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"{model} did not return valid JSON via `agy`, twice: {exc}\n"
             f"First 500 chars: {cleaned[:500]!r}"
         ) from exc
 
