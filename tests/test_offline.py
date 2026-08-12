@@ -1171,6 +1171,54 @@ def test_rules_do_not_reject_real_journal_prose() -> None:
         check(f"not first person: {text[:38]!r}", "first-person" not in fired)
 
 
+def test_the_front_end_has_one_article_list() -> None:
+    """One library, one storage key, one renderer.
+
+    There were two of each: a "Draft Review Queue" over
+    articlegen_local_drafts and a "Published Library" over
+    articlegen_published_library. Same articles, duplicated search / delete /
+    clear-all / open, and saving to the second stored a second full copy of the
+    article HTML — ~65KB against a ~5MB quota, written with a bare setItem that
+    silently lost the article when it threw.
+    """
+    page = open(
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "index.html"),
+        encoding="utf-8",
+    ).read()
+
+    check("only one list view", page.count('id="libraryView"') == 1
+          and 'id="galleryView"' not in page and 'id="publishedView"' not in page)
+    check("only one search box",
+          page.count('id="librarySearchInput"') == 1
+          and 'id="gallerySearchInput"' not in page
+          and 'id="publishedSearchInput"' not in page)
+
+    # The legacy keys may still be *touched* only inside the one-time migration,
+    # which folds them in and deletes them. A localStorage call on one of them
+    # anywhere else means a second store came back. (Prose mentions are fine —
+    # match on the call, not the name.)
+    import re as _re
+
+    migration = page[page.index("function migrateLegacyLibraries"):]
+    migration = migration[:migration.index("\n  }\n")]
+    for legacy in ("articlegen_local_drafts", "articlegen_published_library"):
+        calls = _re.findall(rf"localStorage\.\w+\(\s*'{legacy}'", page)
+        in_migration = _re.findall(rf"localStorage\.\w+\(\s*'{legacy}'", migration)
+        check(f"{legacy} is only touched by the migration",
+              len(calls) == len(in_migration) and in_migration)
+        check(f"and the migration removes {legacy}",
+              f"localStorage.removeItem('{legacy}')" in migration)
+
+    # A bare setItem for the library is the bug this replaced: on
+    # QuotaExceededError it threw away the article the user just waited for.
+    body = page[page.index("const LIBRARY_KEY"):]
+    check("library writes go through writeLibrary, which handles a full quota",
+          "function writeLibrary" in body and "catch (e)" in body
+          and f"localStorage.setItem(LIBRARY_KEY" in body)
+    check("nothing else writes the library key directly",
+          body.count("localStorage.setItem(LIBRARY_KEY") == 1)
+
+
 def test_article_in_the_web_app_cannot_run_scripts() -> None:
     """The reader iframe is sandboxed, and what goes into it carries no script.
 
@@ -2639,6 +2687,7 @@ def main() -> int:
         test_methods_names_only_sources_that_answered,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
         test_prose_style_check, test_rules_do_not_reject_real_journal_prose,
+        test_the_front_end_has_one_article_list,
         test_article_in_the_web_app_cannot_run_scripts,
         test_health_reports_which_build_is_running,
         test_openalex_reaches_for_recent_work_as_well,

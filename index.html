@@ -510,11 +510,8 @@
     <button class="icon-btn" id="themeToggleBtn" onclick="cycleTheme()" title="Toggle Dark/Light Theme">
       <span id="themeToggleIcon">🌙</span>
     </button>
-    <button class="icon-btn" onclick="showView('galleryView'); loadGallery();" title="Draft Queue">
+    <button class="icon-btn" onclick="showView('libraryView'); loadLibrary();" title="Your articles">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
-    </button>
-    <button class="icon-btn" onclick="showView('publishedView'); loadPublishedLibrary();" title="Published Library">
-      <span style="font-size:1.05rem;">📚</span>
     </button>
     <button class="icon-btn" onclick="openModal('settingsModal')" title="Settings">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -622,7 +619,11 @@
     <div class="section-header" style="flex-wrap:wrap; gap:0.5rem;">
       <button class="pill" onclick="showView('ideasView')">← Back to Ideas</button>
       <div style="display:flex; align-items:center; gap:0.5rem;">
-        <button class="pill" style="background:var(--accent); color:white; border:none; font-weight:700;" onclick="saveToPublishedLibrary()">💾 Save to Published Library</button>
+        <!-- Every generated article is already saved. Starring is what tells the
+             library to keep it past the rolling limit — which is all the old
+             "Save to Published Library" button did, via a second storage key
+             holding a second copy of the same HTML. -->
+        <button class="pill" id="starCurrentBtn" onclick="starCurrentArticle()" title="Keep this article in your library">☆ Keep</button>
         <span style="font-size:0.8rem; color:var(--muted);" id="articleMeta">Ready</span>
       </div>
     </div>
@@ -646,45 +647,30 @@
 
   </div>
 
-  <!-- VIEW 5: Article Gallery / Queue -->
-  <div id="galleryView" class="view">
+  <!-- VIEW 5: Your articles.
+       This was two views — a "Draft Review Queue" over articlegen_local_drafts
+       and a "Published Library" over articlegen_published_library. They listed
+       the same articles with the same search box, the same delete and the same
+       clear-all, and saving to the second one stored a second full copy of the
+       article HTML. One list, one storage key, a star for what to keep. -->
+  <div id="libraryView" class="view">
     <div class="section-header" style="flex-wrap:wrap; gap:0.5rem;">
-      <h2 class="section-title">Draft Review Queue</h2>
+      <h2 class="section-title">Your articles</h2>
       <div style="display:flex; gap:0.4rem;">
-        <button class="pill" style="color:#ef4444; border-color:rgba(239,68,68,0.3);" onclick="clearAllLocalDrafts()">🗑️ Clear All</button>
+        <button class="pill" style="color:#ef4444; border-color:rgba(239,68,68,0.3);" onclick="clearLibrary()">🗑️ Clear All</button>
         <button class="pill" onclick="showView('themeView')">+ New Theme</button>
       </div>
     </div>
-
-    <!-- Draft Search & Filter Bar -->
-    <div style="margin-bottom: 1rem;">
-      <input type="text" id="gallerySearchInput" name="search_drafts" class="theme-input" placeholder="🔍 Search saved drafts by title..." oninput="loadGallery()" style="padding:0.6rem 0.9rem; font-size:0.9rem;" autocomplete="off" autocorrect="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
-    </div>
-
-    <div id="galleryList">
-      <!-- Dynamically filled -->
-    </div>
-  </div>
-
-  <!-- VIEW 6: Published Articles Library -->
-  <div id="publishedView" class="view">
-    <div class="section-header" style="flex-wrap:wrap; gap:0.5rem;">
-      <h2 class="section-title">📚 Published Library</h2>
-      <div style="display:flex; gap:0.4rem;">
-        <button class="pill" style="color:#ef4444; border-color:rgba(239,68,68,0.3);" onclick="clearPublishedLibrary()">🗑️ Clear Library</button>
-        <button class="pill" onclick="showView('themeView')">+ New Article</button>
-      </div>
-    </div>
     <p style="font-size:0.85rem; color:var(--muted); margin-top:-0.5rem; margin-bottom:1rem;">
-      Completed and edited articles saved across your devices with permanent public sharing links.
+      Saved in this browser only — not synced, and cleared if you clear site data.
+      Starred articles are kept; the rest roll over after the 20 most recent.
     </p>
 
-    <!-- Search Published Library -->
     <div style="margin-bottom: 1rem;">
-      <input type="text" id="publishedSearchInput" name="search_published" class="theme-input" placeholder="🔍 Search library by title..." oninput="loadPublishedLibrary()" style="padding:0.6rem 0.9rem; font-size:0.9rem;" autocomplete="off" autocorrect="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
+      <input type="text" id="librarySearchInput" name="search_articles" class="theme-input" placeholder="🔍 Search by title..." oninput="loadLibrary()" style="padding:0.6rem 0.9rem; font-size:0.9rem;" autocomplete="off" autocorrect="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
     </div>
 
-    <div id="publishedList">
+    <div id="libraryList">
       <!-- Dynamically filled -->
     </div>
   </div>
@@ -860,6 +846,10 @@
   let currentArticleUrl = '';
   let currentMarkdownUrl = '';
   let currentTitle = '';
+  // Which library entry the reader is showing, so the Keep button knows what it
+  // is starring. Empty for anything not from the library — a locally-served
+  // draft file, or an article opened from a shared #read=/#p= link.
+  let currentArticleId = '';
 
   // Theme Management Controller
   let currentThemeSetting = localStorage.getItem('articlegen_theme') || 'system';
@@ -954,7 +944,7 @@
       } else {
         showToast("✓ Text edits saved to local article preview.");
         const htmlContent = doc.documentElement.outerHTML;
-        if (typeof saveLocalDraft === 'function') saveLocalDraft(currentTitle || 'Edited Article', htmlContent);
+        saveToLibrary(currentTitle || 'Edited Article', htmlContent);
         const hash = encodeArticleToHash(htmlContent);
         if (hash) window.location.hash = hash;
       }
@@ -1206,6 +1196,9 @@
   async function checkUrlHashForArticle() {
     const hash = window.location.hash;
     if (!hash) return;
+    // Somebody else's article, not a library entry — nothing here to star.
+    currentArticleId = '';
+    updateStarButton();
 
     if (hash.startsWith('#p=')) {
       const pasteId = hash.replace('#p=', '');
@@ -1231,6 +1224,7 @@
   }
 
   document.addEventListener('DOMContentLoaded', () => {
+    migrateLegacyLibraries();
     loadPreferences();
     checkUrlHashForArticle();
   });
@@ -1349,7 +1343,7 @@
         // Stateless server: the article comes back inside the response.
         iframe.removeAttribute('src');
         iframe.srcdoc = data.html;
-        saveLocalDraft(data.title || title, data.html);
+        saveToLibrary(data.title || title, data.html);
         cachedShareUrl = '';
         currentMarkdownUrl = '';
         const hash = encodeArticleToHash(data.html);
@@ -1363,6 +1357,9 @@
         iframe.src = apiUrl(data.html_url);
         currentArticleUrl = data.html_url;
         currentMarkdownUrl = data.md_url || '';
+        // Written to drafts/ by the local server; it is not a library entry.
+        currentArticleId = '';
+        updateStarButton();
       } else {
         throw new Error('The backend returned no article.');
       }
@@ -1377,16 +1374,6 @@
     } finally {
       marks.forEach(clearTimeout);
     }
-  }
-
-  function saveLocalDraft(title, htmlContent) {
-    const list = JSON.parse(localStorage.getItem('articlegen_local_drafts') || '[]');
-    list.unshift({
-      title: title,
-      date: new Date().toISOString(),
-      content: htmlContent
-    });
-    localStorage.setItem('articlegen_local_drafts', JSON.stringify(list.slice(0, 20)));
   }
 
   // Two kinds of link, and the difference matters:
@@ -1525,22 +1512,183 @@
     }
   }
 
-  async function loadGallery() {
-    const container = document.getElementById('galleryList');
-    const filterQuery = (document.getElementById('gallerySearchInput')?.value || '').toLowerCase().trim();
-    container.innerHTML = '<p style="color:var(--muted);">Loading draft queue...</p>';
-    
+  // ---------------------------------------------------------------- library
+  //
+  // One list of your articles, in one storage key.
+  //
+  // There were two: articlegen_local_drafts (auto-saved, capped at 20) and
+  // articlegen_published_library (saved on a button, uncapped). They held the
+  // same articles, rendered by two near-identical functions with their own
+  // search box, delete, clear-all and open handler — and "saving" one wrote a
+  // second full copy of ~65KB of HTML under the second key, against a ~5MB
+  // localStorage quota, with no handler for the write failing.
+  //
+  // The star carries what the second key was really for: keep this one. Starred
+  // entries survive the rolling cap; everything else rolls over.
+
+  const LIBRARY_KEY = 'articlegen_library';
+  const LIBRARY_UNSTARRED_LIMIT = 20;
+
+  function readLibrary() {
     try {
+      const list = JSON.parse(localStorage.getItem(LIBRARY_KEY) || '[]');
+      return Array.isArray(list) ? list : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /** Keep every starred entry, plus the most recent unstarred ones. */
+  function pruneLibrary(list) {
+    let budget = LIBRARY_UNSTARRED_LIMIT;
+    return list.filter(item => item.starred || budget-- > 0);
+  }
+
+  /**
+   * Write the library back, and say so when it doesn't fit.
+   *
+   * localStorage is roughly 5MB and one article is roughly 65KB of inlined
+   * HTML and CSS, so a full library is genuinely close to the ceiling. The old
+   * code called setItem bare: when it threw, the article you had just waited
+   * ninety seconds for vanished without a word. Shed the oldest unstarred
+   * entries first, and if even that isn't enough, say what happened.
+   */
+  function writeLibrary(list) {
+    let attempt = pruneLibrary(list);
+    for (;;) {
+      try {
+        localStorage.setItem(LIBRARY_KEY, JSON.stringify(attempt));
+        return attempt;
+      } catch (e) {
+        const droppable = attempt.map((it, i) => [it, i]).filter(([it]) => !it.starred);
+        if (!droppable.length) {
+          showToast('Storage is full and every article is starred — unstar or delete one.');
+          return attempt;
+        }
+        attempt = attempt.filter((_, i) => i !== droppable[droppable.length - 1][1]);
+        showToast('Storage was full, so the oldest unstarred article was dropped.');
+      }
+    }
+  }
+
+  /**
+   * Fold the two old storage keys into the new one. Runs once per browser.
+   *
+   * Entries that were in the published library are starred: choosing to save
+   * one there was the same intent the star records now.
+   *
+   * Deletable once enough time has passed that no browser still holds the old
+   * keys — same disposable-shim status as purgeLegacyGistCredentials above.
+   */
+  function migrateLegacyLibraries() {
+    const drafts = (() => { try { return JSON.parse(localStorage.getItem('articlegen_local_drafts') || '[]'); } catch (e) { return []; } })();
+    const published = (() => { try { return JSON.parse(localStorage.getItem('articlegen_published_library') || '[]'); } catch (e) { return []; } })();
+    if (!drafts.length && !published.length) return;
+
+    const merged = readLibrary();
+    const seen = new Set(merged.map(it => it.title));
+    const add = (item, starred) => {
+      if (!item || !item.title || seen.has(item.title)) return;
+      seen.add(item.title);
+      merged.push({
+        id: item.id || ('a_' + merged.length + '_' + (item.date || '')),
+        title: item.title,
+        date: item.date || new Date().toISOString(),
+        content: item.content || '',
+        starred: starred || !!item.starred,
+        publicUrl: item.publicUrl || ''
+      });
+    };
+    published.forEach(item => add(item, true));
+    drafts.forEach(item => add(item, false));
+    merged.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+    writeLibrary(merged);
+    localStorage.removeItem('articlegen_local_drafts');
+    localStorage.removeItem('articlegen_published_library');
+  }
+
+  /** Every generated article lands here. No button, no second copy. */
+  function saveToLibrary(title, htmlContent) {
+    if (!htmlContent) return null;
+    const list = readLibrary();
+    const existing = list.findIndex(it => it.title === title);
+    const starred = existing >= 0 ? !!list[existing].starred : false;
+    const publicUrl = existing >= 0 ? (list[existing].publicUrl || '') : '';
+    if (existing >= 0) list.splice(existing, 1);
+
+    const entry = {
+      id: 'a_' + Date.now(),
+      title: title,
+      date: new Date().toISOString(),
+      content: htmlContent,
+      starred: starred,
+      publicUrl: publicUrl
+    };
+    list.unshift(entry);
+    writeLibrary(list);
+    currentArticleId = entry.id;
+    updateStarButton();
+    return entry.id;
+  }
+
+  function updateStarButton() {
+    const btn = document.getElementById('starCurrentBtn');
+    if (!btn) return;
+    const item = readLibrary().find(it => it.id === currentArticleId);
+    const on = !!(item && item.starred);
+    btn.innerText = on ? '★ Kept' : '☆ Keep';
+    btn.style.background = on ? 'var(--accent)' : '';
+    btn.style.color = on ? '#fff' : '';
+    btn.style.border = on ? 'none' : '';
+  }
+
+  function starCurrentArticle() {
+    if (!currentArticleId) {
+      showToast('Nothing to keep yet.');
+      return;
+    }
+    toggleStar(currentArticleId, false);
+    updateStarButton();
+    const item = readLibrary().find(it => it.id === currentArticleId);
+    showToast(item && item.starred
+      ? 'Kept. This one will not roll over.'
+      : 'No longer kept.');
+  }
+
+  function toggleStar(id, reload = true) {
+    const list = readLibrary();
+    const item = list.find(it => it.id === id);
+    if (!item) return;
+    item.starred = !item.starred;
+    writeLibrary(list);
+    if (reload) loadLibrary();
+  }
+
+  async function loadLibrary() {
+    const container = document.getElementById('libraryList');
+    if (!container) return;
+    const filterQuery = (document.getElementById('librarySearchInput')?.value || '').toLowerCase().trim();
+    container.innerHTML = '<p style="color:var(--muted);">Loading…</p>';
+
+    // A locally-run `articlegen web` writes real files into drafts/ and is the
+    // authority on what exists; the hosted app has no such endpoint and falls
+    // through to what this browser has stored.
+    //
+    // Only ask when the page and the API share an origin (API_BASE === ''),
+    // which is exactly the local-server case. On GitHub Pages this fetch was a
+    // guaranteed 404 on every library load, logged as a console error, and it
+    // never reached the Render backend anyway — the path is relative.
+    try {
+      if (API_BASE !== '') throw new Error('no local server');
       const resp = await fetch('/api/drafts');
       if (resp.ok) {
         const data = await resp.json();
         if (data.drafts && data.drafts.length > 0) {
           const filtered = data.drafts.filter(d => !filterQuery || d.title.toLowerCase().includes(filterQuery));
-          container.innerHTML = '';
-          if (filtered.length === 0) {
-            container.innerHTML = '<p style="color:var(--muted);">No matching drafts found.</p>';
-            return;
-          }
+          container.innerHTML = filtered.length
+            ? ''
+            : '<p style="color:var(--muted);">No matching articles.</p>';
           filtered.forEach(d => {
             const item = document.createElement('div');
             item.className = 'gallery-item';
@@ -1558,198 +1706,111 @@
       }
     } catch (e) {}
 
-    const localDrafts = JSON.parse(localStorage.getItem('articlegen_local_drafts') || '[]');
-    if (localDrafts.length === 0) {
-      container.innerHTML = '<p style="color:var(--muted); text-align:center; padding:2rem 0;">No saved article drafts yet.<br><span style="font-size:0.8rem; color:var(--muted);">Generated drafts will automatically appear here.</span></p>';
+    const list = readLibrary();
+    if (!list.length) {
+      container.innerHTML = '<p style="color:var(--muted); text-align:center; padding:2rem 0;">No articles yet.<br><span style="font-size:0.8rem;">Anything you generate is saved here automatically.</span></p>';
       return;
     }
 
-    const filtered = localDrafts
-      .map((d, origIndex) => ({ ...d, origIndex }))
-      .filter(d => !filterQuery || d.title.toLowerCase().includes(filterQuery));
-
-    // Sort starred/starred favorites to top
+    const filtered = list.filter(d => !filterQuery || (d.title || '').toLowerCase().includes(filterQuery));
+    if (!filtered.length) {
+      container.innerHTML = '<p style="color:var(--muted);">No matching articles.</p>';
+      return;
+    }
     filtered.sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0));
 
-    if (filtered.length === 0) {
-      container.innerHTML = '<p style="color:var(--muted);">No matching drafts found.</p>';
-      return;
-    }
-
     container.innerHTML = '';
-    filtered.forEach((d) => {
-      const item = document.createElement('div');
-      item.className = 'gallery-item';
-      item.style.gap = '0.5rem';
-      item.innerHTML = `
-        <button type="button" class="icon-btn" style="width:30px; height:30px; border:none; background:none; font-size:1.1rem; cursor:pointer;" onclick="toggleFavoriteDraft(${d.origIndex})" title="${d.starred ? 'Unstar' : 'Star Favorite'}">
+    filtered.forEach(d => {
+      const card = document.createElement('div');
+      card.className = 'gallery-item';
+      card.style.gap = '0.5rem';
+      const publish = d.publicUrl
+        ? `<button type="button" class="pill" style="font-size:0.75rem; padding:0.2rem 0.6rem;" onclick="copyLinkDirect('${escapeHtml(d.publicUrl)}')">🔗 Link</button>
+           <button type="button" class="pill" style="font-size:0.75rem; padding:0.2rem 0.6rem;" onclick="showQrForUrl('${escapeHtml(d.publicUrl)}')">📱 QR</button>`
+        : `<button type="button" class="pill" style="font-size:0.75rem; padding:0.2rem 0.6rem; white-space:nowrap;" onclick="publishLibraryItem('${d.id}')">🌐 Publish</button>`;
+      card.innerHTML = `
+        <button type="button" class="icon-btn" style="width:30px; height:30px; border:none; background:none; font-size:1.1rem; cursor:pointer;" onclick="toggleStar('${d.id}')" title="${d.starred ? 'Stop keeping this' : 'Keep this article'}">
           ${d.starred ? '⭐' : '☆'}
         </button>
         <div style="flex:1; min-width:0;">
           <div class="gallery-title" style="line-height:1.35; margin-bottom:0.25rem;">${escapeHtml(d.title)}</div>
-          <div class="gallery-meta">${new Date(d.date).toLocaleDateString()}</div>
+          <div class="gallery-meta">${new Date(d.date).toLocaleDateString()}${d.publicUrl ? ' · published' : ''}</div>
         </div>
-        <div style="display:flex; align-items:center; gap:0.6rem;">
-          <a class="gallery-action" href="#" onclick="openLocalDraft(${d.origIndex}); return false;">Read →</a>
-          <button type="button" class="icon-btn" style="width:32px; height:32px; color:#ef4444; border-color:rgba(239,68,68,0.3); font-size:0.85rem;" onclick="deleteLocalDraft(${d.origIndex})" title="Delete Draft">🗑️</button>
-        </div>
-      `;
-      container.appendChild(item);
-    });
-  }
-
-  function deleteLocalDraft(index) {
-    let localDrafts = JSON.parse(localStorage.getItem('articlegen_local_drafts') || '[]');
-    if (index >= 0 && index < localDrafts.length) {
-      const deletedTitle = localDrafts[index].title;
-      localDrafts.splice(index, 1);
-      localStorage.setItem('articlegen_local_drafts', JSON.stringify(localDrafts));
-      showToast(`Deleted "${deletedTitle.substring(0, 20)}..."`);
-      loadGallery();
-    }
-  }
-
-  function clearAllLocalDrafts() {
-    let localDrafts = JSON.parse(localStorage.getItem('articlegen_local_drafts') || '[]');
-    if (localDrafts.length === 0) {
-      showToast("No drafts to delete.");
-      return;
-    }
-    if (confirm(`Are you sure you want to delete all ${localDrafts.length} saved article drafts? This cannot be undone.`)) {
-      localStorage.removeItem('articlegen_local_drafts');
-      showToast("All drafts cleared!");
-      loadGallery();
-    }
-  }
-
-  function toggleFavoriteDraft(index) {
-    let localDrafts = JSON.parse(localStorage.getItem('articlegen_local_drafts') || '[]');
-    if (localDrafts[index]) {
-      localDrafts[index].starred = !localDrafts[index].starred;
-      localStorage.setItem('articlegen_local_drafts', JSON.stringify(localDrafts));
-      loadGallery();
-    }
-  }
-
-  function openLocalDraft(index) {
-    const localDrafts = JSON.parse(localStorage.getItem('articlegen_local_drafts') || '[]');
-    const draft = localDrafts[index];
-    if (draft) {
-      currentTitle = draft.title;
-      document.getElementById('articleIframe').srcdoc = draft.content;
-      const hash = encodeArticleToHash(draft.content);
-      if (hash) {
-        window.location.hash = hash;
-        currentArticleUrl = window.location.pathname + hash;
-      }
-      showView('readerView');
-    }
-  }
-
-  async function saveToPublishedLibrary() {
-    const iframe = document.getElementById('articleIframe');
-    if (!iframe) return;
-    const doc = iframe.contentDocument || iframe.contentWindow.document;
-    const htmlContent = doc?.documentElement?.outerHTML || iframe.srcdoc || '';
-    if (!htmlContent) {
-      showToast('No article content to save.');
-      return;
-    }
-
-    // Saving to your own library is a local act, so it must not upload
-    // anything. Only carry a public URL if this article has already been
-    // deliberately published; otherwise the entry is local-only and the
-    // library offers a Publish button per item.
-    const publicUrl = cachedShareUrl || '';
-    const title = currentTitle || doc.title || 'Untitled Article';
-
-    let publishedLib = JSON.parse(localStorage.getItem('articlegen_published_library') || '[]');
-    // Prevent duplicate saves by title
-    publishedLib = publishedLib.filter(item => item.title !== title);
-    publishedLib.unshift({
-      id: 'pub_' + Date.now(),
-      title: title,
-      date: new Date().toISOString(),
-      content: htmlContent,
-      publicUrl: publicUrl
-    });
-
-    localStorage.setItem('articlegen_published_library', JSON.stringify(publishedLib));
-    showToast('📚 Saved to Published Library!');
-  }
-
-  function loadPublishedLibrary() {
-    const container = document.getElementById('publishedList');
-    if (!container) return;
-    const filterQuery = (document.getElementById('publishedSearchInput')?.value || '').toLowerCase().trim();
-    const publishedLib = JSON.parse(localStorage.getItem('articlegen_published_library') || '[]');
-
-    if (publishedLib.length === 0) {
-      container.innerHTML = `
-        <div style="text-align:center; padding:3rem 1rem; color:var(--muted);">
-          <span style="font-size:2.5rem; display:block; margin-bottom:0.5rem;">📚</span>
-          <p style="margin:0 0 0.5rem; font-weight:600;">Your Published Library is empty</p>
-          <p style="font-size:0.82rem; margin:0;">Open any finished article draft and click <strong>"Save to Published Library"</strong> to save it permanently with a public sharing link across your devices.</p>
-        </div>
-      `;
-      return;
-    }
-
-    const filtered = publishedLib.filter(d => !filterQuery || d.title.toLowerCase().includes(filterQuery));
-    if (filtered.length === 0) {
-      container.innerHTML = '<p style="color:var(--muted);">No matching published articles found.</p>';
-      return;
-    }
-
-    container.innerHTML = '';
-    filtered.forEach((item, index) => {
-      const card = document.createElement('div');
-      card.className = 'draft-card';
-      card.style.marginBottom = '1rem';
-
-      const shortUrl = item.publicUrl ? (item.publicUrl.length > 50 ? item.publicUrl.substring(0, 48) + '...' : item.publicUrl) : '';
-
-      card.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.5rem;">
-          <h3 class="draft-title" style="margin:0; font-size:1.1rem; flex:1;">${escapeHtml(item.title)}</h3>
-          <button type="button" class="icon-btn" style="width:30px; height:30px; color:#ef4444; border-color:rgba(239,68,68,0.3); font-size:0.85rem;" onclick="deletePublishedArticle('${item.id}')" title="Delete Published Article">🗑️</button>
-        </div>
-        <p style="font-size:0.8rem; color:var(--muted); margin:0 0 0.8rem;">Saved on ${new Date(item.date).toLocaleDateString()}</p>
-        
-        <div style="background:var(--bg); border:1px solid var(--card-border); border-radius:8px; padding:0.5rem 0.8rem; display:flex; align-items:center; justify-content:space-between; margin-bottom:0.8rem; gap:0.5rem;">
-          ${item.publicUrl
-            ? `<span style="font-size:0.78rem; color:var(--accent); font-family:monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:240px;">${escapeHtml(shortUrl)}</span>
-               <button type="button" class="pill" style="font-size:0.75rem; padding:0.2rem 0.6rem;" onclick="copyLinkDirect('${escapeHtml(item.publicUrl)}')">🔗 Copy Link</button>`
-            : `<span style="font-size:0.78rem; color:var(--muted);">Saved on this device only</span>
-               <button type="button" class="pill" style="font-size:0.75rem; padding:0.2rem 0.6rem; white-space:nowrap;" onclick="publishLibraryItem('${item.id}')">🌐 Publish</button>`}
-        </div>
-
-        <div style="display:flex; gap:0.5rem;">
-          <button class="btn-select" style="flex:1; margin:0;" onclick="openPublishedArticle('${item.id}')">📖 Read Article</button>
-          ${item.publicUrl
-            ? `<button class="pill" style="padding:0.6rem 0.8rem;" onclick="showQrForUrl('${escapeHtml(item.publicUrl)}')">📱 QR</button>`
-            : ''}
+        <div style="display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap; justify-content:flex-end;">
+          ${publish}
+          <a class="gallery-action" href="#" onclick="openLibraryItem('${d.id}'); return false;">Read →</a>
+          <button type="button" class="icon-btn" style="width:32px; height:32px; color:#ef4444; border-color:rgba(239,68,68,0.3); font-size:0.85rem;" onclick="deleteLibraryItem('${d.id}')" title="Delete">🗑️</button>
         </div>
       `;
       container.appendChild(card);
     });
   }
 
-  function openPublishedArticle(id) {
-    const publishedLib = JSON.parse(localStorage.getItem('articlegen_published_library') || '[]');
-    const item = publishedLib.find(d => d.id === id);
-    if (item) {
-      currentTitle = item.title;
-      document.getElementById('articleIframe').srcdoc = item.content;
-      cachedShareUrl = item.publicUrl;
-      showView('readerView');
-    }
+  /**
+   * Open a draft file that a locally-run `articlegen web` wrote into drafts/.
+   *
+   * This was called from the list and never defined anywhere — clicking
+   * "Read →" on a server draft threw a ReferenceError and did nothing. It only
+   * shows up in local server mode, which is why it survived.
+   */
+  function openDraftFromGallery(htmlUrl, title) {
+    const iframe = document.getElementById('articleIframe');
+    iframe.removeAttribute('srcdoc');
+    iframe.src = apiUrl(htmlUrl);
+    currentTitle = title || '';
+    currentArticleUrl = htmlUrl;
+    currentMarkdownUrl = htmlUrl.replace(/\.html$/, '.md');
+    currentArticleId = '';
+    cachedShareUrl = '';
+    document.getElementById('articleMeta').innerText = title || 'Draft';
+    updateStarButton();
+    showView('readerView');
   }
 
-  /** Publish a library entry that was saved locally, on explicit request. */
+  function openLibraryItem(id) {
+    const item = readLibrary().find(it => it.id === id);
+    if (!item) return;
+    currentTitle = item.title;
+    currentArticleId = item.id;
+    cachedShareUrl = item.publicUrl || '';
+    document.getElementById('articleIframe').srcdoc = item.content;
+    const hash = encodeArticleToHash(item.content);
+    if (hash) {
+      window.location.hash = hash;
+      currentArticleUrl = window.location.pathname + hash;
+    }
+    updateStarButton();
+    showView('readerView');
+  }
+
+  function deleteLibraryItem(id) {
+    const list = readLibrary();
+    const item = list.find(it => it.id === id);
+    if (!item) return;
+    if (!confirm(`Delete "${item.title}"?`)) return;
+    writeLibrary(list.filter(it => it.id !== id));
+    showToast('Deleted.');
+    loadLibrary();
+  }
+
+  function clearLibrary() {
+    const list = readLibrary();
+    if (!list.length) {
+      showToast('Nothing to delete.');
+      return;
+    }
+    if (!confirm(`Delete all ${list.length} saved article(s)? This cannot be undone.`)) return;
+    localStorage.removeItem(LIBRARY_KEY);
+    currentArticleId = '';
+    updateStarButton();
+    showToast('Library cleared.');
+    loadLibrary();
+  }
+
+  /** Publish a saved article to the public pastebin, on explicit request. */
   async function publishLibraryItem(id) {
-    const lib = JSON.parse(localStorage.getItem('articlegen_published_library') || '[]');
-    const item = lib.find(d => d.id === id);
+    const list = readLibrary();
+    const item = list.find(it => it.id === id);
     if (!item || !item.content) {
       showToast('Nothing to publish for this entry.');
       return;
@@ -1762,8 +1823,8 @@
     if (!url) return;
 
     item.publicUrl = url;
-    localStorage.setItem('articlegen_published_library', JSON.stringify(lib));
-    loadPublishedLibrary();
+    writeLibrary(list);
+    loadLibrary();
     showToast('Published. Anyone with the link can read it.');
   }
 
@@ -1784,30 +1845,6 @@
         <p style="font-size:0.75rem; color:var(--muted); margin-top:0.6rem; word-break:break-all; max-width:260px;">${escapeHtml(url)}</p>
       </div>
     `;
-  }
-
-  function deletePublishedArticle(id) {
-    let publishedLib = JSON.parse(localStorage.getItem('articlegen_published_library') || '[]');
-    const item = publishedLib.find(d => d.id === id);
-    if (item && confirm(`Are you sure you want to remove "${item.title}" from your Published Library?`)) {
-      publishedLib = publishedLib.filter(d => d.id !== id);
-      localStorage.setItem('articlegen_published_library', JSON.stringify(publishedLib));
-      showToast('Removed from Published Library');
-      loadPublishedLibrary();
-    }
-  }
-
-  function clearPublishedLibrary() {
-    let publishedLib = JSON.parse(localStorage.getItem('articlegen_published_library') || '[]');
-    if (publishedLib.length === 0) {
-      showToast("Library is already empty.");
-      return;
-    }
-    if (confirm(`Are you sure you want to delete all ${publishedLib.length} published articles from your Library?`)) {
-      localStorage.removeItem('articlegen_published_library');
-      showToast("Published Library cleared!");
-      loadPublishedLibrary();
-    }
   }
 
   function escapeHtml(str) {
