@@ -989,7 +989,29 @@ def render_article(
     verification: dict | None = None,
     provenance: dict | None = None,
     style_report: dict | None = None,
+    standalone: bool = True,
 ) -> str:
+    """Render the article as one self-contained HTML page.
+
+    `standalone=False` drops the three scripted parts — the theme-restoring
+    head script, the Share/Copy/Theme toolbar, and the script that backs it.
+    Two reasons, and they point the same way.
+
+    *Security.* The web app shows the article in an iframe, and until this
+    existed that iframe ran same-origin with the visitor's API key in
+    localStorage. It is fed model-written HTML, and worse, `#read=` and `#p=`
+    links let anyone hand a visitor a page of their choosing. A `sandbox`
+    attribute fixes that, but a sandbox without `allow-scripts` would leave the
+    toolbar's buttons present and dead. Removing them is what makes the sandbox
+    free (issue #100).
+
+    *Duplication.* The app already has a sticky action bar with Share, Copy link
+    and a theme toggle, so in that context the in-article toolbar was a second
+    copy of controls the page around it already provides.
+
+    A file written to `drafts/` is opened directly in a browser with no app
+    around it, so it keeps all three.
+    """
     cited, cite_map = _citation_map(article, papers)
     valid_numbers = set(range(1, len(cited) + 1))
     labels = _display_relevance(cite_map, curation)
@@ -1089,6 +1111,9 @@ def render_article(
             additional=_back_matter_html(cited, topic, article, provenance),
             disclaimer=_disclaimer_html(topic, article, cited),
             disclosure_banner=html.escape(_disclosure_banner(cited)),
+            head_script=_HEAD_SCRIPT if standalone else "",
+            toolbar=_TOOLBAR if standalone else "",
+            foot_script=_FOOT_SCRIPT if standalone else "",
         ).replace("__STYLE__", _CSS)
     )
 
@@ -1333,20 +1358,69 @@ _CSS = """
 """
 
 
+# The three scripted parts of the page, kept out of _TEMPLATE so `standalone`
+# can drop them. They are substituted *into* the format call as values, never
+# formatted themselves, so their braces are ordinary single braces.
+_HEAD_SCRIPT = """<script>
+  (function() {
+    var saved = localStorage.getItem('articlegen_theme') || 'system';
+    if (saved === 'dark' || saved === 'light') {
+      document.documentElement.setAttribute('data-theme', saved);
+    }
+  })();
+</script>"""
+
+_TOOLBAR = """<div class="toolbar">
+      <button class="tool-btn" onclick="shareArticle()">Share</button>
+      <button class="tool-btn" onclick="copyArticleLink()">Copy link</button>
+      <button class="tool-btn" onclick="toggleArticleTheme()"><span id="themeIcon">&#9789;</span> Theme</button>
+      <span id="shareToast" class="share-toast">Link copied</span>
+    </div>"""
+
+_FOOT_SCRIPT = """<script>
+function shareArticle() {
+  if (navigator.share) {
+    navigator.share({ title: document.title, url: window.location.href }).catch(function() {});
+  } else {
+    copyArticleLink();
+  }
+}
+function copyArticleLink() {
+  navigator.clipboard.writeText(window.location.href).then(function() {
+    var t = document.getElementById('shareToast');
+    if (t) {
+      t.style.display = 'inline';
+      setTimeout(function() { t.style.display = 'none'; }, 2500);
+    }
+  }).catch(function() {});
+}
+function toggleArticleTheme() {
+  var cur = document.documentElement.getAttribute('data-theme');
+  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var effective = cur || (isSysDark ? 'dark' : 'light');
+  var next = effective === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('articlegen_theme', next);
+  updateArticleThemeIcon();
+}
+function updateArticleThemeIcon() {
+  var icon = document.getElementById('themeIcon');
+  if (!icon) return;
+  var cur = document.documentElement.getAttribute('data-theme');
+  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var effective = cur || (isSysDark ? 'dark' : 'light');
+  icon.innerHTML = effective === 'dark' ? '&#9789;' : '&#9788;';
+}
+document.addEventListener('DOMContentLoaded', updateArticleThemeIcon);
+</script>"""
+
 _TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{page_title}</title>
-<script>
-  (function() {{
-    var saved = localStorage.getItem('articlegen_theme') || 'system';
-    if (saved === 'dark' || saved === 'light') {{
-      document.documentElement.setAttribute('data-theme', saved);
-    }}
-  }})();
-</script>
+{head_script}
 <style>__STYLE__</style>
 </head>
 <body>
@@ -1359,12 +1433,7 @@ _TEMPLATE = """<!DOCTYPE html>
     <p class="meta-line">{meta_line}</p>
     <p class="subject-line"><span class="meta-label">Subject</span>{subject}</p>
 
-    <div class="toolbar">
-      <button class="tool-btn" onclick="shareArticle()">Share</button>
-      <button class="tool-btn" onclick="copyArticleLink()">Copy link</button>
-      <button class="tool-btn" onclick="toggleArticleTheme()"><span id="themeIcon">&#9789;</span> Theme</button>
-      <span id="shareToast" class="share-toast">Link copied</span>
-    </div>
+    {toolbar}
 
     <div class="abstract">
       <p><span class="run-in-head">Abstract</span>{abstract}</p>
@@ -1396,42 +1465,7 @@ _TEMPLATE = """<!DOCTYPE html>
   </footer>
   </article>
 </main>
-<script>
-function shareArticle() {{
-  if (navigator.share) {{
-    navigator.share({{ title: document.title, url: window.location.href }}).catch(function() {{}});
-  }} else {{
-    copyArticleLink();
-  }}
-}}
-function copyArticleLink() {{
-  navigator.clipboard.writeText(window.location.href).then(function() {{
-    var t = document.getElementById('shareToast');
-    if (t) {{
-      t.style.display = 'inline';
-      setTimeout(function() {{ t.style.display = 'none'; }}, 2500);
-    }}
-  }}).catch(function() {{}});
-}}
-function toggleArticleTheme() {{
-  var cur = document.documentElement.getAttribute('data-theme');
-  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  var effective = cur || (isSysDark ? 'dark' : 'light');
-  var next = effective === 'dark' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', next);
-  localStorage.setItem('articlegen_theme', next);
-  updateArticleThemeIcon();
-}}
-function updateArticleThemeIcon() {{
-  var icon = document.getElementById('themeIcon');
-  if (!icon) return;
-  var cur = document.documentElement.getAttribute('data-theme');
-  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  var effective = cur || (isSysDark ? 'dark' : 'light');
-  icon.innerHTML = effective === 'dark' ? '&#9789;' : '&#9788;';
-}}
-document.addEventListener('DOMContentLoaded', updateArticleThemeIcon);
-</script>
+{foot_script}
 </body>
 </html>
 """

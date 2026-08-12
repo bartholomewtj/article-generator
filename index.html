@@ -628,7 +628,20 @@
     </div>
 
     <div class="reader-frame-wrapper">
-      <iframe id="articleIframe" class="article-iframe" title="Generated Article"></iframe>
+      <!-- sandbox with allow-same-origin but NOT allow-scripts.
+           No script runs inside this frame — not inline, not an event handler,
+           nothing. That is the point: what lands in here is model-written HTML,
+           and a #read= or #p= link lets anyone else choose it. Unsandboxed it
+           ran same-origin, one localStorage.getItem away from the visitor's
+           OpenRouter key (issue #100).
+           allow-same-origin is kept deliberately, and it does NOT re-enable
+           scripts. It is what lets this page still reach contentDocument to
+           sync the theme, toggle edit mode, and read the article back out when
+           saving it. Dropping it would break those three for no extra safety.
+           Articles rendered for the app carry no scripts anyway; the hideArticleToolbar
+           call below covers older draft files on disk that still do. -->
+      <iframe id="articleIframe" class="article-iframe" title="Generated Article"
+              sandbox="allow-same-origin"></iframe>
     </div>
 
   </div>
@@ -907,6 +920,20 @@
     } catch (e) {}
   }
 
+  // Older draft files on disk were rendered with the in-article Share / Copy /
+  // Theme toolbar, whose buttons cannot work inside the sandbox. New articles
+  // are rendered without it (render_article's `standalone` flag), and the app's
+  // own action bar does the same three jobs — so hide the dead copy rather than
+  // leave buttons that do nothing.
+  function hideArticleToolbar() {
+    const iframe = document.getElementById('articleIframe');
+    if (!iframe) return;
+    try {
+      const doc = iframe.contentDocument || iframe.contentWindow.document;
+      doc?.querySelectorAll('.toolbar').forEach(el => { el.style.display = 'none'; });
+    } catch (e) {}
+  }
+
   let isEditingInPlace = false;
 
   function toggleInPlaceEdit() {
@@ -957,7 +984,10 @@
     updateThemeIcon();
     const iframe = document.getElementById('articleIframe');
     if (iframe) {
-      iframe.addEventListener('load', syncThemeToIframe);
+      iframe.addEventListener('load', function() {
+        syncThemeToIframe();
+        hideArticleToolbar();
+      });
     }
   });
 

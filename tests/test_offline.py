@@ -1171,6 +1171,51 @@ def test_rules_do_not_reject_real_journal_prose() -> None:
         check(f"not first person: {text[:38]!r}", "first-person" not in fired)
 
 
+def test_article_in_the_web_app_cannot_run_scripts() -> None:
+    """The reader iframe is sandboxed, and what goes into it carries no script.
+
+    The iframe used to run same-origin with no sandbox, and `#read=` / `#p=`
+    links mean the HTML in it is not merely model-written but attacker-choosable:
+    one localStorage.getItem reaches the visitor's OpenRouter key. Two halves fix
+    it and both have to hold — the sandbox attribute, and an article rendered
+    without the scripted toolbar so the sandbox costs nothing (issue #100).
+    """
+    import inspect
+    from articlegen import demo, render, web
+
+    standalone = render.render_article(demo.SAMPLE_ARTICLE, demo.SAMPLE_PAPERS, "t")
+    embedded = render.render_article(
+        demo.SAMPLE_ARTICLE, demo.SAMPLE_PAPERS, "t", standalone=False)
+
+    check("the embedded article has no script tag", "<script" not in embedded)
+    check("no inline event handlers either", "onclick" not in embedded)
+    check("and never touches localStorage", "localStorage" not in embedded)
+    check("the toolbar goes with them", 'class="toolbar"' not in embedded)
+    check("but the article itself is all still there",
+          "<h1>" in embedded and "References" in embedded
+          and "Methods" in embedded and "Table 1" in embedded)
+
+    # A file written to drafts/ is opened on its own, so it keeps all three.
+    check("a standalone draft still carries its toolbar",
+          'class="toolbar"' in standalone and "<script" in standalone)
+
+    page = open(
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "index.html"),
+        encoding="utf-8",
+    ).read()
+    frame = page[page.index('<iframe id="articleIframe"'):]
+    frame = frame[:frame.index(">") + 1]
+    check("the reader iframe is sandboxed", "sandbox=" in frame)
+    # allow-scripts would hand the whole thing back. allow-same-origin on its own
+    # does not grant script execution; it is what keeps contentDocument reachable
+    # for the theme sync, edit mode and save-to-library.
+    check("and never with allow-scripts", "allow-scripts" not in frame)
+    check("but keeps allow-same-origin", "allow-same-origin" in frame)
+
+    src = inspect.getsource(web.ArticleGenHandler._handle_draft)
+    check("the API returns the script-free copy", "standalone=False" in src)
+
+
 def test_health_reports_which_build_is_running() -> None:
     """The deployment must be able to say what it is running, and from where.
 
@@ -2594,6 +2639,7 @@ def main() -> int:
         test_methods_names_only_sources_that_answered,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
         test_prose_style_check, test_rules_do_not_reject_real_journal_prose,
+        test_article_in_the_web_app_cannot_run_scripts,
         test_health_reports_which_build_is_running,
         test_openalex_reaches_for_recent_work_as_well,
         test_claude_cli_provider,

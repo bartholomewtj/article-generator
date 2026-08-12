@@ -344,7 +344,11 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
             draft.curation, draft.verification, draft.provenance,
             draft.style_report,
         )
-        article_html = render_article(*render_args)
+        # The copy sent back goes into a sandboxed iframe in the front end, so
+        # it carries no scripts and no toolbar (see render_article's docstring).
+        # The copy written to drafts/ below is opened directly in a browser with
+        # no app around it, so it keeps both — same file the CLI produces.
+        article_html = render_article(*render_args, standalone=False)
         article_md = render_markdown(*render_args)
 
         response = {
@@ -363,7 +367,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
             html_name = f"{response['stem']}.html"
             md_name = f"{response['stem']}.md"
             with open(os.path.join(DRAFTS_DIR, html_name), "w", encoding="utf-8") as f:
-                f.write(article_html)
+                f.write(render_article(*render_args))
             with open(os.path.join(DRAFTS_DIR, md_name), "w", encoding="utf-8") as f:
                 f.write(article_md)
             build_index(DRAFTS_DIR)
