@@ -15,6 +15,7 @@ The pipeline is deliberately honest about evidence:
 
 from __future__ import annotations
 
+import copy
 import json
 
 from .llm import generate_json
@@ -306,6 +307,127 @@ claim; the section headings, the reference list and every number must be \
 unchanged. Do not add claims, sources or figures.
 """
 
+# The same job, returned as a list of replaced blocks instead of a whole article.
+#
+# Rewriting the entire article to fix three sentences is the most expensive call
+# in the pipeline — measured at 26,632 output tokens against the 24,191 it took
+# to write the article in the first place, and output is priced at 5x input. The
+# blocks the checker did not complain about come back re-generated, which is
+# both waste and risk: every untouched paragraph is another chance to drop a
+# citation marker.
+#
+# `check_style` already reports a `where` for every issue, so the model is being
+# asked for exactly the blocks that were named.
+_REVISE_PATCH_SYSTEM = _WRITER_SYSTEM + """
+
+You are now REVISING an existing draft rather than writing a new one, and you \
+return ONLY the blocks you changed — not the whole article.
+
+For each block that needs fixing, emit one edit naming `where` it goes and the \
+`replacement` text. Leave every block the brief does not complain about out of \
+your reply entirely; anything you omit is kept exactly as it is.
+
+Within the blocks you do return: every "[N]" citation marker must survive exactly \
+as it is and stay attached to the same claim, and every number must be unchanged. \
+Do not add claims, sources or figures unless the brief explicitly tells you the \
+draft is too thin, in which case new material must come from the SOURCES and \
+carry its SOURCE number.
+"""
+
+# Uniform shape on purpose: `replacement` is always a list of strings, so the
+# schema has no optional properties and no per-block variants. A single-string
+# block (title, abstract, a featured-study field) uses the first entry.
+_REVISION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "edits": {
+            "type": "array",
+            "description": "One entry per block you changed. Omit blocks you did not change.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "where": {
+                        "type": "string",
+                        "description": "Which block this replaces: 'title', 'abstract', "
+                        "'key_points', 'featured_study/method', 'featured_study/results', "
+                        "'featured_study/limitations', or the EXACT heading of a section.",
+                    },
+                    "replacement": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "The replacement text. For a section: its paragraphs "
+                        "in order. For key_points: the bullets. For title, abstract or a "
+                        "featured-study field: a single-entry list.",
+                    },
+                },
+                "required": ["where", "replacement"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["edits"],
+    "additionalProperties": False,
+}
+
+# What `style.check_style` calls a block, mapped to where it lives in the article.
+# The checker's `where` values are what the model sees in the brief, so it will
+# echo those spellings back rather than the schema's.
+_PATCH_ALIASES = {
+    "key points": "key_points",
+    "key_takeaways": "key_points",
+    "key takeaways": "key_points",
+    "featured study/method": "featured_study/method",
+    "featured study/results": "featured_study/results",
+    "featured study/limitations": "featured_study/limitations",
+    "featured study/why": "featured_study/why",
+    "standfirst": "abstract",
+}
+
+
+def apply_revisions(article: dict, edits: list[dict]) -> tuple[dict, list[str]]:
+    """Merge a list of block replacements into a copy of `article`.
+
+    Returns (revised, applied) — `applied` names the blocks that actually landed,
+    so a reply full of edits that matched nothing is distinguishable from a
+    genuine no-op. Unknown targets are skipped rather than guessed at: a heading
+    the model invented is a sign it rewrote the structure, and silently appending
+    it would let a revision add sections the style gate never asked for.
+    """
+    revised = copy.deepcopy(article)
+    applied: list[str] = []
+
+    headings = {
+        (s.get("heading") or "").strip().lower(): s
+        for s in revised.get("sections") or []
+    }
+
+    for edit in edits or []:
+        where = str(edit.get("where") or "").strip()
+        replacement = [t for t in (edit.get("replacement") or []) if str(t).strip()]
+        if not where or not replacement:
+            continue
+        key = _PATCH_ALIASES.get(where.lower(), where.lower())
+
+        if key == "title":
+            revised["title"] = replacement[0]
+        elif key == "abstract":
+            revised["abstract"] = " ".join(replacement)
+        elif key == "key_points":
+            revised["key_points"] = replacement
+        elif key.startswith("featured_study/"):
+            field = key.split("/", 1)[1]
+            if field in ("method", "results", "limitations", "why"):
+                revised.setdefault("featured_study", {})[field] = replacement[0]
+            else:
+                continue
+        elif key in headings:
+            headings[key]["paragraphs"] = replacement
+        else:
+            continue
+        applied.append(where)
+
+    return revised, applied
+
 # When open-access full texts ride along in the payload, the abstracts-only
 # framing above becomes false — and a prompt that lies about its own inputs
 # teaches the model to ignore it. The full-text variants are derived by
@@ -334,6 +456,7 @@ def _with_fulltext_framing(system: str) -> str:
 
 _WRITER_SYSTEM_FULLTEXT = _with_fulltext_framing(_WRITER_SYSTEM)
 _REVISE_SYSTEM_FULLTEXT = _with_fulltext_framing(_REVISE_SYSTEM)
+_REVISE_PATCH_SYSTEM_FULLTEXT = _with_fulltext_framing(_REVISE_PATCH_SYSTEM)
 
 
 def plan_queries(
@@ -362,11 +485,17 @@ def _format_sources(
     papers: list[Paper],
     relevance: dict[int, str] | None = None,
     excerpts: dict[int, str] | None = None,
+    omit: set[int] | None = None,
 ) -> str:
     """Render the sources for the prompt.
 
     `excerpts` (from `sources.full_text_excerpts`) appends each paper's
     open-access full text below its abstract.
+
+    `omit` drops sources by index while leaving every other source's number
+    alone, so SOURCE 7 is the seventh paper whether or not SOURCE 6 was
+    dropped. The numbering is the citation scheme — `render` maps the writer's
+    markers back through it — so it must never be re-packed to close a gap.
 
     There is no character budget any more. Until Groq was removed this function
     also trimmed abstracts — shortest-cap-first, then dropping the lowest-ranked
@@ -393,7 +522,11 @@ def _format_sources(
             block += "\n(Abstract only — no open-access full text was available.)"
         return block
 
-    return "\n\n".join(render(p, i, p.abstract) for i, p in enumerate(papers, start=1))
+    return "\n\n".join(
+        render(p, i, p.abstract)
+        for i, p in enumerate(papers, start=1)
+        if not (omit and i in omit)
+    )
 
 
 def curate_sources(
@@ -465,11 +598,32 @@ def write_article(
         context += f"Suggested study to feature (most relevant): SOURCE {mri}.\n\n"
     excerpts = full_text_excerpts(papers)
     use_full_text = bool(excerpts)
+
+    # Tangential sources are background by definition — the curation prompt
+    # defines the label as "only good for background or framing sentences" —
+    # and the pipeline already refuses to spend a full-text fetch on one. They
+    # still arrived here with a full abstract each, several thousand tokens of
+    # material the relevance gate exists to keep out of the article.
+    #
+    # They are dropped by number rather than filtered out of the list: the
+    # SOURCE index IS the citation scheme, so the remaining sources keep the
+    # numbers `render` and `verify` will look them up by.
+    omit = {i for i, label in relevance.items() if label == "tangential"}
     context += (
         "Here are the candidate sources with their relevance labels. Choose the ones "
         "that genuinely support the article and write it.\n\n"
-        + _format_sources(papers, relevance, excerpts)
     )
+    if omit:
+        # The prompt must not misdescribe its own inputs. The tally above counts
+        # the tangential sources, so without this the model is told about
+        # material it cannot see and may cite a SOURCE number that is not there.
+        context += (
+            f"{len(omit)} tangential source(s) are counted in the tally above but are "
+            "NOT reproduced below, because they are background only. The numbering "
+            "below is unchanged and has gaps where they were. Cite only sources you "
+            "can actually see.\n\n"
+        )
+    context += _format_sources(papers, relevance, excerpts, omit=omit)
     return generate_json(
         context,
         _ARTICLE_SCHEMA,
@@ -487,11 +641,20 @@ def revise_prose(
     api_key: str | None = None,
     papers: list[Paper] | None = None,
     curation: dict | None = None,
+    rewrite_whole: bool = False,
 ) -> dict:
     """Re-write a draft's prose against a list of style violations from `style.py`.
 
     The brief names the specific conventions broken and quotes the offending text,
     so this is a targeted edit rather than a second attempt at the whole article.
+
+    By default the model returns only the blocks it changed and they are merged
+    in here — see `_REVISE_PATCH_SYSTEM` for why. `rewrite_whole=True` asks for
+    the entire article instead, which `enforce_style` uses when the draft needs
+    sections it does not yet have: a patch can only replace a block that exists.
+
+    Either way the return value is a complete article, so callers do not need to
+    know which path ran.
     """
     draft_json = json.dumps(article, ensure_ascii=False, indent=1)
 
@@ -512,11 +675,33 @@ def revise_prose(
     else:
         use_full_text = False
     context += "Here is the draft to revise, as JSON:\n\n" + draft_json
-    return generate_json(
+
+    if rewrite_whole:
+        return generate_json(
+            context,
+            _ARTICLE_SCHEMA,
+            system=_REVISE_SYSTEM_FULLTEXT if use_full_text else _REVISE_SYSTEM,
+            model=model,
+            deep=True,
+            api_key=api_key,
+        )
+
+    result = generate_json(
         context,
-        _ARTICLE_SCHEMA,
-        system=_REVISE_SYSTEM_FULLTEXT if use_full_text else _REVISE_SYSTEM,
+        _REVISION_SCHEMA,
+        system=_REVISE_PATCH_SYSTEM_FULLTEXT if use_full_text else _REVISE_PATCH_SYSTEM,
         model=model,
         deep=True,
         api_key=api_key,
     )
+    revised, applied = apply_revisions(article, result.get("edits") or [])
+    if not applied:
+        # Nothing landed: either the model returned no edits, or every `where`
+        # it named was a block this article does not have. Both mean the draft
+        # is unchanged, and returning it as if it were revised would let
+        # `enforce_style` log a revision that never happened.
+        raise RuntimeError(
+            "the revision returned no edit that matched a block in the draft "
+            f"({len(result.get('edits') or [])} edit(s) offered)"
+        )
+    return revised

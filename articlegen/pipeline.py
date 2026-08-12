@@ -19,7 +19,8 @@ from typing import Callable
 
 from .llm import resolve_provider
 from .sources import DATABASE_NAMES, Paper, fetch_full_text, gather_evidence, resolve_pmcid
-from .style import check_style, errors as style_errors, format_report as format_style, revision_brief
+from .style import (SUBSTANCE_RULES, check_style, errors as style_errors,
+                    format_report as format_style, revision_brief)
 from .verify import check_statistics
 from .writer import curate_sources, plan_queries, revise_prose, write_article
 
@@ -119,7 +120,8 @@ def enforce_style(
 
     `papers` matters when the draft failed for thinness or repetition: those can
     only be fixed by adding grounded material, and without the sources the model
-    has nothing to add but more words about the same points.
+    has nothing to add but more words about the same points. They are forwarded
+    to the revision only in that case — see the note at `needs_sources`.
     """
     # The section floor scales with how much directly on-topic evidence there is;
     # demanding five sections from three usable abstracts invites padding.
@@ -132,10 +134,27 @@ def enforce_style(
         return article, report
 
     log(f"Prose style: {len(problems)} issue(s) against journal conventions; revising once...")
+    # The revision replaces named blocks, which is far cheaper than regenerating
+    # the article — but a block can only be replaced if it exists. `too-few-sections`
+    # is the one failure whose fix is a section that is not there yet, so it is
+    # also the one that still pays for a whole rewrite.
+    rewrite_whole = any(i["rule"] == "too-few-sections" for i in problems)
+
+    # The sources go along only when the draft failed for thinness or repetition.
+    # `revision_brief` already splits the two cases: a substance failure is told
+    # to pull specific findings out of the sources, and a register failure is
+    # told to reword and add nothing. Sending 20 abstracts and 60,000 characters
+    # of full text to fix a contraction is ~30,000 input tokens the model is
+    # explicitly forbidden to use — and material it cannot use is material it can
+    # still be distracted by.
+    needs_sources = any(i["rule"] in SUBSTANCE_RULES for i in problems)
+    if papers and not needs_sources:
+        log("  (register-only fixes; revising against the draft alone)")
     try:
         revised = revise_prose(
             article, revision_brief(report), model=model, api_key=api_key,
-            papers=papers, curation=curation,
+            papers=papers if needs_sources else None,
+            curation=curation, rewrite_whole=rewrite_whole,
         )
     except Exception as exc:
         log(f"  revision failed ({exc}); keeping the original draft.")

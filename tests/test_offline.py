@@ -1557,6 +1557,409 @@ def test_claude_cli_provider() -> None:
                 os.environ[var] = val
 
 
+def test_revision_replaces_blocks_rather_than_the_article() -> None:
+    """The style revision returns the blocks it changed, not a new article.
+
+    Rewriting all 3,586 words to fix three sentences was the most expensive call
+    in a measured run — 26,632 output tokens against the 24,191 that wrote the
+    article, at 5x the price of input. It is also the riskier shape: every
+    untouched paragraph that comes back regenerated is another chance to drop a
+    citation marker.
+
+    What has to hold is that a partial reply merges into a complete article, and
+    that a reply naming blocks the draft does not have changes nothing.
+    """
+    from articlegen import writer
+
+    article = {
+        "title": "Old title",
+        "abstract": "Old abstract.",
+        "key_points": ["old point"],
+        "featured_study": {"source_index": 1, "method": "old method",
+                           "results": "old results", "limitations": "old limits"},
+        "sections": [
+            {"heading": "Introduction", "paragraphs": ["intro one", "intro two"]},
+            {"heading": "Boarding times", "paragraphs": ["boarding one"]},
+            {"heading": "Conclusions", "paragraphs": ["conclusion one"]},
+        ],
+        "references": [1, 2, 3],
+    }
+
+    revised, applied = writer.apply_revisions(article, [
+        {"where": "Boarding times", "replacement": ["fixed one", "fixed two"]},
+        {"where": "key points", "replacement": ["fixed point"]},
+        {"where": "featured study/method", "replacement": ["fixed method"]},
+    ])
+
+    check("a named section is replaced by its new paragraphs",
+          revised["sections"][1]["paragraphs"] == ["fixed one", "fixed two"])
+    check("the checker's spelling of a block is understood",
+          revised["key_points"] == ["fixed point"])
+    check("a featured-study field is reachable",
+          revised["featured_study"]["method"] == "fixed method")
+    check("untouched blocks survive verbatim",
+          revised["sections"][0]["paragraphs"] == ["intro one", "intro two"]
+          and revised["abstract"] == "Old abstract."
+          and revised["featured_study"]["results"] == "old results")
+    check("the structure the style gate counts is unchanged",
+          len(revised["sections"]) == 3 and revised["references"] == [1, 2, 3])
+    check("the original is not mutated",
+          article["sections"][1]["paragraphs"] == ["boarding one"]
+          and article["key_points"] == ["old point"])
+    check("every applied block is reported", len(applied) == 3)
+
+    # A heading the model invented means it restructured the article, which is
+    # not what a style revision may do. Appending it would let the revision add
+    # sections the gate never asked for.
+    _, applied = writer.apply_revisions(article, [
+        {"where": "A section that does not exist", "replacement": ["text"]},
+        {"where": "Boarding times", "replacement": []},
+    ])
+    check("an unknown target is skipped, not appended", applied == [])
+
+    # -- the call itself ------------------------------------------------
+    captured = {}
+
+    def fake_generate(prompt, schema, **kwargs):
+        captured["schema"], captured["system"] = schema, kwargs.get("system")
+        return {"edits": [{"where": "Introduction", "replacement": ["revised intro"]}]}
+
+    real = writer.generate_json
+    try:
+        writer.generate_json = fake_generate
+        out = writer.revise_prose(article, "BRIEF")
+        check("revise_prose still returns a whole article",
+              out["title"] == "Old title" and len(out["sections"]) == 3)
+        check("with the edit merged in",
+              out["sections"][0]["paragraphs"] == ["revised intro"])
+        check("the patch schema is the one sent", "edits" in captured["schema"]["properties"])
+        check("and the patch system prompt with it",
+              "ONLY the blocks you changed" in captured["system"])
+
+        # too-few-sections cannot be patched — the section is not there to
+        # replace — so that one path still asks for the whole article.
+        writer.generate_json = lambda p, s, **kw: (
+            captured.update(schema=s, system=kw.get("system")) or dict(article))
+        writer.revise_prose(article, "BRIEF", rewrite_whole=True)
+        check("a whole rewrite still asks for the full article schema",
+              "sections" in captured["schema"]["properties"]
+              and "edits" not in captured["schema"]["properties"])
+
+        # A reply that changes nothing must not be logged as a revision.
+        writer.generate_json = lambda p, s, **kw: {"edits": []}
+        try:
+            writer.revise_prose(article, "BRIEF")
+            check("an empty patch raises rather than faking a revision", False)
+        except RuntimeError as exc:
+            check("an empty patch raises rather than faking a revision",
+                  "no edit that matched" in str(exc))
+    finally:
+        writer.generate_json = real
+
+    # The one rule whose fix is a section that does not exist yet.
+    import inspect
+
+    from articlegen import pipeline
+    src = inspect.getsource(pipeline.enforce_style)
+    check("enforce_style asks for a whole rewrite only on too-few-sections",
+          'i["rule"] == "too-few-sections"' in src and "rewrite_whole=rewrite_whole" in src)
+
+
+def test_revision_carries_sources_only_when_they_can_be_used() -> None:
+    """The sources ride along only for a failure that rewording cannot fix.
+
+    `revision_brief` already splits the two cases: a substance failure is told to
+    pull specific findings out of the sources, a register failure is told to
+    reword and add nothing. Sending 20 abstracts and 60,000 characters of full
+    text to fix a contraction is ~30,000 input tokens the model is forbidden to
+    use.
+
+    The pairing is the invariant: whenever the brief says "go back to the
+    SOURCES", the sources must actually be there.
+    """
+    from articlegen import pipeline
+    from articlegen.style import SUBSTANCE_RULES, revision_brief
+
+    stats = {"sentences": 20, "mean_sentence_words": 22.0, "hedges_per_sentence": 0.3,
+             "passive_ratio": 0.2}
+
+    def report_with(rule, severity="error"):
+        return {"issues": [{"rule": rule, "severity": severity, "where": "whole article",
+                            "detail": "d", "excerpt": ""}], "stats": stats}
+
+    seen = {}
+
+    def fake_revise(article, brief, **kwargs):
+        seen["papers"], seen["brief"] = kwargs.get("papers"), brief
+        raise RuntimeError("stop here — only the call matters")
+
+    papers = ["paper-stand-in"]
+    saved = pipeline.revise_prose, pipeline.check_style
+    try:
+        pipeline.revise_prose = fake_revise
+
+        for rule in ("contraction", "second-person", "booster"):
+            pipeline.check_style = lambda a, **kw: report_with(rule)
+            pipeline.enforce_style({"sections": []}, papers=papers)
+            check(f"{rule}: a rewording fix travels without the sources",
+                  seen["papers"] is None)
+            check(f"{rule}: and the brief does not ask for them",
+                  "go back to the SOURCES" not in seen["brief"].lower()
+                  and "SOURCES below" not in seen["brief"])
+
+        for rule in sorted(SUBSTANCE_RULES - {"under-length"}):
+            pipeline.check_style = lambda a, **kw: report_with(rule)
+            pipeline.enforce_style({"sections": []}, papers=papers)
+            check(f"{rule}: a thinness fix still gets the sources",
+                  seen["papers"] == papers)
+            check(f"{rule}: and the brief tells the model to use them",
+                  "SOURCES below" in seen["brief"])
+
+        # under-length is a warning, never an error, so it cannot reach here on
+        # its own — but paired with one that can, the sources must still travel.
+        pipeline.check_style = lambda a, **kw: {
+            "issues": [{"rule": "under-length", "severity": "warning",
+                        "where": "whole article", "detail": "d", "excerpt": ""},
+                       {"rule": "recycled-phrasing", "severity": "error",
+                        "where": "whole article", "detail": "d", "excerpt": ""}],
+            "stats": stats}
+        pipeline.enforce_style({"sections": []}, papers=papers)
+        check("a mixed report with a substance error still gets the sources",
+              seen["papers"] == papers)
+    finally:
+        pipeline.revise_prose, pipeline.check_style = saved
+
+    # The brief's own wording is what the split is keyed on, so a change to one
+    # without the other is the failure this catches.
+    substance = revision_brief(report_with("recycled-phrasing"))
+    register = revision_brief(report_with("contraction"))
+    check("the substance brief still names the sources", "SOURCES below" in substance)
+    check("the register brief still forbids new material",
+          "do not introduce new claims" in register)
+
+
+def test_tangential_sources_stay_out_of_the_writer_prompt() -> None:
+    """Background-only sources cost tokens the relevance gate exists to refuse.
+
+    `curate_sources` defines "tangential" as good for background or framing
+    only, and the pipeline already refuses to spend a full-text fetch on one.
+    They were still arriving at `write_article` with a full abstract each.
+
+    The trap is the numbering. The SOURCE index *is* the citation scheme —
+    `render` maps the writer's markers back through it — so dropping a source
+    must leave a gap, never re-pack the list.
+    """
+    from articlegen import writer
+    from articlegen.sources import Paper
+
+    papers = [Paper(title=f"P{i}", abstract=f"abstract of paper {i}", year=2024)
+              for i in range(1, 6)]
+    relevance = {1: "direct", 2: "tangential", 3: "related",
+                 4: "tangential", 5: "direct"}
+
+    rendered = writer._format_sources(papers, relevance,
+                                      omit={i for i, r in relevance.items()
+                                            if r == "tangential"})
+    check("tangential abstracts are gone",
+          "abstract of paper 2" not in rendered and "abstract of paper 4" not in rendered)
+    check("the ones that earned their place stay",
+          all(f"abstract of paper {i}" in rendered for i in (1, 3, 5)))
+    check("the surviving sources keep their original numbers",
+          "SOURCE 3 [related to topic]" in rendered
+          and "SOURCE 5 [direct to topic]" in rendered)
+    check("and the numbering is not re-packed to close the gaps",
+          "SOURCE 2" not in rendered and "SOURCE 4" not in rendered)
+
+    # -- what write_article actually sends -------------------------------
+    captured = {}
+
+    def fake_generate(prompt, schema, **kwargs):
+        captured["prompt"] = prompt
+        return {"title": "t", "sections": []}
+
+    real = writer.generate_json
+    try:
+        writer.generate_json = fake_generate
+        writer.write_article("topic", papers, curation={
+            "relevance": relevance,
+            "counts": {"direct": 2, "related": 1, "tangential": 2},
+            "most_relevant_index": 1,
+        })
+    finally:
+        writer.generate_json = real
+
+    prompt = captured["prompt"]
+    check("write_article drops them too", "abstract of paper 2" not in prompt)
+    check("the tally still counts them, so the prompt must say they are missing",
+          "2 tangential" in prompt and "NOT reproduced below" in prompt)
+    check("and warn about the gaps it just created", "gaps" in prompt)
+
+    # The degraded case: curation failed and labelled nothing. Dropping every
+    # source because none is labelled "direct" would leave the writer with an
+    # empty payload, which is worse than a bloated one.
+    try:
+        writer.generate_json = fake_generate
+        writer.write_article("topic", papers, curation={})
+    finally:
+        writer.generate_json = real
+    check("an unlabelled run keeps every source",
+          all(f"abstract of paper {i}" in captured["prompt"] for i in range(1, 6)))
+
+
+def test_gemini_cli_provider() -> None:
+    """Drafting on a Gemini subscription, through the Antigravity CLI.
+
+    Same opt-in invariant as `claude-cli`: it answers as whoever is signed in
+    on this machine, so nothing about the environment may select it and the web
+    app must never offer it.
+
+    The transport is what needs pinning. `agy` ignores stdin, and the article
+    prompt runs to ~95,000 characters against a 32,767-character Windows
+    command line, so the prompt is handed over as an inlined `@file` reference
+    and only small fixed flags go in argv. It does enforce the schema, which
+    the Claude CLI cannot, so the parsed object comes straight out of the
+    envelope.
+    """
+    import json as _json
+
+    from articlegen import llm, web
+
+    saved = {v: os.environ.get(v) for v in
+             ("ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "ARTICLEGEN_PROVIDER")}
+    try:
+        for v in saved:
+            os.environ.pop(v, None)
+
+        check("agy: prefix routes to the Antigravity CLI, stripped to the model",
+              llm.resolve_provider("agy:gemini-3.1-pro-high")
+              == ("gemini-cli", "gemini-3.1-pro-high"))
+        check("a bare agy: takes the default model",
+              llm.resolve_provider("agy:") == ("gemini-cli", llm.GEMINI_CLI_DEFAULT_MODEL))
+        check("no keys at all still falls back to OpenRouter, not the CLI",
+              llm.resolve_provider()[0] == "openrouter")
+        check("the CLI model is not offered to the web app",
+              llm.GEMINI_CLI_DEFAULT_MODEL not in web.ALLOWED_MODELS
+              and not any(m.startswith(llm.GEMINI_CLI_PREFIX) for m in web.ALLOWED_MODELS))
+        check("the web app drops an agy: model rather than honouring it",
+              web._requested_model({"model": "agy:gemini-3.6-flash-high"}) is None)
+
+        # -- the subprocess contract -------------------------------------
+        captured = {}
+
+        def fake_run(args, **kwargs):
+            captured["args"], captured["kwargs"] = args, kwargs
+            # Read back what was written into the scratch directory before the
+            # TemporaryDirectory that holds it is torn down.
+            prompt_path = args[args.index("-p") + 1].lstrip("@")
+            captured["prompt"] = open(prompt_path, encoding="utf-8").read()
+            captured["schema"] = _json.load(
+                open(args[args.index("--json-schema") + 1], encoding="utf-8"))
+
+            class P:
+                returncode, stderr = 0, ""
+                stdout = _json.dumps({
+                    "status": "SUCCESS", "duration_seconds": 1.5,
+                    "usage": {"input_tokens": 3, "output_tokens": 9},
+                    "response": '{"ok": true}',
+                    "structured_output": {"ok": True},
+                })
+            return P()
+
+        import subprocess
+        real_run, real_which = subprocess.run, __import__("shutil").which
+        try:
+            subprocess.run = fake_run
+            __import__("shutil").which = lambda name: "/fake/agy"
+            out = llm.generate_json("PROMPT", {"type": "object"}, system="SYS",
+                                    model="agy:gemini-3.6-flash-high", deep=True)
+        finally:
+            subprocess.run = real_run
+            __import__("shutil").which = real_which
+
+        args = captured["args"]
+        check("the enforced structured output is used directly", out == {"ok": True})
+        check("the model name is passed without the agy: prefix",
+              args[args.index("--model") + 1] == "gemini-3.6-flash-high")
+
+        check("the schema is enforced, not merely requested",
+              captured["schema"] == {"type": "object"})
+        # The whole reason for the file: argv cannot carry the article prompt.
+        check("the prompt is an inlined @file, never an argument",
+              args[args.index("-p") + 1].startswith("@")
+              and "PROMPT" not in " ".join(args))
+        check("the caller's system text rides in that file",
+              "SYS" in captured["prompt"] and "PROMPT" in captured["prompt"])
+        check("argv stays small regardless of the sources",
+              len(" ".join(args)) < 2000)
+        check("slash-command expansion is off, since a source may start with /",
+              "--disable-slash-commands" in args)
+        check("it runs outside the repo",
+              captured["kwargs"]["cwd"] and "articlegen" not in captured["kwargs"]["cwd"])
+
+        # -- reasoning tier --------------------------------------------------
+        # Running the shallow stages a tier down was tried and reverted. It is a
+        # one-line change that looks free, so this pins the outcome rather than
+        # leaving the next person to rediscover it: at -low, curation agreed with
+        # -high on only 14 of 20 relevance labels and collapsed everything toward
+        # "related", which is the gate that stops topic drift. See the note above
+        # GEMINI_CLI_DEFAULT_MODEL in llm.py.
+        shallow = {}
+
+        def capture_shallow(args_, **kwargs):
+            shallow["args"] = args_
+
+            class P:
+                returncode, stderr = 0, ""
+                stdout = _json.dumps({"status": "SUCCESS", "response": "{}",
+                                      "structured_output": {"ok": True}, "usage": {}})
+            return P()
+
+        try:
+            subprocess.run = capture_shallow
+            __import__("shutil").which = lambda name: "/fake/agy"
+            llm.generate_json("P", {"type": "object"}, model="agy:gemini-3.6-flash-high")
+        finally:
+            subprocess.run = real_run
+            __import__("shutil").which = real_which
+        check("a shallow call still runs the model the operator named",
+              shallow["args"][shallow["args"].index("--model") + 1]
+              == "gemini-3.6-flash-high")
+        check("no tier-rewriting helper survives the revert",
+              not hasattr(llm, "_gemini_cli_model"))
+
+        # -- failures ------------------------------------------------------
+        class Failed:
+            returncode, stderr = 0, ""
+            stdout = _json.dumps({"status": "ERROR", "response": "quota exhausted"})
+
+        try:
+            subprocess.run = lambda args_, **kw: Failed()
+            __import__("shutil").which = lambda name: "/fake/agy"
+            llm.generate_json("P", {"type": "object"}, model="agy:")
+            check("a non-SUCCESS status raises rather than parsing as JSON", False)
+        except RuntimeError as exc:
+            check("a non-SUCCESS status raises rather than parsing as JSON",
+                  "status=ERROR" in str(exc))
+        finally:
+            subprocess.run = real_run
+            __import__("shutil").which = real_which
+
+        try:
+            __import__("shutil").which = lambda name: None
+            llm.generate_json("P", {"type": "object"}, model="agy:")
+            check("a missing binary names the fix", False)
+        except RuntimeError as exc:
+            check("a missing binary names the fix", "not on PATH" in str(exc))
+        finally:
+            __import__("shutil").which = real_which
+    finally:
+        for var, val in saved.items():
+            if val is None:
+                os.environ.pop(var, None)
+            else:
+                os.environ[var] = val
+
+
 def test_disclosure_is_above_the_fold_and_derived() -> None:
     """Issue #91: six published pages carried no AI disclosure at all, and the
     masthead's only hint was "Not peer reviewed" in the smallest grey type on
@@ -2709,6 +3112,10 @@ def main() -> int:
         test_health_reports_which_build_is_running,
         test_openalex_reaches_for_recent_work_as_well,
         test_claude_cli_provider,
+        test_gemini_cli_provider,
+        test_tangential_sources_stay_out_of_the_writer_prompt,
+        test_revision_replaces_blocks_rather_than_the_article,
+        test_revision_carries_sources_only_when_they_can_be_used,
         test_disclosure_is_above_the_fold_and_derived,
         test_display_items_are_selected_once_for_both_formats,
         test_failed_style_gate_is_visible_in_the_article,
