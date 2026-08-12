@@ -934,6 +934,38 @@ def _synthesis_label(cited: list[Paper]) -> str:
     return f"Full text read for {n_full} of {len(cited)} sources"
 
 
+def _source_depth_phrase(cited: list[Paper]) -> str:
+    """How deeply the cited sources were read, as a clause for the banner.
+
+    Same count as `_full_text_count`, for the same reason every other grounding
+    statement uses it: the masthead banner and Table 1's Read column must never
+    be able to disagree (issue #75). Never hardcode either wording here.
+    """
+    n_full = _full_text_count(cited)
+    n = len(cited)
+    if not n_full:
+        return "from their abstracts alone"
+    if n_full == n:
+        return "from their full texts"
+    texts = "full text" if n_full == 1 else "full texts"
+    return f"from {n_full} {texts} and the abstracts of the other {n - n_full}"
+
+
+def _disclosure_banner(cited: list[Paper]) -> str:
+    """The masthead's plain-language statement that no human wrote this.
+
+    Issue #91: "Not peer reviewed" in small grey type reads as *preprint* to a
+    non-academic — real scholarship awaiting review, a far higher trust
+    category than what this actually is. This says the quiet part at full
+    contrast, directly under the title, before any of the prose.
+    """
+    return (
+        "Written by a language model from the cited research, "
+        f"{_source_depth_phrase(cited)}. No human author wrote or checked this "
+        "text. Not peer reviewed."
+    )
+
+
 def _read_phrase(cited: list[Paper]) -> str:
     """A trailing clause describing how deeply the cited articles were read."""
     n_full = _full_text_count(cited)
@@ -1056,6 +1088,7 @@ def render_article(
             references="\n".join(refs_html),
             additional=_back_matter_html(cited, topic, article, provenance),
             disclaimer=_disclaimer_html(topic, article, cited),
+            disclosure_banner=html.escape(_disclosure_banner(cited)),
         ).replace("__STYLE__", _CSS)
     )
 
@@ -1144,6 +1177,14 @@ _CSS = """
     font-size: clamp(1.7rem, 4.2vw, 2.3rem);
     line-height: 1.22; font-weight: 700; letter-spacing: -0.005em;
     margin: 0 0 0.9rem;
+  }
+  /* Full contrast, body-text size, above the fold. The point of issue #91 is
+     that a disclosure in muted 0.78rem type is not a disclosure. */
+  .ai-disclosure {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.92rem; font-weight: 600; line-height: 1.45; color: var(--ink);
+    margin: 0 0 0.9rem; padding: 0.6rem 0.8rem;
+    background: var(--surface); border-left: 3px solid var(--ink);
   }
   .meta-line {
     font-size: 0.78rem; color: var(--muted); margin: 0 0 0.35rem;
@@ -1314,6 +1355,7 @@ _TEMPLATE = """<!DOCTYPE html>
   <header class="masthead">
     <p class="article-type">Evidence Review</p>
     <h1>{title}</h1>
+    <p class="ai-disclosure">{disclosure_banner}</p>
     <p class="meta-line">{meta_line}</p>
     <p class="subject-line"><span class="meta-label">Subject</span>{subject}</p>
 
@@ -1424,6 +1466,8 @@ def render_markdown(
         "**EVIDENCE REVIEW**",
         "",
         f"# {article['title']}",
+        "",
+        f"**{_disclosure_banner(cited)}**",
         "",
         f"*Generated {today} · {len(cited)} sources cited"
         + (f", {span}" if span else "")
@@ -1646,6 +1690,9 @@ _INDEX_TEMPLATE = """<!DOCTYPE html>
   .meta {{ color:var(--muted); font-size:0.78rem; margin-top:0.3rem; }}
   .meta a {{ color:var(--link); text-decoration:none; }}
   .empty {{ color:var(--muted); }}
+  .idx-disclosure {{ font-size:0.92rem; font-weight:600; color:var(--ink);
+    background:var(--card); border-left:3px solid var(--ink);
+    padding:0.6rem 0.8rem; margin:0 0 1rem; line-height:1.45; }}
 </style>
 </head>
 <body>
@@ -1654,6 +1701,9 @@ _INDEX_TEMPLATE = """<!DOCTYPE html>
     <h1>Draft review queue</h1>
     <button class="theme-toggle-btn" onclick="toggleIndexTheme()"><span id="idxThemeIcon">&#9789;</span> Theme</button>
   </div>
+  <p class="idx-disclosure">Every article listed here was written by a language
+  model from published research. No human author wrote or checked any of them,
+  and none has been peer reviewed.</p>
   <p class="sub">{count} draft(s) · newest first</p>
   <ul>
     {items}

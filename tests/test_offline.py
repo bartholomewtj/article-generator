@@ -1310,6 +1310,65 @@ def test_openalex_reaches_for_recent_work_as_well() -> None:
           sum(1 for a in attempts if a) == 1)
 
 
+def test_disclosure_is_above_the_fold_and_derived() -> None:
+    """Issue #91: six published pages carried no AI disclosure at all, and the
+    masthead's only hint was "Not peer reviewed" in the smallest grey type on
+    the page — which to a non-academic reads as *preprint*, a far higher trust
+    category than "a language model wrote this". The banner has to sit under
+    the <h1>, at full contrast, in both output formats and on the index.
+
+    Its grounding half is *derived* from the cited papers, never hardcoded —
+    the same no-fallback rule that issue #75 was filed over.
+    """
+    from articlegen import render
+    from articlegen.sources import Paper
+
+    art = {"title": "T", "abstract": "A.", "sections": [], "key_points": [],
+           "references": [1, 2], "keywords": []}
+    abstracts = [Paper(title="a", abstract="x", year=2020),
+                 Paper(title="b", abstract="x", year=2021)]
+    mixed = [Paper(title="a", abstract="x", full_text="body", year=2020),
+             Paper(title="b", abstract="x", year=2021)]
+    full = [Paper(title="a", abstract="x", full_text="body", year=2020),
+            Paper(title="b", abstract="x", full_text="body", year=2021)]
+
+    check("banner names the author when nothing is read in full",
+          render._disclosure_banner(abstracts)
+          == "Written by a language model from the cited research, from their "
+             "abstracts alone. No human author wrote or checked this text. "
+             "Not peer reviewed.")
+    check("banner counts full texts, and counts them like Table 1",
+          "from 1 full text and the abstracts of the other 1"
+          in render._disclosure_banner(mixed))
+    check("banner drops the abstract clause when every source was read in full",
+          "from their full texts" in render._disclosure_banner(full)
+          and "abstracts" not in render._disclosure_banner(full))
+
+    html_out = render.render_article(art, mixed, "night shift work",
+                                     curation={1: "direct", 2: "related"})
+    md_out = render.render_markdown(art, mixed, "night shift work",
+                                    curation={1: "direct", 2: "related"})
+    check("html banner sits directly under the h1",
+          html_out.index("</h1>") < html_out.index('class="ai-disclosure"')
+          < html_out.index('class="meta-line"'))
+    check("html banner is full contrast, not muted",
+          ".ai-disclosure {\n    font-family" in html_out
+          and "color: var(--ink); \n" not in html_out
+          and "font-size: 0.92rem; font-weight: 600" in html_out)
+    check("md banner is the second line of the header block",
+          md_out.index("# T") < md_out.index("No human author wrote or checked")
+          < md_out.index("Generated "))
+    for name, out in (("HTML", html_out), ("Markdown", md_out)):
+        check(f"{name} disclosure says a model wrote it, not that it was assisted",
+              "Written by a language model" in out and "AI assistance" not in out)
+
+    index_html = render._INDEX_TEMPLATE.format(count=0, items="")
+    check("index warns before the list, not after",
+          index_html.index("idx-disclosure") < index_html.index("<ul>"))
+    check("index says no human checked any of them",
+          "No human author wrote or checked any of them" in index_html)
+
+
 def test_display_items_are_selected_once_for_both_formats() -> None:
     """HTML and Markdown must not each decide what a display item contains.
 
@@ -2379,6 +2438,7 @@ def main() -> int:
         test_prose_style_check, test_rules_do_not_reject_real_journal_prose,
         test_health_reports_which_build_is_running,
         test_openalex_reaches_for_recent_work_as_well,
+        test_disclosure_is_above_the_fold_and_derived,
         test_display_items_are_selected_once_for_both_formats,
         test_failed_style_gate_is_visible_in_the_article,
         test_evidence_assessment_is_wholly_deterministic,
