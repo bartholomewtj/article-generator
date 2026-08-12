@@ -4035,6 +4035,91 @@ def _validate(instance, schema: dict, path: str = "") -> list[str]:
     return errors
 
 
+def test_full_text_run_says_why_it_stopped() -> None:
+    """"4 of 19" is not an answer until you know which limit bound.
+
+    On the best article so far, 4 of 19 cited sources had retrievable
+    open-access full text. Whether the pipeline stopped early on its own
+    request cap or whether only 4 sources were actually available needs
+    completely different fixes — and the old log reported the count and then
+    *asserted* availability ("the remaining cited sources have no open-access
+    copy"), so the two were indistinguishable (issue #84).
+    """
+    from articlegen import pipeline
+    from articlegen.sources import Paper
+
+    def run(n_papers, open_access_upto, target=None, cap=None):
+        papers = [Paper(title=f"p{i}", abstract="a", year=2000 + i,
+                        citation_count=i * 10,
+                        pmcid=f"PMC{i}" if i <= open_access_upto else "",
+                        is_open_access=i <= open_access_upto)
+                  for i in range(1, n_papers + 1)]
+        curation = {"relevance": {i: "direct" for i in range(1, n_papers + 1)},
+                    "most_relevant_index": 1, "counts": {"direct": n_papers}}
+        lines = []
+        saved = (pipeline.plan_queries, pipeline.gather_evidence,
+                 pipeline.curate_sources, pipeline.write_article,
+                 pipeline.fetch_full_text, pipeline.enforce_style,
+                 pipeline.FULLTEXT_TARGET, pipeline.MAX_FULLTEXT_REQUESTS)
+        try:
+            if target is not None:
+                pipeline.FULLTEXT_TARGET = target
+            if cap is not None:
+                pipeline.MAX_FULLTEXT_REQUESTS = cap
+            pipeline.plan_queries = lambda topic, **kw: (["q"], "c")
+
+            def gather(queries, **kw):
+                kw.get("outcomes", []).append({"source": "europe_pmc", "query": "q",
+                                               "count": n_papers, "error": "",
+                                               "cached": False})
+                return papers
+
+            pipeline.gather_evidence = gather
+            pipeline.curate_sources = lambda t, p, **kw: curation
+            pipeline.write_article = lambda t, p, **kw: {
+                "title": "t", "abstract": "x", "keywords": [], "sections": [],
+                "key_points": [], "glossary": [], "references": [1]}
+            pipeline.fetch_full_text = lambda p, use_cache=True: "body"
+            pipeline.enforce_style = lambda a, **kw: (a, {"issues": [], "stats": {}})
+            pipeline.generate_draft("topic", log=lines.append)
+        finally:
+            (pipeline.plan_queries, pipeline.gather_evidence,
+             pipeline.curate_sources, pipeline.write_article,
+             pipeline.fetch_full_text, pipeline.enforce_style,
+             pipeline.FULLTEXT_TARGET, pipeline.MAX_FULLTEXT_REQUESTS) = saved
+        return "\n".join(lines)
+
+    # Availability bound it: plenty of budget, only two open-access sources.
+    scarce = run(8, open_access_upto=2)
+    check("a run short of the target says why", "stopped because:" in scarce)
+    check("and names availability when that is the reason",
+          "ran out of eligible sources" in scarce
+          and "had no open-access copy" in scarce)
+    check("it no longer asserts availability it did not check",
+          "the remaining cited sources have no open-access copy" not in scarce)
+
+    # The request cap bound it: everything is open access, cap set below need.
+    capped = run(8, open_access_upto=8, target=8, cap=3)
+    check("a capped run says the cap bound", "request cap of 3 reached" in capped)
+    check("and flags that the code, not the literature, is the constraint",
+          "MAX_FULLTEXT_REQUESTS" in capped and "NOTE:" in capped)
+
+    # The target bound it: the ordinary healthy case.
+    satisfied = run(8, open_access_upto=8, target=2)
+    check("a satisfied run says the target was reached",
+          "target of 2 reached" in satisfied)
+    check("and does not warn about a cap that never bit", "NOTE:" not in satisfied)
+
+    # The skew, measured rather than asserted. Limitations already tells the
+    # reader the deeply-read subset skews open access; nobody had checked how.
+    check("every run reports the read-subset skew", "read-subset skew:" in scarce)
+    check("with both axes the concern is about",
+          "median year" in scarce and "median citations" in scarce)
+    check("and says so plainly when there is nothing to compare",
+          "not comparable" in pipeline._read_subset_skew(
+              [Paper(title="p", abstract="a", year=2020)], []))
+
+
 def test_curation_truncation_is_off_until_measured() -> None:
     """The token saving is real; the risk to the relevance gate is untested.
 
@@ -4257,6 +4342,7 @@ def main(argv: list[str] | None = None) -> int:
         test_openrouter_request_is_asserted_on_the_payload,
         test_output_ceilings_follow_the_default_model,
         test_every_provider_reports_what_it_sent,
+        test_full_text_run_says_why_it_stopped,
         test_curation_truncation_is_off_until_measured,
         test_claude_md_still_describes_this_code,
         test_real_articles_still_match_the_schema,
