@@ -428,6 +428,9 @@ def _claude_cli_generate(prompt: str, schema: dict, system: str | None, model: s
             f"[articlegen] claude-cli in={usage.get('input_tokens', 0)} "
             f"cached={usage.get('cache_read_input_tokens', 0)} "
             f"out={usage.get('output_tokens', 0)} "
+            # The other CLI provider, reported the same way. It is the control:
+            # both wrap a subscription, only one shows the unexplained input.
+            f"sent[{_prompt_size(stdin_text)}] "
             f"({envelope.get('duration_ms', 0) / 1000:.1f}s)",
             file=sys.stderr, flush=True,
         )
@@ -563,6 +566,15 @@ def _gemini_cli_generate(prompt: str, schema: dict, system: str | None, model: s
             # without this the only symptom is an input count nobody can account
             # for.
             f"turns={envelope.get('num_turns', 1)} "
+            # What was actually sent, beside what was charged. `sent=` counts
+            # the prompt file; `schema=` counts the other file in the scratch
+            # directory, because both are reachable three ways — inlined by
+            # `@prompt_path`, exposed by `--add-dir scratch`, and sitting in
+            # `cwd`. If `in=` lands near a small multiple of `sent+schema`,
+            # that is the answer; if it does not, this rules the hypothesis out
+            # rather than leaving it to be guessed at again (#116).
+            f"sent[{_prompt_size(prompt_text)} "
+            f"schema={len(json.dumps(schema))}] "
             f"({envelope.get('duration_seconds', 0):.1f}s)",
             file=sys.stderr, flush=True,
         )
@@ -606,6 +618,28 @@ def _gemini_cli_generate(prompt: str, schema: dict, system: str | None, model: s
 # classifiers don't take the parameter, so it is attached by model prefix.
 _REFUSAL_FALLBACK_MODELS = ("claude-opus-5", "claude-fable", "claude-mythos")
 _REFUSAL_FALLBACK_BETA = "server-side-fallback-2026-07-01"
+
+
+# How big the thing we sent actually was, so a reported input count can be
+# compared against it without re-deriving anything.
+#
+# The `gemini-cli` revision call reports input far above what its prompt can
+# account for: 135,273 fresh plus 440,871 cached, for a brief-plus-draft of
+# roughly 20,000 characters — call it 5,000 tokens, plus agy's ~21,600 of
+# scaffolding, so ~27,000 expected against 135,273 seen (#116). `turns=1` rules
+# out an agent loop re-sending context, so it is genuine, and nobody has
+# identified it. Every efficiency change so far has been aimed at the other
+# half of the call.
+#
+# ~4 characters per token is a rough English average and wrong in the third
+# digit. That does not matter here: the question is whether the reported input
+# is 1x or 25x what was sent, and a ratio that coarse answers it.
+_CHARS_PER_TOKEN = 4
+
+
+def _prompt_size(*parts: str) -> str:
+    chars = sum(len(p) for p in parts if p)
+    return f"chars={chars} ~tok={chars // _CHARS_PER_TOKEN}"
 
 
 def _refusal_fallback_kwargs(model: str) -> dict:
@@ -872,6 +906,20 @@ def _openrouter_generate(
             "that budget thinking. Try a narrower topic, or --max-papers with a "
             "smaller number."
         )
+
+    # The metered path reports the same two numbers, so "is the input count
+    # plausible?" can be answered against a provider whose accounting is
+    # independently verifiable — which is what #116 needs and had no baseline
+    # for. Same line shape as the two CLI providers, so one grep collects all
+    # three.
+    usage = data.get("usage") or {}
+    print(
+        f"[articlegen] openrouter {model} in={usage.get('prompt_tokens', 0)} "
+        f"cached={(usage.get('prompt_tokens_details') or {}).get('cached_tokens', 0)} "
+        f"out={usage.get('completion_tokens', 0)} "
+        f"sent[{_prompt_size(system, prompt)}]",
+        file=sys.stderr, flush=True,
+    )
 
     text_response = (choices[0].get("message") or {}).get("content") or ""
     cleaned = _clean_json_text(text_response)
