@@ -54,6 +54,8 @@ articlegen/
   demo.py      built-in sample for `articlegen demo` (no API/network)
 docs/journal-style.md    the journal conventions and where each came from
 docs/decisions.md        settled history; read per-area, not cover to cover
+tools/compare_curation.py  full vs truncated abstracts for curation (#117)
+tools/compare_models.py    one topic through two models, side by side (#85)
 tests/test_offline.py             pure-logic tests; no network/keys
 tests/test_journal_conformance.py conventions as assertions over 5 fixtures
 ```
@@ -276,6 +278,14 @@ and sections intact.
   `OPENROUTER_REFUSAL_FALLBACK = anthropic/claude-sonnet-5`. Both CLI providers
   are local-only and absent from `web.ALLOWED_MODELS` (`test_claude_cli_provider`,
   `test_gemini_cli_provider`).
+- **The default is not settled (#85).** `anthropic/claude-opus-5` is $5/$25 per
+  Mtok against Sonnet 5's $2/$10 — 2.5x on every article, and Sonnet carries no
+  elevated bio/cyber classifiers, so the refusal path would stop being
+  load-bearing on the common route. Sonnet is already the refusal fallback, so
+  this is a one-flag experiment: `tools/compare_models.py "<topic>"`. It
+  measures the countable half and says outright that the half that decides it —
+  whether the draft *adjudicates* its evidence base or just summarises it —
+  needs a human reading both drafts.
 - **Model ids live in two places** — `llm.py` and `PROVIDERS` in `index.html`.
   Nothing links them and `web._requested_model` silently drops an unrecognised
   name, so a stale front end quietly stops honouring the model the user picked.

@@ -4035,6 +4035,65 @@ def _validate(instance, schema: dict, path: str = "") -> list[str]:
     return errors
 
 
+def test_model_comparison_harness() -> None:
+    """The default costs 2.5x the alternative, and the alternative is untested here.
+
+    `anthropic/claude-opus-5` is $5/$25 per Mtok; `anthropic/claude-sonnet-5` is
+    $2/$10 and is the model the #63 test actually validated on this pipeline —
+    before it gained full-text grounding, the layout rearrange and truthful
+    provenance. Sonnet has never been run through the current one (issue #85).
+
+    A one-flag experiment, but only if the comparison is set up so the result
+    means something.
+    """
+    sys.path.insert(0, os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"))
+    import compare_models
+
+    # The prices are the reason the issue exists, so the arithmetic is worth
+    # pinning: same tokens, 2.5x the cost.
+    opus = compare_models.cost("anthropic/claude-opus-5", 100_000, 20_000)
+    sonnet = compare_models.cost("anthropic/claude-sonnet-5", 100_000, 20_000)
+    check("the estimate matches the published prices",
+          opus == "$1.000" and sonnet == "$0.400")
+    check("and reproduces the 2.5x gap the issue is about",
+          float(opus[1:]) / float(sonnet[1:]) == 2.5)
+    # A wrong dollar figure is worse than none: list prices go stale, and an
+    # unknown model must not be silently priced as a known one.
+    check("an unknown model is not priced", compare_models.cost("x/y", 1, 1) == "n/a")
+    check("and neither is a run whose tokens were not captured",
+          compare_models.cost("anthropic/claude-opus-5", 0, 0) == "n/a")
+
+    # It must read the provider's own accounting, not guess.
+    line = "[articlegen] openrouter anthropic/claude-opus-5 in=1234 cached=99 out=567"
+    m = compare_models._USAGE.search(line)
+    check("token counts are read from the provider log",
+          m is not None and m.group(1) == "1234" and m.group(3) == "567")
+
+    # The report has to say what it cannot measure. The whole value of the
+    # pipeline is adjudication, and a contrast-marker count is not that.
+    rendered = []
+    fake = [{"model": f"m{i}", "cited": 10, "papers": 20, "counts": {},
+             "sections": 6, "words": 1400, "figures": 12, "unverified": 1,
+             "misattributed": 0, "style_errors": [], "contrast": 9,
+             "contrast_per_sentence": 0.1, "tokens_in": 0, "tokens_out": 0}
+            for i in (1, 2)]
+    compare_models.print = lambda *a, **k: rendered.append(" ".join(map(str, a)))
+    try:
+        compare_models.report(fake)
+    finally:
+        del compare_models.print
+    out = "\n".join(rendered)
+    check("the report names what it cannot measure", "ADJUDICATE" in out)
+    check("and labels the contrast count as a hint, not a score",
+          "not a score" in out and "hint only" in out)
+    check("and says the activity log is the authority on cost",
+          "activity log is the authority" in out)
+    check("it reports the checks the pipeline already runs",
+          "style errors" in out and "unverified figures" in out
+          and "misattributed figures" in out)
+
+
 def test_full_text_run_says_why_it_stopped() -> None:
     """"4 of 19" is not an answer until you know which limit bound.
 
@@ -4342,6 +4401,7 @@ def main(argv: list[str] | None = None) -> int:
         test_openrouter_request_is_asserted_on_the_payload,
         test_output_ceilings_follow_the_default_model,
         test_every_provider_reports_what_it_sent,
+        test_model_comparison_harness,
         test_full_text_run_says_why_it_stopped,
         test_curation_truncation_is_off_until_measured,
         test_claude_md_still_describes_this_code,
