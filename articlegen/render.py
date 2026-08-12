@@ -427,8 +427,21 @@ def _figure_series(cited: list[Paper], labels: dict[int, str]) -> dict | None:
     return {"buckets": buckets, "series": series, "counts": counts, "segmented": segmented}
 
 
+# The box used to be captioned "Key study", which claims an appraisal nobody in
+# this pipeline performs. `curate_sources` picks `most_relevant_index` on topic
+# fit alone — there is no quality assessment anywhere — so one draft boxed a
+# scoping review as the "Key study" while an adequately powered RCT sat in the
+# body. Table 1's "Cited by" column is the only quality-looking number on the
+# page and a busy reader reads it as authority. The caption now says what the
+# selection actually is, and the note says what it is not (#102).
+_BOX_SELECTION_NOTE = (
+    "Selected for closeness to the review question, not for study quality; "
+    "no quality appraisal was performed."
+)
+
+
 def _box_html(article: dict, papers: list[Paper], cite_map: dict[int, int]) -> str:
-    """Box 1 — the featured study, as a self-contained boxed display item."""
+    """Box 1 — the most relevant source, as a self-contained boxed display item."""
     parts = _box_parts(article, papers, cite_map)
     if not parts:
         return ""
@@ -446,11 +459,12 @@ def _box_html(article: dict, papers: list[Paper], cite_map: dict[int, int]) -> s
     return (
         '<aside class="display box" aria-labelledby="box-1">\n'
         f'<p class="di-caption" id="box-1"><span class="di-label">Box 1 |</span> '
-        f'Key study: {html.escape(paper.title)}</p>\n'
+        f'Most relevant source: {html.escape(paper.title)}</p>\n'
         f'<p class="box-cite">{html.escape(_short_author(paper))} ({paper.year or "n.d."})'
         f'{(" · " + html.escape(paper.venue)) if paper.venue else ""}{ref}'
         f'{_source_link_html(paper)}</p>\n'
         + "\n".join(rows)
+        + f'\n<p class="box-note">{html.escape(_BOX_SELECTION_NOTE)}</p>'
         + "\n</aside>"
     )
 
@@ -841,6 +855,8 @@ def _assessment_paragraphs(
 # What each rule means to a reader, who has not read style.py. Phrased as the
 # defect in the prose, not as the name of a check.
 _STYLE_FAILURE_WORDING = {
+    "clinical-directive": "instructs the reader on treatment rather than "
+                          "reporting what the studies found",
     "echoed-abstract": "repeats the abstract rather than adding to it",
     "bundled-citations": "cites sources in groups without describing them individually",
     "recycled-phrasing": "reuses phrasing between sections",
@@ -1323,6 +1339,8 @@ _CSS = """
   aside.box p { font-size: 0.95rem; line-height: 1.55; margin: 0 0 0.6rem; }
   aside.box p:last-child { margin-bottom: 0; }
   .box-cite { color: var(--muted); font-size: 0.85rem !important; }
+  .box-note { color: var(--muted); font-size: 0.78rem !important; font-style: italic;
+              margin-top: 0.75rem !important; }
   figure.figure { margin: 1.8rem 0 2rem; padding: 1rem 0 0; border-top: 1px solid var(--rule); }
   .fig-svg { width: 100%; height: auto; display: block; }
   .fig-grid { stroke: var(--rule); stroke-width: 1; }
@@ -1649,7 +1667,7 @@ def _box_markdown(article: dict, papers: list[Paper], cite_map: dict[int, int]) 
         return ""
     paper = parts["paper"]
     ref = f" [{parts['reference']}]" if parts["reference"] else ""
-    out = [f"> **Box 1 | Key study: {paper.title}**", ">",
+    out = [f"> **Box 1 | Most relevant source: {paper.title}**", ">",
            f"> {_short_author(paper)} ({paper.year or 'n.d.'})"
            + (f", {paper.venue}" if paper.venue else "") + ref
            + (f" <{paper.link}>" if paper.link else "")]
@@ -1659,6 +1677,8 @@ def _box_markdown(article: dict, papers: list[Paper], cite_map: dict[int, int]) 
         out.append(f"> **Results.** {parts['results']}")
     if parts["limitations"]:
         out.append(f"> **Limitations.** {parts['limitations']}")
+    out.append(">")
+    out.append(f"> _{_BOX_SELECTION_NOTE}_")
     return "\n".join(out)
 
 

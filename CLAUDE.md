@@ -133,7 +133,25 @@ and sections intact.
 
 - **Errors**: second person, contractions, rhetorical questions, exclamations,
   boosters, claims of proof, first person outside the `here we review` frame,
-  under-hedging (`MIN_HEDGES_PER_SENTENCE = 0.20`).
+  under-hedging (`MIN_HEDGES_PER_SENTENCE = 0.20`), clinical directives.
+- **`clinical-directive` is the one rule with real-world consequences.** A
+  shipped draft carried a titration protocol for a population the same article
+  said had zero studies (#102); the footer disclaimer does nothing against a
+  reader who has been given a dose and a schedule. The line is grammatical
+  because that is what a deterministic check can see: past tense with a study
+  subject **reports**, a modal or imperative aimed at a clinical act
+  **instructs**. Exempt: research recommendations ("future trials should
+  measure X") and idioms that borrow a clinical verb ("treated as provisional",
+  "referred to as"). `_IMPERATIVE_RE` is deliberately **not** built from
+  `_CLINICAL_ACTS` — those end in `\w*` and would fire on "Screening was…",
+  "Dosing varied…". The negative controls in
+  `test_clinical_directives_are_an_error` are the specification; a rule that
+  cannot tell reporting from instructing is the wrong rule.
+- **Box 1 is captioned "Most relevant source", not "Key study".** Nothing in
+  this pipeline appraises study quality — `curate_sources` ranks on topic fit —
+  so the old caption claimed a judgement that was never made, and one draft
+  boxed a scoping review while a powered trial sat in the body. The box carries
+  a fixed disclaimer saying so (#102).
 - **`SUBSTANCE_RULES`** (`under-length`, `too-few-sections`, `hedge-monotony`,
   `repeated-opener`, `recycled-phrasing`, `echoed-abstract`, `bundled-citations`)
   exist because every other rule is a *prohibition*, and a model optimising only

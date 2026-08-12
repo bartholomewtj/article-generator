@@ -80,6 +80,83 @@ _SOFTENERS = (
     "commonly", "frequently", "estimated", "approximately",
 )
 
+# Clinical directives — the rule that exists because a shipped draft contained a
+# titration protocol ("starting with a low-dose exposure of 15 minutes per
+# day... titrated upward by 15 minutes each week") for a population the same
+# article said had zero studies (issue #102).
+#
+# Reporting what a trial did is the job. Telling a clinician what to do is a
+# different act and the one that carries real-world risk, and the footer
+# disclaimer does no work against it: a reader who has been given a dose and a
+# schedule has already been given advice.
+#
+# The line drawn here is grammatical, because that is the part a deterministic
+# check can see. "Participants received 10,000 lux for 30 minutes each morning"
+# reports. "Exposure should be titrated upward each week" instructs. Past tense
+# with a study subject is reporting; a modal or an imperative aimed at a
+# clinical act is an instruction.
+_CLINICAL_ACTS = (
+    r"prescrib\w*", r"administer\w*", r"titrat\w*", r"initiat\w*",
+    r"dose[ds]?\b", r"dosing", r"treat\w*", r"monitor\w*", r"screen\w*",
+    r"refer\w*", r"offer\w*", r"taper\w*", r"discontinu\w*", r"withdraw\w*",
+    r"supplement\w*", r"co-?prescrib\w*", r"augment\w*",
+)
+
+# A modal or recommendation frame pointed at one of those acts. The 40-character
+# window keeps "should" attached to the verb it governs rather than to something
+# two clauses away.
+_DIRECTIVE_RE = re.compile(
+    r"\b(?:should|must|ought\s+to|needs?\s+to|has\s+to|have\s+to|"
+    r"is\s+advised|are\s+advised|is\s+recommended|are\s+recommended|"
+    r"is\s+indicated|are\s+indicated|is\s+warranted|are\s+warranted)\b"
+    r"[^.;:]{0,40}?\b(?:" + "|".join(_CLINICAL_ACTS) + r")",
+    re.IGNORECASE,
+)
+
+# "Future trials should monitor adherence" is a research recommendation, which
+# is standard in a review's Conclusions and is not clinical advice. The subject
+# decides: research nouns in the clause before the modal make it legitimate.
+_RESEARCH_SUBJECT = re.compile(
+    r"\b(?:research|studies|study|trials?|work|literature|evidence|"
+    r"investigations?|investigators?|authors?|analyses|analysis|data|"
+    r"reviews?|replications?|guidelines?)\b",
+    re.IGNORECASE,
+)
+
+# Prescription grammar with no modal in sight. These are multi-word on purpose:
+# a bare "titrated" appears in honest reporting of a trial protocol, but
+# "titrated upward" and "starting dose" are the vocabulary of an instruction.
+_PRESCRIPTION_RE = re.compile(
+    r"\btitrat\w+\s+(?:upward|downward|up\b|down\b)"
+    r"|\b(?:up|down)-titrat\w+"
+    r"|\b(?:starting|initial|loading|maintenance|target|recommended)\s+dos\w+"
+    r"|\bdose\s+(?:escalation|reduction|adjustment)"
+    r"|\btitration\s+(?:schedule|protocol|regimen)"
+    r"|\bis\s+(?:an?\s+\w+\s+|an?\s+)?prerequisite"
+    r"|\bfirst-line\s+(?:treatment|therapy|option|choice)\s+(?:should|must|is\s+recommended)",
+    re.IGNORECASE,
+)
+
+# A sentence opening with a bare clinical verb is an instruction: "Monitor serum
+# levels every four weeks." Deliberately NOT built from _CLINICAL_ACTS — those
+# patterns end in \w*, and "Treatment of...", "Screening was...", "Dosing varied
+# across trials" all open sentences as nouns. Only bare forms that are not also
+# ordinary sentence-initial nouns in this domain are listed; "screen" is left
+# out because "Screen time" is a real exposure in mental-health literature.
+_IMPERATIVE_RE = re.compile(
+    r"^(?:titrate|prescribe|administer|initiate|discontinue|taper|monitor|"
+    r"refer|augment|co-prescribe)\b",
+    re.IGNORECASE,
+)
+
+# Idioms that borrow a clinical verb for something else. "These findings should
+# be treated as provisional" and "the syndrome should be referred to as X" are
+# ordinary review prose, not advice.
+_DIRECTIVE_EXCEPTION = re.compile(
+    r"\s*(?:to\s+)?as\b|\s*with\s+(?:caution|care)",
+    re.IGNORECASE,
+)
+
 _CONTRACTIONS = (
     "don't", "doesn't", "didn't", "isn't", "aren't", "wasn't", "weren't",
     "can't", "cannot've", "won't", "wouldn't", "couldn't", "shouldn't",
@@ -264,6 +341,39 @@ def _find(pattern: str, text: str) -> re.Match | None:
     return re.search(pattern, text, re.IGNORECASE)
 
 
+def _directive_position(text: str, sentences: list[str]) -> int | None:
+    """Where this block first instructs rather than reports, or None.
+
+    Three shapes, in the order they are worth catching:
+
+    1. A modal aimed at a clinical act — "exposure should be titrated". Skipped
+       when the subject is research ("future trials should monitor adherence"
+       belongs in a Conclusions section) or when the verb is idiomatic
+       ("treated as provisional", "referred to as").
+    2. Prescription grammar with no modal at all, which is how the draft that
+       prompted this rule read: "titrated upward by 15 minutes each week".
+    3. A sentence opening with a bare clinical verb, which has no subject and so
+       can only be an instruction.
+    """
+    for m in _DIRECTIVE_RE.finditer(text):
+        if _DIRECTIVE_EXCEPTION.match(text[m.end():m.end() + 20]):
+            continue
+        if _RESEARCH_SUBJECT.search(text[max(0, m.start() - 60):m.start()]):
+            continue
+        return m.start()
+
+    m = _PRESCRIPTION_RE.search(text)
+    if m:
+        return m.start()
+
+    for sentence in sentences:
+        stripped = sentence.strip()
+        if stripped and _IMPERATIVE_RE.match(stripped):
+            at = text.find(stripped[:30])
+            return at if at >= 0 else 0
+    return None
+
+
 def _required_sections(direct_sources: int | None) -> int:
     """How many sections this particular review has the material to support.
 
@@ -337,6 +447,16 @@ def check_style(article: dict, direct_sources: int | None = None) -> dict:
                     f"Claim of proof ({absolute!r}); evidence indicates or supports, "
                     "it rarely proves.", _excerpt(text, m.start()))
                 break
+
+        # Clinical directives. Reporting what a study did is the job; telling a
+        # clinician what to do is a different act, and the one that carries
+        # real-world risk (#102).
+        at = _directive_position(text, sentences)
+        if at is not None:
+            add("clinical-directive", "error", where,
+                "Instructs a clinician rather than reporting what studies found. "
+                "State what was done and observed; never give a dose, schedule, "
+                "titration or monitoring instruction.", _excerpt(text, at))
 
         # First person outside the reviewing frame implies a human author.
         for m in _FIRST_PERSON.finditer(text):

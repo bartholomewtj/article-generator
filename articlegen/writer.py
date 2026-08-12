@@ -283,6 +283,25 @@ nominalisations: "evaluated", not "conducted an evaluation of".
 - PARAGRAPHS. Topic sentence first, then the evidence, then the qualification. \
 2-4 sentences each.
 
+NEVER GIVE CLINICAL ADVICE — this is checked automatically and it is the one \
+rule with real-world consequences:
+
+- Report what studies DID and FOUND. Never state what a clinician, a patient or \
+a service SHOULD do. That is a different act from reviewing, and this article \
+is not qualified to perform it.
+- No dose, no schedule, no titration step, no monitoring interval, no referral \
+or screening instruction — not even a hedged one, and not even when a source \
+recommends it. A published trial may conclude "X should be standard treatment"; \
+you are a synthesis and may only report that the trial concluded that.
+- A protocol detail is reportable only when it is attributed to the study that \
+used it, in the past tense: "participants started at 15 minutes daily and the \
+dose was increased weekly" is a finding; "start at 15 minutes daily and \
+increase weekly" is a prescription.
+- "Future trials should measure X" is fine — a recommendation for research is \
+not a recommendation for care.
+- The footer disclaimer does not cover you. A reader given a dose and a \
+schedule has already been given advice.
+
 BANNED OUTRIGHT: second person; contractions; rhetorical questions; exclamation \
 marks; boosters and hype ("clearly", "obviously", "dramatically", "remarkable", \
 "striking", "unprecedented", "groundbreaking", "game-changer"); claims of proof \
@@ -295,6 +314,12 @@ the brain — and you should worry if you are not getting enough."
   RIGHT: "Clearance of interstitial solutes increases during sleep in rodent \
 models, which has been proposed as a mechanistic link to neurodegenerative risk. \
 The human evidence remains indirect."
+
+  WRONG: "Treatment should be initiated at 15 minutes of morning light daily and \
+titrated upward by 15 minutes each week."
+  RIGHT: "In the single open trial, participants began at 15 minutes of morning \
+light daily, increasing by 15 minutes weekly; no controlled study has tested \
+this schedule."
 """
 
 

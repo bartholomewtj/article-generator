@@ -1171,6 +1171,93 @@ def test_rules_do_not_reject_real_journal_prose() -> None:
         check(f"not first person: {text[:38]!r}", "first-person" not in fired)
 
 
+def test_clinical_directives_are_an_error() -> None:
+    """Reporting what studies found is the job; instructing a clinician is not.
+
+    A shipped draft carried a titration protocol — "starting with a low-dose
+    exposure of 15 minutes per day... titrated upward by 15 minutes each week" —
+    for a population the same article said had zero studies (issue #102). The
+    footer disclaimer does no work against that.
+
+    The pairs below are the rule's specification. Each "reports" line is real
+    review prose that must stay legal; each "instructs" line is the same
+    clinical content turned into advice. A rule that cannot tell them apart is
+    the wrong rule, not a strict one.
+    """
+    import json
+
+    from articlegen import render
+    from articlegen.style import check_style, errors
+
+    def fired(text: str) -> set:
+        return {i["rule"] for i in errors(check_style(
+            {"sections": [{"heading": "Introduction", "paragraphs": [text]}]}))}
+
+    instructs = [
+        "Treatment should be initiated at a low-dose exposure of 15 minutes per "
+        "day, titrated upward by 15 minutes each week.",
+        "Clinicians should prescribe the lowest effective dose.",
+        "Monitor serum levels every four weeks.",
+        "The starting dose is 25 mg at night.",
+        "Ensuring therapeutic antipsychotic levels is an absolute prerequisite.",
+        "Exposure must be titrated according to response.",
+        "Patients should be referred for specialist review.",
+    ]
+    for text in instructs:
+        check(f"instruction is an error: {text[:44]!r}",
+              "clinical-directive" in fired(text))
+
+    # The negative controls matter more than the positives here. Every one of
+    # these is ordinary, correct review prose about the same clinical subject
+    # matter, and an over-eager rule kills the article's ability to report.
+    reports = [
+        "Participants received 10,000 lux for 30 minutes each morning.",
+        "The trial titrated the dose to response over eight weeks.",
+        "Dosing varied across trials, from 25 mg to 100 mg daily.",
+        "Screening was performed at baseline and at 12 weeks.",
+        "Treatment of the underlying condition was reported in three studies.",
+        "Monitoring of adherence was inconsistent across the cohort studies.",
+        "Screen time was associated with poorer sleep in two cohorts.",
+        # Idioms that borrow a clinical verb for something else.
+        "These findings should be treated as provisional.",
+        "The syndrome should be referred to as post-exertional malaise.",
+        # A recommendation for research is not a recommendation for care, and
+        # it is standard in a Conclusions section.
+        "Future trials should monitor adherence more closely.",
+        "Further research should assess whether the effect persists.",
+    ]
+    for text in reports:
+        check(f"report is not an error: {text[:44]!r}",
+              "clinical-directive" not in fired(text))
+
+    # The rule against the corpus. One abstract fires: a Lancet trial report
+    # concluding "WBRT and stereotactic radiosurgery should... be standard
+    # treatment". Those authors ran the trial and may say that; articlegen is a
+    # synthesis and may only report that they said it — the same argument as
+    # the investigator-voice finding in docs/journal-style.md §12.
+    corpus = json.load(open(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "style_corpus.json"),
+        encoding="utf-8"))
+    hits = [e for e in corpus if "clinical-directive" in fired(e["abstract"])]
+    check("exactly one corpus abstract is a clinical directive", len(hits) == 1)
+    check("and it is the one recommending a standard treatment",
+          hits and "standard treatment" in hits[0]["abstract"])
+
+    # demo.SAMPLE_ARTICLE must always pass every rule (CLAUDE.md invariant).
+    from articlegen import demo
+    check("the demo article carries no directive",
+          "clinical-directive" not in {i["rule"] for i in errors(check_style(demo.SAMPLE_ARTICLE))})
+
+    # The writer is told, not only checked. A rule the prompt never mentions is
+    # a revision round trip on every draft.
+    from articlegen import writer
+    check("the writer prompt carries the prohibition",
+          "NEVER GIVE CLINICAL ADVICE" in writer._WRITER_SYSTEM
+          and "not even a hedged one" in writer._WRITER_SYSTEM)
+    check("and the reader is told when it survived",
+          "clinical-directive" in render._STYLE_FAILURE_WORDING)
+
+
 def test_api_key_is_session_only_by_default() -> None:
     """The stored key must not silently outlive the tab, and the page must say why.
 
@@ -2661,7 +2748,9 @@ def test_render_blocks() -> None:
 
     check("md abstract", "**Abstract.**" in md)
     check("md key points", "## Key points" in md)
-    check("md Box 1", "**Box 1 | Key study:" in md)
+    check("md Box 1", "**Box 1 | Most relevant source:" in md)
+    check("md Box 1 disclaims the appraisal it is not making",
+          "no quality appraisal was performed" in md)
     check("md Table 1", "**Table 1 |" in md and "| Ref. | Study |" in md)
     check("md Fig. 1", "**Fig. 1 |" in md)
     check("md methods", "## Methods" in md and "**Search strategy.**" in md)
@@ -3243,6 +3332,7 @@ def main() -> int:
         test_display_items_are_selected_once_for_both_formats,
         test_failed_style_gate_is_visible_in_the_article,
         test_evidence_assessment_is_wholly_deterministic,
+        test_clinical_directives_are_an_error,
         test_api_key_is_session_only_by_default,
         test_house_style_is_fixed_not_a_preference,
         test_register_rules_are_scoped_to_the_synthesis_voice,
