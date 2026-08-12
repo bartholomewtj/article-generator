@@ -4035,6 +4035,79 @@ def _validate(instance, schema: dict, path: str = "") -> list[str]:
     return errors
 
 
+def test_curation_truncation_is_off_until_measured() -> None:
+    """The token saving is real; the risk to the relevance gate is untested.
+
+    Truncating the abstracts sent to curation would cut ~39,000 input tokens to
+    roughly 15,000 for 20 papers. But curation *is* the relevance gate, and two
+    things downstream read its labels: `style._required_sections` scales the
+    section floor with the `direct` count, and `write_article` omits
+    `tangential` sources from the prompt entirely (issue #117).
+
+    The failure mode is not theoretical — curation at a cheaper reasoning tier
+    agreed with the full tier on only 14 of 20 labels, and every disagreement
+    collapsed toward "related".
+    """
+    import inspect
+
+    from articlegen import pipeline, writer
+    from articlegen.sources import Paper
+
+    check("the pipeline still sends full abstracts to curation",
+          writer.CURATION_ABSTRACT_CHARS is None)
+
+    long_abstract = ("Bright light therapy was tested in schizophrenia. " * 40).strip()
+    papers = [Paper(title="A study", abstract=long_abstract, year=2020)]
+
+    full = writer._format_sources(papers)
+    check("no limit means the abstract is untouched", long_abstract in full)
+
+    short = writer._format_sources(papers, abstract_chars=400)
+    check("a limit shortens the prompt", len(short) < len(full))
+    check("the title survives truncation", "Title: A study" in short)
+    check("and the cut is marked, so the model is not misled about completeness",
+          "[…]" in short)
+    kept = short.split("Abstract: ")[1].replace(" […]", "").strip()
+    check("the kept text is a prefix of the original", long_abstract.startswith(kept))
+
+    # An abstract already under the limit must come through whole — marking it
+    # would say text was cut when none was.
+    brief = [Paper(title="B", abstract="Short abstract.", year=2021)]
+    check("an abstract under the limit is left alone",
+          "[…]" not in writer._format_sources(brief, abstract_chars=400))
+
+    # `curate_sources` must actually honour the parameter, or the harness
+    # compares two identical runs and reports a confident false pass.
+    sent = []
+    real = writer.generate_json
+    try:
+        writer.generate_json = lambda prompt, schema, **kw: (
+            sent.append(prompt), {"assessments": []})[1]
+        writer.curate_sources("topic", papers)
+        writer.curate_sources("topic", papers, abstract_chars=400)
+    finally:
+        writer.generate_json = real
+    check("curate_sources honours abstract_chars", len(sent[1]) < len(sent[0]))
+    check("and defaults to the module constant, which is off",
+          "[…]" not in sent[0] and "[…]" in sent[1])
+    check("the pipeline passes no limit of its own",
+          "abstract_chars" not in inspect.getsource(pipeline.generate_draft))
+
+    # The harness that would settle it, and its acceptance rule. The rule is
+    # the part worth pinning: overall agreement is the wrong measure, because a
+    # run that collapsed every label to "related" would score well on it.
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    harness = open(os.path.join(root, "tools", "compare_curation.py"),
+                   encoding="utf-8").read()
+    check("the comparison harness exists", "def compare(" in harness)
+    check("it runs both curations over the same fetched papers",
+          harness.count("curate_sources(topic, papers") == 2)
+    check("and only direct and tangential are treated as gating",
+          'CRITICAL = ("direct", "tangential")' in harness)
+    check("it says outright that agreement on 'related' is not enough",
+          "'related' alone is not enough" in harness)
+
+
 def test_claude_md_still_describes_this_code() -> None:
     """Every file, test and constant CLAUDE.md names must still exist.
 
@@ -4182,6 +4255,7 @@ def main(argv: list[str] | None = None) -> int:
         test_openrouter_request_is_asserted_on_the_payload,
         test_output_ceilings_follow_the_default_model,
         test_every_provider_reports_what_it_sent,
+        test_curation_truncation_is_off_until_measured,
         test_claude_md_still_describes_this_code,
         test_real_articles_still_match_the_schema,
         test_openrouter_routing,

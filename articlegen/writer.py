@@ -506,11 +506,30 @@ def plan_queries(
     return result["queries"][:4], result.get("core_entity", "").strip()
 
 
+def _truncate_abstract(abstract: str, limit: int | None) -> str:
+    """Cut an abstract to `limit` characters at a word boundary, or leave it.
+
+    Only `curate_sources` may pass a limit, and only when explicitly asked
+    (#117). Relevance labelling plausibly turns on the topic and the population,
+    which live in the first few hundred characters — but that is a hypothesis
+    about the gate that stops topic drift, and it has to be measured before it
+    is believed. `tools/compare_curation.py` is the measurement.
+    """
+    if not limit or len(abstract) <= limit:
+        return abstract
+    cut = abstract[:limit]
+    space = cut.rfind(" ")
+    if space > limit * 0.6:
+        cut = cut[:space]
+    return cut.rstrip() + " […]"
+
+
 def _format_sources(
     papers: list[Paper],
     relevance: dict[int, str] | None = None,
     excerpts: dict[int, str] | None = None,
     omit: set[int] | None = None,
+    abstract_chars: int | None = None,
 ) -> str:
     """Render the sources for the prompt.
 
@@ -548,24 +567,49 @@ def _format_sources(
         return block
 
     return "\n\n".join(
-        render(p, i, p.abstract)
+        render(p, i, _truncate_abstract(p.abstract, abstract_chars))
         for i, p in enumerate(papers, start=1)
         if not (omit and i in omit)
     )
 
 
+# Truncating the abstracts sent to curation would cut this call from ~39,000
+# input tokens to roughly 15,000 for 20 papers. It is **off by default and must
+# stay that way until measured** (#117): curation is the relevance gate, and two
+# things downstream key off its labels — `style._required_sections` scales the
+# section floor with the `direct` count, and `write_article` omits `tangential`
+# sources from the prompt entirely.
+#
+# The failure mode is not theoretical. Running curation at a cheaper reasoning
+# tier agreed with the full tier on only 14 of 20 labels, and every disagreement
+# ran one way: collapsing toward "related". Truncation is a different change
+# that can fail the same way, and the same measurement catches it.
+#
+# `tools/compare_curation.py` runs the comparison and applies the acceptance
+# rule: `direct` and `tangential` must both be stable. Agreement on `related`
+# alone is not enough — that is exactly where a degraded run parks everything.
+CURATION_ABSTRACT_CHARS = None
+
+
 def curate_sources(
-    topic: str, papers: list[Paper], model: str | None = None, api_key: str | None = None
+    topic: str, papers: list[Paper], model: str | None = None, api_key: str | None = None,
+    abstract_chars: int | None = None,
 ) -> dict:
     """Score each paper's relevance to the exact topic. Returns:
     {relevance: {index: label}, most_relevant_index: int,
-     counts: {direct, related, tangential}}. Degrades to empty on failure."""
+     counts: {direct, related, tangential}}. Degrades to empty on failure.
+
+    `abstract_chars` truncates each abstract in the prompt. Only the comparison
+    harness passes it; the pipeline uses `CURATION_ABSTRACT_CHARS`, which is
+    `None` until the measurement says otherwise.
+    """
     if not papers:
         return {"relevance": {}, "most_relevant_index": None, "counts": {}}
+    limit = abstract_chars if abstract_chars is not None else CURATION_ABSTRACT_CHARS
     try:
         result = generate_json(
             f"Topic: {topic}\n\nRate each source's relevance to that exact topic.\n\n"
-            + _format_sources(papers),
+            + _format_sources(papers, abstract_chars=limit),
             _CURATE_SCHEMA,
             system=_CURATE_SYSTEM,
             model=model,
