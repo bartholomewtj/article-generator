@@ -299,22 +299,39 @@ def _claude_cli_generate(prompt: str, schema: dict, system: str | None, model: s
             "or pick a provider that takes an API key."
         )
 
-    # Same belt-and-braces as the Groq and OpenRouter paths, and here it is the
-    # only brace there is: the CLI exposes no response_format, so nothing but
-    # the prompt constrains the shape of what comes back.
-    system_instruction = (
-        (system or "")
-        + "\n\nIMPORTANT: You must respond ONLY with a valid JSON object matching this schema. "
-        "Do NOT enclose in backticks or markdown fences. Do NOT output any conversational text, "
-        "preamble or commentary.\n"
-        f"JSON Schema:\n{json.dumps(schema)}"
+    # Everything big goes on stdin; only small fixed flags go in `args`.
+    #
+    # `claude` on Windows is a .cmd shim, so the command line is built by
+    # cmd.exe — whose limit is 8,191 characters, not the 32,767 of a native
+    # CreateProcess call. _WRITER_SYSTEM (8,168) plus the article schema
+    # (3,102) is ~11KB, so passing the system prompt as an argument failed
+    # with "The command line is too long" at the article stage, four calls and
+    # several minutes into a run. There is no --system-prompt-file to reach
+    # for, so the caller's system text is delivered as a preamble on stdin
+    # instead, and --system-prompt carries only the short fixed contract below.
+    contract = (
+        "You are a JSON API. You reply with exactly one JSON object and nothing else: "
+        "no prose, no preamble, no explanation, no markdown fences, no YAML. "
+        "The first character of every reply is `{` and the last is `}`. "
+        "Your instructions and the schema you must satisfy arrive in the message."
     )
     args = [
         exe, *CLAUDE_CLI_BASE_ARGS,
         "--model", model,
         "--effort", CLAUDE_CLI_EFFORT,
-        "--system-prompt", system_instruction,
+        "--system-prompt", contract,
     ]
+
+    # Same belt-and-braces as the Groq and OpenRouter paths, and here it is the
+    # only brace there is: the CLI exposes no response_format, so nothing but
+    # the prompt constrains the shape of what comes back.
+    preamble = (
+        (f"{system}\n\n" if system else "")
+        + "You must respond ONLY with a valid JSON object matching this schema. "
+        "Every required property must be present, spelled exactly as the schema "
+        "spells it.\n"
+        f"JSON Schema:\n{json.dumps(schema)}\n\n---\n\n"
+    )
 
     def _run(stdin_text: str) -> tuple[dict, str]:
         # Two reasons for a scratch cwd. The CLI auto-discovers CLAUDE.md from
@@ -378,7 +395,7 @@ def _claude_cli_generate(prompt: str, schema: dict, system: str | None, model: s
     # which cost the whole run at the first of eight stages. This is not the
     # refusal retry the OpenRouter path does — a refusal raises above and is
     # not retried, since asking the same model again gets the same answer.
-    envelope, cleaned = _run(prompt + _CLI_JSON_DEMAND)
+    envelope, cleaned = _run(preamble + prompt + _CLI_JSON_DEMAND)
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError:
@@ -387,7 +404,7 @@ def _claude_cli_generate(prompt: str, schema: dict, system: str | None, model: s
             file=sys.stderr, flush=True,
         )
 
-    envelope, cleaned = _run(_CLI_JSON_RETRY + prompt + _CLI_JSON_DEMAND)
+    envelope, cleaned = _run(_CLI_JSON_RETRY + preamble + prompt + _CLI_JSON_DEMAND)
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError as exc:

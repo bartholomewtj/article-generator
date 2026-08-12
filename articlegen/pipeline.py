@@ -210,6 +210,18 @@ def generate_draft(
     if counts:
         log(f"  relevance: {counts.get('direct', 0)} direct / "
             f"{counts.get('related', 0)} related / {counts.get('tangential', 0)} tangential")
+    # `curate_sources` degrades to an empty result on any failure, so a curation
+    # that returned nothing looks exactly like one that labelled every source
+    # tangential: "0 direct / 0 related / 0 tangential", logged and passed over.
+    # That is the quietest way this pipeline can go wrong — the relevance gate
+    # is what stops topic drift, and full-text fetching skips every unlabelled
+    # source, so the draft downgrades to abstracts-only for a reason nothing
+    # reports. Say so.
+    if papers and not curation.get("relevance"):
+        log("  WARNING: curation returned no usable labels for any of the "
+            f"{len(papers)} sources. The relevance gate is not protecting this "
+            "draft from topic drift, and no full text will be fetched. "
+            "Re-run, or draft on a different provider.")
 
     # Full-text grounding: after curation, fetch the open-access full text of
     # the sources that earned it — direct/related labels, in rank order. Gated

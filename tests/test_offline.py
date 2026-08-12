@@ -1387,18 +1387,29 @@ def test_claude_cli_provider() -> None:
               "sonnet" in args and "cli:sonnet" not in args)
         check("effort is set high, since subscription time is not per-token",
               args[args.index("--effort") + 1] == llm.CLAUDE_CLI_EFFORT)
-        check("the schema rides in the system prompt, the CLI enforcing none",
-              "JSON Schema:" in args[args.index("--system-prompt") + 1]
-              and "SYS" in args[args.index("--system-prompt") + 1])
+        check("the schema and the caller's system text ride on stdin, not in argv",
+              "JSON Schema:" in captured["kwargs"]["input"]
+              and "SYS" in captured["kwargs"]["input"]
+              and "JSON Schema:" not in " ".join(args)
+              and "SYS" not in " ".join(args))
+        # `claude` is a .cmd shim on Windows, so cmd.exe builds the command
+        # line and its ceiling is 8,191 characters, not the 32,767 of a native
+        # CreateProcess. _WRITER_SYSTEM (8,168) plus the article schema (3,102)
+        # busted it at the article stage, four calls into a run. Nothing that
+        # scales with the article, the schema or the sources may go in argv.
+        check("argv stays small enough for the cmd.exe 8,191-char ceiling",
+              len(" ".join(args)) < 2000)
         check("MCP servers are suppressed, a measured 10x prompt-token tax",
               "--strict-mcp-config" in args
               and args[args.index("--mcp-config") + 1] == '{"mcpServers":{}}')
         check("no tools, so the model answers instead of working",
               args[args.index("--tools") + 1] == "")
-        check("the prompt goes on stdin, not the 32k-capped command line",
-              captured["kwargs"]["input"].startswith("PROMPT") and "PROMPT" not in args)
-        check("the format demand is last, after the sources, not only in the system prompt",
+        check("the prompt goes on stdin, never in argv",
+              "PROMPT" in captured["kwargs"]["input"] and "PROMPT" not in " ".join(args))
+        check("the format demand is last, after the sources, not only up front",
               captured["kwargs"]["input"].rstrip().endswith("no YAML."))
+        check("argv still carries the JSON-only contract",
+              "one JSON object" in args[args.index("--system-prompt") + 1])
         check("it runs outside the repo, so no CLAUDE.md is auto-discovered",
               captured["kwargs"]["cwd"] and "articlegen" not in captured["kwargs"]["cwd"])
 
