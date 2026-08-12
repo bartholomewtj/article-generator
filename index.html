@@ -494,6 +494,22 @@
     margin: 2rem 0 1rem; opacity: 0.75;
   }
   .build-stamp code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.7rem; }
+
+  /* First-run explainer, and the in-page error state that replaced alert(). */
+  .setup-card {
+    border: 1px solid var(--accent); border-radius: 14px;
+    background: var(--accent-soft); padding: 1rem 1.1rem; margin-bottom: 1.25rem;
+  }
+  .setup-title { font-weight: 700; font-size: 0.95rem; margin: 0 0 0.4rem; }
+  .setup-body { font-size: 0.87rem; line-height: 1.55; margin: 0 0 0.9rem; }
+  .setup-btn { margin-top: 0; }
+  .error-card {
+    border: 1px solid var(--danger, #d33); border-radius: 14px;
+    padding: 1rem 1.1rem; margin-top: 1rem; text-align: left;
+  }
+  .error-title { font-weight: 700; font-size: 0.95rem; margin: 0 0 0.4rem; }
+  .error-body { font-size: 0.87rem; line-height: 1.55; margin: 0 0 0.9rem; }
+  .error-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 </style>
 </head>
 <body>
@@ -501,7 +517,7 @@
 <header class="app-header">
   <a href="https://bartholomewtj.github.io/article-generator/" class="logo">
     <div class="logo-icon">✨</div>
-    ArticleGen <span style="font-size:0.7rem; background:var(--accent-soft); color:var(--accent); padding:0.15rem 0.4rem; border-radius:10px; font-weight:600;">v2.3 (SyncFix)</span>
+    ArticleGen
   </a>
   <div class="header-actions">
     <button class="icon-btn" onclick="window.location.href='https://bartholomewtj.github.io/article-generator/'" title="Home">
@@ -525,6 +541,24 @@
   <div id="themeView" class="view active">
     <h1 class="hero-title">Turn any theme into an evidence-grounded article</h1>
     <p class="hero-subtitle">Grounded in real peer-reviewed journal abstracts. Simple, fast, and mobile-first.</p>
+
+    <!-- The setup is mandatory and used to be invisible: nothing on this view
+         said a key was needed, so a first-time visitor typed a theme, tapped,
+         waited out a ~50s cold start and got a raw alert() telling them to open
+         a gear icon they had not noticed (#95). This card is shown only until a
+         key exists — `refreshSetupCard()` hides it once one is set. -->
+    <div class="setup-card" id="setupCard" style="display:none;">
+      <p class="setup-title">Before your first article</p>
+      <p class="setup-body">
+        This site does the research and writing on <strong>your own OpenRouter
+        account</strong>, not ours. You paste a key once; each article then costs
+        you roughly 50c–$1. There is no free tier, and nothing works until the
+        key is set.
+      </p>
+      <button class="btn-primary setup-btn" onclick="openModal('settingsModal')">
+        Set up — about 2 minutes
+      </button>
+    </div>
 
     <div class="theme-box">
       <label class="input-label" for="themeInput">1. Enter a Theme or Topic</label>
@@ -584,6 +618,18 @@
         <div class="step-item" id="stepCurate"><span class="step-icon">⏳</span> <span>Curating Peer-Reviewed Evidence</span></div>
         <div class="step-item" id="stepDraft"><span class="step-icon">⏳</span> <span>Drafting Grounded Article</span></div>
         <div class="step-item" id="stepVerify"><span class="step-icon">⏳</span> <span>Verifying Statistics & Citations</span></div>
+      </div>
+
+      <!-- Failures used to arrive as a browser alert() carrying whatever the
+           backend raised, up to and including 500 characters of raw JSON. This
+           is where they land now, with something to press next (#95). -->
+      <div class="error-card" id="progressError" style="display:none;">
+        <p class="error-title" id="progressErrorTitle">That did not work</p>
+        <p class="error-body" id="progressErrorBody"></p>
+        <div class="error-actions">
+          <button class="btn-primary" id="progressRetryBtn" onclick="retryLastAction()">Try again</button>
+          <button class="pill" onclick="showView('ideasView')">Back to ideas</button>
+        </div>
       </div>
     </div>
   </div>
@@ -680,7 +726,7 @@
   <div class="modal-card" onclick="event.stopPropagation()">
     <form autocomplete="off" onsubmit="return false;" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
       <div class="modal-header">
-        <h3 class="modal-title">API Settings</h3>
+        <h3 class="modal-title">Your OpenRouter key</h3>
         <button type="button" class="icon-btn" onclick="closeModal('settingsModal')">✕</button>
       </div>
       
@@ -691,6 +737,16 @@
       <select id="providerSelect" class="theme-input" onchange="onProviderChange()" style="display:none;">
         <option value="openrouter">OpenRouter &mdash; Claude Opus 5</option>
       </select>
+
+      <!-- The panel used to open on an unexplained password box and a list of
+           steps, and talk about "prepaid credit" without ever saying what a
+           key is or why this site needs one (#95). -->
+      <p style="font-size:0.85rem; line-height:1.55; margin:0 0 1rem;">
+        An API key is a password that lets this site use <strong>your</strong>
+        OpenRouter account to do the writing. The site has no account of its
+        own, so nothing works until you add one. You pay OpenRouter directly —
+        roughly 50c–$1 per article — and you can revoke the key at any time.
+      </p>
 
       <div style="margin-bottom: 1.25rem;">
         <label class="input-label" for="apiKeyInput"><span id="apiKeyLabel">OpenRouter API Key</span></label>
@@ -794,6 +850,81 @@
     return API_BASE + path;
   }
 
+  // ---- first-run and cold-start handling (#95) ---------------------------
+  //
+  // Three separate failures shared one cause: the visitor could not see what
+  // was happening. No key check meant the longest possible wait ended in a
+  // dead end; the ~50s Render cold start looked like a hang; and when
+  // something did fail it arrived as a browser alert() full of internals.
+
+  const WAKE_HINT_MS = 8000;
+
+  /** Nudge the sleeping backend awake as soon as the page loads. */
+  function warmBackend() {
+    if (!API_BASE) return;   // local `articlegen web` is already running
+    fetch(apiUrl('/api/health'), { method: 'GET' }).catch(function () {});
+  }
+
+  /** Show/hide the first-run explainer according to whether a key is set. */
+  function refreshSetupCard() {
+    const card = document.getElementById('setupCard');
+    if (card) card.style.display = activeKey() ? 'none' : '';
+  }
+
+  /**
+   * Gate every request that needs a key. Returns false and opens Settings
+   * rather than letting the visitor wait out a cold start to be told no.
+   */
+  function requireKey() {
+    if (activeKey()) return true;
+    refreshSetupCard();
+    openModal('settingsModal');
+    showToast('Add your OpenRouter key first — this site runs on your account.');
+    return false;
+  }
+
+  /**
+   * Swap in the cold-start explanation if a request is still running after
+   * WAKE_HINT_MS. The copy already existed, but only in apiError() — so it
+   * appeared after a failure, never during the wait it explains.
+   */
+  function whileWaking(apply) {
+    const timer = setTimeout(function () {
+      apply('Waking the free server — the first request after a quiet spell can take up to a minute.');
+    }, WAKE_HINT_MS);
+    return function () { clearTimeout(timer); };
+  }
+
+  // What "Try again" repeats. Set by whichever action is in flight.
+  let lastAction = null;
+
+  function showProgressError(message) {
+    document.getElementById('progressErrorBody').innerText = message;
+    document.getElementById('progressError').style.display = '';
+    document.getElementById('progressRetryBtn').style.display = lastAction ? '' : 'none';
+    // A spinner still turning under a failure message reads as "it is somehow
+    // both broken and still working".
+    setProgressBusy(false);
+  }
+
+  function hideProgressError() {
+    document.getElementById('progressError').style.display = 'none';
+    setProgressBusy(true);
+  }
+
+  function setProgressBusy(busy) {
+    const card = document.getElementById('progressView');
+    const spinner = card && card.querySelector('.spinner');
+    if (spinner) spinner.style.display = busy ? '' : 'none';
+    const step = document.getElementById('progressStepText');
+    if (step) step.style.display = busy ? '' : 'none';
+  }
+
+  function retryLastAction() {
+    hideProgressError();
+    if (lastAction) lastAction();
+  }
+
   /** Turn a fetch/HTTP failure into something a non-developer can act on. */
   async function apiError(resp, netErr) {
     if (netErr || !resp) {
@@ -805,6 +936,17 @@
     try { detail = (await resp.json()).error || ''; } catch (e) {}
     if (resp.status === 429) return detail || 'Rate limit reached. Try again later.';
     if (resp.status === 422) return detail || 'No papers with abstracts were found for this topic.';
+    // 503 is "the scholarly APIs did not answer". The backend appends the
+    // per-source reasons ("openalex: HTTP 429 ..."), which are the right thing
+    // in a log and the wrong thing on a phone. Lead with what to do; the
+    // detail follows only if it is short enough to be readable.
+    if (resp.status === 503) {
+      const why = detail.split(/\bThis is not a problem with the topic\.?\s*/i).pop() || '';
+      return 'The scholarly databases did not answer just now, so there was nothing ' +
+             'to build an article from. This is not your topic and nothing was ' +
+             'charged for it — wait a minute and try again.' +
+             (why && why.length < 160 ? ' (' + why.trim() + ')' : '');
+    }
     if (resp.status >= 500 && /api key/i.test(detail)) {
       return 'The backend could not use that API key. Check it in Settings (⚙️).';
     }
@@ -934,7 +1076,7 @@
         if (hash) window.location.hash = hash;
       }
     } catch(e) {
-      alert("Editing error: " + e.message);
+      showToast('Could not save the edit: ' + e.message);
     }
   }
 
@@ -1082,6 +1224,7 @@
     if (k) (remember ? localStorage : sessionStorage).setItem(cfg.store, k);
 
     if (typeof savePreferences === 'function') savePreferences();
+    refreshSetupCard();
 
     showToast(k && !remember ? 'Saved for this tab only' : 'Settings saved!');
     closeModal('settingsModal');
@@ -1211,6 +1354,10 @@
     migrateLegacyLibraries();
     loadPreferences();
     checkUrlHashForArticle();
+    refreshSetupCard();
+    // Start the ~50s Render cold start now, while the visitor is still typing
+    // a theme, instead of at the moment they tap.
+    warmBackend();
   });
 
   async function requestIdeas() {
@@ -1220,10 +1367,16 @@
       return;
     }
 
+    // Before the round trip, not after it. This is the whole point: a visitor
+    // with no key used to wait out the cold start to be told they needed one.
+    if (!requireKey()) return;
+
     const guidance = document.getElementById('styleInput').value.trim();
     const btn = document.getElementById('ideasBtn');
+    const idle = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg> Generate Article Drafts';
     btn.disabled = true;
     btn.innerHTML = '⏳ Generating Ideas...';
+    const settled = whileWaking(function (msg) { btn.innerHTML = '⏳ ' + msg; });
 
     const key = activeKey();
 
@@ -1244,10 +1397,13 @@
       renderDraftCards(data.theme || theme, data.ideas || []);
       showView('ideasView');
     } catch (err) {
-      alert(err.message);
+      // Still on the theme view here, so the progress card is not the place —
+      // the toast is, and it says the same plain-language thing.
+      showToast(err.message);
     } finally {
+      settled();
       btn.disabled = false;
-      btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg> Generate Article Drafts';
+      btn.innerHTML = idle;
     }
   }
 
@@ -1275,7 +1431,11 @@
   }
 
   async function selectDraft(title) {
+    if (!requireKey()) return;
+
     currentTitle = title;
+    lastAction = function () { selectDraft(title); };
+    hideProgressError();
     document.getElementById('progressTitle').innerText = title;
     showView('progressView');
 
@@ -1303,8 +1463,23 @@
       setTimeout(function () {
         steps[2] && steps[2].classList.add('done');
         stepText.innerText = 'Writing the review, then checking the prose and every figure...';
-      }, 30000)
+      }, 30000),
+      // A run takes 60-90s, and the timeline used to stop at 30s — so the
+      // longest part of the wait was the part where the screen never changed
+      // and the last step never lit up (#95).
+      setTimeout(function () {
+        stepText.innerText = 'Enforcing the journal prose conventions, and revising if they are not met...';
+      }, 55000),
+      setTimeout(function () {
+        steps[3] && steps[3].classList.add('done');
+        stepText.innerText = 'Checking every figure against the sources it is cited to. Nearly there...';
+      }, 80000),
+      setTimeout(function () {
+        stepText.innerText = 'Still working. Long runs happen when the scholarly APIs are slow to answer.';
+      }, 110000)
     ];
+
+    const settled = whileWaking(function (msg) { stepText.innerText = msg; });
 
     try {
       let resp;
@@ -1353,9 +1528,12 @@
         (data.sources_count || 0) + ' Sources Cited';
       showView('readerView');
     } catch (err) {
-      alert('Drafting error: ' + err.message);
-      showView('ideasView');
+      // Stay on the progress card and put the failure in it, with a Try again
+      // button. Bouncing back to the ideas list threw away the context and
+      // left the visitor to work out what to press.
+      showProgressError(err.message);
     } finally {
+      settled();
       marks.forEach(clearTimeout);
     }
   }
@@ -1426,7 +1604,7 @@
       }
       throw new Error('pastebin returned ' + res.status);
     } catch (e) {
-      alert('Could not publish the link: ' + e.message);
+      showToast('Could not publish the link: ' + e.message);
       return null;
     }
   }
