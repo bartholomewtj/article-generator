@@ -1396,9 +1396,55 @@ def test_claude_cli_provider() -> None:
         check("no tools, so the model answers instead of working",
               args[args.index("--tools") + 1] == "")
         check("the prompt goes on stdin, not the 32k-capped command line",
-              captured["kwargs"]["input"] == "PROMPT" and "PROMPT" not in args)
+              captured["kwargs"]["input"].startswith("PROMPT") and "PROMPT" not in args)
+        check("the format demand is last, after the sources, not only in the system prompt",
+              captured["kwargs"]["input"].rstrip().endswith("no YAML."))
         check("it runs outside the repo, so no CLAUDE.md is auto-discovered",
               captured["kwargs"]["cwd"] and "articlegen" not in captured["kwargs"]["cwd"])
+
+        # -- prose replies ------------------------------------------------
+        # The failure this provider actually has. The API paths are given a
+        # response_format and cannot return prose; the first real call here
+        # answered a JSON-schema prompt in YAML and cost the whole run at the
+        # first of eight stages.
+        check("a JSON object is recovered from a reply wrapped in prose",
+              llm._extract_json_object('Sure!\n```json\n{"a": {"b": 1}}\n```\nHope that helps')
+              == '{"a": {"b": 1}}')
+        check("braces and escaped quotes inside strings do not end the object",
+              llm._extract_json_object('{"a": "has } and \\" quote"} trailing')
+              == '{"a": "has } and \\" quote"}')
+        check("a reply with no object at all is passed through untouched",
+              llm._extract_json_object("core_entity: safety planning") ==
+              "core_entity: safety planning")
+
+        calls = []
+
+        def yaml_then_json(args_, **kwargs):
+            calls.append(kwargs["input"])
+
+            class P:
+                returncode, stderr = 0, ""
+                stdout = _json.dumps({
+                    "type": "result", "subtype": "success", "is_error": False,
+                    "usage": {}, "duration_ms": 1,
+                    "result": ('core_entity: safety planning\nqueries:\n  - a'
+                               if len(calls) == 1 else '{"recovered": true}'),
+                })
+            return P()
+
+        try:
+            subprocess.run = yaml_then_json
+            __import__("shutil").which = lambda name: "/fake/claude"
+            out = llm.generate_json("P", {"type": "object"}, model="cli:sonnet")
+        finally:
+            subprocess.run = real_run
+            __import__("shutil").which = real_which
+
+        check("a YAML reply is retried rather than losing the run",
+              out == {"recovered": True} and len(calls) == 2)
+        check("the retry tells the model its last reply was unusable",
+              "was not valid JSON" in calls[1] and "P" in calls[1])
+        check("the retry is not infinite", len(calls) == 2)
 
         # A refusal is a successful invocation carrying an apology. It has to
         # fail here, not later as "invalid JSON" pointing at that apology.

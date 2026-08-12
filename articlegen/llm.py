@@ -218,6 +218,62 @@ def generate_json(
 
 # ---------------------------------------------------------------- claude cli
 
+def _extract_json_object(text: str) -> str:
+    """Pull the first complete JSON object out of a reply that also has prose.
+
+    Only the CLI path needs this. The three API providers are given a
+    `response_format`, so the whole reply is the object; here the schema is
+    only ever a request, and the first thing this provider actually did was
+    answer a JSON-schema prompt in YAML.
+
+    Brace-matching rather than a regex because the article payload nests
+    several levels deep, and string-aware because abstracts contain braces and
+    escaped quotes.
+    """
+    start = text.find("{")
+    if start == -1:
+        return text
+    depth, in_string, escaped = 0, False, False
+    for i, ch in enumerate(text[start:], start):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+    return text
+
+
+# Appended to the end of the user prompt, not just the system prompt. The
+# system prompt already said "JSON only" when Sonnet replied in YAML — with a
+# long source payload in between, the instruction nearest the end of the
+# context is the one that survives.
+_CLI_JSON_DEMAND = (
+    "\n\n---\n"
+    "OUTPUT FORMAT — this overrides any formatting implied above.\n"
+    "Reply with one JSON object and nothing else. The first character of your "
+    "reply must be `{` and the last must be `}`. No prose, no preamble, no "
+    "explanation, no markdown fences, no YAML."
+)
+
+_CLI_JSON_RETRY = (
+    "Your previous reply was not valid JSON, so it could not be used. "
+    "Send the same content again as a single raw JSON object matching the "
+    "schema — starting with `{`, ending with `}`, with nothing before or "
+    "after it.\n\n"
+)
+
+
 def _claude_cli_generate(prompt: str, schema: dict, system: str | None, model: str) -> dict:
     """Generate via `claude -p`, so the call is drawn from a Claude subscription.
 
@@ -260,66 +316,83 @@ def _claude_cli_generate(prompt: str, schema: dict, system: str | None, model: s
         "--system-prompt", system_instruction,
     ]
 
-    # Two reasons for a scratch cwd. The CLI auto-discovers CLAUDE.md from the
-    # working directory, and running inside this repo would prepend articlegen's
-    # own project memory — several thousand tokens about how the pipeline works
-    # — to a call whose job is to write a paragraph about clinical evidence. It
-    # also keeps the subprocess pointed away from the repo it is being run from.
-    #
-    # The prompt goes on stdin, not in `args`: the source payload runs to tens
-    # of kilobytes, and Windows caps a command line at 32,767 characters.
-    try:
-        with tempfile.TemporaryDirectory() as scratch:
-            proc = subprocess.run(
-                args, input=prompt, cwd=scratch, capture_output=True,
-                text=True, encoding="utf-8", timeout=CLAUDE_CLI_TIMEOUT,
+    def _run(stdin_text: str) -> tuple[dict, str]:
+        # Two reasons for a scratch cwd. The CLI auto-discovers CLAUDE.md from
+        # the working directory, and running inside this repo would prepend
+        # articlegen's own project memory — several thousand tokens about how
+        # the pipeline works — to a call whose job is to write a paragraph
+        # about clinical evidence. It also keeps the subprocess pointed away
+        # from the repo it is being run from.
+        #
+        # The prompt goes on stdin, not in `args`: the source payload runs to
+        # tens of kilobytes, and Windows caps a command line at 32,767 chars.
+        try:
+            with tempfile.TemporaryDirectory() as scratch:
+                proc = subprocess.run(
+                    args, input=stdin_text, cwd=scratch, capture_output=True,
+                    text=True, encoding="utf-8", timeout=CLAUDE_CLI_TIMEOUT,
+                )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(
+                f"`claude -p` did not answer within {CLAUDE_CLI_TIMEOUT}s (model {model}). "
+                "Long articles at high effort are slow; retry, or use a metered provider."
+            ) from None
+
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"`claude -p` exited {proc.returncode} (model {model}): "
+                f"{(proc.stderr or proc.stdout or '').strip()[:500]}"
             )
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(
-            f"`claude -p` did not answer within {CLAUDE_CLI_TIMEOUT}s (model {model}). "
-            "Long articles at high effort are slow; retry, or use a metered provider."
-        ) from None
 
-    if proc.returncode != 0:
-        raise RuntimeError(
-            f"`claude -p` exited {proc.returncode} (model {model}): "
-            f"{(proc.stderr or proc.stdout or '').strip()[:500]}"
+        try:
+            envelope = json.loads(proc.stdout)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"`claude -p` did not return a JSON envelope (model {model}): {exc}\n"
+                f"First 500 chars: {proc.stdout[:500]!r}"
+            ) from exc
+
+        # A declined request is a successful invocation carrying a refusal,
+        # exactly as on the Anthropic path — surfaced here rather than left to
+        # fail later as "invalid JSON" pointing at the model's own apology.
+        if envelope.get("is_error") or envelope.get("subtype") not in (None, "success"):
+            raise RuntimeError(
+                f"`claude -p` reported an error (model {model}, "
+                f"subtype={envelope.get('subtype')}, stop_reason={envelope.get('stop_reason')}): "
+                f"{str(envelope.get('result'))[:500]}"
+            )
+
+        usage = envelope.get("usage") or {}
+        print(
+            f"[articlegen] claude-cli in={usage.get('input_tokens', 0)} "
+            f"cached={usage.get('cache_read_input_tokens', 0)} "
+            f"out={usage.get('output_tokens', 0)} "
+            f"({envelope.get('duration_ms', 0) / 1000:.1f}s)",
+            file=sys.stderr, flush=True,
         )
+        return envelope, _extract_json_object(_clean_json_text(envelope.get("result") or ""))
 
+    # One retry, because format compliance is the failure mode this provider
+    # actually has. The API paths get `response_format` and cannot produce
+    # prose; here the first real call answered a JSON-schema prompt in YAML,
+    # which cost the whole run at the first of eight stages. This is not the
+    # refusal retry the OpenRouter path does — a refusal raises above and is
+    # not retried, since asking the same model again gets the same answer.
+    envelope, cleaned = _run(prompt + _CLI_JSON_DEMAND)
     try:
-        envelope = json.loads(proc.stdout)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(
-            f"`claude -p` did not return a JSON envelope (model {model}): {exc}\n"
-            f"First 500 chars: {proc.stdout[:500]!r}"
-        ) from exc
-
-    # A declined request is a successful invocation carrying a refusal, exactly
-    # as on the Anthropic path — surfaced here rather than left to fail later as
-    # "invalid JSON" pointing at the model's own apology.
-    if envelope.get("is_error") or envelope.get("subtype") not in (None, "success"):
-        raise RuntimeError(
-            f"`claude -p` reported an error (model {model}, "
-            f"subtype={envelope.get('subtype')}, stop_reason={envelope.get('stop_reason')}): "
-            f"{str(envelope.get('result'))[:500]}"
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        print(
+            f"[articlegen] claude-cli {model} replied with non-JSON; retrying once",
+            file=sys.stderr, flush=True,
         )
 
-    text_response = envelope.get("result") or ""
-    usage = envelope.get("usage") or {}
-    print(
-        f"[articlegen] claude-cli in={usage.get('input_tokens', 0)} "
-        f"cached={usage.get('cache_read_input_tokens', 0)} "
-        f"out={usage.get('output_tokens', 0)} "
-        f"({envelope.get('duration_ms', 0) / 1000:.1f}s)",
-        file=sys.stderr, flush=True,
-    )
-
-    cleaned = _clean_json_text(text_response)
+    envelope, cleaned = _run(_CLI_JSON_RETRY + prompt + _CLI_JSON_DEMAND)
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError as exc:
         raise RuntimeError(
-            f"{model} did not return valid JSON via the CLI (stop_reason="
+            f"{model} did not return valid JSON via the CLI, twice (stop_reason="
             f"{envelope.get('stop_reason')}): {exc}\n"
             "The CLI cannot enforce a response schema the way the API providers can, "
             "so a conversational reply lands here.\n"
