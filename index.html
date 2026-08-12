@@ -535,46 +535,20 @@
         <input type="text" id="styleInput" name="article_audience" class="theme-input" placeholder="e.g. for high school students, executives..." autocomplete="off" autocorrect="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
       </div>
 
-      <!-- Customization Preferences Accordion -->
+      <!-- Length and evidence depth are no longer choices. Every article is an
+           in-depth longform review written to a strict empirical focus, which is
+           the only combination that matches what style.py enforces afterwards.
+           See LENGTH_LABEL / DEPTH_LABEL below. -->
       <div style="margin-top: 1rem;">
-        <button type="button" class="pill" style="width:100%; justify-content:space-between; display:flex; align-items:center; background:var(--bg); border:1px solid var(--card-border); padding:0.6rem 1rem; border-radius:10px;" onclick="togglePreferences()">
-          <span>⚙️ Custom Article Preferences</span>
-          <span id="prefToggleIcon">▼</span>
-        </button>
-
-        <div id="prefContainer" style="display:none; background:var(--bg); border:1px solid var(--card-border); border-radius:12px; padding:1rem; margin-top:0.6rem;">
-          
-          <div style="margin-bottom: 0.8rem;">
-            <label class="input-label" style="font-size:0.75rem;">Target Article Length</label>
-            <select id="prefLength" class="theme-input" onchange="savePreferences()">
-              <option value="standard" selected>📄 Standard Article (~1,000 words)</option>
-              <option value="brief">⚡ Quick Read (~500 words)</option>
-              <option value="deep">📚 In-Depth Longform (~1,800+ words)</option>
-            </select>
-          </div>
-
-          <div style="margin-bottom: 0.8rem;">
-            <label class="input-label" style="font-size:0.75rem;">Evidence & Citation Depth</label>
-            <select id="prefDepth" class="theme-input" onchange="savePreferences()">
-              <option value="balanced" selected>⚖️ Balanced Overview (Key Findings)</option>
-              <option value="empirical">🔍 Strict Empirical (Focus on Methodologies & Data)</option>
-              <option value="narrative">📖 Narrative & Conceptual (Story-driven)</option>
-            </select>
-          </div>
-
-          <div>
-            <label class="input-label" style="font-size:0.75rem;">Output Language</label>
-            <select id="prefLang" class="theme-input" onchange="savePreferences()">
-              <option value="English" selected>🇺🇸 English</option>
-              <option value="Spanish">🇪🇸 Spanish (Español)</option>
-              <option value="French">🇫🇷 French (Français)</option>
-              <option value="German">🇩🇪 German (Deutsch)</option>
-              <option value="Japanese">🇯🇵 Japanese (日本語)</option>
-              <option value="Chinese">🇨🇳 Chinese (中文)</option>
-            </select>
-          </div>
-
-        </div>
+        <label class="input-label" for="prefLang">Output Language</label>
+        <select id="prefLang" class="theme-input" onchange="savePreferences()">
+          <option value="English" selected>🇺🇸 English</option>
+          <option value="Spanish">🇪🇸 Spanish (Español)</option>
+          <option value="French">🇫🇷 French (Français)</option>
+          <option value="German">🇩🇪 German (Deutsch)</option>
+          <option value="Japanese">🇯🇵 Japanese (日本語)</option>
+          <option value="Chinese">🇨🇳 Chinese (中文)</option>
+        </select>
       </div>
 
       <button id="ideasBtn" class="btn-primary" onclick="requestIdeas()">
@@ -710,28 +684,26 @@
         <button type="button" class="icon-btn" onclick="closeModal('settingsModal')">✕</button>
       </div>
       
-      <div style="margin-bottom: 1.25rem;">
-        <label class="input-label">Writing model</label>
-        <p style="font-size:0.8rem; color:var(--muted); margin-top:-0.2rem; margin-bottom:0.6rem;">
-          Articles are written by <strong>Claude Opus 5</strong>, paid from OpenRouter
-          prepaid credit. There is no daily cap, so a run never fails because the
-          day&rsquo;s quota is spent.
-        </p>
-        <!-- Only OpenRouter is offered for now. The select stays in the DOM, with
-             its single option, so onProviderChange() and saveApiKey() keep working
-             unchanged and restoring a provider is a matter of adding its <option>
-             and its PROVIDERS entry back. -->
-        <select id="providerSelect" class="theme-input" onchange="onProviderChange()" style="display:none;">
-          <option value="openrouter">OpenRouter &mdash; Claude Opus 5</option>
-        </select>
-      </div>
+      <!-- Only OpenRouter is offered for now. The select stays in the DOM, with
+           its single option, so onProviderChange() and saveApiKey() keep working
+           unchanged and restoring a provider is a matter of adding its <option>
+           and its PROVIDERS entry back. -->
+      <select id="providerSelect" class="theme-input" onchange="onProviderChange()" style="display:none;">
+        <option value="openrouter">OpenRouter &mdash; Claude Opus 5</option>
+      </select>
 
       <div style="margin-bottom: 1.25rem;">
         <label class="input-label" for="apiKeyInput"><span id="apiKeyLabel">OpenRouter API Key</span></label>
-        <p style="font-size:0.8rem; color:var(--muted); margin-top:-0.2rem; margin-bottom:0.6rem;" id="apiKeyHelp">
-          Create a key at <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--accent);">openrouter.ai/keys</a>.
-        </p>
         <input type="password" id="apiKeyInput" name="provider_key_token" class="theme-input" placeholder="sk-or-v1-..." autocomplete="new-password" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
+
+        <p style="font-size:0.8rem; color:var(--muted); margin-top:0.9rem; margin-bottom:0.4rem; font-weight:600;">How to get a key</p>
+        <ul style="font-size:0.8rem; color:var(--muted); line-height:1.6; margin:0; padding-left:1.1rem;">
+          <li>Sign up at <a href="https://openrouter.ai" target="_blank" style="color:var(--accent);">openrouter.ai</a>.</li>
+          <li>Add prepaid credit under <strong>Settings &rarr; Credits</strong> &mdash; roughly <strong>50c&ndash;$1 per article</strong>.</li>
+          <li>Go to <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--accent);">openrouter.ai/keys</a> and click <strong>Create Key</strong>.</li>
+          <li>Copy the key (it starts with <code>sk-or-v1-</code>) and paste it above.</li>
+          <li>Press <strong>Save Settings</strong>.</li>
+        </ul>
         <p style="font-size:0.75rem; color:var(--muted); margin-top:0.5rem; line-height:1.5;">
           Your key stays in this browser's local storage and is sent only to the
           article generator backend for the request you asked for. It is never
@@ -1021,11 +993,7 @@
       model: 'anthropic/claude-opus-5',
       store: 'articlegen_key_openrouter',
       label: 'OpenRouter API Key',
-      placeholder: 'sk-or-v1-...',
-      help: 'Claude Opus 5 paid from prepaid credit, with no daily allowance — so a run ' +
-            'never fails because the day&rsquo;s quota is spent. Roughly ' +
-            '<strong>50c&ndash;$1 per article</strong>. Create a key at ' +
-            '<a href="https://openrouter.ai/keys" target="_blank" style="color:var(--accent);">openrouter.ai/keys</a>.'
+      placeholder: 'sk-or-v1-...'
     }
   };
 
@@ -1055,10 +1023,8 @@
     localStorage.setItem('articlegen_provider', chosen);
 
     const label = document.getElementById('apiKeyLabel');
-    const help = document.getElementById('apiKeyHelp');
     const input = document.getElementById('apiKeyInput');
     if (label) label.textContent = cfg.label;
-    if (help) help.innerHTML = cfg.help;
     if (input) {
       input.placeholder = cfg.placeholder;
       input.value = localStorage.getItem(cfg.store) || '';
@@ -1088,23 +1054,8 @@
     setTimeout(() => t.classList.remove('active'), 2500);
   }
 
-  function togglePreferences() {
-    const c = document.getElementById('prefContainer');
-    const icon = document.getElementById('prefToggleIcon');
-    if (!c) return;
-    if (c.style.display === 'none') {
-      c.style.display = 'block';
-      icon.innerText = '▲';
-    } else {
-      c.style.display = 'none';
-      icon.innerText = '▼';
-    }
-  }
-
   function savePreferences() {
     const prefs = {
-      length: document.getElementById('prefLength')?.value || 'standard',
-      depth: document.getElementById('prefDepth')?.value || 'balanced',
       lang: document.getElementById('prefLang')?.value || 'English'
     };
     localStorage.setItem('articlegen_prefs', JSON.stringify(prefs));
@@ -1115,10 +1066,8 @@
       const raw = localStorage.getItem('articlegen_prefs');
       if (raw) {
         const prefs = JSON.parse(raw);
-        // A stored `tone` from an older version is ignored: the house style is
-        // fixed now, so there is nothing to restore it into.
-        if (prefs.length && document.getElementById('prefLength')) document.getElementById('prefLength').value = prefs.length;
-        if (prefs.depth && document.getElementById('prefDepth')) document.getElementById('prefDepth').value = prefs.depth;
+        // Stored `tone`, `length` and `depth` from older versions are ignored:
+        // all three are fixed now, so there is nothing to restore them into.
         if (prefs.lang && document.getElementById('prefLang')) document.getElementById('prefLang').value = prefs.lang;
       }
     } catch(e) {}
@@ -1148,27 +1097,21 @@
   // register, so choosing one produced a draft the checker then rejected.
   const TONE_LABEL = 'Formal Academic & Technical (Rigorous, precise terminology)';
 
+  // Length and evidence depth are fixed for the same reason as the tone. The
+  // shorter lengths gave the writer too little room to report what each study
+  // did, in whom, and what it found — which is exactly what the substance rules
+  // in style.py fail a draft for missing. The narrative and "balanced" depths
+  // asked for storytelling over methods, against a checker that wants figures
+  // attributed to designs and populations. One combination survives both.
+  const LENGTH_LABEL = 'In-Depth Longform (~1,800+ words, 5+ extensive sections with deep analysis)';
+  const DEPTH_LABEL = 'Strict Empirical Focus (Emphasize methodology, sample sizes, and study limitations)';
+
   function getPreferences() {
-    const lenVal = document.getElementById('prefLength')?.value || 'standard';
-    const depthVal = document.getElementById('prefDepth')?.value || 'balanced';
-    const langVal = document.getElementById('prefLang')?.value || 'English';
-
-    const lenMap = {
-      brief: 'Quick Read (~500 words, 2 concise sections)',
-      standard: 'Standard Article (~1,000 words, 3-4 detailed sections)',
-      deep: 'In-Depth Longform (~1,800+ words, 5+ extensive sections with deep analysis)'
-    };
-    const depthMap = {
-      balanced: 'Balanced Overview of findings',
-      empirical: 'Strict Empirical Focus (Emphasize methodology, sample sizes, and study limitations)',
-      narrative: 'Narrative Driven (Focus on storytelling and key conceptual breakthroughs)'
-    };
-
     return {
-      lengthLabel: lenMap[lenVal] || lenMap.standard,
+      lengthLabel: LENGTH_LABEL,
       toneLabel: TONE_LABEL,
-      depthLabel: depthMap[depthVal] || depthMap.balanced,
-      lang: langVal
+      depthLabel: DEPTH_LABEL,
+      lang: document.getElementById('prefLang')?.value || 'English'
     };
   }
 

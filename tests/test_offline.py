@@ -1807,6 +1807,11 @@ def test_house_style_is_fixed_not_a_preference() -> None:
     `docs/journal-style.md` defines the register and `style.py` enforces it, so
     the tone is part of the house style rather than something a reader picks.
     The selector is gone and the label is a constant.
+
+    Article length and evidence depth were removed for the same reason: every
+    option except in-depth longform + strict empirical asked for prose the
+    substance rules then failed. All three are constants now; only the output
+    language is still selectable.
     """
     path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         "index.html")
@@ -1824,9 +1829,21 @@ def test_house_style_is_fixed_not_a_preference() -> None:
     check("styleGuidance still sends a tone", "'Tone: ' + p.toneLabel" in html)
     check("which now resolves to the constant", "toneLabel: TONE_LABEL" in html)
 
-    # The other three preferences are untouched.
-    for keep in ("prefLength", "prefDepth", "prefLang"):
-        check(f"{keep} still offered", f'id="{keep}"' in html)
+    # Length and evidence depth went the same way and for the same reason: the
+    # short lengths and the narrative/balanced depths asked for prose the
+    # substance rules in style.py then failed. One combination survives, so it
+    # is a constant rather than a selector.
+    for gone in ("prefLength", "prefDepth"):
+        check(f"the {gone} selector is gone", f'id="{gone}"' not in html)
+    for label, value in (("LENGTH_LABEL", "In-Depth Longform"),
+                         ("DEPTH_LABEL", "Strict Empirical Focus")):
+        check(f"{label} is a single constant", html.count(f"const {label}") == 1)
+        check(f"and it names {value}", value in html)
+    check("styleGuidance still sends a length", "'Length: ' + p.lengthLabel" in html)
+    check("and an evidence focus", "'Evidence focus: ' + p.depthLabel" in html)
+
+    # Language is still the reader's choice.
+    check("prefLang still offered", 'id="prefLang"' in html)
 
 
 def test_register_rules_are_scoped_to_the_synthesis_voice() -> None:
