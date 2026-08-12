@@ -71,9 +71,9 @@ GROQ_FREE_TPM = 12000
 GROQ_DEEP_OUTPUT = 5000
 GROQ_OUTPUT = 4000
 
-# Rough English average. Used only to size a prompt before sending it, where
-# being approximately right in the safe direction is what matters.
-CHARS_PER_TOKEN = 4
+# Academic text average (dense scientific terminology, numbers, DOIs tokenise
+# at ~3 chars/token, denser than plain English 4 chars/token).
+CHARS_PER_TOKEN = 3
 
 
 def prompt_budget_chars(model: str | None = None, api_key: str | None = None) -> int | None:
@@ -95,7 +95,7 @@ def prompt_budget_chars(model: str | None = None, api_key: str | None = None) ->
     overhead_tokens = 1500
     safety_margin_tokens = 1500
     spare = GROQ_FREE_TPM - GROQ_DEEP_OUTPUT - overhead_tokens - safety_margin_tokens
-    return max(spare, 1000) * CHARS_PER_TOKEN
+    return int(max(spare, 1000) * CHARS_PER_TOKEN)
 
 
 _PROVIDER_DEFAULT_MODELS = {
