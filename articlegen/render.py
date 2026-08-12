@@ -259,20 +259,63 @@ def _titled(title: str) -> str:
     return title if title.endswith((".", "?", "!")) else title + "."
 
 
-def _unverified_sentence(unverified: list[str]) -> str:
-    """The 'figures we could not find in any abstract' limitation, in journal register."""
+def _searched_phrase(full_text_read: bool) -> str:
+    """Name what the statistical check actually searched.
+
+    `verify` searches the abstracts *plus* whatever full-text excerpts the
+    writer was shown. Saying "the abstracts" on a draft that read full texts
+    describes a weaker check than the one that ran (issue #101), so this is
+    derived from the draft like every other provenance statement.
+    """
+    if full_text_read:
+        return (
+            "the material read for the cited sources — their abstracts, and the "
+            "open-access full text where one was retrieved"
+        )
+    return "the abstracts of the cited sources"
+
+
+def _unverified_sentence(unverified: list[str], full_text_read: bool = False) -> str:
+    """The 'figures we could not find in the sources' limitation, in journal register."""
     shown = ", ".join(unverified[:6])
     more = "" if len(unverified) <= 6 else f" and {len(unverified) - 6} other(s)"
+    where = _searched_phrase(full_text_read)
     if len(unverified) == 1:
         return (
-            f"One numerical value reported above ({shown}) could not be located in the "
-            "abstracts of the cited sources. It may originate in a full text, or may be "
-            "unreliable, and should be verified before being quoted."
+            f"One numerical value reported above ({shown}) could not be located in "
+            f"{where}. It may originate in a part of a source that was not read, or may "
+            "be unreliable, and should be verified before being quoted."
         )
     return (
         f"{len(unverified)} numerical values reported above ({shown}{more}) could not be "
-        "located in the abstracts of the cited sources. They may originate in a full text, "
+        f"located in {where}. They may originate in a part of a source that was not read, "
         "or may be unreliable, and should be verified before being quoted."
+    )
+
+
+def _misattributed_sentence(misattributed: list[str]) -> str:
+    """Figures that are real but credited to the wrong source.
+
+    A separate limitation from the unverified ones because it is a different
+    defect: the number is in the evidence base, but not in the source the
+    sentence cites for it. Source numbers are deliberately not named — `verify`
+    works in SOURCE indices while this section prints display numbers, and a
+    wrong number here would be worse than none.
+    """
+    shown = ", ".join(misattributed[:6])
+    more = "" if len(misattributed) <= 6 else f" and {len(misattributed) - 6} other(s)"
+    if len(misattributed) == 1:
+        return (
+            f"One numerical value reported above ({shown}) appears in a cited source "
+            "other than the one its sentence credits. The figure is present in the "
+            "evidence base, but the attribution does not hold and should be checked "
+            "before it is quoted."
+        )
+    return (
+        f"{len(misattributed)} numerical values reported above ({shown}{more}) appear in "
+        "cited sources other than the ones their sentences credit. The figures are present "
+        "in the evidence base, but the attributions do not hold and should be checked "
+        "before they are quoted."
     )
 
 
@@ -657,17 +700,22 @@ def _methods_paragraphs(
             f"full text{'s' if n_full != 1 else ''} of {n_full} "
             f"source{'s were' if n_full != 1 else ' was'} retrieved from Europe PMC "
             "and read alongside them (marked in Table 1); claims resting on the "
-            "remaining sources draw on no data beyond an abstract. Every numerical "
-            "value in the text was checked automatically against exactly the material "
-            "shown to the model — the abstracts plus those full-text excerpts — and "
-            "any figure that could not be located is flagged under Limitations."
+            "remaining sources draw on no data beyond an abstract. Decimals, "
+            "percentages, effect estimates and quantities carrying a clinical unit "
+            "were then checked automatically, each against the sources its own "
+            "sentence cites, within exactly the material shown to the model — the "
+            "abstracts plus those full-text excerpts. A figure that could not be "
+            "located, or that appears only in a source other than the one cited, is "
+            "flagged under Limitations."
         )
     else:
         handling = (
             "Only titles and abstracts were read; full texts were not retrieved, so no claim "
-            "in this review rests on data reported beyond an abstract. Every numerical value "
-            "in the text was checked automatically against the abstracts of the cited sources, "
-            "and any figure that could not be located is flagged under Limitations."
+            "in this review rests on data reported beyond an abstract. Decimals, percentages, "
+            "effect estimates and quantities carrying a clinical unit were checked "
+            "automatically, each against the abstracts of the sources its own sentence cites. "
+            "A figure that could not be located, or that appears only in a source other than "
+            "the one cited, is flagged under Limitations."
         )
 
     generation = (
@@ -780,7 +828,10 @@ def _assessment_paragraphs(
         )
     unverified = (verification or {}).get("unverified") or []
     if unverified:
-        limitations.append(_unverified_sentence([esc(u) for u in unverified]))
+        limitations.append(_unverified_sentence([esc(u) for u in unverified], bool(n_full)))
+    misattributed = (verification or {}).get("misattributed") or []
+    if misattributed:
+        limitations.append(_misattributed_sentence([esc(m) for m in misattributed]))
     surviving = _style_failure_sentence(style_report, esc)
     if surviving:
         limitations.append(surviving)

@@ -2430,6 +2430,61 @@ def test_statistic_verification() -> None:
     check("pre-journal-format drafts are still checked",
           "-0.77" in v_legacy["unverified"] and "8.88" in v_legacy["unverified"])
 
+    # -- attribution: a cited sentence is checked against its own sources, and
+    #    a hit in some other source is a distinct failure, not a pass (#101) --
+    two = [
+        Paper(title="P1", abstract="light therapy was tested; the effect was 0.53", year=2010),
+        Paper(title="P2", abstract="a separate trial reported SMD 2.71", year=2012),
+    ]
+    swapped = {
+        "abstract": "", "evidence_note": "",
+        "sections": [{"heading": "H", "paragraphs": [
+            "The trial found SMD 2.71 [1].",
+            "A related trial found 0.53 [2].",
+            "Neither reported 6.66 [1].",
+        ]}],
+        "key_points": [], "references": [1, 2],
+    }
+    v_swap = check_statistics(swapped, two)
+    check("a figure real in another source is not a pass",
+          "2.71" not in v_swap["unverified"] and "0.53" not in v_swap["unverified"])
+    check("it is reported as misattributed instead",
+          "2.71" in v_swap["misattributed"] and "0.53" in v_swap["misattributed"])
+    check("a figure in no source at all stays unverified",
+          "6.66" in v_swap["unverified"] and "6.66" not in v_swap["misattributed"])
+
+    uncited = {
+        "abstract": "An overall effect of 2.71 was reported.", "evidence_note": "",
+        "sections": [], "key_points": [], "references": [],
+    }
+    v_uncited = check_statistics(uncited, two)
+    check("a sentence citing nothing has no attribution to break",
+          not v_uncited["misattributed"] and not v_uncited["unverified"])
+
+    # -- integers carrying a clinical unit are checked; bare ones are not ----
+    clinical = [Paper(title="P", abstract="Participants (n = 441) received 7,000 lux for "
+                                          "30 minutes; serum was 50 ng/mL in 109 cases.")]
+    quantities = {
+        "abstract": "", "evidence_note": "",
+        "sections": [{"heading": "H", "paragraphs": [
+            "Light at 7,000 lux for 30 minutes reached 50 ng/mL in 109 cases among "
+            "441 participants [1].",
+            "A second protocol used 9,500 lux for 90 minutes [1].",
+        ]}],
+        "key_points": [], "references": [1],
+    }
+    v_q = check_statistics(quantities, clinical)
+    for grounded in ("7,000 lux", "30 minutes", "50 ng/mL", "109 cases", "441 participants"):
+        check(f"clinical quantity is checked and passes: {grounded}",
+              grounded not in v_q["unverified"] and v_q["total"] >= 5)
+    check("absent clinical quantities are flagged",
+          "9,500 lux" in v_q["unverified"] and "90 minutes" in v_q["unverified"])
+
+    bare = {"abstract": "The protocol had 3 stages and ran in 2019.", "evidence_note": "",
+            "sections": [], "key_points": [], "references": []}
+    check("an integer with no clinical unit is not a figure",
+          check_statistics(bare, clinical)["total"] == 0)
+
 
 def test_ranking() -> None:
     from articlegen.sources import Paper, _rank_score
@@ -2469,7 +2524,7 @@ def _sample_draft():
         "most_relevant_index": 2,
         "counts": {"direct": 1, "related": 1, "tangential": 1},
     }
-    verification = {"unverified": ["-0.90", "4.91"], "total": 5}
+    verification = {"unverified": ["-0.90", "4.91"], "misattributed": ["1.24"], "total": 6}
     # `databases` names the sources that actually answered. A real run always
     # records it; nothing is inferred when it is absent (see
     # test_methods_names_only_sources_that_answered).
@@ -2542,6 +2597,8 @@ def test_render_blocks() -> None:
     check("html names the databases", "OpenAlex" in h and "Semantic Scholar" in h)
     check("html limitations replace warning boxes",
           "Limitations." in h and "could not be located" in h and "-0.90" in h)
+    check("html limitations name misattributed figures separately",
+          "1.24" in h and "other than the one its sentence credits" in h)
     check("html no emoji warnings", "⚠" not in h)
     check("html glossary", "Glossary" in h and "Lux" in h)
     check("html back matter", "Competing interests" in h and "Data availability" in h)
@@ -2806,6 +2863,22 @@ def test_full_text_grounding() -> None:
                                            10, 2, "topic")
     check("abstracts-only Methods wording unchanged",
           "full texts were not retrieved" in parts_abs["handling"])
+
+    # -- Methods describes the check that actually runs (issue #101) ---------
+    for name, handling in (("full-text", parts["handling"]), ("abstracts-only",
+                                                              parts_abs["handling"])):
+        check(f"{name} Methods does not overclaim the statistical check",
+              "Every numerical value" not in handling
+              and "quantities carrying a clinical unit" in handling
+              and "its own sentence cites" in handling
+              and "other than the one cited" in handling)
+
+    # The retraction must name what was searched: on a full-text draft the
+    # check read more than the abstracts, and saying otherwise understates it.
+    check("unverified wording follows what was read",
+          "abstracts of the cited sources" in render._unverified_sentence(["9.9"], False)
+          and "open-access full text where one was retrieved"
+          in render._unverified_sentence(["9.9"], True))
     ft_cited = [Paper(title="a", abstract="x", full_text="body", year=2020),
                 Paper(title="b", abstract="x", year=2021)]
     table = render._table_html(ft_cited, {1: "direct", 2: "related"})

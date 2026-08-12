@@ -89,12 +89,15 @@ class Draft:
         cited = self.cited_refs
         direct = sum(1 for r in cited if relevance.get(r) == "direct") if relevance else None
         n_unverified = len(self.verification.get("unverified") or [])
+        n_misattributed = len(self.verification.get("misattributed") or [])
 
         parts = f"{len(cited)} sources cited"
         if direct is not None:
             parts += f"; {direct} directly on-topic"
         if n_unverified:
-            parts += f"; ⚠ {n_unverified} figure(s) not found in source abstracts"
+            parts += f"; ⚠ {n_unverified} figure(s) not found in the cited sources"
+        if n_misattributed:
+            parts += f"; ⚠ {n_misattributed} figure(s) credited to the wrong source"
         if relevance and not direct:
             parts += "; ⚠ no directly on-topic source found"
         # style_report is optional on the dataclass; a report that never ran is

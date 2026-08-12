@@ -69,6 +69,21 @@ starts calling stages directly.
   `sources.full_text_excerpts`, so nothing has to be recorded per run.
   Verifying against text the writer never saw would let a figure recalled from
   training pass as grounded.
+- **A cited sentence is checked against its own sources, with no fallback to the
+  rest.** There used to be one, and it hid the failure that most changes
+  clinical meaning: a real figure lifted from paper 12 and credited to paper 3
+  passed silently. A figure that is real but in the wrong source is now returned
+  as `misattributed`, not `unverified`, and gets its own Limitations sentence.
+  A sentence citing nothing has no attribution to break and is still checked
+  against everything (#101).
+- **Methods must describe the check that runs, not the check you wish ran.**
+  It claimed "every numerical value" while `_FIGURE_RE` skipped bare integers,
+  and `_unverified_sentence` said "the abstracts" on drafts that had read full
+  texts. Same rule as `databases` — derived, never aspirational.
+- **The statistical check is generous about form and strict about presence.** A
+  quantity verifies on its number alone, because a source may write the same
+  amount a different way. A missed figure is a warning the reader never sees; a
+  false flag is a wrong warning printed in the article.
 - **Statistic and style checking are deterministic, not LLM passes.** A model
   asked "is this grounded / is this journal style?" agrees with itself.
 - **Three display items are built deterministically in `render.py`**: `Box 1`
