@@ -426,6 +426,27 @@ verbatim, and `agy models` lists them — or `ARTICLEGEN_PROVIDER=gemini-cli`.
   production) and `ARTICLEGEN_RATE_LIMIT` (per-IP/hour, default 20). The
   throttle exists because the scholarly APIs meter against the *server's* IP.
   It is charged after validation, so a malformed request costs no quota.
+- **The per-IP limit needs a real client IP and an aggregate partner.** Behind
+  Render's load balancer `client_address[0]` is the *proxy*, so every visitor
+  shared one bucket and a single abuser locked out everybody — the exact
+  failure the throttle exists to prevent (#96). `_client_ip` takes the
+  **rightmost** `X-Forwarded-For` entry, and only when `TRUST_PROXY`: a caller
+  can send their own header and the proxy appends the real peer to it, so the
+  leftmost entry is attacker-chosen and an untrusted deployment that believed
+  the header would let anyone pick their bucket. Auto-on via
+  `RENDER_GIT_COMMIT`, or `ARTICLEGEN_TRUST_PROXY=1`.
+  `ARTICLEGEN_RATE_LIMIT_TOTAL` (default 120/hour, all visitors) is the one
+  that matches the real constraint — upstream load scales with visitor count
+  while every individual stays politely under 20.
+- **A dead-sources day must not bill the caller.** `plan_queries` is a paid LLM
+  call and ran before anything touched a scholarly API, so a doomed run was
+  charged in full. `pipeline._preflight_sources` probes one query first and
+  refuses only when *every* source errored — the same condition
+  `generate_draft` already raises on afterwards, so it cannot block a draft
+  that would have worked. Two memos keep it off the healthy path: a server
+  that heard from a source within `SOURCE_PROBE_TTL` skips the probe, and one
+  that just saw everything fail reuses that verdict for
+  `SOURCE_PROBE_FAIL_TTL`. `ARTICLEGEN_SOURCE_PROBE=0` disables it.
 - **`protocol_version = "HTTP/1.1"` is load-bearing.** http.server defaults to
   HTTP/1.0, which closes the connection after every response; pooling clients
   then fail instantly on a socket the server already hung up on. It presents as
