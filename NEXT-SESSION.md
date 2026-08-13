@@ -1,6 +1,6 @@
 # Next session
 
-_Last handoff: 12 August 2026 — `main` @ `f6e6015`, everything merged, nothing in flight_
+_Last handoff: 13 August 2026 — `main` @ `850cc6c`, everything merged, nothing in flight_
 
 ## Where this stopped
 
@@ -9,18 +9,12 @@ like a journal Review article, grounded in paper abstracts plus open-access full
 texts. It runs as a CLI and as a hosted web app (GitHub Pages front end → Render
 backend).
 
-Three things landed this session, all merged. **Nothing is in flight** —
-working tree clean, one branch (`main`), local and remote in sync.
+**The whole issue backlog was worked through in one session** — 15 PRs, all
+merged, nothing in flight. Ten issues fixed outright, four deliberately left
+open because they need a run I could not do, and two new ones filed.
 
-1. **The web app's article options are gone.** Every article is now an in-depth
-   longform review at a strict empirical focus — `TONE_LABEL`, `LENGTH_LABEL`
-   and `DEPTH_LABEL` are constants in `index.html`, not selectors. Output
-   language is the only remaining choice. API Settings lost the writing-model
-   block and gained five bullet steps for getting an OpenRouter key.
-2. **A token-efficiency pass, and a new provider** (PR #115). Three changes cut
-   what a draft spends; a fourth was measured and rejected.
-3. **`CLAUDE.md` reconciled** (PR #118) — the first two drifted six passages of
-   it.
+The suite went from ~640 checks to 844. `CLAUDE.md` shrank 573 → 445 lines with
+the history moved to `docs/decisions.md`.
 
 ## Resume with
 
@@ -28,84 +22,87 @@ working tree clean, one branch (`main`), local and remote in sync.
 cd /c/claudeOS/Projects/articlegenerator && git branch --show-current && git status --short && python tests/test_offline.py && python tests/test_journal_conformance.py
 ```
 
-Prints the branch, no file list, then `ALL PASS` and `ALL CONVENTIONS MET`. No
-keys, no network. Verified at handoff. Branch and dirtiness come first on
-purpose (#97): the tests print green even on a dirty tree on the wrong branch.
+Prints `main`, no file list, then `ALL PASS` and `ALL CONVENTIONS MET`. No keys,
+no network. Verified at handoff. Branch and dirtiness come first on purpose
+(#97): the tests print green even on a dirty tree on the wrong branch.
 
-**Drafting needs a provider, and the default one is currently broken** — see
-"Watch out for". What works today:
+Drafting needs a provider, and **the default one is still broken** — see "Watch
+out for". What works today:
 
 ```bash
 python -m articlegen --model agy:gemini-3.6-flash-high draft "your topic"   # Gemini subscription
 python -m articlegen --model cli:opus draft "your topic"                    # Claude subscription
 ```
 
-A full run is ~4 minutes. Is the live site current?
-
-```bash
-git rev-parse --short=7 HEAD
-curl -s https://bartholomewtj.github.io/article-generator/ | grep -o 'build <code>[a-f0-9]*'
-curl -s -m 90 https://articlegen-api.onrender.com/api/health
-```
-
-The backend sleeps after 15 min idle and takes ~50s to wake.
-
 ## Next thing to do
 
-1. **Replace the OpenRouter key.** `.env` holds a dead one, so the default
-   provider path cannot be run or tested locally until it is swapped. Visitors
-   to the deployed app use their own keys and are unaffected.
-2. **#101 and #102** remain the substantive work — both clinical-safety changes,
-   to what `check_statistics` will accept and to what the writer may say.
+1. **Get a working OpenRouter key.** It is the single blocker on all four open
+   issues and on #134 and #135. `.env` holds a dead one (401 User not found,
+   unchanged since 6 Aug); issue a new one at openrouter.ai/keys, then also add
+   it as a repo secret so `live-smoke.yml` can run (#134).
+2. **Run the four harnesses and close what they answer.** Each open issue now
+   has the measurement built and a comment saying exactly what to paste back:
+   `tools/compare_models.py "<topic>"` (#85), `tools/compare_curation.py
+   --chars 400` (#117), one `agy:` draft for #116, any draft for #84.
+3. **Generate two or three more example articles** into `drafts/` (#135) — the
+   new free demo path currently points at an index of one.
 
 ## Open
 
-- **#116, #117** (filed this session) — the `gemini-cli` revision call
-  costs far more context than its prompt explains; and curating on truncated
-  abstracts would save ~24k input tokens but needs the relevance gate
-  re-validated first.
-- **#113** — stored key readable across the shared Pages origin, and Settings
-  says the opposite.
-- **#111** — no free path for a first-time visitor.
-- **#101** — `check_statistics` accepts a figure found in *any* source, so
-  misattribution passes as verified.
-- **#102** — nothing stops the writer producing dose and titration instructions.
-- **#114, #99** — `CLAUDE.md` upkeep. #114 was proved right this session: one
-  session's work drifted six passages, all corrected by hand in PR #118.
-- **#104, #92, #95, #96, #98, #84, #85** — unchanged. Read the comments on #84,
-  #85 and #98 before starting; they carry real measurements.
+- **#116** — `gemini-cli` revision call reports 135,273 input for a ~20,000-char
+  prompt. All three providers now log `sent[chars= ~tok=]`; one `agy` run
+  answers the ratio. Hypothesis in `docs/decisions.md`: the prompt is reachable
+  three ways (`-p @file`, `--add-dir`, `cwd`). **Do not change those flags on a
+  guess** — `--add-dir` is load-bearing.
+- **#117** — curating on truncated abstracts saves ~24k input tokens.
+  `tools/compare_curation.py` decides it. Accepts only if `direct` *and*
+  `tangential` are stable; agreement on `related` is the failure mode, not a pass.
+- **#85** — Opus 5 vs Sonnet 5 for the OpenRouter default. 2.5× cost gap,
+  verified at $1.000 vs $0.400. `tools/compare_models.py` measures the countable
+  half; the half that decides it needs you to read both drafts.
+- **#84** — full-text coverage. Two of three questions now answered in code:
+  every run says *which* limit bound it and prints the read-subset skew. The
+  third (other open-access routes) needs data from a few runs.
+- **#134** — `live-smoke.yml` needs `OPENROUTER_API_KEY` as a repo secret.
+- **#135** — `drafts/` holds one article, so the new demo path is a list of one.
+
+No open PRs. All 15 from this session are merged.
 
 ## Watch out for
 
-- **The `OPENROUTER_API_KEY` in `.env` is dead.** OpenRouter returns
-  `401 User not found`, meaning the key was revoked or its account removed.
-  Topping up will not help — issue a new one at openrouter.ai/keys. This is why
-  every run this session used `agy:`.
+- **A PR that touches `articlegen/**` now fails CI unless it also touches
+  `CLAUDE.md`.** New gate, `docs-current.yml` (#114). The escape hatch is a line
+  in the PR body: `Docs: n/a - <why>`. It is not a bug; do not delete the
+  workflow when it goes red.
+- **Never write "does not close #NNN" in a PR body or commit message.** GitHub's
+  parser matches `close #NNN` and ignores the negation — this closed #84, #85
+  and #117 on merge, all of which had to be reopened by hand. Write "Refs #NNN,
+  stays open" instead.
+- **`test_claude_md_still_describes_this_code` will push back on correct prose.**
+  It checks every file, guard test and constant the docs name. Twice this
+  session it flagged sentences *recounting* an old error (`pages.yml`, "Groq as
+  the default"). Both times the right fix was the check, not the text — a doc
+  guard that fails on true sentences trains you to ignore it.
+- **The `OPENROUTER_API_KEY` in `.env` is dead.** `401 User not found` — revoked
+  or the account went. Topping up will not help. This is why every run last
+  session used `agy:`.
 - **`agy` is the only working route to Gemini on your subscription.** The Google
-  `gemini` CLI refuses to authenticate: `IneligibleTierError`, Code Assist for
-  individuals is retired in favour of Antigravity.
-- **Do not run the shallow stages at a cheaper reasoning tier.** It is a one-line
-  change, it looks free, and it was measured: at `-low` curation agreed with
-  `-high` on only 14 of 20 relevance labels and collapsed everything toward
-  "related" — that is the gate that stops topic drift. `plan_queries` emits
-  run-on queries at `-low` *and* `-medium`. Both tiers report `thinking=0`, which
-  is the tell. The measurement is in `llm.py` above `GEMINI_CLI_DEFAULT_MODEL`.
-- **On `gemini-cli`, 88% of output tokens are thinking.** Changes that reduce
-  emitted *text* barely move the bill. The patch-based revision cut emitted
-  content 75% and total output 6%. Measure against `thinking_tokens`, not word
-  count.
-- **The SOURCE numbering has gaps now.** `write_article` omits tangential
-  sources by number and never re-packs the list, because the index *is* the
-  citation scheme. Anything that renumbers to close a gap breaks `render` and
-  `verify` together.
-- **The sandbox must never gain `allow-scripts`.** That one flag hands back
-  everything #100 closed. `allow-same-origin` alone does not run scripts.
+  `gemini` CLI refuses to authenticate: `IneligibleTierError`.
+- **Do not run the shallow stages at a cheaper reasoning tier.** Measured: at
+  `-low` curation agreed with `-high` on only 14 of 20 relevance labels and
+  collapsed everything toward "related" — that is the gate that stops topic
+  drift. Both cheap tiers report `thinking=0`, which is the tell.
+- **The SOURCE numbering has gaps.** `write_article` omits tangential sources by
+  number and never re-packs, because the index *is* the citation scheme.
+  Anything that renumbers to close a gap breaks `render` and `verify` together.
+- **The sandbox must never gain `allow-scripts`** — that one flag hands back
+  everything #100 closed.
 - **Don't reinstate a source char budget.** It existed only for Groq's
-  per-minute ceiling, and reinstating it takes full text away from every draft.
+  per-minute ceiling and takes full text away from every draft.
 - **`/api/diag` is the only trustworthy answer** on which scholarly source works
-  right now — never write it down, it flips. Semantic Scholar 429'd on every run
-  this session; OpenAlex and Europe PMC carried them.
+  right now — never write it down, it flips. It now also probes Unpaywall.
 - **Searches are cached 24h** (refusals 2 min). Testing fetch changes needs
   `sources.clear_search_cache()` or `ARTICLEGEN_SEARCH_CACHE_TTL=0`.
-- Everything structural is in `CLAUDE.md`. This file only carries what changed
-  hands at the session boundary.
+- Everything structural is in `CLAUDE.md`; the history behind it is in
+  `docs/decisions.md`. This file only carries what changed hands at the session
+  boundary.
