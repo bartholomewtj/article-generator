@@ -330,10 +330,14 @@ and sections intact.
   as the API ones. `agy` ignores stdin, so the prompt goes over as `-p "@<file>"`
   with `--add-dir`. **Every call runs the model the operator named — do not step
   the shallow ones down a tier** (measured; `docs/decisions.md`).
-- **The gemini-cli revision call's input is unexplained and still open (#116).**
-  All three providers log `sent[chars=… ~tok=…]` beside what they were charged,
-  so one real run answers it. Read `docs/decisions.md` before changing any of
-  `-p @file`, `--add-dir` or the scratch cwd.
+- **`gemini-cli` input is a fixed floor plus the prompt counted once (#116,
+  measured, closed).** About 33,000 tokens of floor, then ~0.77 reported tokens
+  per `~tok` sent. The prompt is *not* multiplied by being reachable three ways;
+  that hypothesis was tested and killed. All three providers log
+  `sent[chars=… ~tok=…]` beside what they were charged — keep it. Two rules when
+  reading those lines: compare `in + cached`, because the split alone is noisy,
+  and only compare calls **within one run**, because the floor moves between
+  sessions. Details and the one unexplained residual in `docs/decisions.md`.
 
 ## Web app (`index.html` + `web.py`)
 

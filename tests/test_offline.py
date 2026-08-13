@@ -430,14 +430,14 @@ def test_openrouter_request_is_asserted_on_the_payload() -> None:
 def test_every_provider_reports_what_it_sent() -> None:
     """Reported input has to be comparable against what was actually sent.
 
-    The gemini-cli revision call reports 135,273 fresh input plus 440,871
-    cached for a prompt of roughly 20,000 characters — ~27,000 tokens expected
-    against 135,273 seen, with `turns=1` ruling out an agent loop taking extra
-    passes (issue #116). Nobody has identified the cause, and it was not
-    measurable: the log printed what was charged and never what was sent, so
-    the comparison meant re-deriving the prompt by hand.
+    This pairing is what answered #116. The revision call's input looked
+    unexplainable for as long as the log printed what was charged and never
+    what was sent, so the comparison meant re-deriving the prompt by hand — and
+    the figure it got re-derived against left out the SOURCES block entirely.
+    Once both were on the same line, reported input turned out to be a fixed
+    floor plus the prompt counted once (`docs/decisions.md`).
 
-    This does not fix the overcount. It makes the next real run answer it.
+    Keep the pair logged. The measurement is only repeatable while it is there.
     """
     import inspect
     import re as _re
@@ -461,10 +461,10 @@ def test_every_provider_reports_what_it_sent() -> None:
     # verifiable, which is exactly what the CLI providers' is not.
     check("the metered path reports its input count too",
           "prompt_tokens" in inspect.getsource(llm._openrouter_generate))
-    # The gemini path also reports the other file in its scratch directory:
-    # both are reachable three ways — inlined by `@prompt_path`, exposed by
-    # `--add-dir scratch`, and sitting in `cwd` — which is the standing
-    # hypothesis for the overcount.
+    # The gemini path also reports the other file in its scratch directory. It
+    # was logged to test whether prompt and schema were being counted several
+    # times over; they are not (#116), but the size stays on the line because
+    # the schema is real input and belongs beside the rest of it.
     check("the gemini path reports the schema it also exposes",
           "json.dumps(schema)" in inspect.getsource(llm._gemini_cli_generate))
 
