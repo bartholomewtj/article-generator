@@ -566,13 +566,12 @@ def _gemini_cli_generate(prompt: str, schema: dict, system: str | None, model: s
             # without this the only symptom is an input count nobody can account
             # for.
             f"turns={envelope.get('num_turns', 1)} "
-            # What was actually sent, beside what was charged. `sent=` counts
-            # the prompt file; `schema=` counts the other file in the scratch
-            # directory, because both are reachable three ways — inlined by
-            # `@prompt_path`, exposed by `--add-dir scratch`, and sitting in
-            # `cwd`. If `in=` lands near a small multiple of `sent+schema`,
-            # that is the answer; if it does not, this rules the hypothesis out
-            # rather than leaving it to be guessed at again (#116).
+            # What was actually sent, beside what was charged. This is what
+            # answered #116: `in=` tracks `sent` at a slope below 1 on a fixed
+            # floor, so the prompt is counted once and the reported input was
+            # never unexplained — see the note at `_CHARS_PER_TOKEN`. Keep the
+            # pair logged; the question only stayed open as long as it did
+            # because the charge was printed and the prompt never was.
             f"sent[{_prompt_size(prompt_text)} "
             f"schema={len(json.dumps(schema))}] "
             f"({envelope.get('duration_seconds', 0):.1f}s)",
@@ -623,17 +622,36 @@ _REFUSAL_FALLBACK_BETA = "server-side-fallback-2026-07-01"
 # How big the thing we sent actually was, so a reported input count can be
 # compared against it without re-deriving anything.
 #
-# The `gemini-cli` revision call reports input far above what its prompt can
-# account for: 135,273 fresh plus 440,871 cached, for a brief-plus-draft of
-# roughly 20,000 characters — call it 5,000 tokens, plus agy's ~21,600 of
-# scaffolding, so ~27,000 expected against 135,273 seen (#116). `turns=1` rules
-# out an agent loop re-sending context, so it is genuine, and nobody has
-# identified it. Every efficiency change so far has been aimed at the other
-# half of the call.
+# This settled #116. Over one full `agy` draft, reported input tracks the
+# prompt at slightly under one token per estimated token, on a fixed floor:
+#
+#   call     sent ~tok        in    against 33,000 + 0.77 x ~tok
+#   plan            235    33,858      +677
+#   curate       13,095    43,315      +232
+#   write        28,343    55,381      +557
+#   revise       35,293   101,549   +41,373
+#
+# Three of the four land within ~700 tokens of that line, so the prompt is
+# counted once. The standing hypothesis was that it arrived three ways at once
+# — inlined by `-p @file`, exposed by `--add-dir` and sitting in `cwd` — and a
+# slope below 1 rules that out. A direct A/B agrees: three runs each with and
+# without `--add-dir` gave the same total context to within 0.1% (47,122 vs
+# 47,088), and a canary buried at 80% depth of the prompt came back every time
+# without it. `--add-dir` is not load-bearing for arrival and does not multiply
+# the count.
+#
+# The "~20,000 characters" this used to be measured against counted only the
+# brief and the draft. `revise_prose` also sends the SOURCES block, which
+# `sources.FULLTEXT_TOTAL_CHARS` alone allows 60,000 characters of; the real
+# revision prompt measured 141,173. There was never a 25x overcount.
+#
+# What is left: the revision call, and only it, sits ~41,000 above the line. It
+# is the largest prompt and carries by far the most thinking (31,735 tokens).
+# Not prompt duplication, cause not identified, and small enough to leave.
 #
 # ~4 characters per token is a rough English average and wrong in the third
-# digit. That does not matter here: the question is whether the reported input
-# is 1x or 25x what was sent, and a ratio that coarse answers it.
+# digit. That did not matter here: the question was whether the reported input
+# was 1x or 25x what was sent, and a ratio that coarse answers it.
 _CHARS_PER_TOKEN = 4
 
 

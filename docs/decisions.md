@@ -107,23 +107,54 @@ Other measurements on this provider:
   all — `IneligibleTierError`; Code Assist for individuals is retired in favour
   of Antigravity.
 
-### `#116` — the revision call's input is still unexplained
+### `#116` — the revision call's input, explained
 
-**Open.** The revision call reports 135,273 fresh input plus 440,871 cached for
-a brief-plus-draft of roughly 20,000 characters — call it 5,000 tokens, plus the
-scaffolding above, so ~27,000 expected. `turns=1`, so it is not an agent loop
-taking extra passes; that was the first hypothesis and the `turns=` field was
-added to rule it out.
+**Closed.** It was measured against the wrong number. Nothing was overcounting.
 
-All three providers now log `sent[chars=… ~tok=…]` beside what they were
-charged, in one line shape, so a single run answers the ratio.
+One full `agy` draft, all four calls, reported input against what was sent:
 
-**Standing hypothesis, not yet tested:** the prompt is reachable three ways from
-the subprocess — inlined by `-p @prompt_path`, exposed by `--add-dir scratch`,
-and sitting in `cwd=scratch`. The schema file shares that directory, which is
-why its size is logged too. Confirm or kill it with a real `agy` run **before**
-changing any of those flags; `--add-dir` was found necessary for the prompt to
-arrive at all, so removing it on a guess breaks the provider.
+| call | sent `~tok` | `in` | against `33,000 + 0.77 × ~tok` |
+| --- | ---: | ---: | ---: |
+| plan_queries | 235 | 33,858 | +677 |
+| curate | 13,095 | 43,315 | +232 |
+| write | 28,343 | 55,381 | +557 |
+| revise | 35,293 | 101,549 | +41,373 |
+
+Three of the four sit within ~700 tokens of a straight line: a fixed floor of
+about 33,000 tokens, plus the prompt counted **once**. The slope is 0.77, not 3
+— our `~tok` estimate at 4 characters per token simply runs about 25% high on
+this prose.
+
+**The three-ways hypothesis is dead**, by two independent routes. The slope
+rules it out arithmetically. A direct A/B rules it out by experiment: three runs
+each with and without `--add-dir`, same 20,159-character prompt, gave 47,122 vs
+47,088 mean total context — a 0.07% difference — and a canary buried at 80%
+depth of the prompt came back in all three runs *without* `--add-dir`. So
+`--add-dir` neither multiplies the count nor is needed for the prompt to
+arrive. Contrary to what this file used to say, it is not load-bearing.
+
+**Where the original figure went wrong.** "A brief-plus-draft of roughly 20,000
+characters" left out the SOURCES block. `revise_prose` sends brief + sources +
+draft, and `sources.FULLTEXT_TOTAL_CHARS` allows 60,000 characters of full text
+on its own. The measured revision prompt was **141,173 characters**, seven times
+the assumed size. The note above in this same file already said the article
+prompt is ~95,000 characters; the two never got reconciled.
+
+Two further traps this ran into, worth keeping:
+
+- **Read `in + cached`, not `in`.** The fresh/cached split swings hard on
+  identical inputs — 18,514 to 26,775 fresh across six runs of one prompt —
+  while the total held to ±0.1%. The 135,273 in the original report is one side
+  of a noisy split.
+- **The floor moves between sessions, not within them.** A 61-character prompt
+  reported ~88,500 total in one session and a 940-character prompt ~90,900 in
+  another, but six runs inside a single session varied by 111 tokens. Compare
+  calls within a run; never across.
+
+**Left open, deliberately:** the revision call — and only it — sits ~41,000
+tokens above the line. It is both the largest prompt and by far the most
+thinking (31,735 tokens, roughly double the next call). It is not prompt
+duplication. The cause is unidentified and the cost is small enough to leave.
 
 ---
 
