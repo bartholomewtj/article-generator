@@ -443,3 +443,8 @@ index.html on GitHub Pages  ──POST /api/draft──▶  backend on Render
 - Add a case to `tests/test_offline.py` for any new pure-logic behaviour.
 - When you fix something that cost real time to find, the invariant goes here
   and the story goes in `docs/decisions.md`.
+- **Never write "does not close #NNN" in a PR body or commit message.** GitHub's
+  linked-issue parser matches `close #NNN` and ignores the negation around it,
+  so the sentence saying to leave an issue open is what closes it on merge. This
+  closed #84, #85 and #117; all three had to be reopened by hand. Write "Refs
+  #NNN, stays open" instead.
