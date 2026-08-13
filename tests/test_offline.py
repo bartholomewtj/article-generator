@@ -4051,15 +4051,13 @@ def _validate(instance, schema: dict, path: str = "") -> list[str]:
 
 
 def test_model_comparison_harness() -> None:
-    """The default costs 2.5x the alternative, and the alternative is untested here.
+    """The default costs 2.5x the alternative, and that trade was taken on purpose.
 
     `anthropic/claude-opus-5` is $5/$25 per Mtok; `anthropic/claude-sonnet-5` is
-    $2/$10 and is the model the #63 test actually validated on this pipeline —
-    before it gained full-text grounding, the layout rearrange and truthful
-    provenance. Sonnet has never been run through the current one (issue #85).
-
-    A one-flag experiment, but only if the comparison is set up so the result
-    means something.
+    $2/$10. #85 asked whether the cheaper model was good enough and was settled
+    by decision, not by measurement: Opus stays, because prose quality is the
+    product. The harness survives as a general cost/quality probe for a future
+    pair, so the arithmetic it reports still has to be right.
     """
     sys.path.insert(0, os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"))
