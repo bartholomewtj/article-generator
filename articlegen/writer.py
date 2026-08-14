@@ -573,21 +573,30 @@ def _format_sources(
     )
 
 
-# Truncating the abstracts sent to curation would cut this call from ~39,000
-# input tokens to roughly 15,000 for 20 papers. It is **off by default and must
-# stay that way until measured** (#117): curation is the relevance gate, and two
-# things downstream key off its labels — `style._required_sections` scales the
-# section floor with the `direct` count, and `write_article` omits `tangential`
-# sources from the prompt entirely.
+# Truncating the abstracts sent to curation saves real tokens and **stays off**
+# (#117, measured, closed). Curation is the relevance gate, and two things
+# downstream key off its labels — `style._required_sections` scales the section
+# floor with the `direct` count, and `write_article` omits `tangential` sources
+# from the prompt entirely.
 #
-# The failure mode is not theoretical. Running curation at a cheaper reasoning
-# tier agreed with the full tier on only 14 of 20 labels, and every disagreement
-# ran one way: collapsing toward "related". Truncation is a different change
-# that can fail the same way, and the same measurement catches it.
+# `tools/compare_curation.py --chars 400` over four topics, 80 labels:
 #
-# `tools/compare_curation.py` runs the comparison and applies the acceptance
-# rule: `direct` and `tangential` must both be stable. Agreement on `related`
-# alone is not enough — that is exactly where a degraded run parks everything.
+#   agreement    64/80
+#   direct       27/30 retained   <-- gate degraded
+#   tangential   12/17 retained   <-- gate degraded
+#
+# Every topic moved at least one gating label, so it fails the acceptance rule
+# outright. The saving it was weighed against is also smaller than the estimate
+# that motivated it: measured at ~12,800 input tokens per curation call across
+# the four topics, not the ~24,000 assumed.
+#
+# The way it fails is *not* the cheaper-tier failure. That one collapsed
+# everything toward "related". This one moved 8 labels into "related" and 8 out
+# — symmetric churn, so truncation does not bias the gate, it destabilises it.
+# Cutting to the first 400 characters removes the population and outcome detail
+# that separates "direct" from "related", and what replaces it is noise rather
+# than a consistent lean. Re-running at a larger `--chars` is the only version
+# of this worth trying again, and it needs the same acceptance rule.
 CURATION_ABSTRACT_CHARS = None
 
 

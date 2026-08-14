@@ -118,10 +118,25 @@ def verdict(results: list[dict]) -> bool:
         print(f"  {label:>10}: {kept}/{len(held)} retained{marker}")
 
     # The specific failure seen before: everything collapsing toward "related".
-    drifted = sum(1 for _, a, b, _ in rows if a != b and b == "related")
-    if drifted:
-        print(f"\n  {drifted} label(s) moved TO 'related' — the collapse seen "
-              "when curation ran at a cheaper tier.")
+    #
+    # Counting only the moves *into* "related" cannot tell a collapse from
+    # ordinary churn, and the first real run of this tool proved why: at 400
+    # characters 8 labels moved in and 8 moved out, which is instability, not a
+    # collapse, and a one-way count called it a collapse (#117). Report both
+    # directions and let the net name which failure this is — they need
+    # different fixes, and the verdict below does not depend on either.
+    toward = sum(1 for _, a, b, _ in rows if a != b and b == "related")
+    away = sum(1 for _, a, b, _ in rows if a != b and a == "related")
+    if toward or away:
+        net = toward - away
+        if net > 0:
+            print(f"\n  {toward} label(s) moved TO 'related' against {away} the "
+                  f"other way (net +{net}) — the collapse seen when curation "
+                  "ran at a cheaper tier.")
+        else:
+            print(f"\n  {toward} label(s) moved TO 'related', {away} the other "
+                  f"way (net {net:+d}) — churn in both directions, not a "
+                  "collapse. The gate is unstable here, not biased.")
 
     print()
     if ok:

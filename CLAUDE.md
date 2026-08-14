@@ -55,7 +55,9 @@ articlegen/
 docs/journal-style.md    the journal conventions and where each came from
 docs/decisions.md        settled history; read per-area, not cover to cover
 tools/compare_curation.py  full vs truncated abstracts for curation (#117)
-tools/compare_models.py    one topic through two models, side by side (#85)
+tools/compare_models.py    one topic through two models, side by side (built
+                           for #85; that default is settled, kept as a general
+                           cost/quality probe for any future pair)
 tests/test_offline.py             pure-logic tests; no network/keys
 tests/test_journal_conformance.py conventions as assertions over 5 fixtures
 ```
@@ -246,14 +248,17 @@ and sections intact.
   tangential to the *exact* topic; the writer is told the counts and must flag
   when nothing is directly on-topic. Prevents a "schizophrenia" article quietly
   leaning on depression studies.
-- **`CURATION_ABSTRACT_CHARS` is `None` and stays that way until measured.**
-  Truncating the abstracts sent to curation would cut ~39,000 input tokens to
-  ~15,000, but `style._required_sections` reads the `direct` count and
-  `write_article` omits `tangential` sources, so a degraded label degrades the
-  article silently. Run `tools/compare_curation.py` and read its verdict: it
-  accepts only if `direct` **and** `tangential` are stable, because overall
-  agreement is satisfiable by collapsing everything to `related` — which is
-  exactly what happened when curation ran at a cheaper tier (#117).
+- **`CURATION_ABSTRACT_CHARS` is `None` and stays that way — measured, not
+  pending (#117).** `tools/compare_curation.py --chars 400` over four topics:
+  64/80 labels agreed, but `direct` retained 27/30 and `tangential` 12/17, and
+  every topic moved at least one gating label. `style._required_sections` reads
+  the `direct` count and `write_article` omits `tangential` sources, so those
+  misses degrade the article silently. **Do not truncate at 400.** Note the
+  failure is churn, not the cheaper-tier collapse: 8 labels moved into
+  `related` and 8 moved out, so truncation destabilises the gate rather than
+  biasing it. The saving was also over-estimated — ~12,800 input tokens per
+  call, not ~24,000. A larger `--chars` is the only re-try worth running, under
+  the same acceptance rule.
 - **Ranking**: topic overlap first, then `citation_weight + recency`, decaying
   over `RECENCY_HALF_LIFE` on the citation term's scale.
 - **A source that refuses once is skipped for the rest of the run**
@@ -278,14 +283,16 @@ and sections intact.
   `OPENROUTER_REFUSAL_FALLBACK = anthropic/claude-sonnet-5`. Both CLI providers
   are local-only and absent from `web.ALLOWED_MODELS` (`test_claude_cli_provider`,
   `test_gemini_cli_provider`).
-- **The default is not settled (#85).** `anthropic/claude-opus-5` is $5/$25 per
-  Mtok against Sonnet 5's $2/$10 — 2.5x on every article, and Sonnet carries no
-  elevated bio/cyber classifiers, so the refusal path would stop being
-  load-bearing on the common route. Sonnet is already the refusal fallback, so
-  this is a one-flag experiment: `tools/compare_models.py "<topic>"`. It
-  measures the countable half and says outright that the half that decides it —
-  whether the draft *adjudicates* its evidence base or just summarises it —
-  needs a human reading both drafts.
+- **The default is settled: Opus, and it is not up for re-litigation (#85).**
+  `anthropic/claude-opus-5` costs $5/$25 per Mtok against Sonnet 5's $2/$10 —
+  2.5x on every article — and the owner has taken that trade deliberately. The
+  question was never cost, it was whether the draft *adjudicates* its evidence
+  base or merely summarises it, and prose quality is the product here. Do not
+  propose Sonnet as the default again. **Sonnet stays as
+  `OPENROUTER_REFUSAL_FALLBACK` and that is a separate mechanism** — it is the
+  substitute *because* it carries no elevated bio/cyber classifiers, so the
+  fallback cannot reproduce the refusal it exists to escape (#45, #79).
+  Removing it would leave refusals unhandled on the common route.
 - **Model ids live in two places** — `llm.py` and `PROVIDERS` in `index.html`.
   Nothing links them and `web._requested_model` silently drops an unrecognised
   name, so a stale front end quietly stops honouring the model the user picked.

@@ -298,6 +298,46 @@ places. `OPENALEX_MAILTO` is set and joining the polite pool did **not** fix
 OpenAlex: the constraint is the shared cloud IP, not the contact address, so
 changing region is not a fix either. Run `/api/diag` and read the result.
 
+### `#117` — curating on truncated abstracts destabilises the gate
+
+**Closed. Do not truncate at 400 characters.** `CURATION_ABSTRACT_CHARS` stays
+`None`, now on evidence rather than caution.
+
+`tools/compare_curation.py --chars 400`, four topics, 20 papers each, same paper
+list curated twice so prompt length was the only variable:
+
+| | result |
+| --- | --- |
+| overall agreement | 64/80 |
+| `direct` retained | 27/30 — **gate degraded** |
+| `tangential` retained | 12/17 — **gate degraded** |
+
+Every one of the four topics moved at least one gating label, so it fails the
+acceptance rule outright, with no marginal call to make.
+
+**It fails differently from the cheaper-tier run, and the difference matters.**
+That one collapsed every disagreement toward `related`. This one moved 8 labels
+*into* `related` and 8 *out* — 5 `tangential`→`related` against 5 the other way,
+3 `related`→`direct` against 3 the other way. Perfectly symmetric. Truncation
+does not bias the gate, it destabilises it: the first 400 characters keep the
+title and topic but drop the population and outcome detail that separates
+`direct` from `related`, and what replaces that signal is noise, not a lean.
+
+The harness reported this as a collapse, because it counted only the moves
+*into* `related`. That counter now reports both directions and nets them — a
+one-way count cannot tell a collapse from churn, and the two want different
+fixes.
+
+**The prize was smaller than advertised.** The issue estimated ~24,000 input
+tokens saved per curation call. Measured across the four topics: 13,688 /
+19,154 / 12,877 / 5,438, mean **~12,800**. Roughly half.
+
+Measured on `agy:gemini-3.6-flash-high`, not on the metered default, because
+the OpenRouter key was dead. A different model could in principle hold its
+labels better under truncation — but the margin here is wide, not marginal, so
+that would change the explanation and not the verdict. If it is ever re-run,
+a larger `--chars` is the only version worth trying, under the same rule.
+
 ---
 
 ## Web app and deployment
