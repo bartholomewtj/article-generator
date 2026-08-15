@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brief hospital admission by self-referral reduces involuntary care and self-harm without increasing total inpatient utilization in borderline personality disorder</title>
+<script>
+  (function() {
+    var saved = localStorage.getItem('articlegen_theme') || 'system';
+    if (saved === 'dark' || saved === 'light') {
+      document.documentElement.setAttribute('data-theme', saved);
+    }
+  })();
+</script>
+<style>
+  :root, html[data-theme="light"] {
+    --bg: #ffffff;
+    --surface: #f7f7f5;
+    --ink: #14171a;
+    --ink-2: #3c4249;
+    --muted: #6a7178;
+    --accent: #17457f;
+    --link: #1b5aa8;
+    --rule: #dfdfda;
+    --rule-strong: #b9bab5;
+    --seg-direct: #184f95;
+    --seg-related: #2a78d6;
+    --seg-tangential: #86b6ef;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14150f;
+      --surface: #1e1f1c;
+      --ink: #f2f1ea;
+      --ink-2: #cfcec5;
+      --muted: #9d9d94;
+      --accent: #9dc4f5;
+      --link: #86b6ef;
+      --rule: #33342f;
+      --rule-strong: #4c4d47;
+      --seg-direct: #86b6ef;
+      --seg-related: #3987e5;
+      --seg-tangential: #184f95;
+      color-scheme: dark;
+    }
+  }
+  html[data-theme="dark"] {
+    --bg: #14150f;
+    --surface: #1e1f1c;
+    --ink: #f2f1ea;
+    --ink-2: #cfcec5;
+    --muted: #9d9d94;
+    --accent: #9dc4f5;
+    --link: #86b6ef;
+    --rule: #33342f;
+    --rule-strong: #4c4d47;
+    --seg-direct: #86b6ef;
+    --seg-related: #3987e5;
+    --seg-tangential: #184f95;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Iowan Old Style", "Charter", Georgia, "Times New Roman", serif;
+    font-size: 1.02rem;
+    line-height: 1.62;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Fluid column: phones keep the viewport width exactly as before (the 40rem
+     floor only binds once the screen exceeds it); desktops scale with the
+     window up to 52rem. The wide-screen font bump below grows the rem, so the
+     ceiling is ~985px of column while the measure stays near 75 characters —
+     wider than this stops being readable prose, which is why journals cap it. */
+  main { max-width: clamp(40rem, 72vw, 52rem); margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+  @media (min-width: 1200px) {
+    html { font-size: 112.5%; }
+  }
+  .sans, .meta-line, .subject-line, .keywords, .di-caption, .fig-legend, .key-points,
+  .refs ol, .toolbar, .colophon, table, .meta-label {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+
+  /* ---- masthead ---------------------------------------------------- */
+  header.masthead { border-top: 3px solid var(--ink); padding-top: 0.9rem; margin-bottom: 2rem; }
+  .article-type {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 0.9rem;
+  }
+  h1 {
+    font-size: clamp(1.7rem, 4.2vw, 2.3rem);
+    line-height: 1.22; font-weight: 700; letter-spacing: -0.005em;
+    margin: 0 0 0.9rem;
+  }
+  /* Full contrast, body-text size, above the fold. The point of issue #91 is
+     that a disclosure in muted 0.78rem type is not a disclosure. */
+  .ai-disclosure {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.92rem; font-weight: 600; line-height: 1.45; color: var(--ink);
+    margin: 0 0 0.9rem; padding: 0.6rem 0.8rem;
+    background: var(--surface); border-left: 3px solid var(--ink);
+  }
+  .meta-line {
+    font-size: 0.78rem; color: var(--muted); margin: 0 0 0.35rem;
+    padding-bottom: 0.9rem; border-bottom: 1px solid var(--rule);
+  }
+  .subject-line { font-size: 0.78rem; color: var(--muted); margin: 0 0 0.9rem; }
+  .meta-label {
+    font-size: 0.68rem; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted); margin-right: 0.4rem;
+  }
+
+  /* ---- abstract & key points --------------------------------------- */
+  .abstract { margin: 0 0 1.2rem; }
+  .abstract p { margin: 0; font-size: 1.06rem; line-height: 1.6; color: var(--ink-2); }
+  .abstract .run-in-head {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink); margin-right: 0.5rem;
+  }
+  .keywords { font-size: 0.8rem; color: var(--muted); margin: 0 0 2rem; }
+  aside.key-points {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    padding: 1.1rem 1.3rem 1.2rem; margin: 0 0 2.2rem; border-radius: 3px;
+  }
+  aside.key-points h2 {
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 0.7rem;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  aside.key-points ul { margin: 0; padding-left: 1.1rem; }
+  .key-points-note { color: var(--muted); font-size: 0.78rem !important;
+                     font-style: italic; margin: 0 0 0.7rem 0 !important; }
+  sup.flag { font-size: 0.72em; line-height: 0; vertical-align: super; }
+  sup.flag a { color: var(--muted); text-decoration: none; font-weight: 700; }
+  aside.key-points li { margin-bottom: 0.5rem; font-size: 0.95rem; line-height: 1.55; }
+  aside.key-points li:last-child { margin-bottom: 0; }
+
+  /* ---- body -------------------------------------------------------- */
+  h2 {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 1.02rem; font-weight: 700; letter-spacing: 0.01em;
+    margin: 2.2rem 0 0.7rem; color: var(--ink);
+  }
+  p { margin: 0 0 1rem; }
+  .body-section p + p { text-indent: 1.2em; }
+  .run-in { font-weight: 700; font-style: italic; }
+  a { color: var(--link); }
+  sup.cite { font-size: 0.68em; line-height: 0; font-weight: 600; letter-spacing: 0.02em; }
+  sup.cite a { color: var(--link); text-decoration: none; padding: 0 0.02em; }
+  sup.cite a:hover { text-decoration: underline; }
+
+  /* ---- display items ----------------------------------------------- */
+  .display { margin: 1.8rem 0 2rem; }
+  .di-caption {
+    font-size: 0.8rem; line-height: 1.5; color: var(--muted); margin: 0.7rem 0 0;
+  }
+  .di-label { font-weight: 700; color: var(--ink); }
+  aside.box {
+    background: var(--surface); border: 1px solid var(--rule-strong);
+    padding: 1.1rem 1.3rem 1.2rem; border-radius: 3px;
+  }
+  aside.box .di-caption { margin: 0 0 0.7rem; font-size: 0.92rem; color: var(--ink); }
+  aside.box p { font-size: 0.95rem; line-height: 1.55; margin: 0 0 0.6rem; }
+  aside.box p:last-child { margin-bottom: 0; }
+  .box-cite { color: var(--muted); font-size: 0.85rem !important; }
+  .box-note { color: var(--muted); font-size: 0.78rem !important; font-style: italic;
+              margin-top: 0.75rem !important; }
+  figure.figure { margin: 1.8rem 0 2rem; padding: 1rem 0 0; border-top: 1px solid var(--rule); }
+  .fig-svg { width: 100%; height: auto; display: block; }
+  .fig-grid { stroke: var(--rule); stroke-width: 1; }
+  .fig-axis { stroke: var(--rule-strong); stroke-width: 1; }
+  .fig-tick { fill: var(--muted); font-size: 11px;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .fig-value { fill: var(--ink-2); font-size: 11px; font-weight: 600;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .fig-axis-title { fill: var(--muted); font-size: 11px; letter-spacing: 0.04em;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .seg-direct { fill: var(--seg-direct); }
+  .seg-related { fill: var(--seg-related); }
+  .seg-tangential { fill: var(--seg-tangential); }
+  .seg-cited { fill: var(--seg-related); }
+  .fig-legend {
+    display: flex; flex-wrap: wrap; gap: 0.3rem 1.1rem; list-style: none;
+    margin: 0.6rem 0 0; padding: 0; font-size: 0.78rem; color: var(--muted);
+  }
+  .fig-legend li { display: flex; align-items: center; gap: 0.4rem; }
+  .swatch {
+    display: inline-block; width: 0.68rem; height: 0.68rem; border-radius: 2px;
+    margin-right: 0.35rem; vertical-align: -0.05rem;
+  }
+  .swatch-direct { background: var(--seg-direct); }
+  .swatch-related { background: var(--seg-related); }
+  .swatch-tangential { background: var(--seg-tangential); }
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; min-width: 32rem; border-collapse: collapse; font-size: 0.82rem; }
+  tbody td:nth-child(5) { white-space: nowrap; }
+  thead th {
+    text-align: left; font-weight: 700; color: var(--ink);
+    border-top: 1px solid var(--rule-strong); border-bottom: 1px solid var(--rule-strong);
+    padding: 0.45rem 0.5rem; white-space: nowrap;
+  }
+  tbody td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--rule); color: var(--ink-2); }
+  tbody tr:last-child td { border-bottom: 1px solid var(--rule-strong); }
+  .t-num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .t-venue { color: var(--muted); }
+
+  /* ---- back matter -------------------------------------------------- */
+  .back-section { margin-top: 2.2rem; }
+  .back-section > h2:first-child, .refs h2 { margin-top: 0; }
+  .back-section p { font-size: 0.92rem; line-height: 1.58; color: var(--ink-2); }
+  .glossary dl { margin: 0; }
+  .gloss-row { display: flex; gap: 0.75rem; padding: 0.4rem 0; border-bottom: 1px solid var(--rule); }
+  .gloss-row dt { flex: 0 0 9.5rem; font-weight: 700; font-size: 0.92rem; }
+  .gloss-row dd { margin: 0; font-size: 0.92rem; color: var(--ink-2); }
+  .gloss-row:last-child { border-bottom: none; }
+  .refs { margin-top: 2.4rem; border-top: 2px solid var(--ink); padding-top: 1.1rem; }
+  .refs ol { margin: 0; padding-left: 1.5rem; font-size: 0.82rem; line-height: 1.5; }
+  .refs li { margin-bottom: 0.55rem; color: var(--ink-2); }
+  .refs li:target { background: var(--surface); border-radius: 2px; }
+  .refs a { color: var(--link); text-decoration: none; }
+  .refs a:hover { text-decoration: underline; }
+  .ref-authors { color: var(--ink); }
+  .ref-cites { color: var(--muted); }
+  footer.colophon {
+    margin-top: 2.4rem; padding-top: 1rem; border-top: 1px solid var(--rule);
+    font-size: 0.78rem; line-height: 1.55; color: var(--muted);
+  }
+
+  /* ---- toolbar ------------------------------------------------------ */
+  .toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0 2rem; }
+  .tool-btn {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    background: transparent; color: var(--ink-2);
+    border: 1px solid var(--rule-strong); border-radius: 2px;
+    padding: 0.35rem 0.7rem; font-size: 0.78rem; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+  }
+  .tool-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .share-toast { font-size: 0.78rem; color: var(--accent); align-self: center; display: none; }
+
+  @media (max-width: 34rem) {
+    .gloss-row { display: block; }
+    .gloss-row dt { margin-bottom: 0.15rem; }
+    .body-section p + p { text-indent: 0; }
+  }
+  @media print {
+    body { font-size: 10.5pt; background: #fff; color: #000; }
+    .toolbar { display: none; }
+    a, sup.cite a { color: #000; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <article>
+  <header class="masthead">
+    <p class="article-type">Evidence Review</p>
+    <h1>Brief hospital admission by self-referral reduces involuntary care and self-harm without increasing total inpatient utilization in borderline personality disorder</h1>
+    <p class="ai-disclosure">Written by a language model from the cited research, from 5 full texts and the abstracts of the other 11. No human author wrote or checked this text. Not peer reviewed.</p>
+    <p class="meta-line">Generated 13 August 2026 &middot; 16 sources cited, 2002–2026 &middot; Full text read for 5 of 16 sources &middot; Not peer reviewed</p>
+    <p class="subject-line"><span class="meta-label">Subject</span>Brief admission for borderline personality disorder in acute mental health care</p>
+
+    <div class="toolbar">
+      <button class="tool-btn" onclick="shareArticle()">Share</button>
+      <button class="tool-btn" onclick="copyArticleLink()">Copy link</button>
+      <button class="tool-btn" onclick="toggleArticleTheme()"><span id="themeIcon">&#9789;</span> Theme</button>
+      <span id="shareToast" class="share-toast">Link copied</span>
+    </div>
+
+    <div class="abstract">
+      <p><span class="run-in-head">Abstract</span>Acute psychiatric hospitalization for individuals with borderline personality disorder appears to present a clinical paradox, as prolonged compulsory stays may exacerbate emotional dysregulation and iatrogenic distress. Traditional inpatient protocols risk reinforcing maladaptive crisis behaviors, leading mental health services to seek brief, structured alternatives. Here we review the empirical evidence regarding brief planned admissions and patient-initiated crisis stays for individuals diagnosed with borderline personality disorder. Controlled trials and observational cohorts indicate that brief self-referred hospitalization does not significantly alter aggregate annual inpatient days compared with standard care, yet it appears to achieve reductions in compulsory admissions and non-suicidal self-injury. Qualitative evaluations suggest that self-managed crisis admissions enhance patient self-efficacy, foster psychological safety, and preserve community routines by shifting therapeutic control to service users. Short-term outpatient psychotherapies embedded within stepped care frameworks may further complement these inpatient adaptations by mitigating acute suicidal ideation. Integrating patient-initiated brief stays alongside structured community psychotherapies seemingly provides a viable framework for mitigating acute psychiatric crises while avoiding the hazards of prolonged involuntary hospitalization.</p>
+    </div>
+    <p class="keywords"><span class="meta-label">Keywords</span> borderline personality disorder; brief planned admission; patient-initiated brief admission; crisis intervention; psychiatric hospitalization; self-harm</p>
+  </header>
+
+  <section class="body-section">
+<h2>Introduction</h2>
+<p>Acute psychiatric crises among individuals diagnosed with borderline personality disorder pose substantial challenges for emergency care systems. Individuals presenting with severe emotional dysregulation, self-harm, and suicidal ideation frequently access emergency departments and acute wards.<sup class="cite"><a href="#ref-1">1</a></sup> A scoping review of emergency room decision-making spanning twenty-five years identified a clinical paradox where individuals with borderline traits present in severe distress but face inconsistent admission decisions.<sup class="cite"><a href="#ref-1">1</a></sup> Accounted for in early cohort data, individuals with borderline traits comprise approximately 15% of acute psychiatric admissions, with high-utilizing subgroups averaging 56.6 to 139.2 hospital days per year.<sup class="cite"><a href="#ref-6">6</a></sup> Traditional prolonged hospital stays appear to carry documented risks of iatrogenic harm, including increased service dependency, power struggles, behavioral regression, and escalating self-harm.<sup class="cite"><a href="#ref-1">1</a>,<a href="#ref-2">2</a>,<a href="#ref-6">6</a></sup></p>
+<p>Structural stigma within health services seemingly compounds these clinical challenges, often impeding access to responsive crisis management. National practice guidelines increasingly recommend avoiding prolonged inpatient stays during acute crises, advocating instead for brief crisis stabilization models.<sup class="cite"><a href="#ref-2">2</a></sup> A Cochrane systematic review of seven randomized controlled trials evaluating psychological therapies reported that standard inpatient care showed no superiority over outpatient behavioral interventions in reducing hospital readmissions.<sup class="cite"><a href="#ref-3">3</a></sup> Moreover, acute psychiatric admissions often represent high-cost environments where coercive measures remain prevalent, heightening distress during vulnerable transition periods.</p>
+<p>Systematic review evidence synthesized across thirty-five studies confirmed that high-quality empirical data regarding acute crisis services for personality disorders remain limited.<sup class="cite"><a href="#ref-2">2</a></sup> Most models of acute care suffer from very low certainty evidence, leaving substantial gaps regarding optimal crisis management strategies.<sup class="cite"><a href="#ref-2">2</a></sup> Here we review the empirical literature on brief planned admissions and short-term crisis interventions designed to manage acute psychiatric distress while preserving autonomy.</p>
+</section>
+
+<figure class="display figure">
+<svg class="fig-svg" viewBox="0 0 660 250" role="img" aria-label="Cited sources by publication year, segmented by relevance"><line class="fig-grid" x1="40.0" x2="648.0" y1="206.0" y2="206.0"></line><text class="fig-tick" x="32.0" y="209.5" text-anchor="end">0</text><line class="fig-grid" x1="40.0" x2="648.0" y1="145.3" y2="145.3"></line><text class="fig-tick" x="32.0" y="148.8" text-anchor="end">1</text><line class="fig-grid" x1="40.0" x2="648.0" y1="84.7" y2="84.7"></line><text class="fig-tick" x="32.0" y="88.2" text-anchor="end">2</text><line class="fig-grid" x1="40.0" x2="648.0" y1="24.0" y2="24.0"></line><text class="fig-tick" x="32.0" y="27.5" text-anchor="end">3</text><path class="fig-seg seg-direct" d="M52.2,204.0 L52.2,149.3 Q52.2,145.3 56.2,145.3 L84.6,145.3 Q88.6,145.3 88.6,149.3 L88.6,204.0 Z"><title>2002: 1 direct</title></path><text class="fig-value" x="70.4" y="139.3" text-anchor="middle">1</text><text class="fig-tick" x="70.4" y="224.0" text-anchor="middle">2002</text><path class="fig-seg seg-related" d="M113.0,204.0 L113.0,149.3 Q113.0,145.3 117.0,145.3 L145.4,145.3 Q149.4,145.3 149.4,149.3 L149.4,204.0 Z"><title>2006: 1 related</title></path><text class="fig-value" x="131.2" y="139.3" text-anchor="middle">1</text><text class="fig-tick" x="131.2" y="224.0" text-anchor="middle">2006</text><path class="fig-seg seg-direct" d="M173.8,204.0 L173.8,149.3 Q173.8,145.3 177.8,145.3 L206.2,145.3 Q210.2,145.3 210.2,149.3 L210.2,204.0 Z"><title>2014: 1 direct</title></path><text class="fig-value" x="192.0" y="139.3" text-anchor="middle">1</text><text class="fig-tick" x="192.0" y="224.0" text-anchor="middle">2014</text><path class="fig-seg seg-direct" d="M234.6,204.0 L234.6,149.3 Q234.6,145.3 238.6,145.3 L267.0,145.3 Q271.0,145.3 271.0,149.3 L271.0,204.0 Z"><title>2018: 1 direct</title></path><text class="fig-value" x="252.8" y="139.3" text-anchor="middle">1</text><text class="fig-tick" x="252.8" y="224.0" text-anchor="middle">2018</text><rect class="fig-seg seg-direct" x="295.4" y="84.7" width="36.5" height="119.3"><title>2019: 2 direct</title></rect><path class="fig-seg seg-related" d="M295.4,82.7 L295.4,28.0 Q295.4,24.0 299.4,24.0 L327.8,24.0 Q331.8,24.0 331.8,28.0 L331.8,82.7 Z"><title>2019: 1 related</title></path><text class="fig-value" x="313.6" y="18.0" text-anchor="middle">3</text><text class="fig-tick" x="313.6" y="224.0" text-anchor="middle">2019</text><path class="fig-seg seg-direct" d="M356.2,204.0 L356.2,149.3 Q356.2,145.3 360.2,145.3 L388.6,145.3 Q392.6,145.3 392.6,149.3 L392.6,204.0 Z"><title>2021: 1 direct</title></path><text class="fig-value" x="374.4" y="139.3" text-anchor="middle">1</text><text class="fig-tick" x="374.4" y="224.0" text-anchor="middle">2021</text><path class="fig-seg seg-related" d="M417.0,204.0 L417.0,149.3 Q417.0,145.3 421.0,145.3 L449.4,145.3 Q453.4,145.3 453.4,149.3 L453.4,204.0 Z"><title>2023: 1 related</title></path><text class="fig-value" x="435.2" y="139.3" text-anchor="middle">1</text><text class="fig-tick" x="435.2" y="224.0" text-anchor="middle">2023</text><rect class="fig-seg seg-direct" x="477.8" y="145.3" width="36.5" height="58.7"><title>2024: 1 direct</title></rect><path class="fig-seg seg-related" d="M477.8,143.3 L477.8,88.7 Q477.8,84.7 481.8,84.7 L510.2,84.7 Q514.2,84.7 514.2,88.7 L514.2,143.3 Z"><title>2024: 1 related</title></path><text class="fig-value" x="496.0" y="78.7" text-anchor="middle">2</text><text class="fig-tick" x="496.0" y="224.0" text-anchor="middle">2024</text><path class="fig-seg seg-related" d="M538.6,204.0 L538.6,88.7 Q538.6,84.7 542.6,84.7 L571.0,84.7 Q575.0,84.7 575.0,88.7 L575.0,204.0 Z"><title>2025: 2 related</title></path><text class="fig-value" x="556.8" y="78.7" text-anchor="middle">2</text><text class="fig-tick" x="556.8" y="224.0" text-anchor="middle">2025</text><path class="fig-seg seg-related" d="M599.4,204.0 L599.4,28.0 Q599.4,24.0 603.4,24.0 L631.8,24.0 Q635.8,24.0 635.8,28.0 L635.8,204.0 Z"><title>2026: 3 related</title></path><text class="fig-value" x="617.6" y="18.0" text-anchor="middle">3</text><text class="fig-tick" x="617.6" y="224.0" text-anchor="middle">2026</text><line class="fig-axis" x1="40.0" x2="648.0" y1="206.0" y2="206.0"></line><text class="fig-axis-title" x="330.0" y="242.0" text-anchor="middle">Year of publication</text><text class="fig-axis-title" x="-115.0" y="12" text-anchor="middle" transform="rotate(-90)">Cited sources</text></svg>
+<ul class="fig-legend"><li><span class="swatch swatch-direct"></span>Direct</li><li><span class="swatch swatch-related"></span>Related</li></ul>
+<figcaption class="di-caption"><span class="di-label">Fig. 1 |</span> Composition of the evidence base. Cited sources by year of publication, segmented by how directly each addresses the review question. Bar labels give the number of sources in each period; the underlying records are listed in Table 1.</figcaption>
+</figure>
+
+<section class="body-section">
+<h2>Inpatient service use and compulsory care</h2>
+<p>Patient-initiated brief admission protocols allow individuals to self-refer for short hospital stays of one to three days without requiring emergency physician triage. The single-masked Brief Admission Skåne Randomized Clinical Trial evaluated this model in 125 adults (mean age 32.0 years, 84.8% female) with recurrent self-harm and borderline personality traits across four Swedish psychiatric clinics.<sup class="cite"><a href="#ref-4">4</a></sup> Over twelve months, total inpatient days and emergency visits decreased significantly within both the brief admission arm (\(\chi^2 = 22.71, P &lt; 0.001<sup class="flag" title="This figure could not be located in the sources cited for it."><a href="#limitations">†</a></sup>\); \(\chi^2 = 13.95, P &lt; 0.001<sup class="flag" title="This figure could not be located in the sources cited for it."><a href="#limitations">†</a></sup>\)) and the control arm (\(\chi^2 = 23.01, P &lt; 0.001<sup class="flag" title="This figure could not be located in the sources cited for it."><a href="#limitations">†</a></sup>\); \(\chi^2 = 21.61, P &lt; 0.001<sup class="flag" title="This figure could not be located in the sources cited for it."><a href="#limitations">†</a></sup>\)).<sup class="cite"><a href="#ref-4">4</a></sup> However, participants offered brief admission uniquely demonstrated statistically significant reductions in compulsory admission days (\(\chi^2 = 7.67, P = 0.02<sup class="flag" title="This figure could not be located in the sources cited for it."><a href="#limitations">†</a></sup>\)) and non-suicidal self-injury (\(\chi^2 = 6.13, P = 0.047<sup class="flag" title="This figure could not be located in the sources cited for it."><a href="#limitations">†</a></sup>\)).<sup class="cite"><a href="#ref-4">4</a></sup> Furthermore, brief admission participants showed significantly greater functional recovery in mobility (\(z = -2.39, P = 0.02<sup class="flag" title="This figure could not be located in the sources cited for it."><a href="#limitations">†</a></sup>\)) and marked within-group gains in cognition (\(F = 9.02, P &lt; 0.001<sup class="flag" title="This figure could not be located in the sources cited for it."><a href="#limitations">†</a></sup>\)), domestic responsibilities (\(F = 3.23, P = 0.049<sup class="flag" title="This figure could not be located in the sources cited for it."><a href="#limitations">†</a></sup>\)), and participation (\(F = 3.79, P = 0.03<sup class="flag" title="This figure could not be located in the sources cited for it."><a href="#limitations">†</a></sup>\)).<sup class="cite"><a href="#ref-4">4</a></sup></p>
+<p>Complementary observational data suggest that patient-managed crisis admissions may alter service utilization patterns. A Swedish register study comparing 107 patients utilizing patient-initiated brief admission against 5,659 matched controls observed significantly lower odds of extended hospitalizations (OR 0.56, 95% CI: 0.44–0.72).<sup class="cite"><a href="#ref-5">5</a></sup> Difference-in-differences analyses indicated non-significant additional reductions in inpatient days for the brief admission cohort at six months (\(\beta = -1.436, \text{SE} = 1.531\)) and twelve months (\(\beta = -3.590, \text{SE} = 3.546\)).<sup class="cite"><a href="#ref-5">5</a></sup> Conversely, outpatient care contacts increased by half a visit every six months (\(\beta = 0.503, \text{SE} = 0.263\)), reaching statistical significance at twelve months (\(\beta = 0.960, \text{SE} = 0.456\)) and eighteen months (\(\beta = 0.436, \text{SE} = 0.219\)).<sup class="cite"><a href="#ref-5">5</a></sup> An earlier matched cohort study in New Zealand reported a substantial reduction in annual hospital days following brief planned admissions, though post-intervention admission counts decreased similarly across intervention and control groups.<sup class="cite"><a href="#ref-6">6</a></sup></p>
+<p>Short-term inpatient admissions may also yield acute symptom stabilization when structured effectively. A cross-sectional study of adult psychiatric inpatients screened with the McLean Screening Instrument for Borderline Personality Disorder observed that positive-screening patients presented with higher baseline anxiety, depression, and suicidality.<sup class="cite"><a href="#ref-7">7</a></sup> Nevertheless, these individuals experienced significantly greater symptom reductions and higher proportions of reliable change in anxiety, depression, and global psychiatric severity upon discharge than negative-screening controls.<sup class="cite"><a href="#ref-7">7</a></sup> Similarly, an evaluation of 187 young adults aged sixteen to twenty-five in a Swiss transitional psychiatric unit recorded significant reductions on the Brief Symptom Checklist and Health of the Nation Outcome Scales during hospitalization.</p>
+</section>
+
+<aside class="display box" aria-labelledby="box-1">
+<p class="di-caption" id="box-1"><span class="di-label">Box 1 |</span> Most relevant source: Effect of Brief Admission to Hospital by Self-referral for Individuals Who Self-harm and Are at Risk of Suicide</p>
+<p class="box-cite">Westling et al. (2019) · JAMA Network Open<sup class="cite"><a href="#ref-4">4</a></sup> · <a href="https://doi.org/10.1001/jamanetworkopen.2019.5463">doi:10.1001/jamanetworkopen.2019.5463</a></p>
+<p><span class="run-in">Method.</span> The single-masked Brief Admission Skåne Randomized Clinical Trial evaluated 125 participants with recurrent self-harm, suicidality, and at least three borderline personality disorder criteria across four Swedish psychiatric facilities. Participants were randomized to receive 12 months of self-referred brief admission alongside treatment as usual or treatment as usual alone.</p>
+<p><span class="run-in">Results.</span> No significant difference in total hospital days was observed between groups, but the brief admission group demonstrated significant within-group reductions in compulsory admission days (\(\chi^2 = 7.67, P = 0.02<sup class="flag" title="This figure could not be located in the sources cited for it."><a href="#limitations">†</a></sup>\)) and non-suicidal self-injuries (\(\chi^2 = 6.13, P = 0.047<sup class="flag" title="This figure could not be located in the sources cited for it."><a href="#limitations">†</a></sup>\)). The brief admission arm also achieved significantly greater improvement in the mobility domain of daily life functioning (\(z = -2.39, P = 0.02<sup class="flag" title="This figure could not be located in the sources cited for it."><a href="#limitations">†</a></sup>\)).</p>
+<p><span class="run-in">Limitations.</span> The trial could not demonstrate greater efficacy for brief admission in reducing overall inpatient service utilization compared to treatment as usual. The authors noted that future studies are required to explore other potential beneficial treatment effects.</p>
+<p class="box-note">Selected for closeness to the review question, not for study quality; no quality appraisal was performed.</p>
+</aside>
+
+<section class="body-section">
+<h2>Brief outpatient and psychological interventions in stepped care</h2>
+<p>Structured short-term outpatient psychotherapies have been developed to serve as transitional steps between emergency services and long-term treatment models. A two-part study evaluated a four-session manualized brief intervention embedded within a stepped care framework for personality disorder.<sup class="cite"><a href="#ref-8">8</a></sup> Service utilization data from 191 community referrals demonstrated that 84.29% completed at least one session, 60.21% attended two or more sessions, and 41.89% completed three or more sessions.<sup class="cite"><a href="#ref-8">8</a></sup> Following the intervention, 13.61% of participants required stepping up to higher intensity care, while 29.31% transitioned to external community providers.<sup class="cite"><a href="#ref-8">8</a></sup> Across four metropolitan sites, sixty-seven participants completing the four sessions showed a large reduction in suicidal ideation (\(d = 1.01\)) and improved quality of life, with health economic data indicating annual savings of USD $2,720 per patient through reduced inpatient days and emergency visits.<sup class="cite"><a href="#ref-8">8</a></sup></p>
+<p>Mindfulness and acceptance frameworks delivered in condensed formats appear to offer measurable clinical utility during acute stabilization. A pre-post within-subjects trial evaluated Wise Moments, a four-session Acceptance and Commitment Therapy intervention focused on self-as-context, among fifty-one adults (76% female, mean age 35.25 years, range 18–63) presenting with borderline traits.<sup class="cite"><a href="#ref-9">9</a></sup> Participants exhibited statistically significant post-treatment improvements across all outcome domains, including psychological flexibility, mindfulness, self-compassion, general wellbeing, and borderline symptom severity.<sup class="cite"><a href="#ref-9">9</a></sup></p>
+<p>Extending brief crisis interventions to youth populations seemingly addresses early emergent pathology, though adolescent findings represent an extrapolation from adult models. A pre-post observational trial evaluated Gold Card SA, a four-session outpatient model offering up to three adolescent sessions and one support person session, in 155 adolescents (aged 12–15 years, \(n = 46\); 16–17 years, \(n = 109\)) with borderline features.<sup class="cite"><a href="#ref-10">10</a></sup> In the six months post-intervention, emergency department presentations were 90% lower relative to the prior six months (95% CI [0.05, 0.18], \(P &lt; 0.001<sup class="flag" title="This figure could not be located in the sources cited for it."><a href="#limitations">†</a></sup>\)).<sup class="cite"><a href="#ref-10">10</a></sup> Significant reductions were observed for perceived burdensomeness (12–15 years: \(d_{\text{av}} = 0.31, P = 0.001<sup class="flag" title="This figure could not be located in the sources cited for it."><a href="#limitations">†</a></sup>\); 16–17 years: \(d_{\text{av}} = 0.51, P &lt; 0.001<sup class="flag" title="This figure could not be located in the sources cited for it."><a href="#limitations">†</a></sup>\)) and psychosocial dysfunction (12–15 years: \(d_{\text{av}} = 0.31, P = 0.006<sup class="flag" title="This figure could not be located in the sources cited for it."><a href="#limitations">†</a></sup>\); 16–17 years: \(d_{\text{av}} = 0.31, P = 0.01<sup class="flag" title="This figure could not be located in the sources cited for it."><a href="#limitations">†</a></sup>\)).<sup class="cite"><a href="#ref-10">10</a></sup> Adolescents aged sixteen to seventeen also reported significant decreases in borderline symptom severity (\(d_{\text{av}} = 0.89, P &lt; 0.001<sup class="flag" title="This figure could not be located in the sources cited for it."><a href="#limitations">†</a></sup>\)) and self-harm likelihood (\(\text{Exp}(B) = 0.86, P = 0.03<sup class="flag" title="This figure could not be located in the sources cited for it."><a href="#limitations">†</a></sup>\)).<sup class="cite"><a href="#ref-10">10</a></sup></p>
+</section>
+
+<section class="body-section">
+<h2>Service user experiences and self-management</h2>
+<p>Qualitative investigations provide critical insights into how service users perceive brief admission mechanisms. A phenomenological trial interviewing seventeen individuals (sixteen female, one male) diagnosed with borderline personality disorder identified four central meaning units: admission organization, nurse contact quality, time-out from daily life, and experienced personal value.<sup class="cite"><a href="#ref-11">11</a></sup> Participants emphasized that supportive, validating nurse interactions represented the single most vital component of brief stays, directly mitigating interpersonal hypersensitivity and fears of rejection.<sup class="cite"><a href="#ref-11">11</a></sup></p>
+<p>Qualitative evaluations conducted during the pilot phase of the Brief Admission Skåne trial examined motivations for requesting short stays among eight participants.<sup class="cite"><a href="#ref-12">12</a></sup> Service users requested admissions primarily to interrupt escalating urges to self-harm, end social isolation, obtain rest, and avoid compulsory hospitalization.<sup class="cite"><a href="#ref-12">12</a></sup> Conversely, perceived negative staff attitudes, room shortages, and difficulty gauging symptom severity operated as barriers that prevented some individuals from requesting care.<sup class="cite"><a href="#ref-12">12</a></sup> These findings indicate that repeated staff education regarding brief admission principles may be essential for maintaining a non-judgmental ward atmosphere.<sup class="cite"><a href="#ref-12">12</a></sup></p>
+<p>Broader qualitative syntheses suggest that patient-managed crisis admissions may help preserve community functioning. A descriptive interview study of sixteen patients reported that brief admissions fostered self-determination and self-care, enabling service users to maintain employment, domestic routines, and interpersonal relationships while shifting therapeutic control from staff to patients.<sup class="cite"><a href="#ref-13">13</a></sup> An evaluation of the Open Borders residential program revealed that brief respite, phone coaching, and small supportive teams enhanced client self-efficacy while reducing self-harm.<sup class="cite"><a href="#ref-14">14</a></sup> Furthermore, a systematic review synthesizing thirteen qualitative studies (\(n = 186<sup class="flag" title="This figure could not be located in the sources cited for it."><a href="#limitations">†</a></sup>\)) confirmed that patient-initiated brief stays interrupt symptom escalation by offering a safe, respectful environment where warm reception and active listening foster autonomy.<sup class="cite"><a href="#ref-15">15</a></sup></p>
+</section>
+
+<section class="body-section">
+<h2>Peer support and staff perspectives in acute care</h2>
+<p>Integrating lived experience peer support workers into acute psychiatric settings seemingly offers a promising avenue for reducing structural stigma and enhancing psychological safety. An online survey in Western Canada evaluated perspectives across forty-one quantitative respondents and twenty-five qualitative participants, including individuals with borderline traits (73%), loved ones, and clinicians.<sup class="cite"><a href="#ref-16">16</a></sup> Service users and providers rated peer support as highly valuable for helping patients feel seen, heard, and validated during acute crises, thereby potentially counteracting intense feelings of shame and isolation.<sup class="cite"><a href="#ref-16">16</a></sup> However, participants identified key operational challenges, including staffing consistency, role ambiguity between peer workers and clinical staff, and potential friction between acute crisis stabilization and long-term recovery objectives.<sup class="cite"><a href="#ref-16">16</a></sup></p>
+<p>Staff attitudes and organizational culture exert a major influence on the implementation of brief admission models. Qualitative analysis of clinician perspectives in the Open Borders program revealed that managing high-acuity crisis presentations created noticeable emotional impacts on staff.<sup class="cite"><a href="#ref-14">14</a></sup> Clinicians observed that small team structures, non-judgmental ward environments, and flexible scheduling allowed care to be tailored to individual needs, supporting a transition away from traditional medical models.<sup class="cite"><a href="#ref-14">14</a></sup> Structured staff education regarding brief admission principles appears essential to counteract entrenched structural stigma and maintain high treatment fidelity across acute settings.<sup class="cite"><a href="#ref-12">12</a></sup></p>
+</section>
+
+<aside class="key-points">
+<h2>Key points</h2>
+<p class="key-points-note">Every figure in this review was checked against the material read for the cited sources — their abstracts, and the open-access full text where one was retrieved. † marks a figure that could not be found there. See Limitations.</p>
+<ul>
+<li>In a single-masked randomized trial of 125 adults who self-harm with borderline personality disorder features, self-referred brief admission did not alter overall annual hospital days compared to standard care, but it significantly reduced compulsory admission days (\(\chi^2 = 7.67, P = 0.02<sup class="flag" title="This figure could not be located in the sources cited for it."><a href="#limitations">†</a></sup>\)) and instances of non-suicidal self-injury (\(\chi^2 = 6.13, P = 0.047<sup class="flag" title="This figure could not be located in the sources cited for it."><a href="#limitations">†</a></sup>\)).<sup class="cite"><a href="#ref-4">4</a></sup></li>
+<li>A Swedish retrospective register cohort of 107 patients with borderline personality disorder utilizing patient-initiated brief admissions demonstrated lower odds of extended inpatient hospitalizations compared to 5,659 controls (OR 0.56, 95% CI: 0.44–0.72) alongside a statistically significant increase in outpatient visits at 12-month follow-up.<sup class="cite"><a href="#ref-5">5</a></sup></li>
+<li>An evaluation of a four-session brief psychological intervention for personality disorder across four metropolitan sites (\(n = 67<sup class="flag" title="This figure could not be located in the sources cited for it."><a href="#limitations">†</a></sup>\)) recorded a large reduction in suicidal ideation (\(d = 1.01\)) and overall symptom distress following crisis presentation within a stepped care framework.<sup class="cite"><a href="#ref-8">8</a></sup></li>
+<li>A pre-post observational study of the Gold Card SA brief crisis model in 155 adolescents with borderline personality features demonstrated a 90% lower incidence of emergency department presentations in the 6 months post-intervention (95% CI [0.05, 0.18]) and a significant reduction in borderline symptom severity among 16–17-year-olds (\(d_{\text{av}} = 0.89\)).<sup class="cite"><a href="#ref-10">10</a></sup></li>
+<li>Qualitative thematic analyses of service users enrolled in patient-initiated brief admission programs revealed that structured 1-to-3-day stays provided essential time-outs from acute distress, with patient-nurse interactions and preserved self-determination identified as central to preventing crisis escalation.<sup class="cite"><a href="#ref-11">11</a>–<a href="#ref-13">13</a>,<a href="#ref-15">15</a></sup></li>
+</ul>
+</aside>
+
+<section class="body-section">
+<h2>Conclusions and outlook</h2>
+<p>Current evidence indicates that brief planned admissions and patient-initiated crisis stays may offer viable alternatives to traditional inpatient psychiatric hospitalization for individuals with borderline personality disorder. Although randomized trial data demonstrate that brief admissions do not reduce overall annual hospital days relative to treatment as usual, they appear effective in decreasing compulsory care days and non-suicidal self-injury.<sup class="cite"><a href="#ref-4">4</a></sup> Register-based observational cohorts further suggest a shift toward lower odds of prolonged hospitalization alongside increased outpatient care engagement.<sup class="cite"><a href="#ref-5">5</a></sup></p>
+<p>Short-term outpatient psychotherapies, such as four-session crisis models, complement inpatient brief stays by providing structured interventions that significantly reduce suicidal ideation and acute distress.<sup class="cite"><a href="#ref-8">8</a>,<a href="#ref-10">10</a></sup> Qualitative findings consistently indicate that empowering service users to initiate brief admissions enhances self-efficacy, preserves daily routines, and fosters therapeutic alliance.<sup class="cite"><a href="#ref-11">11</a>,<a href="#ref-13">13</a>,<a href="#ref-15">15</a></sup></p>
+<p>Substantial clinical and methodological questions remain unresolved regarding optimal implementation frameworks across diverse healthcare systems. High-quality randomized evidence remains sparse, and future research must evaluate cost-effectiveness, long-term functional recovery, and the integration of peer support services.<sup class="cite"><a href="#ref-2">2</a>,<a href="#ref-16">16</a></sup> Well-powered multi-center trials incorporating standardized treatment fidelity protocols will be essential to establish robust clinical guidelines for crisis care in borderline personality disorder.<sup class="cite"><a href="#ref-1">1</a>,<a href="#ref-2">2</a>,<a href="#ref-4">4</a></sup></p>
+</section>
+
+  <section class="back-section">
+<h2>Methods</h2>
+<p><span class="run-in">Search strategy.</span> Candidate records were retrieved on 13 August 2026 from OpenAlex and Europe PMC, using the search strings ‘brief admission borderline personality disorder’; ‘planned brief admission psychiatric crisis’; ‘brief hospitalization borderline personality disorder’; ‘brief admission acute mental health care BPD’. Records without a retrievable abstract were discarded, leaving 20 for screening. Each remaining record was assessed for how directly it addresses Brief admission for borderline personality disorder in acute mental health care and labelled direct, related or background; 16 were cited here and are listed in Table 1.</p>
+<p><span class="run-in">Evidence handling.</span> Titles and abstracts were read for every record, and the open-access full texts of 5 sources were retrieved from Europe PMC and read alongside them (marked in Table 1); claims resting on the remaining sources draw on no data beyond an abstract. Decimals, percentages, effect estimates and quantities carrying a clinical unit were then checked automatically, each against the sources its own sentence cites, within exactly the material shown to the model — the abstracts plus those full-text excerpts. A figure that could not be located, or that appears only in a source other than the one cited, is flagged under Limitations.</p>
+<p><span class="run-in">Generation.</span> Search planning, source curation and drafting were performed by a large language model (gemini-3.6-flash-high). Source retrieval, relevance tabulation, citation numbering, Table 1, Fig. 1 and the statistical check are deterministic and were not model-generated.</p>
+</section>
+
+  <section class="back-section">
+<h2>Evidence assessment</h2>
+<p>Of the 16 sources cited, 7 address the review question directly, 9 are related and 0 provide background only; they were published in 2002–2026. The composition of the evidence base is shown in Fig. 1.</p>
+<p id="limitations"><span class="run-in">Limitations.</span> This synthesis was prepared from the open-access full texts of 5 cited sources and the abstracts of the remaining 11. Where only an abstract was available, effect estimates, methodological detail, and the limitations that authors report only in a full text were unavailable, so the strength of those studies could not be appraised here. 14 numerical values reported above (P = 0.02, P = 0.047, 0.001, P = 0.02, P = 0.047, P = 0.049 and 8 other(s)), each marked † where it appears, could not be located in the material read for the cited sources — their abstracts, and the open-access full text where one was retrieved. They may originate in a part of a source that was not read, or may be unreliable, and should be verified before being quoted. An automated check of the writing against journal prose conventions was not satisfied by this draft: it reuses phrasing between sections. A revision was attempted and did not resolve this, so the text below should be read as a working draft rather than a finished review.</p>
+</section>
+
+  <div class="display table-wrap" aria-labelledby="table-1">
+<p class="di-caption" id="table-1"><span class="di-label">Table 1 |</span> Characteristics of the cited evidence. Relevance is the curation label for how directly each source addresses the review question; citation counts are as reported by the indexing database. Read records whether the model saw the source's open-access full text or its abstract only.</p>
+<div class="table-scroll"><table>
+<thead><tr><th>Ref.</th><th>Study</th><th>Year</th><th>Source</th><th>Relevance</th><th>Read</th><th>Cited by</th></tr></thead>
+<tbody><tr><td class="t-num"><a href="#ref-1">1</a></td><td>Bouchard-Boivin et al.</td><td class="t-num">2026</td><td class="t-venue">Frontiers in psychiatry</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">—</td></tr><tr><td class="t-num"><a href="#ref-2">2</a></td><td>Maconick et al.</td><td class="t-num">2023</td><td class="t-venue">BMC Psychiatry</td><td><span class="swatch swatch-related"></span>Related</td><td>Full text</td><td class="t-num">10</td></tr><tr><td class="t-num"><a href="#ref-3">3</a></td><td>Binks et al.</td><td class="t-num">2006</td><td class="t-venue">Cochrane Database of Systematic Reviews</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">136</td></tr><tr><td class="t-num"><a href="#ref-4">4</a></td><td>Westling et al.</td><td class="t-num">2019</td><td class="t-venue">JAMA Network Open</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Full text</td><td class="t-num">56</td></tr><tr><td class="t-num"><a href="#ref-5">5</a></td><td>Eckerström et al.</td><td class="t-num">2024</td><td class="t-venue">International Journal of Mental Health Nursing</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td><td class="t-num">12</td></tr><tr><td class="t-num"><a href="#ref-6">6</a></td><td>van Kessel et al.</td><td class="t-num">2002</td><td class="t-venue">New Zealand journal of psychology</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td><td class="t-num">10</td></tr><tr><td class="t-num"><a href="#ref-7">7</a></td><td>Chen et al.</td><td class="t-num">2025</td><td class="t-venue">BMC psychiatry</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">—</td></tr><tr><td class="t-num"><a href="#ref-8">8</a></td><td>Huxley et al.</td><td class="t-num">2019</td><td class="t-venue">BMC Psychiatry</td><td><span class="swatch swatch-related"></span>Related</td><td>Full text</td><td class="t-num">47</td></tr><tr><td class="t-num"><a href="#ref-9">9</a></td><td>Donald et al.</td><td class="t-num">2026</td><td class="t-venue">Australasian psychiatry : bulletin of Royal Australian and New Zealand College of Psychiatrists</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">—</td></tr><tr><td class="t-num"><a href="#ref-10">10</a></td><td>Bartsch et al.</td><td class="t-num">2026</td><td class="t-venue">BMC psychiatry</td><td><span class="swatch swatch-related"></span>Related</td><td>Full text</td><td class="t-num">—</td></tr><tr><td class="t-num"><a href="#ref-11">11</a></td><td>Helleman et al.</td><td class="t-num">2014</td><td class="t-venue">International Journal of Mental Health Nursing</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td><td class="t-num">56</td></tr><tr><td class="t-num"><a href="#ref-12">12</a></td><td>Helleman et al.</td><td class="t-num">2018</td><td class="t-venue">Nordic Journal of Psychiatry</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td><td class="t-num">28</td></tr><tr><td class="t-num"><a href="#ref-13">13</a></td><td>Enoksson et al.</td><td class="t-num">2021</td><td class="t-venue">Journal of Clinical Nursing</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td><td class="t-num">13</td></tr><tr><td class="t-num"><a href="#ref-14">14</a></td><td>Mortimer‐Jones et al.</td><td class="t-num">2019</td><td class="t-venue">International Journal of Mental Health Nursing</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td><td class="t-num">20</td></tr><tr><td class="t-num"><a href="#ref-15">15</a></td><td>Värnå et al.</td><td class="t-num">2024</td><td class="t-venue">International Journal of Mental Health Nursing</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">9</td></tr><tr><td class="t-num"><a href="#ref-16">16</a></td><td>Turner et al.</td><td class="t-num">2025</td><td class="t-venue">International journal of mental health nursing</td><td><span class="swatch swatch-related"></span>Related</td><td>Full text</td><td class="t-num">1</td></tr></tbody>
+</table></div>
+</div>
+
+  <section class="back-section glossary">
+<h2>Glossary</h2>
+<dl><div class="gloss-row"><dt>Patient-initiated brief admission</dt><dd>A psychiatric intervention allowing individuals in crisis to self-refer for short, pre-planned hospital stays of one to three days without requiring emergency physician approval.</dd></div><div class="gloss-row"><dt>Iatrogenic harm</dt><dd>Inadvertent adverse effects or behavioral regression caused by medical or psychiatric treatment itself, such as prolonged involuntary hospitalization.</dd></div><div class="gloss-row"><dt>Stepped care model</dt><dd>A healthcare delivery framework that begins with low-intensity treatments and progressively escalates to more intensive interventions only when clinically necessary.</dd></div><div class="gloss-row"><dt>Non-suicidal self-injury</dt><dd>Deliberate destruction of body tissue performed without suicidal intent, often used as a strategy to manage intense emotional distress.</dd></div></dl>
+</section>
+
+  <section class="refs">
+    <h2>References</h2>
+    <ol>
+      <li id="ref-1"><span class="ref-authors">Bouchard-Boivin, M. et al.</span> <a href="https://doi.org/10.3389/fpsyt.2026.1820717">Treatment of patients with borderline personality disorder in the emergency room? A scoping review.</a> <em>Frontiers in psychiatry</em> (2026).</li>
+<li id="ref-2"><span class="ref-authors">Maconick, L. et al.</span> <a href="https://doi.org/10.1186/s12888-023-05119-7">Crisis and acute mental health care for people who have been given a diagnosis of a ‘personality disorder’: a systematic review.</a> <em>BMC Psychiatry</em> (2023). <span class="ref-cites">Cited by 10</span></li>
+<li id="ref-3"><span class="ref-authors">Binks, C. et al.</span> <a href="https://doi.org/10.1002/14651858.cd005652">Psychological therapies for people with borderline personality disorder.</a> <em>Cochrane Database of Systematic Reviews</em> (2006). <span class="ref-cites">Cited by 136</span></li>
+<li id="ref-4"><span class="ref-authors">Westling, S. et al.</span> <a href="https://doi.org/10.1001/jamanetworkopen.2019.5463">Effect of Brief Admission to Hospital by Self-referral for Individuals Who Self-harm and Are at Risk of Suicide.</a> <em>JAMA Network Open</em> (2019). <span class="ref-cites">Cited by 56</span></li>
+<li id="ref-5"><span class="ref-authors">Eckerström, J. et al.</span> <a href="https://doi.org/10.1111/inm.13371">Effects of Patient‐Initiated Brief Admissions on Psychiatric Care Consumption in Borderline Personality Disorder: ARegister‐Based Study.</a> <em>International Journal of Mental Health Nursing</em> (2024). <span class="ref-cites">Cited by 12</span></li>
+<li id="ref-6"><span class="ref-authors">van Kessel, K., Lambie, I. &amp; Stewart, M. W.</span> <a href="https://www.questia.com/library/journal/1G1-99115031/the-impact-of-brief-planned-admissions-on-inpatient">The Impact of Brief Planned Admissions on Inpatient Mental Health Unit Utilisation for People with a Diagnosis of Borderline Personality Disorder.</a> <em>New Zealand journal of psychology</em> (2002). <span class="ref-cites">Cited by 10</span></li>
+<li id="ref-7"><span class="ref-authors">Chen, J. J. et al.</span> <a href="https://doi.org/10.1186/s12888-025-06928-8">Characteristics and outcomes of individuals screening positive for borderline personality disorder on an adult inpatient psychiatry unit: a cross-sectional study.</a> <em>BMC psychiatry</em> (2025).</li>
+<li id="ref-8"><span class="ref-authors">Huxley, E. et al.</span> <a href="https://doi.org/10.1186/s12888-019-2308-z">Evaluation of a brief intervention within a stepped care whole of service model for personality disorder.</a> <em>BMC Psychiatry</em> (2019). <span class="ref-cites">Cited by 47</span></li>
+<li id="ref-9"><span class="ref-authors">Donald, F. et al.</span> <a href="https://doi.org/10.1177/10398562261444297">Wise Moments: A four-session Acceptance and Commitment Therapy for Borderline Personality Disorder.</a> <em>Australasian psychiatry : bulletin of Royal Australian and New Zealand College of Psychiatrists</em> (2026).</li>
+<li id="ref-10"><span class="ref-authors">Bartsch, D. R. et al.</span> <a href="https://doi.org/10.1186/s12888-026-07871-y">Implementation and outcomes of a brief crisis intervention for adolescents with borderline personality features: a pre-post observational study.</a> <em>BMC psychiatry</em> (2026).</li>
+<li id="ref-11"><span class="ref-authors">Helleman, M. et al.</span> <a href="https://doi.org/10.1111/inm.12074">Experiences of patients with borderline personality disorder with the brief admission intervention: A phenomenological study.</a> <em>International Journal of Mental Health Nursing</em> (2014). <span class="ref-cites">Cited by 56</span></li>
+<li id="ref-12"><span class="ref-authors">Helleman, M. et al.</span> <a href="https://doi.org/10.1080/08039488.2018.1467966">Individuals’ experiences with brief admission during the implementation of the brief admission skåne RCT, a qualitative study.</a> <em>Nordic Journal of Psychiatry</em> (2018). <span class="ref-cites">Cited by 28</span></li>
+<li id="ref-13"><span class="ref-authors">Enoksson, M. et al.</span> <a href="https://doi.org/10.1111/jocn.16118">Experiences of how brief admission influences daily life functioning among individuals with borderline personality disorder (BPD) and self‐harming behaviour.</a> <em>Journal of Clinical Nursing</em> (2021). <span class="ref-cites">Cited by 13</span></li>
+<li id="ref-14"><span class="ref-authors">Mortimer‐Jones, S. et al.</span> <a href="https://doi.org/10.1111/inm.12602">Staff and client perspectives of the Open Borders programme for people with borderline personality disorder.</a> <em>International Journal of Mental Health Nursing</em> (2019). <span class="ref-cites">Cited by 20</span></li>
+<li id="ref-15"><span class="ref-authors">Värnå, E. et al.</span> <a href="https://doi.org/10.1111/inm.13457">Patient Experiences of Patient‐Initiated Brief Admission in Psychiatric Care: A Systematic Review.</a> <em>International Journal of Mental Health Nursing</em> (2024). <span class="ref-cites">Cited by 9</span></li>
+<li id="ref-16"><span class="ref-authors">Turner, B. J. et al.</span> <a href="https://doi.org/10.1111/inm.70158">Lived Experience and Clinician Perspectives on the Priorities and Challenges of Integrating Peer Support in Acute Psychiatric Services for People With BPD.</a> <em>International journal of mental health nursing</em> (2025). <span class="ref-cites">Cited by 1</span></li>
+    </ol>
+  </section>
+
+  <section class="back-section">
+<h2>Additional information</h2>
+<p><span class="run-in">Data availability.</span> No new data were generated. All evidence cited is published and openly indexed; 16 of the 16 cited records resolve through the links in the reference list.</p>
+<p><span class="run-in">Author contributions.</span> Search planning, source curation and drafting were carried out by an automated pipeline (articlegen, gemini-3.6-flash-high). No human author wrote or verified the text before publication of this draft.</p>
+<p><span class="run-in">Competing interests.</span> None declared.</p>
+<p><span class="run-in">Peer review.</span> This article has not been peer reviewed and is not a publication of record.</p>
+</section>
+
+  <footer class="colophon">
+    <strong>Not medical or clinical advice.</strong> This is a machine-generated summary of the cited journal articles, 5 of 16 read in full, the rest from their abstracts, for background only. It is not a substitute for professional judgement, primary sources, or clinical guidelines. Verify every claim, figure, and dose against the cited papers before acting on it.
+  </footer>
+  </article>
+</main>
+<script>
+function shareArticle() {
+  if (navigator.share) {
+    navigator.share({ title: document.title, url: window.location.href }).catch(function() {});
+  } else {
+    copyArticleLink();
+  }
+}
+function copyArticleLink() {
+  navigator.clipboard.writeText(window.location.href).then(function() {
+    var t = document.getElementById('shareToast');
+    if (t) {
+      t.style.display = 'inline';
+      setTimeout(function() { t.style.display = 'none'; }, 2500);
+    }
+  }).catch(function() {});
+}
+function toggleArticleTheme() {
+  var cur = document.documentElement.getAttribute('data-theme');
+  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var effective = cur || (isSysDark ? 'dark' : 'light');
+  var next = effective === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('articlegen_theme', next);
+  updateArticleThemeIcon();
+}
+function updateArticleThemeIcon() {
+  var icon = document.getElementById('themeIcon');
+  if (!icon) return;
+  var cur = document.documentElement.getAttribute('data-theme');
+  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var effective = cur || (isSysDark ? 'dark' : 'light');
+  icon.innerHTML = effective === 'dark' ? '&#9789;' : '&#9788;';
+}
+document.addEventListener('DOMContentLoaded', updateArticleThemeIcon);
+</script>
+</body>
+</html>

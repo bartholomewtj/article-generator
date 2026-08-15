@@ -14,3 +14,7 @@ venv/
 !README*.html
 /ideas/
 !index.html
+
+# sssf runtime
+adws/adw_data/sessions/
+adws/adw_data/sssf.db*

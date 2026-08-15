@@ -1,0 +1,134 @@
+# sssf.config.yaml — the factory's agent roster. One agent, one prompt, one purpose.
+#
+# This is the claudeSSSF roster. Every agent runs on the Claude Code CLI, so the
+# whole factory spends one subscription allowance. Models are picked per phase:
+# haiku for mechanical work, sonnet for the builder (the long pole), opus where
+# judgement decides the run. `coding_agent: pi` is selectable per-agent for
+# OpenRouter models — set it and a matching `openrouter/<model-id>`.
+defaults:
+  coding_agent: claude_code
+  model: sonnet                    # alias (opus|sonnet|haiku|fable) or an explicit claude-* id
+  thinking: medium                 # maps to Claude Code --effort: low | medium | high | xhigh | max
+  harness_engineering: []          # pi-only (loads .ts extensions); ignored by claude_code
+  # Roster-wide allowlist, in Claude Code's tool vocabulary — case-sensitive.
+  # Any agent may override with its own list. On claude_code agents this is
+  # ENFORCED: unlisted tools are passed to --disallowedTools, which binds even
+  # in bypassPermissions mode. On pi agents, unnamed extension tools are
+  # filtered the same way. The real write boundary is `writes:` via
+  # permissions.py.
+  tools:
+    - Read                         # read file contents
+    - Bash                         # execute bash commands
+    - Edit                         # find/replace edits
+    - Write                        # create/overwrite files
+    - Grep                         # search file contents
+    - Glob                         # find files by glob pattern
+  # Off-limits to every agent that does not name them in its own `writes`.
+  # `tools` alone cannot protect these: Bash runs `git checkout`, and Write
+  # reaches any path. An agent must not be able to edit the machinery that
+  # decides whether its own work passed. Enforced in adw_modules/permissions.py.
+  #
+  # `writes:` per agent says what it may change IN THE REPO. It never restricts
+  # the session runtime under data_dir — context_handoff/, envelopes, prompts,
+  # raw output. Every agent can always write its own report; `writes: []` means
+  # read-only with respect to the repo, not mute.
+  protected_files:
+    - adws/adw_modules/
+    - adws/adw_sssf_config/
+    - adws/adw_*.py
+  data_dir: adws/adw_data          # runtime home: {data_dir}/sessions/{adw_id}/{agent_name}/
+
+observability:
+  db: adws/adw_data/sssf.db        # tracer writes here directly; the UI polls it
+  poll_ms: 500                     # visualizer live-poll cadence
+
+agents:
+  - name: planner
+    model: opus                    # judgement-heavy, but opus plans nearly as well as
+    thinking: high                 # fable at a fraction of the allowance burn — flip
+                                   # to `fable` by hand for the runs that earn it
+                                   # (fable is capped at 50% of weekly limits)
+    color: "#a78bfa"                 # optional hex — the agent's lane color in the visualizer
+    purpose: Turn a request into a plan the builder can implement without asking questions.
+    prompt_engineering:
+      system: adws/adw_data/prompt_engineering/planner/system.md
+      user: adws/adw_data/prompt_engineering/planner/user.md
+    writes:                        # the plan is the only thing it may leave in the repo
+      - specs/
+    tools:                         # full recon + write for plan.md; no Edit — the planner never touches repo files
+      - Read
+      - Grep
+      - Glob
+      - Bash
+      - Write
+      - Task                       # Claude Code's built-in subagents, in place of pi's subagents.ts
+
+  - name: builder
+    coding_agent: agy              # Gemini CLI on free Gemini quota — $0 per run
+    model: gemini-3.7-flash-high   # effort rides the id suffix; `thinking` is not sent
+    thinking: medium
+    color: "#22d3ee"
+    purpose: Implement the plan exactly; report every changed file in the envelope.
+    prompt_engineering:
+      system: adws/adw_data/prompt_engineering/builder/system.md
+      user: adws/adw_data/prompt_engineering/builder/user.md
+    # No `writes` key: unrestricted, and the only agent that is. It still cannot
+    # touch defaults.protected_files — the builder does not get to edit its own grader.
+    # No `tools` key either: agy has no tools flag, so a list would be ignored
+    # (references/config.md in the skill). `writes:` is the boundary that holds.
+
+  - name: scout
+    coding_agent: agy              # mechanical recon on free Gemini quota
+    model: gemini-3.7-flash-medium # effort rides the id suffix
+    thinking: low
+    color: "#fbbf24"
+    purpose: Find and report where things live; change nothing.
+    prompt_engineering:
+      system: adws/adw_data/prompt_engineering/scout/system.md
+      user: adws/adw_data/prompt_engineering/scout/user.md
+    writes: []                     # read-only, and now actually read-only: its findings
+                                   # go to context_handoff/, which is runtime, not the repo
+    # No `tools` key: agy has no tools flag; `writes: []` is what holds.
+
+  # No tester agent: running the suite is a known command, so it is a kind="code"
+  # phase over adw_modules/quality.py. See SKILL.md hard rule 8.
+
+  - name: reviewer
+    coding_agent: grok             # a different model FAMILY from the builder — real
+    model: grok-4.5                # blind-spot diversity, not just a different tier
+    thinking: high
+    color: "#fb7185"
+    purpose: Confirm that what was built is what was asked for; change nothing.
+    prompt_engineering:
+      system: adws/adw_data/prompt_engineering/reviewer/system.md
+      user: adws/adw_data/prompt_engineering/reviewer/user.md
+    writes: []                     # a reviewer that cannot fix cannot quietly fix — the
+                                   # claim the tool list only implied, now enforced
+    tools:                         # grok's tool vocabulary; write only for review.md
+      - read_file
+      - grep
+      - list_dir
+      - run_terminal_command
+      - write
+
+  - name: documenter
+    coding_agent: agy              # writing up a diff is mechanical — free quota
+    model: gemini-3.7-flash-medium
+    thinking: low
+    color: "#e879f9"
+    purpose: Write up the change that was just made, from the diff; document only.
+    prompt_engineering:
+      system: adws/adw_data/prompt_engineering/documenter/system.md
+      user: adws/adw_data/prompt_engineering/documenter/user.md
+    writes:                        # documentation only — "document only" is a rule now,
+      - app_docs/                  # not a line in a prompt the model may drift from.
+      - docs/                      # Markdown anywhere, because docs live next to the
+      - "**/*.md"                  # code they describe as often as in a docs folder.
+      - "*.md"
+    tools:                         # reads the diff and the code; writes/edits documentation only
+      - Read
+      - Grep
+      - Glob
+      - Bash
+      - Write
+      - Edit
