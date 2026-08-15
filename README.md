@@ -105,8 +105,12 @@ Cheaper options, if writing quality is not what you're trying to fix:
 
 Any OpenRouter catalogue model works with `--model`.
 
-Optional extras: a `SEMANTIC_SCHOLAR_API_KEY` secret and an `OPENALEX_MAILTO`
-environment variable raise the scholarly APIs' rate limits.
+Set a free `SEMANTIC_SCHOLAR_API_KEY`. Without it, Semantic Scholar's
+shared keyless limit refuses effectively every call: measured over four
+runs spanning an hour, the first query of every run came back HTTP 429 and
+the source was then skipped for the rest of that run, so those drafts were
+written on the other databases alone. `OPENALEX_MAILTO` is genuinely
+optional — it puts OpenAlex requests in its "polite pool".
 
 ## The same workflow, locally
 
@@ -176,10 +180,13 @@ export ANTHROPIC_API_KEY=sk-ant-...   # Claude (or: ant auth login)
 # or neither — draft on a Claude subscription with: --model cli:opus
 ```
 
-The scholarly APIs need no key, but you can raise their rate limits:
+The scholarly APIs work without keys, but Semantic Scholar's shared tier
+refuses nearly every call — setting the [free API key](https://www.semanticscholar.org/product/api)
+is the fix worth doing on any machine that runs drafts (a run without it still
+works on the remaining databases, and Methods will say so):
 
 ```bash
-export SEMANTIC_SCHOLAR_API_KEY=...   # optional
+export SEMANTIC_SCHOLAR_API_KEY=...
 export OPENALEX_MAILTO=you@example.com  # optional, "polite pool"
 ```
 
@@ -210,7 +217,7 @@ Markdown, for easy editing), and refreshes `index.html` (your review queue).
 | Command | Key options |
 |---------|-------------|
 | `ideas <theme>` | `-n` (how many, default 6), `-o` (output .md path) |
-| `draft <title>` | `--open`, `--style "<audience/tone>"`, `--max-papers N`, `--name <stem>` |
+| `draft <title>` | `--open`, `--style "<audience/tone>"`, `--max-papers N` (default 40), `--name <stem>` |
 | `queue` | `--open` |
 | `demo` | `--open`, `-o` |
 

@@ -34,8 +34,15 @@ def operator_env() -> dict[str, str]:
     venv = env.pop("VIRTUAL_ENV", "")
     if not venv:
         return env
-    venv_bin = str(Path(venv) / "bin")
-    parts = [p for p in env.get("PATH", "").split(os.pathsep) if p and p != venv_bin]
+    # The venv's executables live in `bin` on POSIX and `Scripts` on Windows.
+    # Compare normalised (case-folded, separators fixed) so a PATH entry
+    # written any way still matches — stripping only the POSIX name left the
+    # ephemeral venv first on PATH on Windows, and every `python` a quality
+    # block ran resolved to a venv without the project's own packages.
+    venv_dirs = {os.path.normcase(os.path.normpath(str(Path(venv) / sub)))
+                 for sub in ("bin", "Scripts")}
+    parts = [p for p in env.get("PATH", "").split(os.pathsep)
+             if p and os.path.normcase(os.path.normpath(p)) not in venv_dirs]
     env["PATH"] = os.pathsep.join(parts)
     return env
 

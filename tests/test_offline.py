@@ -1206,6 +1206,101 @@ def test_search_cache() -> None:
          sources.search_europe_pmc, sources.search_arxiv) = real
 
 
+def test_first_semantic_scholar_refusal_buys_one_patient_round() -> None:
+    """The first Semantic Scholar refusal of a run buys one patient retry (#148).
+
+    Measured over four runs spanning more than an hour: every first keyless
+    Semantic Scholar query returned HTTP 429 after its three tries, the
+    `exhausted` set then skipped the source for the rest of that run, and every
+    draft that session was written without it.
+
+    The patient wait stays at _MAX_BACKOFF (30s) and is scoped to Semantic
+    Scholar only, once per run. A second refusal still exhausts the source for
+    the run, and non-retryable failures or probe runs (patient=False) get no wait.
+    """
+    from articlegen import sources
+
+    check("the patient wait stays within the backoff cap",
+          sources._S2_PATIENT_WAIT <= sources._MAX_BACKOFF)
+
+    real_get = sources._get_with_retry
+    real_sleep = sources.time.sleep
+    reals = (sources.search_semantic_scholar, sources.search_openalex,
+             sources.search_europe_pmc, sources.search_arxiv)
+    try:
+        sources.clear_search_cache()
+
+        # 1. First refusal buys a second round; scoped to S2; second refusal exhausts for the run
+        url_calls: dict[str, int] = {}
+        waits: list[float] = []
+
+        def fake_get_429(url, params=None, headers=None, tries=3):
+            url_calls[url] = url_calls.get(url, 0) + 1
+            exc = sources.SearchFailure("HTTP 429 after 3 attempts")
+            exc.retry_later = True
+            raise exc
+
+        def fake_sleep(seconds):
+            waits.append(seconds)
+
+        sources._get_with_retry = fake_get_429
+        sources.time.sleep = fake_sleep
+        sources.search_europe_pmc = lambda q, limit=15: []
+        sources.search_arxiv = lambda q, limit=15: []
+
+        outs: list[dict] = []
+        sources.gather_evidence(["q one", "q two"], outcomes=outs)
+
+        s2_calls = url_calls.get(sources.SEMANTIC_SCHOLAR_URL, 0)
+        oa_calls = url_calls.get(sources.OPENALEX_URL, 0)
+
+        check("first Semantic Scholar refusal buys a second round", s2_calls == 2)
+        check("exactly one patient wait was recorded, matching _S2_PATIENT_WAIT",
+              waits == [sources._S2_PATIENT_WAIT])
+        check("patient round is scoped to Semantic Scholar (OpenAlex called once)",
+              oa_calls == 1)
+        check("second S2 refusal still exhausts the source for the run",
+              any(o["source"] == "semantic_scholar" and o["query"] == "q two"
+                  and "skipped (already failed this run)" in o["error"] for o in outs))
+
+        # 2. Non-retryable failure gets no patient wait (maintains _MAX_BACKOFF invariant)
+        sources.clear_search_cache()
+        url_calls.clear()
+        waits.clear()
+
+        def fake_get_non_retryable(url, params=None, headers=None, tries=3):
+            url_calls[url] = url_calls.get(url, 0) + 1
+            exc = sources.SearchFailure("HTTP 400")
+            exc.retry_later = False
+            raise exc
+
+        sources._get_with_retry = fake_get_non_retryable
+        outs_non_retryable: list[dict] = []
+        sources.gather_evidence(["q three"], outcomes=outs_non_retryable)
+
+        check("non-retryable failure gets no patient wait",
+              url_calls.get(sources.SEMANTIC_SCHOLAR_URL, 0) == 1 and waits == [])
+
+        # 3. Pre-flight probe (patient=False) does not buy the round
+        sources.clear_search_cache()
+        url_calls.clear()
+        waits.clear()
+        sources._get_with_retry = fake_get_429
+        outs_probe: list[dict] = []
+        sources.gather_evidence(["q four"], outcomes=outs_probe, patient=False)
+
+        check("pre-flight probe (patient=False) buys no patient wait",
+              url_calls.get(sources.SEMANTIC_SCHOLAR_URL, 0) == 1 and waits == [])
+
+    finally:
+        sources.clear_search_cache()
+        sources._get_with_retry = real_get
+        sources.time.sleep = real_sleep
+        (sources.search_semantic_scholar, sources.search_openalex,
+         sources.search_europe_pmc, sources.search_arxiv) = reals
+        sources._s2_patient_round_spent = False
+
+
 def test_polite_pool_identification() -> None:
     """We must identify ourselves, and respect a cool-off the server asks for.
 
@@ -1431,6 +1526,350 @@ def test_arxiv_parsing() -> None:
     # property of this tuple.
     check("arXiv is queried last, so the published version wins dedupe",
           gather.index('"arxiv"') > gather.index('"europe_pmc"'))
+
+
+def test_titles_arrive_without_markup() -> None:
+    """Publisher markup never reaches a Paper title (issue #140).
+
+    OpenAlex passes JATS through, so a real cited title arrived as
+    "The <scp>Nurse-Police</scp> ... (<scp>N-PACT</scp>): ...". The tags reached
+    Table 1, the reference list and the writer's prompt, and they defeated
+    dedupe: `_normalize_title` keeps "scp" as a word, so the tagged and untagged
+    copies of one paper were cited as two references.
+    """
+    from articlegen.sources import Paper, _normalize_title, _strip_title_markup
+    from articlegen import sources
+
+    clean = "The Nurse-Police Assistance Crisis Team (N-PACT): A new role for nursing"
+
+    # Both spacings the publisher may send: tags tight against the bracket, and
+    # tags with the space the markup itself introduced.
+    tight = ("The <scp>Nurse-Police</scp> Assistance Crisis Team "
+             "(<scp>N-PACT</scp>): A new role for nursing")
+    spaced = ("The <scp>Nurse-Police</scp> Assistance Crisis Team "
+              "( <scp>N-PACT</scp> ): A new role for nursing")
+    check("tags removed and spacing normalised", _strip_title_markup(tight) == clean)
+    check("and the spaces the tags left are closed too",
+          _strip_title_markup(spaced) == clean)
+
+    # Case and attributes.
+    check("uppercase tags go too", _strip_title_markup("A <SCP>MDMA</SCP> trial")
+          == "A MDMA trial")
+    check("attributes do not save a tag",
+          _strip_title_markup('Effects of <i class="genus">Lactobacillus</i> on IBS')
+          == "Effects of Lactobacillus on IBS")
+    check("sub/sup go too",
+          _strip_title_markup("Serum 25(OH)D<sub>3</sub> and CO<sub>2</sub>")
+          == "Serum 25(OH)D3 and CO2")
+
+    # Negative control: comparison operators are not markup. A generic
+    # `<[^>]+>` sweep eats "<65 versus >" and the title loses its meaning.
+    operators = "Outcomes in adults aged <65 versus >80 years"
+    check("comparison operators survive", _strip_title_markup(operators) == operators)
+
+    # The choke point: every Paper, whichever API built it.
+    check("Paper cleans its own title", Paper(title=tight, abstract="a").title == clean)
+
+    # Which is what restores dedupe.
+    check("tagged and untagged copies now dedupe together",
+          _normalize_title(Paper(title=tight, abstract="a").title)
+          == _normalize_title(Paper(title=clean, abstract="a").title))
+
+    # And through a real OpenAlex parse, since that is where it came from.
+    payload = {"results": [{
+        "id": "https://openalex.org/W1", "title": tight,
+        "publication_year": 2024, "cited_by_count": 3,
+        "abstract_inverted_index": {"An": [0], "abstract.": [1]},
+        "authorships": [{"author": {"display_name": "Ann Ab"}}],
+        "primary_location": {"source": {"display_name": "J Psychiatr Nurs"},
+                             "landing_page_url": "https://example.org/1"},
+        "doi": "10.1000/npact",
+    }]}
+
+    class FakeResp:
+        def json(self):
+            return payload
+
+    real = sources._get_with_retry
+    try:
+        sources._get_with_retry = lambda url, params, headers: FakeResp()
+        papers = sources._openalex_page("nurse police", limit=1)
+    finally:
+        sources._get_with_retry = real
+    check("an OpenAlex record parses with a clean title", papers[0].title == clean)
+
+
+def test_candidate_papers_dedupe_by_doi() -> None:
+    """Papers are deduped by normalised DOI first, then by title (issue #139).
+
+    Two of three recent runs cited one paper twice because the search sources
+    spell the same DOI three ways (resolver URL, mixed case, bare) and the
+    titles differed by a subtitle or publisher markup.
+    """
+    from articlegen.sources import Paper, _normalize_doi
+    from articlegen import sources
+
+    # 1. _normalize_doi unit checks
+    expected = "10.1001/jamapsychiatry.2025.1317"
+    check("bare lowercase DOI normalises",
+          _normalize_doi("10.1001/jamapsychiatry.2025.1317") == expected)
+    check("mixed-case DOI is lowercased",
+          _normalize_doi("10.1001/JAMAPsychiatry.2025.1317") == expected)
+    check("https://doi.org/ prefix stripped",
+          _normalize_doi("https://doi.org/10.1001/jamapsychiatry.2025.1317") == expected)
+    check("http://dx.doi.org/ prefix stripped",
+          _normalize_doi("http://dx.doi.org/10.1001/jamapsychiatry.2025.1317") == expected)
+    check("doi: prefix stripped and trimmed",
+          _normalize_doi("doi: 10.1001/JAMAPsychiatry.2025.1317") == expected)
+    check("surrounding whitespace and punctuation stripped",
+          _normalize_doi("  https://doi.org/10.1001/jamapsychiatry.2025.1317.  ") == expected)
+    check("empty DOI returns empty string", _normalize_doi("") == "")
+    # Junk values ("n/a", "unknown") must return "" rather than becoming a shared merge key
+    # that would collapse unrelated records into one.
+    check("junk non-DOI returns empty string", _normalize_doi("n/a") == "")
+    check("unknown non-DOI returns empty string", _normalize_doi("unknown") == "")
+
+    reals = (sources.search_semantic_scholar, sources.search_openalex,
+             sources.search_europe_pmc, sources.search_arxiv)
+    try:
+        sources.search_semantic_scholar = lambda q, limit=15: []
+        sources.search_arxiv = lambda q, limit=15: []
+
+        # 2. Different casings/prefixes merge, keeping richer metadata and first-seen identity
+        oa_thin = Paper(
+            title="Janik Study: A Randomized Trial on Psychiatric Care",
+            abstract="Abstract from OpenAlex",
+            doi="https://doi.org/10.1001/jamapsychiatry.2025.1317",
+            citation_count=0,
+            year=None,
+            source="openalex",
+        )
+        epmc_rich = Paper(
+            title="Janik Study",
+            abstract="Abstract from EPMC",
+            doi="10.1001/JAMAPsychiatry.2025.1317",
+            pmcid="PMC55",
+            is_open_access=True,
+            citation_count=12,
+            year=2025,
+            source="europe_pmc",
+        )
+        sources.search_openalex = lambda q, limit=15: [oa_thin]
+        sources.search_europe_pmc = lambda q, limit=15: [epmc_rich]
+        sources.clear_search_cache()
+        merged = sources.gather_evidence(["q"], use_cache=False)
+
+        check("same DOI in different formats merges to one record", len(merged) == 1)
+        # First-seen title wins: this preserves the invariant that arXiv querying last
+        # discards a preprint in favour of the peer-reviewed published version.
+        check("first-seen title is kept",
+              merged[0].title == "Janik Study: A Randomized Trial on Psychiatric Care")
+        check("pmcid is enriched from duplicate",
+              merged[0].pmcid == "PMC55" and merged[0].is_open_access)
+        check("citation count is enriched from duplicate", merged[0].citation_count == 12)
+        check("year is enriched from duplicate", merged[0].year == 2025)
+
+        # 3. No-DOI records still dedupe by title
+        no_doi_1 = Paper(title="No DOI Study", abstract="Abs 1", doi="")
+        no_doi_2 = Paper(title="No DOI Study", abstract="Abs 2", doi="")
+        sources.search_openalex = lambda q, limit=15: [no_doi_1]
+        sources.search_europe_pmc = lambda q, limit=15: [no_doi_2]
+        sources.clear_search_cache()
+        merged_no_doi = sources.gather_evidence(["q"], use_cache=False)
+        check("no-DOI records still dedupe by title", len(merged_no_doi) == 1)
+
+        # 4. Distinct DOIs never merge on DOI
+        diff_1 = Paper(title="Title A", abstract="Abs A", doi="10.1000/1")
+        diff_2 = Paper(title="Title B", abstract="Abs B", doi="10.1000/2")
+        sources.search_openalex = lambda q, limit=15: [diff_1]
+        sources.search_europe_pmc = lambda q, limit=15: [diff_2]
+        sources.clear_search_cache()
+        merged_diff = sources.gather_evidence(["q"], use_cache=False)
+        check("distinct DOIs and titles never merge", len(merged_diff) == 2)
+
+        # Same title with distinct DOIs still merges via title fallback (the preprint case)
+        preprint_pub_1 = Paper(title="Same Title Everywhere", abstract="Pub abs", doi="10.1000/journal.1")
+        preprint_pub_2 = Paper(title="Same Title Everywhere", abstract="Preprint abs", doi="10.48550/arxiv.1")
+        sources.search_openalex = lambda q, limit=15: [preprint_pub_1]
+        sources.search_europe_pmc = lambda q, limit=15: [preprint_pub_2]
+        sources.clear_search_cache()
+        merged_preprint = sources.gather_evidence(["q"], use_cache=False)
+        check("same title with different DOIs merges via title (preprint vs published)",
+              len(merged_preprint) == 1)
+
+    finally:
+        (sources.search_semantic_scholar, sources.search_openalex,
+         sources.search_europe_pmc, sources.search_arxiv) = reals
+        sources.clear_search_cache()
+
+
+def test_preprints_are_marked_as_preprints() -> None:
+    """Preprints are detected and marked in references and Table 1 (issue #144).
+
+    A recent draft cited a Research Square preprint (10.21203/rs.3.rs-9924877/v1)
+    beside a Cochrane review with nothing to tell them apart except a blank journal
+    cell in Table 1.
+    """
+    from articlegen.sources import Paper, _looks_like_preprint
+    from articlegen import render, sources
+
+    # 1. Identifier detection
+    check("Research Square DOI flagged",
+          _looks_like_preprint("10.21203/rs.3.rs-9924877/v1", ""))
+    check("Research Square resolver URL flagged",
+          _looks_like_preprint("https://doi.org/10.21203/rs.3.rs-1/v1", ""))
+    check("bioRxiv/medRxiv date-format DOI flagged",
+          _looks_like_preprint("10.1101/2024.03.01.583912", ""))
+    check("CSH journal Genome Research negative control not flagged",
+          not _looks_like_preprint("10.1101/gr.123456", ""))
+    check("CSH journal Perspectives negative control not flagged",
+          not _looks_like_preprint("10.1101/cshperspect.a012345", ""))
+    check("arXiv registered DOI flagged (mixed-case)",
+          _looks_like_preprint("10.48550/arXiv.2401.00001", ""))
+    check("arXiv URL with no DOI flagged",
+          _looks_like_preprint("", "https://arxiv.org/abs/2401.00001"))
+    check("ordinary journal DOI not flagged",
+          not _looks_like_preprint("10.1001/jamapsychiatry.2025.1317", ""))
+    check("empty identifier not flagged",
+          not _looks_like_preprint("", ""))
+
+    # 2. The choke point in Paper.__post_init__
+    p_preprint = Paper(title="T", abstract="a", doi="10.21203/rs.3.rs-1/v1")
+    check("Paper dataclass identifies preprint on construction", p_preprint.is_preprint is True)
+    p_journal = Paper(title="T", abstract="a", doi="10.1001/jamapsychiatry.2025.1317")
+    check("Paper dataclass leaves journal paper unflagged", p_journal.is_preprint is False)
+
+    # 3. Parsers
+    # OpenAlex type=preprint
+    oa_payload = {"results": [{
+        "id": "https://openalex.org/W1", "title": "OA Preprint",
+        "publication_year": 2024, "cited_by_count": 0,
+        "abstract_inverted_index": {"An": [0], "abstract.": [1]},
+        "authorships": [{"author": {"display_name": "Author A"}}],
+        "primary_location": {"source": {"display_name": ""},
+                             "landing_page_url": "https://example.org/1"},
+        "doi": "10.1000/ordinary-doi",
+        "type": "preprint",
+    }]}
+
+    class FakeOAResp:
+        def json(self):
+            return oa_payload
+
+    # Europe PMC source=PPR vs source=MED
+    epmc_payload = {"resultList": {"result": [
+        {
+            "id": "PPR123", "source": "PPR", "title": "EPMC Preprint",
+            "pubYear": "2024", "authorList": {"author": [{"fullName": "Author B"}]},
+            "abstractText": "EPMC preprint abstract.", "doi": "10.1000/ordinary-epmc-doi",
+            "pubType": "preprint",
+        },
+        {
+            "id": "MED123", "source": "MED", "title": "EPMC Journal Paper",
+            "pubYear": "2024", "authorList": {"author": [{"fullName": "Author C"}]},
+            "abstractText": "EPMC journal abstract.", "doi": "10.1000/ordinary-med-doi",
+            "journalInfo": {"journal": {"title": "Journal of Medicine"}},
+        },
+    ]}}
+
+    class FakeEPMCResp:
+        def json(self):
+            return epmc_payload
+
+    # arXiv Atom XML sample
+    atom = """<?xml version="1.0" encoding="UTF-8"?>
+    <feed xmlns="http://www.w3.org/2005/Atom"
+          xmlns:arxiv="http://arxiv.org/schemas/atom">
+      <entry>
+        <id>http://arxiv.org/abs/2401.00001v1</id>
+        <published>2024-01-01T00:00:00Z</published>
+        <title>arXiv Paper</title>
+        <summary>arXiv abstract</summary>
+        <author><name>Author D</name></author>
+        <arxiv:doi>10.1000/arxiv-doi</arxiv:doi>
+        <arxiv:journal_ref>Nature Energy 9, 1 (2024)</arxiv:journal_ref>
+      </entry>
+    </feed>"""
+
+    class FakeArxivResp:
+        text = atom
+
+    real_get = sources._get_with_retry
+    try:
+        sources._get_with_retry = lambda url, params, headers: FakeOAResp()
+        oa_papers = sources._openalex_page("test query", limit=1)
+        check("OpenAlex type=preprint sets is_preprint", oa_papers[0].is_preprint is True)
+
+        sources._get_with_retry = lambda url, params, headers: FakeEPMCResp()
+        epmc_papers = sources.search_europe_pmc("test query", limit=2)
+        check("Europe PMC PPR source sets is_preprint", epmc_papers[0].is_preprint is True)
+        check("Europe PMC MED source leaves is_preprint False", epmc_papers[1].is_preprint is False)
+
+        sources._get_with_retry = lambda url, params, headers: FakeArxivResp()
+        arxiv_papers = sources.search_arxiv("test query", limit=1)
+        check("arXiv search unconditionally sets is_preprint", arxiv_papers[0].is_preprint is True)
+    finally:
+        sources._get_with_retry = real_get
+
+    # 4. Rendering
+    paper_preprint = Paper(
+        title="Preprint Study",
+        abstract="Abstract of preprint",
+        authors=["Alice Smith"],
+        doi="10.21203/rs.3.rs-9924877/v1",
+        year=2024,
+        venue="",
+    )
+    paper_journal = Paper(
+        title="Cochrane Review",
+        abstract="Abstract of Cochrane review",
+        authors=["Bob Jones"],
+        doi="10.1002/14651858.CD001",
+        year=2023,
+        venue="Cochrane Database Syst Rev",
+    )
+    cited_pair = [paper_preprint, paper_journal]
+
+    t_html = render._table_html(cited_pair, {})
+    check("Table 1 HTML marks preprint in Source column", "Preprint" in t_html)
+    check("Table 1 HTML keeps journal venue", "Cochrane Database Syst Rev" in t_html)
+
+    t_md = render._table_markdown(cited_pair, {})
+    check("Table 1 Markdown marks preprint in Source column", "Preprint" in t_md)
+    check("Table 1 Markdown keeps journal venue", "Cochrane Database Syst Rev" in t_md)
+
+    article_payload = {
+        "title": "A Test Review Article",
+        "abstract": "Summary with references [1] and [2].",
+        "keywords": ["testing"],
+        "evidence_note": "Evidence note [1].",
+        "featured_study": {"source_index": 1, "method": "Trial", "results": "Results"},
+        "sections": [
+            {"heading": "Introduction", "paragraphs": ["Intro referencing [1] and [2]."]},
+            {"heading": "Conclusions", "paragraphs": ["Conclusion [1]."]},
+        ],
+        "key_points": ["Key point referencing [2]."],
+        "glossary": [],
+        "references": [1, 2],
+    }
+
+    h_out = render.render_article(article_payload, cited_pair, "test topic", None, None, None)
+    md_out = render.render_markdown(article_payload, cited_pair, "test topic", None, None, None)
+
+    marker = "(preprint, not peer reviewed)"
+    check("HTML render has preprint marker exactly once", h_out.count(marker) == 1)
+    check("Markdown render has preprint marker exactly once", md_out.count(marker) == 1)
+
+    # 5. _merge_duplicate adoption
+    kept_no_doi = Paper(title="Duplicate Study", abstract="Abs", doi="", url="")
+    dup_preprint_doi = Paper(title="Duplicate Study", abstract="Abs", doi="10.21203/rs.3.rs-9924877/v1")
+    sources._merge_duplicate(kept_no_doi, dup_preprint_doi)
+    check("adopting preprint DOI in merge sets is_preprint", kept_no_doi.is_preprint is True)
+
+    kept_published = Paper(title="Published Paper", abstract="Abs", doi="10.1001/jamapsychiatry.2025.1317", is_preprint=False)
+    dup_arxiv = Paper(title="Published Paper", abstract="Abs", doi="10.48550/arXiv.1", is_preprint=True)
+    sources._merge_duplicate(kept_published, dup_arxiv)
+    check("published paper does not inherit preprint flag across merge when kept has DOI", kept_published.is_preprint is False)
 
 
 def test_arxiv_rate_limit_is_honoured() -> None:
@@ -2493,6 +2932,88 @@ def test_claude_cli_provider() -> None:
               llm._extract_json_object("core_entity: safety planning") ==
               "core_entity: safety planning")
 
+        # -- deterministic repair (#147) ---------------------------------------
+        # 3 of 5 write_article calls on cli:opus returned non-JSON at least once,
+        # and one run died after its retry on "Expecting ',' delimiter: line 1
+        # column 4942" — a complete article object one comma short.
+        check("a missing comma between two values is repaired",
+              llm._repair_json('{"a": "one" "b": "two"}') == {"a": "one", "b": "two"})
+        check("and the same slip between two objects in an array",
+              llm._repair_json(
+                  '{"sections": [{"heading": "H1"} {"heading": "H2"}]}')
+              == {"sections": [{"heading": "H1"}, {"heading": "H2"}]})
+        check("a trailing comma before } or ] is dropped",
+              llm._repair_json('{"a": [1, 2,], "b": 3,}') == {"a": [1, 2], "b": 3})
+        check("a bare newline inside a string is escaped",
+              llm._repair_json('{"a": "line one\nline two"}')
+              == {"a": "line one\nline two"})
+        # The acceptance rule is parses AND dict. This repairs into valid JSON
+        # that no caller of generate_json can use.
+        check("a repair that yields a list is refused",
+              llm._repair_json('[1, 2,]') is None)
+        # A refusal is prose. There is nothing in it to salvage, and inventing a
+        # dict from an apology would hand the pipeline a fake article.
+        check("a refusal does not repair into anything",
+              llm._repair_json("I'm sorry, I can't help with that.") is None)
+        check("neither does a YAML reply",
+              llm._repair_json("core_entity: safety planning\nqueries:\n  - a") is None)
+        # The pass is a no-op on anything that already parses: in valid JSON a
+        # value is only ever followed by , : } ] or the end.
+        _valid = '{"a": "x, y", "b": [1, 2], "c": {"d": "has } and \\" quote"}}'
+        check("valid JSON passes through the repair untouched",
+              llm._repair_json_text(_valid) == _valid)
+
+        near_miss_calls = []
+
+        def near_miss_proc(args_, **kwargs):
+            near_miss_calls.append(kwargs["input"])
+
+            class P:
+                returncode, stderr = 0, ""
+                stdout = _json.dumps({
+                    "type": "result", "subtype": "success", "is_error": False,
+                    "usage": {}, "duration_ms": 1,
+                    "result": '{"article": "body" "title": "T"}',
+                })
+            return P()
+
+        try:
+            subprocess.run = near_miss_proc
+            __import__("shutil").which = lambda name: "/fake/claude"
+            out = llm.generate_json("P", {"type": "object"}, model="cli:sonnet")
+        finally:
+            subprocess.run = real_run
+            __import__("shutil").which = real_which
+
+        check("a near-miss reply is repaired on the first call, no retry spent",
+              out == {"article": "body", "title": "T"} and len(near_miss_calls) == 1)
+
+        unfixable_calls = []
+
+        def unfixable_proc(args_, **kwargs):
+            unfixable_calls.append(kwargs["input"])
+
+            class P:
+                returncode, stderr = 0, ""
+                stdout = _json.dumps({
+                    "type": "result", "subtype": "success", "is_error": False,
+                    "usage": {}, "duration_ms": 1,
+                    "result": "Just plain conversational prose with no JSON at all.",
+                })
+            return P()
+
+        try:
+            subprocess.run = unfixable_proc
+            __import__("shutil").which = lambda name: "/fake/claude"
+            llm.generate_json("P", {"type": "object"}, model="cli:sonnet")
+            check("an unfixable reply raises after two calls", False)
+        except RuntimeError as exc:
+            check("an unfixable reply raises after two calls",
+                  len(unfixable_calls) == 2 and "twice" in str(exc))
+        finally:
+            subprocess.run = real_run
+            __import__("shutil").which = real_which
+
         calls = []
 
         def yaml_then_json(args_, **kwargs):
@@ -2735,6 +3256,210 @@ def test_revision_carries_sources_only_when_they_can_be_used() -> None:
     check("the substance brief still names the sources", "SOURCES below" in substance)
     check("the register brief still forbids new material",
           "do not introduce new claims" in register)
+
+
+def test_warnings_ride_along_on_a_revision() -> None:
+    """Warning-level style findings ride along only when errors triggered a revision.
+
+    `check_style` flags long sentences, wordiness and passive voice as warnings.
+    They never trigger a revision on their own — `enforce_style` returns early
+    when there are no errors — but once the model is revising anyway, warnings
+    in the same blocks ride along in `revision_brief()` as secondary items to fix
+    (#145).
+
+    The acceptance rule and source-passing split stay keyed strictly on errors.
+    """
+    from articlegen import demo, pipeline, style
+    from articlegen.style import (
+        LONG_SENTENCE_WORDS, RIDE_ALONG_WARNINGS, SUBSTANCE_RULES, check_style, errors, revision_brief,
+    )
+
+    # 1. Real prose, end to end: fixture trips a contraction error and a long-sentence warning.
+    long_sentence = "This analysis indicates that " + " ".join(["evidence"] * (LONG_SENTENCE_WORDS + 5)) + "."
+    article_1 = {
+        "sections": [{
+            "heading": "Introduction",
+            "paragraphs": [f"It's clear that results matter. {long_sentence}"]
+        }]
+    }
+    rep_1 = check_style(article_1)
+    rules_fired_1 = {i["rule"] for i in rep_1["issues"]}
+    check("fixture produces a contraction error", "contraction" in rules_fired_1)
+    check("fixture produces a long-sentence warning", "long-sentence" in rules_fired_1)
+    brief_1 = revision_brief(rep_1)
+    check("brief contains the contraction error first", "Contraction" in brief_1)
+    check("brief contains the secondary warning section",
+          "Also fix these while you are in the same blocks" in brief_1)
+    check("long-sentence warning rides along in the brief", "word sentence; split it" in brief_1)
+
+    # 2. Every long sentence rides along, not just the first.
+    long_sentence_2 = "A secondary review shows that " + " ".join(["finding"] * (LONG_SENTENCE_WORDS + 5)) + "."
+    article_2 = {
+        "sections": [{
+            "heading": "Introduction",
+            "paragraphs": [
+                f"It's clear that results matter. {long_sentence}",
+                f"They're observing that {long_sentence_2}",
+            ]
+        }]
+    }
+    rep_2 = check_style(article_2)
+    brief_2 = revision_brief(rep_2)
+    check("every long sentence rides along in the brief",
+          brief_2.count("word sentence; split it") == 2)
+
+    # 3. Warnings alone buy no revision.
+    called = []
+
+    def fake_revise(article, brief, **kwargs):
+        called.append(True)
+        raise RuntimeError("revise_prose should not be called for warnings alone")
+
+    stats = {"sentences": 20, "mean_sentence_words": 22.0, "hedges_per_sentence": 0.3,
+             "passive_ratio": 0.2}
+
+    def report_with(rule, severity="error"):
+        return {"issues": [{"rule": rule, "severity": severity, "where": "whole article",
+                            "detail": "d", "excerpt": ""}], "stats": stats}
+
+    saved = pipeline.revise_prose, pipeline.check_style
+    try:
+        pipeline.revise_prose = fake_revise
+        pipeline.check_style = lambda a, **kw: report_with("long-sentence", severity="warning")
+        dummy_art = {"sections": [{"heading": "Introduction", "paragraphs": ["Prose."]}]}
+        res_art, res_rep = pipeline.enforce_style(dummy_art)
+        check("warnings alone do not trigger revise_prose", len(called) == 0)
+        check("enforce_style returns original article unchanged when warnings-only", res_art == dummy_art)
+    finally:
+        pipeline.revise_prose, pipeline.check_style = saved
+
+    # 4. under-length does not ride along.
+    mixed_report = {
+        "issues": [
+            {"rule": "contraction", "severity": "error", "where": "Introduction",
+             "detail": "Contraction 'it\\'s'", "excerpt": "it's"},
+            {"rule": "under-length", "severity": "warning", "where": "whole article",
+             "detail": "500 words of body prose", "excerpt": ""},
+        ],
+        "stats": stats,
+    }
+    mixed_brief = revision_brief(mixed_report)
+    check("under-length warning does not ride along in the brief",
+          "under-length" not in mixed_brief and "words of body prose" not in mixed_brief)
+    check("register brief with under-length warning still forbids new material",
+          "do not introduce new claims or numbers" in mixed_brief)
+    check("and does not ask for sources", "SOURCES below" not in mixed_brief)
+
+    # 5. The curated sample is untouched.
+    sample_rep = check_style(demo.SAMPLE_ARTICLE)
+    check("curated demo.SAMPLE_ARTICLE has zero style errors", errors(sample_rep) == [])
+    sample_brief = revision_brief(sample_rep)
+    check("warning-only sample brief has no 'Also fix these' section",
+          "Also fix these" not in sample_brief)
+
+
+def test_a_second_style_pass_runs_only_after_progress() -> None:
+    """A second revision pass is allowed, and only after the first one worked.
+
+    Two of three measured runs ended with exactly one residual style error after
+    a productive revision (3 -> 1 and 2 -> 1), which is enough to print the
+    "working draft rather than a finished review" line in Limitations. So
+    `enforce_style` may go round twice — but the second pass is gated on the
+    first having been accepted, and acceptance means strictly fewer errors. An
+    error the model cannot fix costs one call, never a loop (#146).
+    """
+    from articlegen import pipeline
+
+    stats = {"sentences": 20, "mean_sentence_words": 22.0, "hedges_per_sentence": 0.3,
+             "passive_ratio": 0.2}
+
+    def report_with(n_errors, rule="contraction"):
+        return {"issues": [{"rule": rule, "severity": "error", "where": "whole article",
+                            "detail": "d", "excerpt": ""} for _ in range(n_errors)],
+                "stats": stats}
+
+    article = {"sections": [{"heading": "Introduction", "paragraphs": ["Prose."]}],
+               "references": []}
+
+    def run(error_counts):
+        """Drive enforce_style with a scripted sequence of error counts.
+
+        `error_counts[0]` is the initial check; each later entry is the check on
+        the revision produced by that pass. Returns (passes_run, final_report).
+        """
+        seq = list(error_counts)
+        calls = {"check": 0, "revise": 0, "sources": []}
+
+        def fake_check(a, **kw):
+            i = min(calls["check"], len(seq) - 1)
+            calls["check"] += 1
+            return report_with(seq[i])
+
+        def fake_revise(a, brief, **kwargs):
+            calls["revise"] += 1
+            calls["sources"].append(kwargs.get("papers"))
+            return dict(a)
+
+        saved = pipeline.revise_prose, pipeline.check_style
+        try:
+            pipeline.revise_prose = fake_revise
+            pipeline.check_style = fake_check
+            out_article, out_report = pipeline.enforce_style(article)
+        finally:
+            pipeline.revise_prose, pipeline.check_style = saved
+        return calls, out_report
+
+    # 1. Improves, then clears: two passes run and the draft comes back clean.
+    calls, report = run([3, 1, 0])
+    check("a productive first pass buys a second", calls["revise"] == 2)
+    check("and a cleared draft is what comes back",
+          not [i for i in report["issues"] if i["severity"] == "error"])
+
+    # 2. Improves, then stalls: the cap stops it at two.
+    calls, report = run([3, 1, 1])
+    check("progress then a stall stops at the two-pass cap", calls["revise"] == 2)
+    check("and the better of the two drafts is kept",
+          len([i for i in report["issues"] if i["severity"] == "error"]) == 1)
+
+    # 3. No improvement on the first pass: no second pass at all.
+    calls, _ = run([2, 2])
+    check("a pass that did not improve buys no second pass", calls["revise"] == 1)
+
+    # 4. A revision that gets worse is discarded and stops the loop.
+    calls, report = run([2, 3])
+    check("a worse revision buys no second pass", calls["revise"] == 1)
+    check("and the original draft is kept",
+          len([i for i in report["issues"] if i["severity"] == "error"]) == 2)
+
+    # 5. The cap is two, stated once.
+    check("the pass cap is a named constant set to two",
+          pipeline.MAX_STYLE_PASSES == 2)
+
+    # 6. The substance split still applies on the second pass: if what is left
+    #    is a thinness failure, the sources travel with that call too.
+    seq = [("recycled-phrasing", 3), ("recycled-phrasing", 1), ("recycled-phrasing", 0)]
+    calls = {"check": 0, "revise": 0, "sources": []}
+
+    def fake_check(a, **kw):
+        rule, n = seq[min(calls["check"], len(seq) - 1)]
+        calls["check"] += 1
+        return report_with(n, rule=rule)
+
+    def fake_revise(a, brief, **kwargs):
+        calls["revise"] += 1
+        calls["sources"].append(kwargs.get("papers"))
+        return dict(a)
+
+    papers = ["paper-stand-in"]
+    saved = pipeline.revise_prose, pipeline.check_style
+    try:
+        pipeline.revise_prose = fake_revise
+        pipeline.check_style = fake_check
+        pipeline.enforce_style(article, papers=papers)
+    finally:
+        pipeline.revise_prose, pipeline.check_style = saved
+    check("the sources travel on both passes of a substance failure",
+          calls["sources"] == [papers, papers])
 
 
 def test_tangential_sources_stay_out_of_the_writer_prompt() -> None:
@@ -3733,6 +4458,52 @@ def test_ungrounded_citations_leave_no_trace() -> None:
           rendered("dropped [9] here [2].", {2: 2}) == "dropped here.[2]")
 
 
+def test_second_hand_figures_are_a_last_resort() -> None:
+    """A draft opened its Introduction on three figures the writer never saw at
+    first hand (e.g. "A meta-analysis cited within a Canadian pilot study estimated
+    ... 14.4%"). The number is real in the quoting paper, so verify.check_statistics
+    confirms the quotation, but nobody checked whether the original paper reported it.
+
+    The writer is instructed to avoid second-hand figures in load-bearing slots
+    (title, abstract, key_points, opening claim of Introduction) when first-hand
+    alternatives exist, and to keep "cited within"-style attribution when they are
+    unavoidable. This test pins that the rule survives every system-prompt derivation
+    and does not duplicate substitution targets.
+    """
+    from articlegen import writer
+
+    # 1. Rule is in _WRITER_SYSTEM
+    check("second-hand figure rule is in writer system prompt",
+          "SECOND-HAND" in writer._WRITER_SYSTEM)
+
+    # 2. Names the slots it protects
+    for slot in ("`title`", "`abstract`", "`key_points`", "Introduction"):
+        check(f"second-hand figure rule protects slot: {slot}",
+              slot in writer._WRITER_SYSTEM)
+
+    # 3. Survives every derivation
+    derivations = (
+        ("_WRITER_SYSTEM_FULLTEXT", writer._WRITER_SYSTEM_FULLTEXT),
+        ("_REVISE_SYSTEM", writer._REVISE_SYSTEM),
+        ("_REVISE_SYSTEM_FULLTEXT", writer._REVISE_SYSTEM_FULLTEXT),
+        ("_REVISE_PATCH_SYSTEM", writer._REVISE_PATCH_SYSTEM),
+        ("_REVISE_PATCH_SYSTEM_FULLTEXT", writer._REVISE_PATCH_SYSTEM_FULLTEXT),
+    )
+    for name, prompt in derivations:
+        check(f"second-hand figure rule survives into {name}",
+              "SECOND-HAND" in prompt)
+
+    # 4. No substitution target appears twice in _WRITER_SYSTEM
+    for old, _ in writer._FULLTEXT_SUBSTITUTIONS:
+        check(f"substitution target appears exactly once: {old[:40]}…",
+              writer._WRITER_SYSTEM.count(old) == 1)
+
+    # 5. Preserves honest attribution phrasing
+    for name, prompt in (("_WRITER_SYSTEM", writer._WRITER_SYSTEM),) + derivations:
+        check(f"'cited within' attribution phrasing preserved in {name}",
+              "cited within" in prompt)
+
+
 def test_full_text_grounding() -> None:
     """Full-text mode: fetch only what is truly open access, show a bounded
     excerpt, tell the model the truth about its inputs, and verify statistics
@@ -3967,8 +4738,8 @@ def test_pipeline_fetches_full_text() -> None:
         pipeline.enforce_style = lambda a, **kw: (a, {"issues": [], "stats": {}})
 
         draft = pipeline.generate_draft("topic")
-        check("direct and related sources are fetched, tangential is not",
-              fetched_pmcids == ["PMC1", "PMC3", "PMC4"])
+        check("direct sources are fetched before related, tangential never",
+              fetched_pmcids == ["PMC1", "PMC4", "PMC3"])
         check("papers carry their full text", draft.papers[0].full_text == "body text")
         check("provenance records which sources were read in full",
               draft.provenance["full_text_sources"] == [1, 3, 4])
@@ -3987,6 +4758,45 @@ def test_pipeline_fetches_full_text() -> None:
     finally:
         (pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
          pipeline.write_article, pipeline.fetch_full_text, pipeline.enforce_style) = saved
+
+
+def test_full_text_order_favours_direct_and_recent() -> None:
+    """Deep reads go to the directly relevant and the current, in that order.
+
+    Rank order sorts on topic overlap then citation weight, so the five full
+    texts landed on old, heavily-cited papers: one measured run read a subset
+    at median year 2019 / 122 citations against an abstract-only rest at median
+    2023, and the article then printed the "could not be appraised" limitation
+    about the newest directly-relevant syntheses (#143). Relevance tier first,
+    then year, then search rank.
+    """
+    from articlegen.sources import Paper, full_text_order
+
+    papers = [
+        Paper(title="related new", abstract="a", year=2024),      # 1
+        Paper(title="direct old", abstract="a", year=2011),       # 2
+        Paper(title="tangential new", abstract="a", year=2025),   # 3
+        Paper(title="direct new", abstract="a", year=2023),       # 4
+        Paper(title="related old", abstract="a", year=2015),      # 5
+        Paper(title="unlabelled", abstract="a", year=2026),       # 6
+        Paper(title="direct undated", abstract="a"),              # 7
+    ]
+    relevance = {1: "related", 2: "direct", 3: "tangential",
+                 4: "direct", 5: "related", 7: "direct"}
+
+    order = full_text_order(papers, relevance)
+    check("direct-newest, direct-older, then related-newest",
+          order == [4, 2, 7, 1, 5])
+    check("tangential sources are never offered for fetch", 3 not in order)
+    check("an unlabelled source is never offered either", 6 not in order)
+
+    # Ties fall back to search rank, which is what the pipeline did before this
+    # change — so an all-one-tier, all-one-year pool is untouched by it.
+    same = [Paper(title=f"p{i}", abstract="a", year=2020) for i in range(1, 5)]
+    check("equal tier and year keeps the incoming rank order",
+          full_text_order(same, {i: "direct" for i in range(1, 5)}) == [1, 2, 3, 4])
+    check("no labels means nothing is fetched",
+          full_text_order(same, {}) == [])
 
 
 def test_pmcid_is_resolved_by_doi() -> None:
@@ -4336,7 +5146,8 @@ def test_curation_truncation_is_off_until_measured() -> None:
     """The token saving is real; the risk to the relevance gate is untested.
 
     Truncating the abstracts sent to curation would cut ~39,000 input tokens to
-    roughly 15,000 for 20 papers. But curation *is* the relevance gate, and two
+    roughly 15,000 for 20 papers (the default pool then; it is now
+    `DEFAULT_MAX_PAPERS`). But curation *is* the relevance gate, and two
     things downstream read its labels: `style._required_sections` scales the
     section floor with the `direct` count, and `write_article` omits
     `tangential` sources from the prompt entirely (issue #117).
@@ -4403,6 +5214,52 @@ def test_curation_truncation_is_off_until_measured() -> None:
           'CRITICAL = ("direct", "tangential")' in harness)
     check("it says outright that agreement on 'related' is not enough",
           "'related' alone is not enough" in harness)
+
+
+def test_the_candidate_pool_is_big_enough_to_curate() -> None:
+    """The pool default is one constant, and 20 was too small to be curated.
+
+    Three runs on 2026-08-15 collected exactly 20 candidates and cited 16-19 of
+    them — the relevance gate discarding almost nothing — and a landmark cluster
+    RCT named by a run's own planned query never made the pool (issue #141).
+
+    The number lived in four places, and one of them was a hardcoded argument in
+    the web handler rather than a default. Raising the pipeline default alone
+    would have left the deployed web app on 20 with nothing to show for it.
+    """
+    import inspect
+
+    from articlegen import cli, pipeline, sources, web, writer
+
+    check("the pool default is 40", sources.DEFAULT_MAX_PAPERS == 40)
+
+    for mod, fn in ((sources, sources.gather_evidence),
+                    (pipeline, pipeline.generate_draft)):
+        default = inspect.signature(fn).parameters["max_papers"].default
+        check(f"{fn.__name__} defaults to the constant",
+              default == sources.DEFAULT_MAX_PAPERS)
+
+    parser = cli.build_parser()
+    args = parser.parse_args(["draft", "a topic"])
+    check("the CLI flag defaults to the constant",
+          args.max_papers == sources.DEFAULT_MAX_PAPERS)
+
+    handler = inspect.getsource(web.ArticleGenHandler._handle_draft)
+    check("the web handler reads the constant rather than its own number",
+          "max_papers=DEFAULT_MAX_PAPERS" in handler)
+
+    # The whole point of one constant: no caller may carry a second copy of the
+    # number. A stale literal here is how the web path would sit on the old pool
+    # while everything else moved.
+    for mod in (cli, pipeline, sources, web):
+        check(f"{mod.__name__} hardcodes no candidate cap of its own",
+              "max_papers=20" not in inspect.getsource(mod)
+              and "max_papers: int = 20" not in inspect.getsource(mod))
+
+    # The bigger pool is paid for in curation tokens, never in truncation.
+    # Truncating at 400 chars was measured in #117 and destabilised the gate.
+    check("a bigger pool did not buy itself truncated abstracts",
+          writer.CURATION_ABSTRACT_CHARS is None)
 
 
 def test_claude_md_still_describes_this_code() -> None:
@@ -4557,6 +5414,7 @@ def main(argv: list[str] | None = None) -> int:
         test_model_comparison_harness,
         test_full_text_run_says_why_it_stopped,
         test_curation_truncation_is_off_until_measured,
+        test_the_candidate_pool_is_big_enough_to_curate,
         test_claude_md_still_describes_this_code,
         test_real_articles_still_match_the_schema,
         test_openrouter_routing,
@@ -4566,11 +5424,17 @@ def main(argv: list[str] | None = None) -> int:
         test_draft_summary, test_rate_limit,
         test_keepalive_connection_reuse, test_substance_checks,
         test_source_failures_are_distinguishable,
+        test_first_semantic_scholar_refusal_buys_one_patient_round,
         test_search_cache, test_front_end_models_match_the_allowlist,
         test_polite_pool_identification, test_europe_pmc_parsing,
-        test_arxiv_parsing, test_arxiv_rate_limit_is_honoured,
+        test_arxiv_parsing, test_titles_arrive_without_markup,
+        test_candidate_papers_dedupe_by_doi,
+        test_preprints_are_marked_as_preprints,
+        test_arxiv_rate_limit_is_honoured,
         test_ungrounded_citations_leave_no_trace,
+        test_second_hand_figures_are_a_last_resort,
         test_full_text_grounding, test_pipeline_fetches_full_text,
+        test_full_text_order_favours_direct_and_recent,
         test_pmcid_is_resolved_by_doi,
         test_unpaywall_fallback_in_resolve_pmcid,
         test_methods_names_only_sources_that_answered,
@@ -4585,6 +5449,8 @@ def main(argv: list[str] | None = None) -> int:
         test_tangential_sources_stay_out_of_the_writer_prompt,
         test_revision_replaces_blocks_rather_than_the_article,
         test_revision_carries_sources_only_when_they_can_be_used,
+        test_warnings_ride_along_on_a_revision,
+        test_a_second_style_pass_runs_only_after_progress,
         test_disclosure_is_above_the_fold_and_derived,
         test_display_items_are_selected_once_for_both_formats,
         test_failed_style_gate_is_visible_in_the_article,

@@ -66,6 +66,23 @@ _UA_BASE = "articlegen/0.1.0 (+https://github.com/bartholomewtj/article-generato
 # egress IPs.
 _MAX_BACKOFF = 30.0
 
+# One extra, patient attempt for the FIRST Semantic Scholar call of a run.
+# Measured over four runs spanning more than an hour (#148): every first
+# keyless Semantic Scholar query returned HTTP 429 after its three tries, the
+# `exhausted` set then skipped the source for the rest of that run, and every
+# draft that session was written without it.
+#
+# The wait sits AT _MAX_BACKOFF, never above it: 30s is the most this codebase
+# is willing to make a caller with a progress bar wait. Semantic Scholar only,
+# once per run, and once it has failed the source is exhausted exactly as
+# before. This does not replace SEMANTIC_SCHOLAR_API_KEY — it only buys back
+# the case where the limit clears inside half a minute.
+_S2_PATIENT_WAIT = _MAX_BACKOFF
+
+# Spent per run. Reset by gather_evidence, which is the run boundary — the same
+# pattern as _recency_query_refused.
+_s2_patient_round_spent = False
+
 # How long a search result stays usable. The literature for a topic does not
 # change hour to hour, but the free tiers of these APIs refuse constantly — so
 # the same query re-run an hour later is far more likely to fail than to return
@@ -91,8 +108,71 @@ _search_cache: dict[tuple[str, str, int], tuple[float, list["Paper"], str]] = {}
 _SS_FIELDS = "title,abstract,year,authors,venue,citationCount,externalIds,url"
 _OA_FIELDS = (
     "id,title,publication_year,authorships,primary_location,"
-    "cited_by_count,abstract_inverted_index,doi"
+    "cited_by_count,abstract_inverted_index,doi,type"
 )
+
+
+# Inline formatting tags the publishers' JATS leaves in a title. Named
+# explicitly rather than matched as `<[^>]+>` (what `_strip_markup` does to
+# abstracts): a real title like "Outcomes in adults aged <65 versus >80 years"
+# contains a substring a generic tag pattern would eat whole, taking the visible
+# text with it. Every tag listed here is character-level, so removing it never
+# joins two words.
+_TITLE_MARKUP_RE = re.compile(
+    r"</?(?:scp|sc|i|b|u|em|strong|italic|bold|underline|monospace|sub|sup|span)\b[^>]*>",
+    re.IGNORECASE,
+)
+
+
+def _strip_title_markup(title: str) -> str:
+    """Remove publisher markup from a title, leaving the visible text intact.
+
+    OpenAlex returns JATS tags inline ("The <scp>N-PACT</scp> team"), which
+    reached Table 1, the reference list and the writer's prompt verbatim — and
+    defeated dedupe, because `_normalize_title` kept "scp" as a word and the
+    tagged and untagged copies of one paper no longer matched (issue #140).
+
+    The tag goes without a replacement space, then whitespace is collapsed and
+    the gaps the tags leave beside brackets and punctuation are closed, so
+    "( N-PACT ):" reads "(N-PACT):" whichever way the publisher spaced it.
+    """
+    text = _TITLE_MARKUP_RE.sub("", title)
+    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"([(\[])\s+", r"\1", text)
+    text = re.sub(r"\s+([)\]:;,.])", r"\1", text)
+    return text
+
+
+# DOI prefixes owned by preprint servers. A prefix belongs to one registrant, so
+# matching one is an identity check rather than a guess — which is what makes
+# this safe as a fallback for the sources that publish no type metadata.
+#
+# 10.1101 needs the extra digit. Cold Spring Harbor Laboratory Press registered
+# that prefix and uses it for BOTH bioRxiv/medRxiv postings (10.1101/2024.03.01.
+# 583912, or an older bare 10.1101/123456) and its peer-reviewed journals
+# (10.1101/gr.*, 10.1101/gad.*, 10.1101/cshperspect.*). A bare `10.1101` check
+# would print "not peer reviewed" under every Genome Research paper — a false
+# flag is a wrong warning printed in the article, which is worse than a miss.
+_PREPRINT_DOI_RES = (
+    re.compile(r"^10\.21203/"),          # Research Square
+    re.compile(r"^10\.1101/\d"),         # bioRxiv / medRxiv (digit, not a journal code)
+    re.compile(r"^10\.48550/arxiv\."),   # arXiv's own registered DOIs
+)
+
+_PREPRINT_URL_RE = re.compile(r"arxiv\.org/(?:abs|pdf)/", re.IGNORECASE)
+
+
+def _looks_like_preprint(doi: str, url: str) -> bool:
+    """True when the identifier itself says the record is a preprint posting.
+
+    The fallback for sources that return no usable type metadata (issue #144).
+    Identifier-only on purpose: a title or an abstract can say anything, and a
+    venue string arrives too inconsistently to key a printed claim on.
+    """
+    normalised = _normalize_doi(doi)
+    if normalised and any(rx.match(normalised) for rx in _PREPRINT_DOI_RES):
+        return True
+    return bool(url and _PREPRINT_URL_RE.search(url))
 
 
 @dataclass
@@ -113,6 +193,19 @@ class Paper:
     pmcid: str = ""
     is_open_access: bool = False
     full_text: str = ""
+    is_preprint: bool = False
+
+    def __post_init__(self) -> None:
+        # The one place a title is cleaned. Four search functions build Papers
+        # and a fifth would be added without remembering to call this, so the
+        # cleaning belongs to the object rather than to each parse site.
+        self.title = _strip_title_markup(self.title)
+        # The identifier fallback lives here for the same reason the title clean
+        # does: one choke point, so a fifth search source inherits it. A parser
+        # that already knows from the API's type metadata sets the flag True
+        # before construction, and this never clears it.
+        if not self.is_preprint:
+            self.is_preprint = _looks_like_preprint(self.doi, self.url)
 
     @property
     def author_line(self) -> str:
@@ -186,31 +279,55 @@ def _get_with_retry(url: str, params: dict, headers: dict, tries: int = 3) -> re
                 return resp
             last = f"HTTP {resp.status_code}"
             if resp.status_code not in (429, 500, 502, 503):
-                raise SearchFailure(last)  # non-retryable
+                exc = SearchFailure(last)  # non-retryable
+                exc.retry_later = False
+                raise exc
         if attempt < tries - 1:
             wait = _retry_delay(resp, delay)
             if wait is None:
-                raise SearchFailure(f"{last}, cool-off longer than {_MAX_BACKOFF:.0f}s")
+                exc = SearchFailure(f"{last}, cool-off longer than {_MAX_BACKOFF:.0f}s")
+                exc.retry_later = False
+                raise exc
             time.sleep(wait)
             delay *= 2
-    raise SearchFailure(f"{last} after {tries} attempts")
+    exc = SearchFailure(f"{last} after {tries} attempts")
+    exc.retry_later = True
+    raise exc
 
 
 def search_semantic_scholar(query: str, limit: int = 15) -> list[Paper]:
+    """Query Semantic Scholar Graph API.
+
+    This is the one source with a patient retry round: under shared rate limits
+    the first call routinely 429s after three quick tries (#148), so we give it
+    one extra attempt after a 30s wait before declaring failure and exhausting
+    the source for the run.
+    """
+    global _s2_patient_round_spent
     headers = {}
     api_key = os.environ.get("SEMANTIC_SCHOLAR_API_KEY")
     if api_key:
         headers["x-api-key"] = api_key
-    resp = _get_with_retry(
-        SEMANTIC_SCHOLAR_URL,
-        params={"query": query, "limit": limit, "fields": _SS_FIELDS},
-        headers=headers,
-    )
+    params = {"query": query, "limit": limit, "fields": _SS_FIELDS}
+    try:
+        resp = _get_with_retry(SEMANTIC_SCHOLAR_URL, params=params, headers=headers)
+    except SearchFailure as exc:
+        # `retry_later` defaults True: an unlabelled failure costs one wait,
+        # which is cheaper than missing the case this exists for.
+        if _s2_patient_round_spent or not getattr(exc, "retry_later", True):
+            raise
+        _s2_patient_round_spent = True   # set BEFORE the wait: spent is spent,
+        time.sleep(_S2_PATIENT_WAIT)     # whether or not this round succeeds
+        resp = _get_with_retry(SEMANTIC_SCHOLAR_URL, params=params, headers=headers)
     papers = []
     for item in resp.json().get("data") or []:
         if not item.get("abstract"):
             continue
         external_ids = item.get("externalIds") or {}
+        # Semantic Scholar's publicationTypes enum has no preprint value, and
+        # externalIds["ArXiv"] is present on plenty of published papers, so keying
+        # on it would false-flag them. The DOI fallback covers Research Square,
+        # bioRxiv and arXiv-registered DOIs coming through this source.
         papers.append(
             Paper(
                 title=item.get("title") or "",
@@ -290,6 +407,7 @@ def _openalex_page(query: str, limit: int, from_year: int | None = None) -> list
                 url=location.get("landing_page_url") or item.get("id") or "",
                 doi=item.get("doi") or "",
                 source="OpenAlex",
+                is_preprint=(item.get("type") == "preprint"),
             )
         )
     return papers
@@ -331,9 +449,9 @@ def search_openalex(query: str, limit: int = 15) -> list[Paper]:
         _recency_query_refused = True
         return papers
 
-    seen = {(p.doi or _normalize_title(p.title)) for p in papers}
+    seen = {(_normalize_doi(p.doi) or _normalize_title(p.title)) for p in papers}
     for paper in recent:
-        key = paper.doi or _normalize_title(paper.title)
+        key = _normalize_doi(paper.doi) or _normalize_title(paper.title)
         if key not in seen:
             seen.add(key)
             papers.append(paper)
@@ -419,6 +537,7 @@ def search_europe_pmc(query: str, limit: int = 15) -> list[Paper]:
                 # Both flags are needed: isOpenAccess without inEPMC means the
                 # OA copy lives somewhere Europe PMC cannot serve from.
                 is_open_access=(item.get("isOpenAccess") == "Y" and item.get("inEPMC") == "Y"),
+                is_preprint=(src == "PPR" or "preprint" in (item.get("pubType") or "").lower()),
             )
         )
     return papers
@@ -521,6 +640,9 @@ def search_arxiv(query: str, limit: int = 15) -> list[Paper]:
             if (name := (a.findtext(f"{_ATOM}name") or "").strip())
         ]
         journal_ref = _collapse(entry.findtext(f"{_ARXIV_NS}journal_ref") or "")
+        # Unconditionally True: even when the entry carries a journal_ref, the
+        # record we link and cite is the arXiv posting, not the journal's
+        # version of record.
         papers.append(
             Paper(
                 title=_collapse(entry.findtext(f"{_ATOM}title") or ""),
@@ -534,6 +656,7 @@ def search_arxiv(query: str, limit: int = 15) -> list[Paper]:
                 url=entry_id,
                 doi=(entry.findtext(f"{_ARXIV_NS}doi") or "").strip(),
                 source="arXiv",
+                is_preprint=True,
             )
         )
     return papers
@@ -547,6 +670,27 @@ def _collapse(text: str) -> str:
     unverifiable.
     """
     return re.sub(r"\s+", " ", text).strip()
+
+
+_DOI_PREFIX_RE = re.compile(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", re.IGNORECASE)
+
+
+def _normalize_doi(doi: str) -> str:
+    """One spelling for a DOI, so two records of one paper share a merge key.
+
+    The four search sources spell the same DOI three ways — OpenAlex returns
+    the resolver URL, Semantic Scholar returns mixed case, Europe PMC returns
+    it bare — which is how one paper reached the reference list twice (#139).
+    DOI prefixes and suffixes are case-insensitive for lookup, so lowercasing
+    is safe.
+
+    Anything that is not a DOI returns "" rather than itself: a junk value
+    ("n/a", "unknown") repeated across two unrelated records would otherwise
+    become a merge key and collapse two real papers into one.
+    """
+    text = _DOI_PREFIX_RE.sub("", (doi or "").strip()).strip()
+    text = text.rstrip(".,;").lower()
+    return text if text.startswith("10.") else ""
 
 
 def _normalize_title(title: str) -> str:
@@ -825,6 +969,34 @@ def full_text_excerpts(papers: list[Paper]) -> dict[int, str]:
     return out
 
 
+# Which eligible sources get a deep read, and in what order. The set is the
+# same as it always was (direct and related, never tangential); only the order
+# changed. Rank order put citation weight ahead of everything, so the five deep
+# reads went to old, heavily-cited papers: one measured run read a subset with
+# median year 2019 and 122 citations while the abstract-only rest ran at median
+# 2023 (#143). The article then prints "abstract-only, could not be appraised"
+# about the most current directly-relevant work — the papers doing the most.
+FULLTEXT_RELEVANCE_ORDER = ("direct", "related")
+
+
+def full_text_order(papers: list[Paper], relevance: dict[int, str]) -> list[int]:
+    """1-based indices to attempt full text for, best candidate first.
+
+    Direct before related; newest first inside a tier; search rank breaks the
+    remaining ties, which is the order the whole pipeline used before. A paper
+    with no year sorts as if year 0 — an undated record is not evidence of
+    being current. Tangential and unlabelled sources are absent from the
+    result: they are never fetched, whether or not the target is met.
+    """
+    tier = {label: n for n, label in enumerate(FULLTEXT_RELEVANCE_ORDER)}
+    ranked = []
+    for index, paper in enumerate(papers, start=1):
+        label = relevance.get(index)
+        if label in tier:
+            ranked.append((tier[label], -(paper.year or 0), index))
+    return [index for _, _, index in sorted(ranked)]
+
+
 def fetch_full_text(paper: Paper, use_cache: bool = True) -> str:
     """The paper's open-access full text as plain text, or "" when unavailable.
 
@@ -907,9 +1079,61 @@ def _search_once(name: str, search, query: str, limit: int) -> tuple[list[Paper]
     return papers, error, False
 
 
+def _merge_duplicate(kept: Paper, dup: Paper) -> None:
+    """Fold a duplicate record's metadata into the copy already collected.
+
+    The kept copy's *identity* is never swapped, only enriched. First-seen has
+    to win: arXiv is queried last precisely so a preprint loses to the
+    published version, and a preprint that happened to carry more metadata
+    would otherwise take its place in the reference list.
+
+    The preprint flag is never OR'd across a merge for the same reason: arXiv
+    losing to a published version must not relabel that published version as
+    a preprint. The flag is only updated if adopting the duplicate's identifier
+    reveals the only identifier we now hold is a preprint one.
+
+    The abstract is filled only when the kept copy has none. `verify.py`
+    checks statistics against the abstract shown to the writer, so pulling a
+    different source's wording in under a record identified by the first
+    source's title and venue would quietly change what a figure is checked
+    against. Every parser already drops records without an abstract, so this
+    branch is a guard, not a common path.
+    """
+    if dup.pmcid and not kept.pmcid:
+        kept.pmcid, kept.is_open_access = dup.pmcid, dup.is_open_access
+    if dup.abstract and not kept.abstract:
+        kept.abstract = dup.abstract
+    if dup.citation_count > kept.citation_count:
+        kept.citation_count = dup.citation_count
+    if kept.year is None and dup.year is not None:
+        kept.year = dup.year
+    if dup.doi and not kept.doi:
+        kept.doi = dup.doi
+        # Adopting an identifier adopts what it says about the record: if the
+        # only DOI we now hold is a preprint-server one, that is what the
+        # reference link points at.
+        kept.is_preprint = kept.is_preprint or _looks_like_preprint(kept.doi, "")
+    if dup.authors and not kept.authors:
+        kept.authors = dup.authors
+    if dup.venue and not kept.venue:
+        kept.venue = dup.venue
+    if dup.url and not kept.url:
+        kept.url = dup.url
+        kept.is_preprint = kept.is_preprint or _looks_like_preprint("", kept.url)
+
+
+# The pool the relevance gate gets to work on. At 20 it barely worked: three
+# measured runs collected exactly 20 candidates and cited 16-19 of them, and a
+# landmark cluster RCT named by a run's own planned query never made the pool
+# (#141). Curation cost scales with this number and that is the accepted price
+# — the alternative, truncating the abstracts sent to curation, was measured in
+# #117 and destabilises the gate, so CURATION_ABSTRACT_CHARS stays None.
+DEFAULT_MAX_PAPERS = 40
+
+
 def gather_evidence(
     queries: list[str],
-    max_papers: int = 20,
+    max_papers: int = DEFAULT_MAX_PAPERS,
     # Records without a retrievable abstract are discarded, and the yield is
     # poor: a real run of three queries against both APIs returned 10 usable
     # papers, which is thin for a review and leaves each section restating the
@@ -921,6 +1145,7 @@ def gather_evidence(
     log=lambda msg: None,
     outcomes: list[dict] | None = None,
     use_cache: bool = True,
+    patient: bool = True,
 ) -> list[Paper]:
     """Run every query against every source, dedupe, and return the best candidates,
     ranked by a blend of topic relevance, citations, and recency.
@@ -934,11 +1159,18 @@ def gather_evidence(
     `use_cache=False` forces a live probe of every source. Only the diagnostic
     endpoint wants this — it exists to answer "can this host reach its sources
     *right now*", which a cached answer cannot. Drafting always leaves it on.
+
+    `patient=False` starts the run with the patient retry round already spent
+    (used by pre-flight probes to fail fast without adding 30s).
     """
-    global _recency_query_refused
+    global _recency_query_refused, _s2_patient_round_spent
     _recency_query_refused = False
-    seen: set[str] = set()
-    _first_by_title: dict[str, Paper] = {}
+    # patient=False starts the run with the round already spent. The pre-flight
+    # probe uses it: it exists to fail FAST before the caller is billed, so it
+    # must never add 30s to a run that is about to work.
+    _s2_patient_round_spent = not patient
+    by_title: dict[str, Paper] = {}
+    by_doi: dict[str, Paper] = {}
     collected: list[Paper] = []
     # A source that has already refused once in this run will almost certainly
     # refuse again — the limits are per-minute and the run takes seconds. Each
@@ -955,11 +1187,11 @@ def gather_evidence(
         # so the module-level names are looked up fresh.
         #
         # arXiv goes last, and the order is load-bearing: dedupe is first-seen-
-        # wins on the normalised title, and a preprint usually shares its title
-        # with the published version. Querying arXiv last means the peer-
-        # reviewed record is the one kept, with the preprint discarded as its
-        # duplicate — the wrong way round would cite preprints for work that
-        # has since appeared in a journal.
+        # wins on the DOI, falling back to the normalised title, and a preprint
+        # usually shares its title with the published version. Querying arXiv
+        # last means the peer-reviewed record is the one kept, with the
+        # preprint discarded as its duplicate — the wrong way round would cite
+        # preprints for work that has since appeared in a journal.
         for name, search in (("semantic_scholar", search_semantic_scholar),
                              ("openalex", search_openalex),
                              ("europe_pmc", search_europe_pmc),
@@ -995,21 +1227,29 @@ def gather_evidence(
                    else f"FAILED ({error}){suffix}"))
 
             for paper in results:
-                key = _normalize_title(paper.title)
-                if not key:
+                # DOI first, title second. A DOI is a stable identifier; a
+                # title is text, and any wording difference between two
+                # sources' copies of one record used to produce two candidates
+                # — two slots in the capped pool and two entries in a "N
+                # sources cited" count that should have said one (#139).
+                title_key = _normalize_title(paper.title)
+                doi_key = _normalize_doi(paper.doi)
+                if not title_key:
                     continue
-                if key in seen:
-                    # First-seen wins, but a duplicate from Europe PMC may know
-                    # something the kept copy does not: the PMCID that makes
-                    # full text fetchable. Merge that instead of discarding it.
-                    if paper.pmcid:
-                        kept = _first_by_title.get(key)
-                        if kept is not None and not kept.pmcid:
-                            kept.pmcid = paper.pmcid
-                            kept.is_open_access = paper.is_open_access
+                kept = by_doi.get(doi_key) if doi_key else None
+                if kept is None:
+                    kept = by_title.get(title_key)
+                if kept is not None:
+                    _merge_duplicate(kept, paper)
+                    # Register the duplicate's own keys against the kept copy,
+                    # so a third record matching either spelling merges too.
+                    by_title.setdefault(title_key, kept)
+                    if doi_key:
+                        by_doi.setdefault(doi_key, kept)
                     continue
-                seen.add(key)
-                _first_by_title[key] = paper
+                by_title[title_key] = paper
+                if doi_key:
+                    by_doi[doi_key] = paper
                 collected.append(paper)
 
     # Build a keyword set from the topic + core entity for a relevance signal.

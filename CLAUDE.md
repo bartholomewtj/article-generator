@@ -64,10 +64,10 @@ tests/test_journal_conformance.py conventions as assertions over 5 fixtures
 
 **`pipeline.generate_draft()`, and nowhere else**: source pre-flight →
 `plan_queries` → `gather_evidence` → `curate_sources` → full-text fetch →
-`write_article` → `enforce_style` (one `revise_prose` pass if `check_style`
-finds errors) → `check_statistics` → a `Draft` carrying article, papers,
-curation, verification, style report and `provenance` (queries, model, date,
-databases, full_text_sources).
+`write_article` → `enforce_style` (up to `MAX_STYLE_PASSES` `revise_prose`
+passes if `check_style` finds errors) → `check_statistics` → a `Draft` carrying
+article, papers, curation, verification, style report and `provenance` (queries,
+model, date, databases, full_text_sources).
 
 Callers differ **only** in what they do with the `Draft`. Never re-implement a
 stage in a caller — the web handler once had its own copy that silently skipped
@@ -83,6 +83,7 @@ behaviour it describes.
 | Every caller runs the one pipeline | `test_pipeline_is_shared` |
 | API keys travel as arguments, never through `os.environ` | `test_per_request_api_key` |
 | Methods names only databases that actually answered | `test_methods_names_only_sources_that_answered` |
+| The first Semantic Scholar refusal of a run buys one patient retry | `test_first_semantic_scholar_refusal_buys_one_patient_round` |
 | Verification searches exactly what the writer was shown | `test_full_text_grounding` |
 | A cited sentence is checked against its own sources | `test_statistic_verification` |
 | Flagged figures are marked where the number is | `test_unverified_figures_are_marked_inline` |
@@ -91,11 +92,18 @@ behaviour it describes.
 | The stored API key is tab-only (`sessionStorage`) unless opted in | `test_api_key_is_session_only_by_default` |
 | Nothing needing a key costs a round trip to discover it | `test_first_visit_does_not_dead_end` |
 | The full-text dependencies fail loudly enough to diagnose | `test_full_text_dependencies_fail_loudly_enough_to_diagnose` |
+| Deep reads go to direct and recent sources first | `test_full_text_order_favours_direct_and_recent` |
 | A doomed run is refused before the caller is billed | `test_dead_sources_fail_before_the_caller_is_billed` |
 | The article shape is not a preference (`TONE_LABEL`, `LENGTH_LABEL`, `DEPTH_LABEL` are constants) | `test_house_style_is_fixed_not_a_preference` |
 | Register rules fire on investigator voice, not synthesis voice | `test_register_rules_are_scoped_to_the_synthesis_voice` |
 | Sources travel with a revision only when usable | `test_revision_carries_sources_only_when_they_can_be_used` |
+| A second style pass runs only after the first reduced the errors | `test_a_second_style_pass_runs_only_after_progress` |
 | Every article still matches the writer's schema | `test_real_articles_still_match_the_schema` |
+| Titles carry no publisher markup | `test_titles_arrive_without_markup` |
+| One paper is one candidate, however its DOI is spelled | `test_candidate_papers_dedupe_by_doi` |
+| A preprint is labelled wherever it is listed | `test_preprints_are_marked_as_preprints` |
+| A load-bearing figure is not quoted at second hand when a first-hand one exists | `test_second_hand_figures_are_a_last_resort` |
+| The candidate-pool default lives in one constant | `test_the_candidate_pool_is_big_enough_to_curate` |
 
 **Not pinned by a test** — these need the reasoning, because nothing else
 carries it:
@@ -160,8 +168,8 @@ copy because the front end shows it in a **sandboxed** iframe; files written to
 ## Prose style (enforced, not prompted)
 
 `style.py` turns `docs/journal-style.md` §13–18 into a deterministic check.
-`enforce_style` sends `revision_brief()` back through `revise_prose` **once**,
-and keeps the revision only if it reduces the error count *and* leaves citations
+`enforce_style` sends `revision_brief()` back through `revise_prose`, and
+keeps each revision only if it reduces the error count *and* leaves citations
 and sections intact.
 
 - **The revision is a patch, not a new article.** `revise_prose` asks for a list
@@ -170,6 +178,22 @@ and sections intact.
   model invented means it restructured the article, which a style pass may not
   do. `too-few-sections` is the one failure that still buys a whole rewrite
   (`rewrite_whole=True`). Measurements: `docs/decisions.md`.
+- **A second pass is allowed, and only after the first one worked.**
+  `MAX_STYLE_PASSES` is 2, and the loop repeats only through the accept
+  branch — which requires strictly fewer errors — so a stuck error costs one
+  call rather than looping. Two runs on record ended at 3 → 1 and 2 → 1
+  errors, and a single residual is enough to print the "working draft rather
+  than a finished review" line in Limitations (#146). Each pass recomputes
+  `rewrite_whole` and `needs_sources` from the *current* report, so the
+  `SUBSTANCE_RULES` split applies on pass 2 exactly as on pass 1. →
+  `test_a_second_style_pass_runs_only_after_progress`
+- **Warnings ride along on a revision; they never buy one.**
+  `RIDE_ALONG_WARNINGS` (long-sentence, wordiness, passive-voice) are appended
+  to `revision_brief()` only when errors already triggered the pass. The
+  early return, `needs_sources` and the acceptance rule all stay keyed on
+  errors. `under-length` is deliberately out: it is a substance rule, so
+  letting it in would make the brief ask for sources `enforce_style` did not
+  send. → `test_warnings_ride_along_on_a_revision`
 - **Errors**: second person, contractions, rhetorical questions, exclamations,
   boosters, claims of proof, first person outside the `here we review` frame,
   under-hedging (`MIN_HEDGES_PER_SENTENCE = 0.20`), clinical directives.
@@ -210,11 +234,29 @@ and sections intact.
 
 ## Sources and grounding
 
+- **The candidate pool is `DEFAULT_MAX_PAPERS` (40), defined in `sources.py` and
+  read by every entry point** — the CLI flag's default, `generate_draft`, and
+  the web handler. At 20 the relevance gate barely discarded anything: three
+  measured runs collected exactly 20 candidates and cited 16-19 of them, and a
+  landmark cluster RCT named by a run's own planned query never made the pool
+  (#141). A bigger pool is paid for in curation tokens, **never in truncated
+  abstracts** — `CURATION_ABSTRACT_CHARS` stays `None` (#117). Two knock-ons
+  are expected rather than bugs: the Methods "screened" count roughly doubles,
+  and `MAX_FULLTEXT_REQUESTS` (18) now binds before `FULLTEXT_TARGET` more
+  often, so the stop-reason NOTE fires routinely.
 - **Abstracts plus open-access full text.** `FULLTEXT_TARGET` (5) matches what
   `full_text_excerpts` can show (5 × 12,000 = 60,000 chars);
   `MAX_FULLTEXT_REQUESTS` (18) stops a topic with no open-access literature
   spending a request per paper. **Tangential sources are never fetched**, even
   when the target goes unmet.
+- **The fetch order is relevance then recency, not rank** (`full_text_order`).
+  Rank sorts on topic overlap then citation weight, so the five deep reads
+  went to old, heavily-cited work — a measured run read median year 2019 /
+  122 citations against an abstract-only rest at median 2023, and the article
+  printed "abstract-only, could not be appraised" about the most current
+  directly-relevant syntheses (#143). Direct before related, newest first
+  inside a tier, search rank breaking ties. The eligible *set* is unchanged;
+  tangential and unlabelled sources are still never fetched.
 - **Every run says *why* full-text fetching stopped.** "4 of 19" is not an
   answer: a request cap that bit is a tuning problem, genuinely absent open
   access is a property of the literature and not fixable here, and the log used
@@ -244,6 +286,30 @@ and sections intact.
   An empty pmcid means nobody asked — `sources.resolve_pmcid` looks the DOI up
   first. Full texts get bracketed citation numbers stripped at parse time — they
   collide with the SOURCE-index scheme.
+- **Titles are stripped of publisher markup in `Paper.__post_init__`** — the
+  one choke point, so a fifth search source gets it for free. OpenAlex passes
+  JATS through (`<scp>`, `<i>`, `<sub>`…), which printed raw in Table 1 and
+  the reference list and defeated dedupe, since `_normalize_title` kept `scp`
+  as a word and cited one paper twice (#140). `_TITLE_MARKUP_RE` lists the
+  tags by name instead of sweeping `<[^>]+>` like `_strip_markup` does to
+  abstracts: a title reading "adults aged <65 versus >80" would otherwise
+  lose the middle of itself. Europe PMC titles keep their `_strip_markup`
+  call as well — that one catches general HTML the named list does not.
+- **Candidates are deduped by DOI first, then by title** (`_normalize_doi`,
+  `_merge_duplicate`). One paper reached the reference list twice because the
+  four sources spell a DOI three ways — resolver URL, mixed case, bare — and
+  the titles differed by a subtitle (#139). The kept copy's **identity is
+  never swapped, only enriched**: first-seen has to win, because the
+  arXiv-last ordering is what discards a preprint in favour of the published
+  version. A value that is not a DOI normalises to `""` rather than itself,
+  so a junk field shared by two unrelated records cannot merge them.
+- **Preprints are detected and marked, never excluded or down-ranked.**
+  Preprints are detected from API type metadata where it exists (OpenAlex
+  `type`, Europe PMC `PPR`, arXiv always) with an identifier fallback in
+  `Paper.__post_init__`; `10.1101` needs a following digit because Cold Spring
+  Harbor uses the same prefix for its journals; the flag is never copied across
+  a `_merge_duplicate` because first-seen identity wins; and preprints are
+  marked, never excluded or down-ranked.
 - **Relevance gate.** `curate_sources` labels each paper direct/related/
   tangential to the *exact* topic; the writer is told the counts and must flag
   when nothing is directly on-topic. Prevents a "schizophrenia" article quietly
@@ -286,6 +352,20 @@ and sections intact.
 - **arXiv gets a 3s client-side throttle** (`_ARXIV_MIN_INTERVAL`). There is no
   key, so the penalty for ignoring their documented interval falls on the
   egress IP — shared, on the hosted backend.
+- **Keyless Semantic Scholar is effectively dead under the shared rate limit —
+  measured, four runs over more than an hour (#148)**: every *first* Semantic
+  Scholar query returned HTTP 429 after its three tries, `exhausted` then
+  skipped it for the rest of the run, and the drafts that session were
+  written without it. **Setting the free `SEMANTIC_SCHOLAR_API_KEY` is the fix
+  worth doing on any machine that runs drafts.** No code change recovers this.
+  The one code-side concession: `_S2_PATIENT_WAIT`, a single extra attempt
+  after one wait at the `_MAX_BACKOFF` ceiling, on the first Semantic Scholar
+  call of a run only. Semantic Scholar only, once per run, and the source is
+  exhausted after it exactly as before. A failure marked `retry_later = False`
+  (non-retryable status, or a cool-off past the cap) is **not** waited on —
+  that is `_MAX_BACKOFF` doing its job. `_preflight_sources` passes
+  `patient=False`: it exists to fail fast before the caller is billed, so the
+  probe must not add 30s to a run that is about to work. → `test_first_semantic_scholar_refusal_buys_one_patient_round`
 - **A source that refuses once is skipped for the rest of the run**
   (`gather_evidence`'s `exhausted` set). Note the interaction with
   `_MAX_BACKOFF`: a source asking for a cool-off longer than 30s fails
@@ -351,11 +431,16 @@ and sections intact.
   prepend *this file* to every call. `--effort high` always on `claude-cli`;
   subscription time is not metered per token, so `deep` and `api_key` are
   ignored and neither is an oversight.
-- **`claude-cli` enforces no response schema**, unlike the API paths. Three
+- **`claude-cli` enforces no response schema**, unlike the API paths. Four
   defences, all load-bearing: the format demand is repeated at the *end* of the
   user prompt, a fenced or prose-wrapped object is recovered by string-aware
-  brace matching, and an unparseable reply is retried once. A **refusal** is not
-  retried: same model, same answer. Suppress MCP servers with
+  brace matching, a near-miss is repaired deterministically — trailing commas,
+  a missing comma at a value boundary, bare newlines inside strings — and
+  accepted **only if it then parses to a dict**, and an unparseable reply is
+  retried once. Repair runs before each retry decision, never instead of one,
+  and never as an LLM call: a model asked to fix its own JSON rewrites it, and
+  the near-miss it was meant to save is what gets lost (#147). A **refusal** is
+  not retried: same model, same answer. Suppress MCP servers with
   `--strict-mcp-config` and an empty `--mcp-config`, or pay a 10x prompt tax.
 - **`gemini-cli`'s `--json-schema` genuinely enforces the schema** and returns
   the parsed object in `structured_output`. It is the one CLI path as reliable
@@ -468,7 +553,8 @@ index.html on GitHub Pages  ──POST /api/draft──▶  backend on Render
   regex covering `[...]=`, `.update(` and `.setdefault(`, then runs a real call
   through a fake transport and asserts `os.environ` is byte-identical.
 - Set `OPENROUTER_API_KEY` or `ANTHROPIC_API_KEY`, or use `--model cli:opus`
-  with no key at all. Optional: `SEMANTIC_SCHOLAR_API_KEY`, `OPENALEX_MAILTO`.
+  with no key at all. Recommended: `SEMANTIC_SCHOLAR_API_KEY` (free; without it
+  Semantic Scholar 429s on effectively every call, #148). Optional: `OPENALEX_MAILTO`.
 
 ## Conventions
 

@@ -84,6 +84,19 @@ The CLI enforces no response schema, unlike the API paths. The first real call
 answered a JSON-schema prompt in YAML and cost the whole run at the first of
 eight stages.
 
+### `#147` — repairing near-miss JSON on `claude-cli`
+
+`claude-cli` cannot enforce a response schema. Measured: 3 of 5 `write_article`
+calls on `cli:opus` returned non-JSON at least once, and one run died after its
+retry with `Expecting ',' delimiter: line 1 column 4942` — a complete article
+one comma short.
+
+Repair is deterministic rather than an LLM retry: asking a model to fix its own
+JSON rewrites the text, and the article we were trying to salvage is what gets
+lost. Acceptance requires both valid JSON and a dict root — callers of
+`generate_json` expect a mapping, so a repair that yields a list or scalar is
+unusable.
+
 ### `gemini-cli` — do not step the shallow calls down a tier
 
 It is a one-line change and it looks free: both cheap tiers report
@@ -231,9 +244,83 @@ the pipeline performs. `curate_sources` ranks on topic fit alone, so one draft
 boxed a scoping review as the "key study" while an adequately powered trial sat
 in the body.
 
+### `#145` — long-sentence warnings survived every draft
+
+Measured across three recent runs: 21 long-sentence warnings total (4, 5 and 12
+per draft), mean sentence length 28–30 words, including a 61-word sentence in a
+Conclusions section. One run logged "Prose style: clean" while printing 12
+long-sentence lines in its diagnostic output. Because `long-sentence` was a
+warning rather than an error, `revision_brief()` excluded it: the revision pass
+fixed error-level issues and left every long sentence in place.
+
+Warnings were excluded from the brief originally because a warning is a matter
+of degree and must not be able to spend an LLM revision call on its own.
+Promoting `long-sentence` to an error would have bought a revision for every
+single long sentence and put sentence length into the acceptance count, which
+is calibrated strictly on journal-breaking errors.
+
+The fix is ride-along: `RIDE_ALONG_WARNINGS` (long-sentence, wordiness,
+passive-voice) are appended to `revision_brief()` under a secondary "Also fix
+these" heading only when errors have already triggered the revision pass. If
+there are no errors, no revision occurs and warnings remain informational.
+`under-length` is excluded from the ride-along set because it is a substance
+rule and would cause the brief to reference sources that `enforce_style` does
+not provide for register-only fixes.
+
+### `#146` — a second revision pass, gated on progress
+
+Two of three runs finished with exactly one residual style error after a
+revision that had already worked: 3 → 1 and 2 → 1. One error is enough for
+Limitations to brand the article "a working draft rather than a finished
+review", so the last error was costing the article's framing for want of one
+more targeted edit.
+
+The gate is progress, not a retry count. `enforce_style` loops only through the
+accept branch, and acceptance already required strictly fewer errors, so an
+error the model cannot fix still costs exactly one call. `MAX_STYLE_PASSES` is
+2 rather than 3 because the residual being paid for is one error; nothing on
+record suggests a third pass has anything to do.
+
 ---
 
 ## Grounding and provenance
+
+### `#139` — one paper, two references
+
+Two of three recent runs cited the same paper twice as separate references:
+`10.1001/jamapsychiatry.2025.1317` (Janik et al.) and `10.1111/jan.16056` (N-PACT).
+The four search sources spell a DOI three ways — resolver URL, mixed case,
+bare — and wording differences in the title (such as a subtitle or markup)
+allowed duplicates to slip past title-based dedupe.
+
+The fix normalises DOIs with `_normalize_doi` and merges duplicate metadata
+field by field into the first-seen record (`_merge_duplicate`). A literal
+"keep the richer record" swap would have broken the invariant that querying
+arXiv last discards a preprint in favour of the published version, since a
+preprint with higher citation counts would displace the peer-reviewed
+article. Merging field by field enriches the kept record while preserving
+first-seen identity.
+
+### `#144` — preprints were indistinguishable from peer-reviewed papers
+
+A draft cited a Research Square preprint (DOI `10.21203/rs.3.rs-9924877/v1`)
+beside a Cochrane review with nothing to tell them apart; the only difference on
+the page was a blank journal cell in Table 1's Source column. The masthead's
+"Not peer reviewed" refers to the generated article itself, not its sources.
+
+Preprints are now detected in `articlegen/sources.py` using API type metadata
+(OpenAlex `type == "preprint"`, Europe PMC `PPR`, arXiv unconditionally) with
+an identifier fallback (`_looks_like_preprint`) in `Paper.__post_init__` for
+DOI prefixes like Research Square and bioRxiv/medRxiv. `10.1101` requires a
+following digit (`10.1101/\d`) because Cold Spring Harbor Laboratory Press
+uses the same prefix for both preprints and its peer-reviewed journals (such as
+Genome Research, `10.1101/gr.*`).
+
+The preprint flag is never merged across duplicate records in
+`_merge_duplicate` because first-seen identity wins and arXiv is queried last
+specifically to favour published versions over preprints. `articlegen/render.py`
+marks preprints in Table 1's Source column and appends `(preprint, not peer
+reviewed)` to reference entries in HTML and Markdown.
 
 ### `#75` — the article contradicted itself about its own evidence
 
@@ -337,6 +424,121 @@ the OpenRouter key was dead. A different model could in principle hold its
 labels better under truncation — but the margin here is wide, not marginal, so
 that would change the explanation and not the verdict. If it is ever re-run,
 a larger `--chars` is the only version worth trying, under the same rule.
+
+### `#143` — the deep reads went to the oldest papers
+
+Measured on a recent run: the read-subset skew line reported `read n=5 median
+year 2019, median citations 122; abstract-only n=15 median year 2023` — the five
+full texts went to older, highly-cited papers while the most current
+directly-relevant syntheses got abstract-only treatment. The article then
+printed the standing limitation that abstract-only sources could not be
+appraised — about exactly the papers doing the most work.
+
+Rank order sorts on topic overlap then citation weight, so citation weight
+inside `_rank_score` pulled old, heavily-cited work to the top of the fetch
+list. Raising `FULLTEXT_TARGET` was not the fix: the excerpt budget is already
+full at 5 × 12,000 characters (`FULLTEXT_PER_PAPER_CHARS` × `FULLTEXT_TARGET` =
+`FULLTEXT_TOTAL_CHARS`).
+
+The fix is ordering only (`full_text_order`): attempt the eligible set in
+relevance order (direct before related), newest publication year first within a
+tier, search rank breaking remaining ties. Tangential and unlabelled sources are
+still excluded even if the target goes unmet.
+
+What to watch next: the skew line on the next few real runs. If the read subset
+now runs *newer* than the abstract-only rest, that is the change working, not a
+new problem.
+
+### `#141` — a pool of 20 was inclusion, not curation
+
+Three mental-health runs on 2026-08-15 each collected **exactly 20** candidates
+and cited 16-19 of them. Hitting the cap every time is the tell: the pool was
+capped, not exhausted, so the direct/related/tangential gate was choosing from a
+list that had already been cut for it.
+
+The cost was specific. The seclusion run planned the query "Safewards trial
+conflict containment acute mental health wards" and the Bowers Safewards cluster
+RCT still never made the pool — it reached the article only second-hand, quoted
+inside an integrative review. Twenty slots ranked with a recency weight fill
+with recent reviews, and the landmark primary trial they all cite is what gets
+squeezed out.
+
+The default is now `DEFAULT_MAX_PAPERS = 40`, defined once in `sources.py` and
+read by `gather_evidence`, `generate_draft`, the `--max-papers` flag and the web
+handler. It was previously written out four times, and the web handler's copy
+was a hardcoded argument rather than a default — raising the pipeline default
+alone would have left the deployed app on 20.
+
+**Paid for in tokens, not in truncation.** Curation grades every candidate on a
+full abstract, so the curation call roughly doubles (~13,000 input tokens
+measured at 20). That is the accepted price. Truncating those abstracts is the
+one thing that must not be traded here: `#117` measured it and it destabilises
+the gate, so `CURATION_ABSTRACT_CHARS` stays `None`.
+
+What to watch on the next few real runs:
+
+- **Does the gate now discard?** Cited-of-collected should fall well below the
+  16-19 of 20 that prompted this. If runs still cite nearly everything, the
+  problem is the gate's labelling, not the pool size.
+- **`per_query` is still 25 and was not raised.** A topic that comes back with
+  fewer than 40 candidates is a thin literature, not a bug — but if that is the
+  common case, the cap is not the binding constraint and this change is inert.
+- **The full-text stop reason.** The eligible list doubles while
+  `MAX_FULLTEXT_REQUESTS` stays 18, so "request cap reached" should become the
+  usual exit and its NOTE should fire routinely. That is the log doing its job.
+  Whether 18 is still the right number is a separate question with its own
+  measurement.
+
+### `#142` — load-bearing statistics arrived second-hand
+
+A draft from the 2026-08-15 runs opened its Introduction with three numbers the
+writer never saw at first hand (14.4%, 15.8% and 25.6% restraint-seclusion
+prevalence; 25–47% PTSD; and a Cochrane review quoted inside a realist review).
+The prose labelled this honestly ("a meta-analysis cited within a Canadian pilot
+study estimated…"), but `verify.check_statistics` searches only the material the
+writer was shown. The quoted figure is present in that text, so it verifies —
+the check can only ever confirm that the quoting paper printed the number, not
+that the originating study reported it. If the quoting paper misquoted, the error
+entered the article with a citation that looked verified.
+
+Chasing nested references — resolving a DOI mentioned inside body text and
+fetching the original study — would introduce a new fetch path, new failure modes,
+and no guarantee the nested work is open access. That path was left out of scope.
+
+Instead, the writer's system prompt now instructs it to avoid building the
+`title`, `abstract`, `key_points` or the opening claim of the Introduction on a
+figure its source attributes to another work, whenever any supplied source
+reports a comparable figure at first hand. Where a second-hand figure is the only
+evidence available, the existing "cited within"-style attribution is preserved so
+the reader can see it is second-hand, citing the source actually read.
+
+Because this is a prompt-side rule without deterministic enforcement, it is a
+tendency rather than a guarantee: a future draft may still occasionally lead with
+a quoted figure if no first-hand alternative exists or if the model leans toward
+it. Refs #142.
+
+### `#148` — keyless Semantic Scholar 429'd for a whole session
+
+Measured across four runs spanning more than an hour: every FIRST Semantic
+Scholar query returned HTTP 429 after 3 attempts, and the `exhausted` set
+then (correctly, per design) skipped the source for the rest of each run.
+Net effect: Semantic Scholar contributed nothing all session, and every draft
+ran on the remaining databases.
+
+Weakening the `exhausted` set was rejected: re-attempting a dead source on
+every query wasted ~10s each time. Raising `_MAX_BACKOFF` or waiting out a
+cool-off longer than the 30s cap was also rejected: a user is watching a
+progress bar.
+
+The code-side change is narrow: `_S2_PATIENT_WAIT` gives ONLY the first Semantic
+Scholar attempt of a run one extra retry round after waiting at the existing
+`_MAX_BACKOFF` ceiling (30s) before declaring the failure that exhausts the
+source. `_preflight_sources` passes `patient=False` so the probe fails fast
+without adding 30s. A failure with `retry_later = False` (non-retryable HTTP
+status or cool-off past `_MAX_BACKOFF`) gets no wait.
+
+The real fix remains setting the free `SEMANTIC_SCHOLAR_API_KEY`, which is an ops
+task and stays open. Refs #148, stays open.
 
 ---
 

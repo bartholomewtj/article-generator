@@ -729,17 +729,48 @@ SUBSTANCE_RULES = frozenset({
     "hedge-monotony", "repeated-opener", "echoed-abstract", "bundled-citations",
 })
 
+# Warnings that ride along on a revision that is already happening. A warning
+# never buys a revision on its own — `enforce_style` returns early when there
+# are no errors — but once the model is being paid to rewrite prose anyway,
+# a 61-word sentence is a fix nobody else is going to make (#145).
+#
+# `under-length` is deliberately absent. It is the one warning that is also a
+# SUBSTANCE_RULE, and letting it into the brief would flip the brief into "go
+# back to the SOURCES below" while `enforce_style` — which keys `needs_sources`
+# on the *errors* — sent no sources with it. The brief would then name material
+# that is not in the prompt.
+RIDE_ALONG_WARNINGS = frozenset({"long-sentence", "wordiness", "passive-voice"})
+
 
 def revision_brief(report: dict) -> str:
     """The instruction sent back to the model when the prose misses the house style."""
-    problems = errors(report) or report["issues"]
+    errs = errors(report)
+    problems = errs or report["issues"]
     needs_substance = any(i["rule"] in SUBSTANCE_RULES for i in problems)
+
+    # Warnings ride along only when errors already bought the revision. With no
+    # errors there is no revision to attach them to, and appending them here
+    # would let a warning-only report produce a brief that reads like a job.
+    extras = [
+        i for i in report["issues"]
+        if i["severity"] != "error" and i["rule"] in RIDE_ALONG_WARNINGS
+    ] if errs else []
 
     lines = ["The draft breaks these journal-prose conventions. Fix each one:"]
     for issue in problems:
         lines.append(f"- [{issue['where']}] {issue['detail']}")
         if issue["excerpt"]:
             lines.append(f"  Offending text: {issue['excerpt']}")
+
+    if extras:
+        lines.append(
+            "Also fix these while you are in the same blocks, provided doing so "
+            "disturbs nothing above:"
+        )
+        for issue in extras:
+            lines.append(f"- [{issue['where']}] {issue['detail']}")
+            if issue["excerpt"]:
+                lines.append(f"  Offending text: {issue['excerpt']}")
 
     if needs_substance:
         # A register fix is a rewording; a thinness fix is not. Telling the model

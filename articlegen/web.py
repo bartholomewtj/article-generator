@@ -40,7 +40,7 @@ from . import llm
 from .ideas import generate_ideas
 from .pipeline import NoPapersFound, generate_draft
 from .render import _draft_title, build_index, render_article, render_markdown
-from .sources import gather_evidence, probe_unpaywall
+from .sources import DEFAULT_MAX_PAPERS, gather_evidence, probe_unpaywall
 
 DRAFTS_DIR = "drafts"
 
@@ -395,7 +395,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
 
         try:
             draft = generate_draft(
-                topic, style_note=style[:500], max_papers=20, api_key=api_key,
+                topic, style_note=style[:500], max_papers=DEFAULT_MAX_PAPERS, api_key=api_key,
                 model=_requested_model(payload), log=self._log_stage
             )
         except NoPapersFound as exc:

@@ -21,7 +21,8 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from .llm import resolve_provider
-from .sources import DATABASE_NAMES, Paper, fetch_full_text, gather_evidence, resolve_pmcid
+from .sources import (DATABASE_NAMES, DEFAULT_MAX_PAPERS, Paper, fetch_full_text,
+                      full_text_order, gather_evidence, resolve_pmcid)
 from .style import (SUBSTANCE_RULES, check_style, errors as style_errors,
                     format_report as format_style, revision_brief)
 from .verify import check_statistics
@@ -92,7 +93,7 @@ def _preflight_sources(topic: str, log: Logger) -> None:
     outcomes: list[dict] = []
     log("Checking the scholarly APIs are answering...")
     papers = gather_evidence([topic], max_papers=1, per_query=1, topic=topic,
-                             log=_silent, outcomes=outcomes)
+                             log=_silent, outcomes=outcomes, patient=False)
     failures = [o for o in outcomes if o["error"]]
     if outcomes and len(failures) == len(outcomes):
         reasons = "; ".join(sorted({f"{o['source']}: {o['error']}" for o in failures}))
@@ -209,6 +210,15 @@ class Draft:
         return parts
 
 
+# How many times `enforce_style` may send the prose back to the model. The
+# second pass is gated on the first having *worked*: a pass only repeats after
+# a revision that was accepted, and acceptance means strictly fewer errors. So
+# an error the model cannot fix costs one call, not two, and nothing loops.
+# Two, not three: the runs that motivated this ended at 3 -> 1 and 2 -> 1, a
+# residual of one, which is what a second pass is sized for (#146).
+MAX_STYLE_PASSES = 2
+
+
 def enforce_style(
     article: dict,
     model: str | None = None,
@@ -217,10 +227,12 @@ def enforce_style(
     papers: list[Paper] | None = None,
     curation: dict | None = None,
 ) -> tuple[dict, dict]:
-    """Check the prose against journal conventions and, if it misses, revise once.
+    """Check the prose against journal conventions and, if it misses, revise.
 
-    The revision is only accepted if it actually reduces the error count and keeps
-    the draft intact — a revision that drops citations or sections is discarded.
+    Allows up to MAX_STYLE_PASSES passes, with a second pass only running if the
+    first pass was accepted (i.e. it reduced the error count). The revision is
+    only accepted if it actually reduces the error count and keeps the draft
+    intact — a revision that drops citations or sections is discarded.
 
     `papers` matters when the draft failed for thinness or repetition: those can
     only be fixed by adding grounded material, and without the sources the model
@@ -237,46 +249,65 @@ def enforce_style(
         log(format_style(report))
         return article, report
 
-    log(f"Prose style: {len(problems)} issue(s) against journal conventions; revising once...")
-    # The revision replaces named blocks, which is far cheaper than regenerating
-    # the article — but a block can only be replaced if it exists. `too-few-sections`
-    # is the one failure whose fix is a section that is not there yet, so it is
-    # also the one that still pays for a whole rewrite.
-    rewrite_whole = any(i["rule"] == "too-few-sections" for i in problems)
-
-    # The sources go along only when the draft failed for thinness or repetition.
-    # `revision_brief` already splits the two cases: a substance failure is told
-    # to pull specific findings out of the sources, and a register failure is
-    # told to reword and add nothing. Sending 20 abstracts and 60,000 characters
-    # of full text to fix a contraction is ~30,000 input tokens the model is
-    # explicitly forbidden to use — and material it cannot use is material it can
-    # still be distracted by.
-    needs_sources = any(i["rule"] in SUBSTANCE_RULES for i in problems)
-    if papers and not needs_sources:
-        log("  (register-only fixes; revising against the draft alone)")
-    try:
-        revised = revise_prose(
-            article, revision_brief(report), model=model, api_key=api_key,
-            papers=papers if needs_sources else None,
-            curation=curation, rewrite_whole=rewrite_whole,
+    for attempt in range(1, MAX_STYLE_PASSES + 1):
+        log(
+            f"Prose style: {len(problems)} issue(s) against journal conventions; "
+            f"revising (pass {attempt} of {MAX_STYLE_PASSES})..."
         )
-    except Exception as exc:
-        log(f"  revision failed ({exc}); keeping the original draft.")
-        log(format_style(report))
-        return article, report
+        # Both of these are recomputed from the *current* report: a second pass
+        # is fixing whatever the first one left behind, which need not be the
+        # kind of failure the first one was fixing.
+        #
+        # The revision replaces named blocks, which is far cheaper than
+        # regenerating the article — but a block can only be replaced if it
+        # exists. `too-few-sections` is the one failure whose fix is a section
+        # that is not there yet, so it is also the one that still pays for a
+        # whole rewrite.
+        rewrite_whole = any(i["rule"] == "too-few-sections" for i in problems)
 
-    intact = (
-        len(revised.get("references") or []) >= len(article.get("references") or [])
-        and len(revised.get("sections") or []) == len(article.get("sections") or [])
-    )
-    revised_report = check_style(revised, direct_sources=direct_sources)
-    if intact and len(style_errors(revised_report)) < len(problems):
-        log(f"  revised: {len(problems)} -> {len(style_errors(revised_report))} issue(s).")
-        log(format_style(revised_report))
-        return revised, revised_report
+        # The sources go along only when the draft failed for thinness or
+        # repetition. `revision_brief` already splits the two cases: a substance
+        # failure is told to pull specific findings out of the sources, and a
+        # register failure is told to reword and add nothing. Sending 20
+        # abstracts and 60,000 characters of full text to fix a contraction is
+        # ~30,000 input tokens the model is explicitly forbidden to use — and
+        # material it cannot use is material it can still be distracted by.
+        needs_sources = any(i["rule"] in SUBSTANCE_RULES for i in problems)
+        if papers and not needs_sources:
+            log("  (register-only fixes; revising against the draft alone)")
 
-    reason = "revision dropped citations or sections" if not intact else "revision did not improve"
-    log(f"  {reason}; keeping the original draft.")
+        try:
+            revised = revise_prose(
+                article, revision_brief(report), model=model, api_key=api_key,
+                papers=papers if needs_sources else None,
+                curation=curation, rewrite_whole=rewrite_whole,
+            )
+        except Exception as exc:
+            log(f"  revision failed ({exc}); keeping the draft as it stands.")
+            break
+
+        # Intactness is measured against the draft in hand, not the draft this
+        # function was handed: after an accepted pass, that is the revision.
+        intact = (
+            len(revised.get("references") or []) >= len(article.get("references") or [])
+            and len(revised.get("sections") or []) == len(article.get("sections") or [])
+        )
+        revised_report = check_style(revised, direct_sources=direct_sources)
+        revised_problems = style_errors(revised_report)
+        if not intact or len(revised_problems) >= len(problems):
+            reason = (
+                "revision dropped citations or sections" if not intact
+                else "revision did not improve"
+            )
+            log(f"  {reason}; keeping the draft as it stands.")
+            break
+
+        log(f"  revised: {len(problems)} -> {len(revised_problems)} issue(s).")
+        article, report, problems = revised, revised_report, revised_problems
+        if not problems:
+            log("  prose style now clean.")
+            break
+
     log(format_style(report))
     return article, report
 
@@ -285,7 +316,7 @@ def generate_draft(
     topic: str,
     *,
     style_note: str = "",
-    max_papers: int = 20,
+    max_papers: int = DEFAULT_MAX_PAPERS,
     model: str | None = None,
     api_key: str | None = None,
     log: Logger = _silent,
@@ -349,7 +380,8 @@ def generate_draft(
             "Re-run, or draft on a different provider.")
 
     # Full-text grounding: after curation, fetch the open-access full text of
-    # the sources that earned it — direct/related labels, in rank order.
+    # the sources that earned it — direct before related, newest first inside a
+    # tier, search rank breaking ties (#143).
     #
     # This step used to be skipped whenever the provider was Groq, whose
     # per-minute token ceiling could not fit a single full text. Groq is gone,
@@ -367,9 +399,9 @@ def generate_draft(
     relevance = curation.get("relevance") or {}
     log("Fetching open-access full texts...")
     requests_spent = 0
-    # Still direct and related only, in rank order. Tangential sources are
-    # deliberately excluded even when that leaves the target unmet: they are
-    # background, and handing the writer 12,000 characters of an off-topic
+    # Still direct and related only, relevance then recency. Tangential sources
+    # are deliberately excluded even when that leaves the target unmet: they
+    # are background, and handing the writer 12,000 characters of an off-topic
     # paper is exactly the topic drift the relevance gate exists to prevent.
     # Why the loop stopped is a different question from how many it got, and
     # they need completely different fixes: a request cap that bites is a
@@ -379,15 +411,14 @@ def generate_draft(
     # (#84). Each tally below is one of the exits.
     eligible = no_open_access = fetch_failed = 0
     stopped = "ran out of eligible sources"
-    for index, paper in enumerate(papers, start=1):
+    for index in full_text_order(papers, relevance):
+        paper = papers[index - 1]
         if len(fetched) >= FULLTEXT_TARGET:
             stopped = f"target of {FULLTEXT_TARGET} reached"
             break
         if requests_spent >= MAX_FULLTEXT_REQUESTS:
             stopped = f"request cap of {MAX_FULLTEXT_REQUESTS} reached"
             break
-        if relevance.get(index) not in ("direct", "related"):
-            continue
         eligible += 1
         if not paper.pmcid and paper.doi:
             requests_spent += 1
@@ -448,7 +479,7 @@ def generate_draft(
         # Which sources (1-based indices) the writer saw full text for. The
         # Methods section is written from this — like `databases`, it records
         # what actually happened, never what was intended.
-        "full_text_sources": fetched,
+        "full_text_sources": sorted(fetched),
     }
 
     return Draft(
