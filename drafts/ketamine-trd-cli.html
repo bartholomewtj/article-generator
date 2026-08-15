@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Durability of antidepressant response to ketamine and esketamine in treatment-resistant depression</title>
+<script>
+  (function() {
+    var saved = localStorage.getItem('articlegen_theme') || 'system';
+    if (saved === 'dark' || saved === 'light') {
+      document.documentElement.setAttribute('data-theme', saved);
+    }
+  })();
+</script>
+<style>
+  :root, html[data-theme="light"] {
+    --bg: #ffffff;
+    --surface: #f7f7f5;
+    --ink: #14171a;
+    --ink-2: #3c4249;
+    --muted: #6a7178;
+    --accent: #17457f;
+    --link: #1b5aa8;
+    --rule: #dfdfda;
+    --rule-strong: #b9bab5;
+    --seg-direct: #184f95;
+    --seg-related: #2a78d6;
+    --seg-tangential: #86b6ef;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14150f;
+      --surface: #1e1f1c;
+      --ink: #f2f1ea;
+      --ink-2: #cfcec5;
+      --muted: #9d9d94;
+      --accent: #9dc4f5;
+      --link: #86b6ef;
+      --rule: #33342f;
+      --rule-strong: #4c4d47;
+      --seg-direct: #86b6ef;
+      --seg-related: #3987e5;
+      --seg-tangential: #184f95;
+      color-scheme: dark;
+    }
+  }
+  html[data-theme="dark"] {
+    --bg: #14150f;
+    --surface: #1e1f1c;
+    --ink: #f2f1ea;
+    --ink-2: #cfcec5;
+    --muted: #9d9d94;
+    --accent: #9dc4f5;
+    --link: #86b6ef;
+    --rule: #33342f;
+    --rule-strong: #4c4d47;
+    --seg-direct: #86b6ef;
+    --seg-related: #3987e5;
+    --seg-tangential: #184f95;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Iowan Old Style", "Charter", Georgia, "Times New Roman", serif;
+    font-size: 1.02rem;
+    line-height: 1.62;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Fluid column: phones keep the viewport width exactly as before (the 40rem
+     floor only binds once the screen exceeds it); desktops scale with the
+     window up to 52rem. The wide-screen font bump below grows the rem, so the
+     ceiling is ~985px of column while the measure stays near 75 characters —
+     wider than this stops being readable prose, which is why journals cap it. */
+  main { max-width: clamp(40rem, 72vw, 52rem); margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+  @media (min-width: 1200px) {
+    html { font-size: 112.5%; }
+  }
+  .sans, .meta-line, .subject-line, .keywords, .di-caption, .fig-legend, .key-points,
+  .refs ol, .toolbar, .colophon, table, .meta-label {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+
+  /* ---- masthead ---------------------------------------------------- */
+  header.masthead { border-top: 3px solid var(--ink); padding-top: 0.9rem; margin-bottom: 2rem; }
+  .article-type {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 0.9rem;
+  }
+  h1 {
+    font-size: clamp(1.7rem, 4.2vw, 2.3rem);
+    line-height: 1.22; font-weight: 700; letter-spacing: -0.005em;
+    margin: 0 0 0.9rem;
+  }
+  /* Full contrast, body-text size, above the fold. The point of issue #91 is
+     that a disclosure in muted 0.78rem type is not a disclosure. */
+  .ai-disclosure {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.92rem; font-weight: 600; line-height: 1.45; color: var(--ink);
+    margin: 0 0 0.9rem; padding: 0.6rem 0.8rem;
+    background: var(--surface); border-left: 3px solid var(--ink);
+  }
+  .meta-line {
+    font-size: 0.78rem; color: var(--muted); margin: 0 0 0.35rem;
+    padding-bottom: 0.9rem; border-bottom: 1px solid var(--rule);
+  }
+  .subject-line { font-size: 0.78rem; color: var(--muted); margin: 0 0 0.9rem; }
+  .meta-label {
+    font-size: 0.68rem; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted); margin-right: 0.4rem;
+  }
+
+  /* ---- abstract & key points --------------------------------------- */
+  .abstract { margin: 0 0 1.2rem; }
+  .abstract p { margin: 0; font-size: 1.06rem; line-height: 1.6; color: var(--ink-2); }
+  .abstract .run-in-head {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink); margin-right: 0.5rem;
+  }
+  .keywords { font-size: 0.8rem; color: var(--muted); margin: 0 0 2rem; }
+  aside.key-points {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    padding: 1.1rem 1.3rem 1.2rem; margin: 0 0 2.2rem; border-radius: 3px;
+  }
+  aside.key-points h2 {
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 0.7rem;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  aside.key-points ul { margin: 0; padding-left: 1.1rem; }
+  .key-points-note { color: var(--muted); font-size: 0.78rem !important;
+                     font-style: italic; margin: 0 0 0.7rem 0 !important; }
+  sup.flag { font-size: 0.72em; line-height: 0; vertical-align: super; }
+  sup.flag a { color: var(--muted); text-decoration: none; font-weight: 700; }
+  aside.key-points li { margin-bottom: 0.5rem; font-size: 0.95rem; line-height: 1.55; }
+  aside.key-points li:last-child { margin-bottom: 0; }
+
+  /* ---- body -------------------------------------------------------- */
+  h2 {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 1.02rem; font-weight: 700; letter-spacing: 0.01em;
+    margin: 2.2rem 0 0.7rem; color: var(--ink);
+  }
+  p { margin: 0 0 1rem; }
+  .body-section p + p { text-indent: 1.2em; }
+  .run-in { font-weight: 700; font-style: italic; }
+  a { color: var(--link); }
+  sup.cite { font-size: 0.68em; line-height: 0; font-weight: 600; letter-spacing: 0.02em; }
+  sup.cite a { color: var(--link); text-decoration: none; padding: 0 0.02em; }
+  sup.cite a:hover { text-decoration: underline; }
+
+  /* ---- display items ----------------------------------------------- */
+  .display { margin: 1.8rem 0 2rem; }
+  .di-caption {
+    font-size: 0.8rem; line-height: 1.5; color: var(--muted); margin: 0.7rem 0 0;
+  }
+  .di-label { font-weight: 700; color: var(--ink); }
+  aside.box {
+    background: var(--surface); border: 1px solid var(--rule-strong);
+    padding: 1.1rem 1.3rem 1.2rem; border-radius: 3px;
+  }
+  aside.box .di-caption { margin: 0 0 0.7rem; font-size: 0.92rem; color: var(--ink); }
+  aside.box p { font-size: 0.95rem; line-height: 1.55; margin: 0 0 0.6rem; }
+  aside.box p:last-child { margin-bottom: 0; }
+  .box-cite { color: var(--muted); font-size: 0.85rem !important; }
+  .box-note { color: var(--muted); font-size: 0.78rem !important; font-style: italic;
+              margin-top: 0.75rem !important; }
+  figure.figure { margin: 1.8rem 0 2rem; padding: 1rem 0 0; border-top: 1px solid var(--rule); }
+  .fig-svg { width: 100%; height: auto; display: block; }
+  .fig-grid { stroke: var(--rule); stroke-width: 1; }
+  .fig-axis { stroke: var(--rule-strong); stroke-width: 1; }
+  .fig-tick { fill: var(--muted); font-size: 11px;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .fig-value { fill: var(--ink-2); font-size: 11px; font-weight: 600;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .fig-axis-title { fill: var(--muted); font-size: 11px; letter-spacing: 0.04em;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .seg-direct { fill: var(--seg-direct); }
+  .seg-related { fill: var(--seg-related); }
+  .seg-tangential { fill: var(--seg-tangential); }
+  .seg-cited { fill: var(--seg-related); }
+  .fig-legend {
+    display: flex; flex-wrap: wrap; gap: 0.3rem 1.1rem; list-style: none;
+    margin: 0.6rem 0 0; padding: 0; font-size: 0.78rem; color: var(--muted);
+  }
+  .fig-legend li { display: flex; align-items: center; gap: 0.4rem; }
+  .swatch {
+    display: inline-block; width: 0.68rem; height: 0.68rem; border-radius: 2px;
+    margin-right: 0.35rem; vertical-align: -0.05rem;
+  }
+  .swatch-direct { background: var(--seg-direct); }
+  .swatch-related { background: var(--seg-related); }
+  .swatch-tangential { background: var(--seg-tangential); }
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; min-width: 32rem; border-collapse: collapse; font-size: 0.82rem; }
+  tbody td:nth-child(5) { white-space: nowrap; }
+  thead th {
+    text-align: left; font-weight: 700; color: var(--ink);
+    border-top: 1px solid var(--rule-strong); border-bottom: 1px solid var(--rule-strong);
+    padding: 0.45rem 0.5rem; white-space: nowrap;
+  }
+  tbody td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--rule); color: var(--ink-2); }
+  tbody tr:last-child td { border-bottom: 1px solid var(--rule-strong); }
+  .t-num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .t-venue { color: var(--muted); }
+
+  /* ---- back matter -------------------------------------------------- */
+  .back-section { margin-top: 2.2rem; }
+  .back-section > h2:first-child, .refs h2 { margin-top: 0; }
+  .back-section p { font-size: 0.92rem; line-height: 1.58; color: var(--ink-2); }
+  .glossary dl { margin: 0; }
+  .gloss-row { display: flex; gap: 0.75rem; padding: 0.4rem 0; border-bottom: 1px solid var(--rule); }
+  .gloss-row dt { flex: 0 0 9.5rem; font-weight: 700; font-size: 0.92rem; }
+  .gloss-row dd { margin: 0; font-size: 0.92rem; color: var(--ink-2); }
+  .gloss-row:last-child { border-bottom: none; }
+  .refs { margin-top: 2.4rem; border-top: 2px solid var(--ink); padding-top: 1.1rem; }
+  .refs ol { margin: 0; padding-left: 1.5rem; font-size: 0.82rem; line-height: 1.5; }
+  .refs li { margin-bottom: 0.55rem; color: var(--ink-2); }
+  .refs li:target { background: var(--surface); border-radius: 2px; }
+  .refs a { color: var(--link); text-decoration: none; }
+  .refs a:hover { text-decoration: underline; }
+  .ref-authors { color: var(--ink); }
+  .ref-cites { color: var(--muted); }
+  footer.colophon {
+    margin-top: 2.4rem; padding-top: 1rem; border-top: 1px solid var(--rule);
+    font-size: 0.78rem; line-height: 1.55; color: var(--muted);
+  }
+
+  /* ---- toolbar ------------------------------------------------------ */
+  .toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0 2rem; }
+  .tool-btn {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    background: transparent; color: var(--ink-2);
+    border: 1px solid var(--rule-strong); border-radius: 2px;
+    padding: 0.35rem 0.7rem; font-size: 0.78rem; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+  }
+  .tool-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .share-toast { font-size: 0.78rem; color: var(--accent); align-self: center; display: none; }
+
+  @media (max-width: 34rem) {
+    .gloss-row { display: block; }
+    .gloss-row dt { margin-bottom: 0.15rem; }
+    .body-section p + p { text-indent: 0; }
+  }
+  @media print {
+    body { font-size: 10.5pt; background: #fff; color: #000; }
+    .toolbar { display: none; }
+    a, sup.cite a { color: #000; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <article>
+  <header class="masthead">
+    <p class="article-type">Evidence Review</p>
+    <h1>Durability of antidepressant response to ketamine and esketamine in treatment-resistant depression</h1>
+    <p class="ai-disclosure">Written by a language model from the cited research, from 5 full texts and the abstracts of the other 14. No human author wrote or checked this text. Not peer reviewed.</p>
+    <p class="meta-line">Generated 15 August 2026 &middot; 19 sources cited, 2019–2026 &middot; Full text read for 5 of 19 sources &middot; Not peer reviewed</p>
+    <p class="subject-line"><span class="meta-label">Subject</span>Ketamine and esketamine for treatment-resistant depression: durability of response and clinical implications</p>
+
+    <div class="toolbar">
+      <button class="tool-btn" onclick="shareArticle()">Share</button>
+      <button class="tool-btn" onclick="copyArticleLink()">Copy link</button>
+      <button class="tool-btn" onclick="toggleArticleTheme()"><span id="themeIcon">&#9789;</span> Theme</button>
+      <span id="shareToast" class="share-toast">Link copied</span>
+    </div>
+
+    <div class="abstract">
+      <p><span class="run-in-head">Abstract</span>Treatment-resistant depression describes a major depressive episode that fails to remit after adequate trials of at least two antidepressants, and it accounts for a large share of the disability attributed to mood disorders. Ketamine, an antagonist at the N-methyl-D-aspartate glutamate receptor, and its S-enantiomer esketamine produce antidepressant effects within hours rather than weeks, and intranasal esketamine now holds regulatory approval in many jurisdictions for adults with this condition. Acute efficacy appears reasonably well supported by randomized trials, but the clinical problem has arguably shifted to what follows the initial response: how long benefit persists, whether continued dosing is required to sustain it, and what repeated glutamatergic exposure may cost in tolerability. Here we review the controlled and uncontrolled evidence bearing on durability, ranging from randomized-withdrawal relapse-prevention trials and pooled analyses to multi-year extension cohorts and the synaptic work invoked to justify dosing intervals. The available data suggest that continued dosing approximately halves relapse risk among patients already stabilized, that symptomatic gains typically persist while treatment continues, and that no controlled trial has yet defined whether treatment can be withdrawn without loss of benefit. Predictors of individual response remain poorly characterized, and long-term safety evidence derives mainly from uncontrolled follow-up in patients who chose to stay in treatment.</p>
+    </div>
+    <p class="keywords"><span class="meta-label">Keywords</span> esketamine; treatment-resistant depression; relapse prevention; randomized withdrawal; maintenance treatment; ketamine; nmda receptor antagonist</p>
+  </header>
+
+  <section class="body-section">
+<h2>Introduction</h2>
+<p>Treatment-resistant depression is commonly defined as a depressive episode that fails to remit after two adequate antidepressant trials, the definition adopted by the US Food and Drug Administration and the European Medicines Agency. A wide-ranging review of the construct notes that no consensus definition with demonstrated predictive utility exists, which appears to hamper prevalence estimation and comparison across studies; on the regulatory definition, at least 30% of persons with depression qualify, although a significant share may be pseudo-resistant through inadequate trials or non-adherence.<sup class="cite"><a href="#ref-1">1</a></sup> That review lists intravenous ketamine and intranasal esketamine among the interventions established as efficacious in this population, regards electroconvulsive therapy as effective acutely and in maintenance, and cites preliminary evidence of its non-inferiority to acute intravenous ketamine.<sup class="cite"><a href="#ref-1">1</a></sup></p>
+<p>Glutamatergic agents are motivated in part by the limits of monoamine pharmacology. In a reanalysis of the STAR*D trial summarized by McIntyre and Jain, 41% of patients treated with a first-line selective serotonin reuptake inhibitor responded and 70% did not reach remission, with response falling to 21% by the fourth treatment step.<sup class="cite"><a href="#ref-2">2</a></sup> That narrative review also reports that between 25% and 60% of patients who do improve later experience recurrence, and that roughly half of those prescribed antidepressants discontinue within three months, which together appear to place durability rather than onset at the centre of the clinical problem.<sup class="cite"><a href="#ref-2">2</a></sup></p>
+<p>Relapse seems particularly frequent in this population: approximately 70% of patients with treatment-resistant depression who initially respond to standard antidepressants relapse within six months.<sup class="cite"><a href="#ref-3">3</a></sup> Serretti argues that ketamine and esketamine have shifted the field&#x27;s principal unmet needs away from short-term symptom improvement and toward the post-response trajectory, including relapse prevention, the structure and eventual tapering of maintenance, functional recovery, patient selection, and long-term safety and abuse liability.<sup class="cite"><a href="#ref-4">4</a></sup> Here we review the evidence bearing on how long benefit persists, the mechanistic work invoked to explain its time course, and the conditions under which the effect has been sustained. Direct evidence on durability rests on a small number of randomized-withdrawal trials and on uncontrolled extension cohorts; the acute literature is considerably larger, and material carried over from it is labelled as extrapolation where it bears on durability only indirectly.</p>
+</section>
+
+<figure class="display figure">
+<svg class="fig-svg" viewBox="0 0 660 250" role="img" aria-label="Cited sources by publication year, segmented by relevance"><line class="fig-grid" x1="40.0" x2="648.0" y1="206.0" y2="206.0"></line><text class="fig-tick" x="32.0" y="209.5" text-anchor="end">0</text><line class="fig-grid" x1="40.0" x2="648.0" y1="145.3" y2="145.3"></line><text class="fig-tick" x="32.0" y="148.8" text-anchor="end">2</text><line class="fig-grid" x1="40.0" x2="648.0" y1="84.7" y2="84.7"></line><text class="fig-tick" x="32.0" y="88.2" text-anchor="end">4</text><line class="fig-grid" x1="40.0" x2="648.0" y1="24.0" y2="24.0"></line><text class="fig-tick" x="32.0" y="27.5" text-anchor="end">6</text><rect class="fig-seg seg-direct" x="67.7" y="175.7" width="46.0" height="28.3"><title>2019: 1 direct</title></rect><path class="fig-seg seg-related" d="M67.7,173.7 L67.7,119.0 Q67.7,115.0 71.7,115.0 L109.7,115.0 Q113.7,115.0 113.7,119.0 L113.7,173.7 Z"><title>2019: 2 related</title></path><text class="fig-value" x="90.7" y="109.0" text-anchor="middle">3</text><text class="fig-tick" x="90.7" y="224.0" text-anchor="middle">2019</text><path class="fig-seg seg-direct" d="M169.0,204.0 L169.0,179.7 Q169.0,175.7 173.0,175.7 L211.0,175.7 Q215.0,175.7 215.0,179.7 L215.0,204.0 Z"><title>2020: 1 direct</title></path><text class="fig-value" x="192.0" y="169.7" text-anchor="middle">1</text><text class="fig-tick" x="192.0" y="224.0" text-anchor="middle">2020</text><path class="fig-seg seg-related" d="M270.3,204.0 L270.3,149.3 Q270.3,145.3 274.3,145.3 L312.3,145.3 Q316.3,145.3 316.3,149.3 L316.3,204.0 Z"><title>2023: 2 related</title></path><text class="fig-value" x="293.3" y="139.3" text-anchor="middle">2</text><text class="fig-tick" x="293.3" y="224.0" text-anchor="middle">2023</text><path class="fig-seg seg-related" d="M371.7,204.0 L371.7,88.7 Q371.7,84.7 375.7,84.7 L413.7,84.7 Q417.7,84.7 417.7,88.7 L417.7,204.0 Z"><title>2024: 4 related</title></path><text class="fig-value" x="394.7" y="78.7" text-anchor="middle">4</text><text class="fig-tick" x="394.7" y="224.0" text-anchor="middle">2024</text><rect class="fig-seg seg-direct" x="473.0" y="175.7" width="46.0" height="28.3"><title>2025: 1 direct</title></rect><path class="fig-seg seg-related" d="M473.0,173.7 L473.0,119.0 Q473.0,115.0 477.0,115.0 L515.0,115.0 Q519.0,115.0 519.0,119.0 L519.0,173.7 Z"><title>2025: 2 related</title></path><text class="fig-value" x="496.0" y="109.0" text-anchor="middle">3</text><text class="fig-tick" x="496.0" y="224.0" text-anchor="middle">2025</text><rect class="fig-seg seg-direct" x="574.3" y="115.0" width="46.0" height="89.0"><title>2026: 3 direct</title></rect><path class="fig-seg seg-related" d="M574.3,113.0 L574.3,28.0 Q574.3,24.0 578.3,24.0 L616.3,24.0 Q620.3,24.0 620.3,28.0 L620.3,113.0 Z"><title>2026: 3 related</title></path><text class="fig-value" x="597.3" y="18.0" text-anchor="middle">6</text><text class="fig-tick" x="597.3" y="224.0" text-anchor="middle">2026</text><line class="fig-axis" x1="40.0" x2="648.0" y1="206.0" y2="206.0"></line><text class="fig-axis-title" x="330.0" y="242.0" text-anchor="middle">Year of publication</text><text class="fig-axis-title" x="-115.0" y="12" text-anchor="middle" transform="rotate(-90)">Cited sources</text></svg>
+<ul class="fig-legend"><li><span class="swatch swatch-direct"></span>Direct</li><li><span class="swatch swatch-related"></span>Related</li></ul>
+<figcaption class="di-caption"><span class="di-label">Fig. 1 |</span> Composition of the evidence base. Cited sources by year of publication, segmented by how directly each addresses the review question. Bar labels give the number of sources in each period; the underlying records are listed in Table 1.</figcaption>
+</figure>
+
+<section class="body-section">
+<h2>Magnitude of the acute effect</h2>
+<p>The short-term trials establish the effect that maintenance studies then attempt to preserve. A phase 3 double-blind active-controlled trial at 39 outpatient centres randomized 227 adults with nonresponse to at least two antidepressants to flexibly dosed esketamine nasal spray plus a newly initiated antidepressant, or to that antidepressant plus placebo spray; 197 completed the 28-day double-blind phase.<sup class="cite"><a href="#ref-5">5</a></sup> The esketamine group showed a greater fall in Montgomery-Åsberg Depression Rating Scale (MADRS) score at day 28, with a least-squares mean difference of −4.0 (95% CI −7.31 to −0.64), and separation appeared at earlier time points, which is consistent with rapid onset.<sup class="cite"><a href="#ref-5">5</a></sup> Dissociation, nausea, vertigo, dysgeusia and dizziness were more common with esketamine and typically resolved within about 1.5 hours of dosing; 7% of that group discontinued because of an adverse event, against 0.9% of comparators.<sup class="cite"><a href="#ref-5">5</a></sup></p>
+<p>The companion fixed-dose trial did not reproduce that result on its primary endpoint. TRANSFORM-1 randomized 346 adults 1:1:1 to esketamine 56 mg, esketamine 84 mg or placebo nasal spray, each with a newly initiated oral antidepressant taken for four weeks.<sup class="cite"><a href="#ref-6">6</a></sup> The 84 mg comparison did not reach statistical significance (least-squares mean difference −3.2, 95% CI −6.88 to 0.45; P = .088), and because the testing sequence was hierarchical the 56 mg comparison could not be formally tested, although its nominal difference was −4.1 (95% CI −7.67 to −0.49).<sup class="cite"><a href="#ref-6">6</a></sup> Its authors judged that the treatment effect in both esketamine arms nonetheless exceeded what has been regarded as clinically meaningful for approved antidepressants.<sup class="cite"><a href="#ref-6">6</a></sup> The two pivotal trials therefore differ in outcome despite broadly similar populations and endpoints, a discrepancy most plausibly attributable to the fixed-dose design and the statistical hierarchy, though a smaller true effect cannot be excluded.</p>
+<p>Whether the concurrent oral antidepressant carries part of the benefit was addressed by a phase 4 double-blind placebo-controlled trial at 51 US sites, reported in two records of the same study.<sup class="cite"><a href="#ref-7">7</a>,<a href="#ref-8">8</a></sup> After an antidepressant-free period of two weeks or more, 378 participants meeting prerandomization severity criteria received fixed-dose esketamine, 56 mg or 84 mg, or placebo, self-administered twice weekly under supervision for four weeks; the day-28 differences from placebo were −5.1 and −6.8 points, with observed effect sizes of 0.48 and 0.63.<sup class="cite"><a href="#ref-7">7</a></sup> Separation was already apparent at 24 hours after the first dose.<sup class="cite"><a href="#ref-8">8</a></sup> Nausea (24.8%), dissociation (24.3%), dizziness (21.7%) and headache (19.0%) were the commonest treatment-emergent events across esketamine doses; 441 participants opted into a 12-week open-label phase, with median exposure of 78 days, so the trial speaks to acute monotherapy efficacy rather than to durability.<sup class="cite"><a href="#ref-7">7</a></sup></p>
+<p>Pooling appears to narrow the acute estimate. A systematic review and meta-analysis of randomized trials comparing intranasal esketamine plus an oral antidepressant against placebo spray plus the same antidepressant identified six unique trials with 1,836 participants; across four acute induction trials (n = 937), the pooled day-28 MADRS difference was −2.99 (95% CI −5.10 to −0.89; I² = 48.5%).<sup class="cite"><a href="#ref-9">9</a></sup> Response and remission were more frequent with esketamine (risk ratios 1.44 and 1.52, corresponding to roughly 154 additional responders and 106 additional remitters per 1,000 patients on pooled control risks), functioning improved on the Sheehan Disability Scale by −1.70 points, and improvement was already evident by day 2.<sup class="cite"><a href="#ref-9">9</a></sup> The same analysis found substantially raised acute harms, including dissociation (risk ratio 7.33, 95% CI 4.49-11.98), raised blood pressure events (risk ratio 3.96) and discontinuation for adverse events (risk ratio 2.68), so the acute benefit-harm balance appears narrower than the symptom estimate alone conveys.<sup class="cite"><a href="#ref-9">9</a></sup></p>
+</section>
+
+<aside class="display box" aria-labelledby="box-1">
+<p class="di-caption" id="box-1"><span class="di-label">Box 1 |</span> Most relevant source: Efficacy of Esketamine Nasal Spray Plus Oral Antidepressant Treatment for Relapse Prevention in Patients With Treatment-Resistant Depression</p>
+<p class="box-cite">Daly et al. (2019) · JAMA Psychiatry<sup class="cite"><a href="#ref-10">10</a></sup> · <a href="https://doi.org/10.1001/jamapsychiatry.2019.1189">doi:10.1001/jamapsychiatry.2019.1189</a></p>
+<p><span class="run-in">Method.</span> A phase 3, multicentre, double-blind randomized-withdrawal trial enrolled 705 adults with prospectively confirmed treatment-resistant depression, of whom 455 received a 16-week course of esketamine nasal spray (56 or 84 mg) plus an oral antidepressant. The 297 participants who achieved stable remission or stable response were then randomized 1:1 to continue esketamine or to switch to placebo nasal spray, with the oral antidepressant continued in both groups.</p>
+<p><span class="run-in">Results.</span> Among the 176 participants in stable remission, 26.7% of those continuing esketamine relapsed compared with 45.3% of those switched to placebo spray (log-rank P = .003; number needed to treat 6), a 51% lower relapse risk (hazard ratio 0.49, 95% CI 0.29-0.84). Among the 121 stable responders, the reduction was 70% (hazard ratio 0.30, 95% CI 0.16-0.55; number needed to treat 4).</p>
+<p><span class="run-in">Limitations.</span> The randomized-withdrawal design admitted only patients already stabilized on esketamine, so the estimate probably applies to maintenance of an achieved response rather than to durability in unselected patients or after a planned taper. Dysgeusia, vertigo, dissociation, somnolence and dizziness occurred in 20.4% to 27.0% of esketamine-treated patients after randomization, and each was reported in fewer than 7% of those switched to placebo spray, which may have weakened the blind. The trial could not establish how long benefit lasts once treatment stops.</p>
+<p class="box-note">Selected for closeness to the review question, not for study quality; no quality appraisal was performed.</p>
+</aside>
+
+<section class="body-section">
+<h2>Relapse prevention after stabilization</h2>
+<p>The strongest durability evidence comes from randomized withdrawal in patients already stabilized. In the phase 3 trial described in the featured box, continued esketamine plus an oral antidepressant delayed relapse relative to switching to placebo spray, with hazard ratios of 0.49 among stable remitters and 0.30 among stable responders, and numbers needed to treat of 6 and 4 respectively.<sup class="cite"><a href="#ref-10">10</a></sup> That design is informative precisely because both groups had already responded during a 16-week induction and optimization course, so the comparison appears to isolate the contribution of continued dosing rather than of initial response.<sup class="cite"><a href="#ref-10">10</a></sup></p>
+<p>Pooling the two maintenance randomized-withdrawal trials (n = 899) gave a hazard ratio of 0.51 (95% CI 0.42-0.62) with no detectable heterogeneity (I² = 0%), while treatment-emergent adverse events during maintenance were similar between groups (risk ratio 1.07, 95% CI 0.99-1.17).<sup class="cite"><a href="#ref-9">9</a></sup> The consistency across these two trials contrasts with the moderate heterogeneity seen in the acute analyses, which may indicate that the maintenance effect is more reproducible than the acute one, although only two trials contribute. The reviewers concluded that benefit and harm should be weighed individually within supervised care.<sup class="cite"><a href="#ref-9">9</a></sup></p>
+<p>A separate systematic review examining dosing parameters against markers of synaptic plasticity reported that, across clinical trials, twice-weekly and thrice-weekly dosing yielded comparable four-week outcomes, and that weekly maintenance significantly reduced relapse risk.<sup class="cite"><a href="#ref-11">11</a></sup> A pharmacodynamic review similarly summarizes multiple randomized trials in which esketamine reduced depressive symptoms within hours and maintained the reduction over several weeks.<sup class="cite"><a href="#ref-13">13</a></sup> Taken together with the withdrawal trials, these data are consistent with an effect sustained by repeated exposure rather than one persisting autonomously. No controlled trial identified here has tested planned tapering or discontinuation after a period of stability, and Serretti identifies the structure and eventual tapering of maintenance as an open question.<sup class="cite"><a href="#ref-4">4</a></sup></p>
+</section>
+
+<section class="body-section">
+<h2>Maintenance of gains in open-label extension cohorts</h2>
+<p>Uncontrolled extensions provide the longest exposure data. A phase 3 open-label multicentre study followed 802 patients for up to one year on esketamine nasal spray (28, 56 or 84 mg) plus a new oral antidepressant, given twice weekly during a four-week induction phase and weekly or every other week during a 48-week optimization and maintenance phase.<sup class="cite"><a href="#ref-12">12</a></sup> Mean MADRS score fell by 16.4 points during induction and changed by 0.3 points during optimization and maintenance, which suggests that gains were held rather than extended.<sup class="cite"><a href="#ref-12">12</a></sup> Dizziness (32.9%), dissociation (27.6%), nausea (25.1%) and headache (24.9%) were the common treatment-emergent events, dissociative symptoms generally resolved within 1.5 hours of dosing, cognitive performance typically improved or remained stable, and no case of interstitial cystitis or respiratory depression was reported.<sup class="cite"><a href="#ref-12">12</a></sup> Attrition was nonetheless considerable: 9.5% discontinued because of an adverse event, and only 150 of 603 participants (24.9%) completed the maintenance phase.<sup class="cite"><a href="#ref-12">12</a></sup></p>
+<p>The largest and longest dataset, SUSTAIN-3, enrolled 1,148 adults from six phase 3 parent studies at 222 sites in 27 countries into an open-label single-arm extension with flexible dosing intervals of one, two or four weeks, individualized to depression severity.<sup class="cite"><a href="#ref-3">3</a></sup> Participants had a mean age of 49.6 years and two-thirds were female; total exposure reached 3,777 cumulative patient-years, with a mean of 42.9 months and a maximum of 79 months.<sup class="cite"><a href="#ref-3">3</a></sup> MADRS score fell by a mean of 12.8 points during induction and changed by 0.2 points across optimization and maintenance; remission was recorded in 35.6% at the induction endpoint, 48.5% at week 112 and 49.6% at the phase endpoint.<sup class="cite"><a href="#ref-3">3</a></sup> Headache (36.9%), dizziness (33.9%), nausea (33.6%) and dissociation (25.5%) were the commonest events, discontinuation for lack of efficacy (5.3%) or adverse events (6.4%) was modest, nine participants died, one by suicide, and the investigators identified no new safety signals.<sup class="cite"><a href="#ref-3">3</a></sup></p>
+<p>Both cohorts describe patients who remained in treatment, so the rising remission proportions over time may reflect the surviving sample as much as any cumulative gain.<sup class="cite"><a href="#ref-3">3</a>,<a href="#ref-12">12</a></sup> Neither study included a comparator arm, which appears to limit their contribution to the durability question to showing that improvement generally persists while intermittent dosing continues.</p>
+</section>
+
+<section class="body-section">
+<h2>Synaptic mechanisms and the timing of repeated dosing</h2>
+<p>Mechanistic work has been used to explain why the effect fades. A systematic review of 61 clinical and 17 preclinical studies examined dosing parameters alongside direct and indirect markers of long-term potentiation and synaptic scaling, with most clinical studies enrolling patients with treatment-resistant depression and fewer including treatment-resistant bipolar depression.<sup class="cite"><a href="#ref-11">11</a></sup> In treatment-resistant depression, a single 0.5 mg/kg intravenous ketamine infusion produced rapid but transient antidepressant effects that reached their maximum at 24 hours and then faded across the next two to three days; a similar temporal pattern was observed in bipolar samples, and comparable neurophysiological findings emerged in preclinical models.<sup class="cite"><a href="#ref-11">11</a></sup> Early neurophysiological changes appeared within three to eight hours, consolidated by 24 hours, and were sparsely detected beyond three days, which led the authors to propose a plasticity window of roughly two to three days.<sup class="cite"><a href="#ref-11">11</a></sup></p>
+<p>Upstream pharmacology is better characterized than its link to clinical durability. McIntyre and Jain describe N-methyl-D-aspartate receptor antagonism relieving the magnesium block, permitting calcium and sodium influx, and triggering signalling through the phosphoinositide 3-kinase, mammalian target of rapamycin and brain-derived neurotrophic factor pathways, with downstream increases in synaptic protein expression and dendritic spine density.<sup class="cite"><a href="#ref-2">2</a></sup> Their account also assigns roles to AMPA receptors, to metabotropic receptors and to glial recycling of glutamate, so the relevant target is arguably a signalling cascade rather than a single receptor.<sup class="cite"><a href="#ref-2">2</a></sup> A review of esketamine pharmacodynamics adds actions at opioid and monoaminergic receptors and on inflammatory pathways, and states that the synergy among these mechanisms is not fully understood.<sup class="cite"><a href="#ref-13">13</a></sup></p>
+<p>Clinical durability appears to vary more than the mechanistic account alone would predict. A scoping review of 69 studies found early improvement in depressive symptoms, particularly in treatment-resistant depression, but durability that differed across studies; intravenous racemic ketamine was the most extensively investigated route, while intranasal esketamine remains the principal approved formulation.<sup class="cite"><a href="#ref-14">14</a></sup> That review attributed the uncertainty about long-term efficacy and safety largely to study heterogeneity, short follow-up and variability in dosing protocols.<sup class="cite"><a href="#ref-14">14</a></sup></p>
+</section>
+
+<section class="body-section">
+<h2>Predictors of response, delivery and certainty of evidence</h2>
+<p>Patient selection remains largely empirical. A retrospective multicentre real-world study of 149 patients treated with intranasal esketamine trained random forest classifiers on sociodemographic and psychometric data, predicting response with 68.53% accuracy at one month and 66.26% at three months, and remission at three months with 68.60% accuracy.<sup class="cite"><a href="#ref-15">15</a></sup> Severe anhedonia, anxious distress, mixed symptoms and bipolarity predicted response and remission positively, whereas benzodiazepine use and greater depression severity were associated with delayed response.<sup class="cite"><a href="#ref-15">15</a></sup> The retrospective design, the absence of biomarkers and the lack of established interrater reliability across centres appear to constrain these estimates, and no prospective replication was identified.<sup class="cite"><a href="#ref-15">15</a></sup></p>
+<p>The certainty attached to the wider literature is low. An overview of reviews following PRIOR guidance synthesized 26 systematic reviews covering 44 randomized trials and 3,316 participants across unipolar and bipolar depression, and judged the intervention effective and well tolerated while rating the quality of the included reviews and original studies as poor.<sup class="cite"><a href="#ref-16">16</a></sup> Insufficient data prevented that analysis from separating the effects of ketamine from those of esketamine.<sup class="cite"><a href="#ref-16">16</a></sup> An updated narrative review of management reaches a compatible position, listing cost, accessibility, durability of response and uncertain long-term outcomes as the principal limitations of ketamine-based therapies, and framing them as additions to rather than replacements for conventional antidepressants.<sup class="cite"><a href="#ref-17">17</a></sup> The same review positions repetitive transcranial magnetic stimulation as slower in onset but with generally mild adverse effects, notes that theta burst stimulation has shown non-inferiority to conventional protocols with shorter sessions, and describes transcranial direct current stimulation as more modest and less consistent.<sup class="cite"><a href="#ref-17">17</a></sup></p>
+<p>Delivery constraints appear to shape what durability means in practice. A community case study describing two public hospital ketamine programmes in Edmonton, Canada, operating since 2015, reported growing demand for maintenance treatment and described three service models incorporating sublingual or intranasal ketamine to sustain access where the cost of intravenous or esketamine maintenance was prohibitive.<sup class="cite"><a href="#ref-18">18</a></sup> Martiadis and colleagues proposed a phase-based framework delineating roles for medical supervision, nursing and psychotherapy across pre-treatment assessment, induction, post-session integration and maintenance, with measurable fidelity indicators; they noted that prospective implementation and comparative studies of clinical effectiveness, feasibility and cost-effectiveness have not yet been done.<sup class="cite"><a href="#ref-19">19</a></sup></p>
+</section>
+
+<aside class="key-points">
+<h2>Key points</h2>
+<p class="key-points-note">Every figure in this review was located in the material read for the cited sources — their abstracts, and the open-access full text where one was retrieved.</p>
+<ul>
+<li>In a phase 3 randomized-withdrawal trial, continuing esketamine nasal spray plus an oral antidepressant lowered relapse risk by 51% among patients in stable remission (hazard ratio 0.49, 95% CI 0.29-0.84) and by 70% among stable responders (hazard ratio 0.30, 95% CI 0.16-0.55).<sup class="cite"><a href="#ref-10">10</a></sup></li>
+<li>Pooling two maintenance randomized-withdrawal trials (n = 899) gave a relapse hazard ratio of 0.51 (95% CI 0.42-0.62) with no detectable heterogeneity, whereas the pooled acute day-28 MADRS difference across four induction trials was only −2.99 points, and dissociation was roughly sevenfold more common acutely (risk ratio 7.33).<sup class="cite"><a href="#ref-9">9</a></sup></li>
+<li>The longest exposure dataset is single-arm and therefore uncontrolled: an open-label extension of 1,148 patients accumulated 3,777 patient-years, with mean exposure of 42.9 months, MADRS change of +0.2 points across the maintenance phase and remission in 48.5% at week 112.<sup class="cite"><a href="#ref-3">3</a></sup></li>
+<li>Acute efficacy does not appear uniform across pivotal trials; the fixed-dose TRANSFORM-1 study of 346 adults missed its primary endpoint for the 84 mg dose (difference −3.2, 95% CI −6.88 to 0.45; P = .088), which blocked formal testing of the 56 mg dose.<sup class="cite"><a href="#ref-6">6</a></sup></li>
+<li>A systematic review of 61 clinical and 17 preclinical studies reported that a single 0.5 mg/kg intravenous ketamine infusion gave transient benefit, greatest 24 hours after dosing and largely gone within two to three days, alongside neurophysiological markers seldom detectable after three days.<sup class="cite"><a href="#ref-11">11</a></sup></li>
+<li>In a phase 4 monotherapy trial without a concurrent oral antidepressant, 378 patients randomized to esketamine 56 mg, 84 mg or placebo showed day-28 MADRS differences of −5.1 and −6.8 points, with observed effect sizes of 0.48 and 0.63.<sup class="cite"><a href="#ref-7">7</a></sup></li>
+<li>A retrospective real-world study of 149 patients predicted three-month response to intranasal esketamine with about 66% accuracy using random forest models, with anhedonia, anxious distress, mixed symptoms and bipolarity predicting response and benzodiazepine use predicting delay.<sup class="cite"><a href="#ref-15">15</a></sup></li>
+</ul>
+</aside>
+
+<section class="body-section">
+<h2>Conclusions and outlook</h2>
+<p>Several conclusions appear reasonably secure. Intranasal esketamine added to an oral antidepressant produces a rapid but modest acute reduction in depressive symptoms relative to placebo spray, evident within two days and still present at day 28 in pooled analysis.<sup class="cite"><a href="#ref-9">9</a></sup> Among patients stabilized on esketamine, continuing it approximately halves the hazard of relapse compared with withdrawal, consistently across the two randomized-withdrawal trials.<sup class="cite"><a href="#ref-9">9</a>,<a href="#ref-10">10</a></sup> Improvement generally persists over multi-year intermittent dosing in uncontrolled extension cohorts, with no new safety signals reported up to roughly 3,777 cumulative patient-years, although the absence of a comparator limits what such cohorts can establish.<sup class="cite"><a href="#ref-3">3</a></sup></p>
+<p>Substantially more remains open. No controlled trial identified here has tested how maintenance might be tapered or stopped, how long benefit persists after discontinuation, or whether symptomatic gains translate into durable functional recovery; these are close to the gaps that a recent clinically oriented review identifies as the field&#x27;s central unmet needs, together with predictive biomarkers and long-term abuse liability.<sup class="cite"><a href="#ref-4">4</a></sup> The correspondence between an antidepressant effect that decays over two to three days and a plasticity window of similar length is suggestive, but it has not been tested prospectively as a basis for scheduling.<sup class="cite"><a href="#ref-11">11</a></sup> Real-world predictors of response reach only moderate accuracy in a single retrospective sample, and the certainty of the pooled literature has been rated as low.<sup class="cite"><a href="#ref-15">15</a>,<a href="#ref-16">16</a></sup></p>
+<p>The evidence that would settle these questions seems identifiable. Randomized trials of protocolized tapering, with follow-up extending well past the last dose, would help establish whether durability is a property of the treatment or of its continuation. Future studies should measure functional and patient-reported outcomes alongside symptom scales, since the pooled functional benefit reported so far is small.<sup class="cite"><a href="#ref-9">9</a></sup> Head-to-head comparison of racemic ketamine and esketamine, and biomarker-stratified designs testing whether early neurophysiological markers predict later relapse, would address two ambiguities that current syntheses appear unable to resolve.<sup class="cite"><a href="#ref-11">11</a>,<a href="#ref-16">16</a></sup></p>
+</section>
+
+  <section class="back-section">
+<h2>Methods</h2>
+<p><span class="run-in">Search strategy.</span> Candidate records were retrieved on 15 August 2026 from OpenAlex and Europe PMC, using the search strings ‘esketamine treatment-resistant depression durability of response relapse prevention’; ‘intravenous ketamine treatment-resistant depression maintenance long-term outcomes’; ‘ketamine antidepressant response duration randomized controlled trial’; ‘esketamine nasal spray TRD efficacy safety meta-analysis’. Records without a retrievable abstract were discarded, leaving 20 for screening. Each remaining record was assessed for how directly it addresses Ketamine and esketamine for treatment-resistant depression: durability of response and clinical implications and labelled direct, related or background; 19 were cited here and are listed in Table 1.</p>
+<p><span class="run-in">Evidence handling.</span> Titles and abstracts were read for every record, and the open-access full texts of 5 sources were retrieved from Europe PMC and read alongside them (marked in Table 1); claims resting on the remaining sources draw on no data beyond an abstract. Decimals, percentages, effect estimates and quantities carrying a clinical unit were then checked automatically, each against the sources its own sentence cites, within exactly the material shown to the model — the abstracts plus those full-text excerpts. A figure that could not be located, or that appears only in a source other than the one cited, is flagged under Limitations.</p>
+<p><span class="run-in">Generation.</span> Search planning, source curation and drafting were performed by a large language model (opus). Source retrieval, relevance tabulation, citation numbering, Table 1, Fig. 1 and the statistical check are deterministic and were not model-generated.</p>
+</section>
+
+  <section class="back-section">
+<h2>Evidence assessment</h2>
+<p>Of the 19 sources cited, 6 address the review question directly, 13 are related and 0 provide background only; they were published in 2019–2026. The composition of the evidence base is shown in Fig. 1.</p>
+<p id="limitations"><span class="run-in">Limitations.</span> This synthesis was prepared from the open-access full texts of 5 cited sources and the abstracts of the remaining 14. Where only an abstract was available, effect estimates, methodological detail, and the limitations that authors report only in a full text were unavailable, so the strength of those studies could not be appraised here. An automated check of the writing against journal prose conventions was not satisfied by this draft: it opens successive sentences the same way. A revision was attempted and did not resolve this, so the text below should be read as a working draft rather than a finished review.</p>
+</section>
+
+  <div class="display table-wrap" aria-labelledby="table-1">
+<p class="di-caption" id="table-1"><span class="di-label">Table 1 |</span> Characteristics of the cited evidence. Relevance is the curation label for how directly each source addresses the review question; citation counts are as reported by the indexing database. Read records whether the model saw the source's open-access full text or its abstract only.</p>
+<div class="table-scroll"><table>
+<thead><tr><th>Ref.</th><th>Study</th><th>Year</th><th>Source</th><th>Relevance</th><th>Read</th><th>Cited by</th></tr></thead>
+<tbody><tr><td class="t-num"><a href="#ref-1">1</a></td><td>McIntyre et al.</td><td class="t-num">2023</td><td class="t-venue">World Psychiatry</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">752</td></tr><tr><td class="t-num"><a href="#ref-2">2</a></td><td>McIntyre &amp; Jain</td><td class="t-num">2024</td><td class="t-venue">CNS Drugs</td><td><span class="swatch swatch-related"></span>Related</td><td>Full text</td><td class="t-num">60</td></tr><tr><td class="t-num"><a href="#ref-3">3</a></td><td>Zaki et al.</td><td class="t-num">2025</td><td class="t-venue">The International Journal of Neuropsychopharmacology</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Full text</td><td class="t-num">36</td></tr><tr><td class="t-num"><a href="#ref-4">4</a></td><td>Serretti</td><td class="t-num">2026</td><td class="t-venue">Clinical psychopharmacology and neuroscience : the official scientific journal of the Korean College of Neuropsychopharmacology</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td><td class="t-num">—</td></tr><tr><td class="t-num"><a href="#ref-5">5</a></td><td>Popova et al.</td><td class="t-num">2019</td><td class="t-venue">American Journal of Psychiatry</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">889</td></tr><tr><td class="t-num"><a href="#ref-6">6</a></td><td>Fedgchin et al.</td><td class="t-num">2019</td><td class="t-venue">The International Journal of Neuropsychopharmacology</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">599</td></tr><tr><td class="t-num"><a href="#ref-7">7</a></td><td>Janik et al.</td><td class="t-num">2025</td><td class="t-venue">JAMA Psychiatry</td><td><span class="swatch swatch-related"></span>Related</td><td>Full text</td><td class="t-num">46</td></tr><tr><td class="t-num"><a href="#ref-8">8</a></td><td>Janik et al.</td><td class="t-num">2025</td><td class="t-venue">JAMA psychiatry</td><td><span class="swatch swatch-related"></span>Related</td><td>Full text</td><td class="t-num">24</td></tr><tr><td class="t-num"><a href="#ref-9">9</a></td><td>Xie et al.</td><td class="t-num">2026</td><td class="t-venue">Frontiers in psychiatry</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td><td class="t-num">—</td></tr><tr><td class="t-num"><a href="#ref-10">10</a></td><td>Daly et al.</td><td class="t-num">2019</td><td class="t-venue">JAMA Psychiatry</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td><td class="t-num">780</td></tr><tr><td class="t-num"><a href="#ref-11">11</a></td><td>Le et al.</td><td class="t-num">2026</td><td class="t-venue">Journal of affective disorders</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td><td class="t-num">—</td></tr><tr><td class="t-num"><a href="#ref-12">12</a></td><td>Wajs et al.</td><td class="t-num">2020</td><td class="t-venue">The Journal of Clinical Psychiatry</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td><td class="t-num">293</td></tr><tr><td class="t-num"><a href="#ref-13">13</a></td><td>Song et al.</td><td class="t-num">2024</td><td class="t-venue">Neuropsychiatric Disease and Treatment</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">13</td></tr><tr><td class="t-num"><a href="#ref-14">14</a></td><td>Turtulli &amp; Papadaki</td><td class="t-num">2026</td><td class="t-venue">Journal of clinical medicine</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">—</td></tr><tr><td class="t-num"><a href="#ref-15">15</a></td><td>Pettorruso et al.</td><td class="t-num">2023</td><td class="t-venue">Psychiatry Research</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">58</td></tr><tr><td class="t-num"><a href="#ref-16">16</a></td><td>Rodolico et al.</td><td class="t-num">2024</td><td class="t-venue">Frontiers in Psychiatry</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">31</td></tr><tr><td class="t-num"><a href="#ref-17">17</a></td><td>Viniegra</td><td class="t-num">2026</td><td class="t-venue">Cureus</td><td><span class="swatch swatch-related"></span>Related</td><td>Full text</td><td class="t-num">—</td></tr><tr><td class="t-num"><a href="#ref-18">18</a></td><td>Chrenek et al.</td><td class="t-num">2024</td><td class="t-venue">Frontiers in Psychiatry</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">23</td></tr><tr><td class="t-num"><a href="#ref-19">19</a></td><td>Martiadis et al.</td><td class="t-num">2026</td><td class="t-venue">Journal of Clinical Medicine</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">10</td></tr></tbody>
+</table></div>
+</div>
+
+  <section class="back-section glossary">
+<h2>Glossary</h2>
+<dl><div class="gloss-row"><dt>Treatment-resistant depression</dt><dd>A depressive episode that has not remitted despite adequate trials of at least two different antidepressants.</dd></div><div class="gloss-row"><dt>Randomized-withdrawal design</dt><dd>A trial in which people who have already improved on a treatment are randomly assigned either to continue it or to switch to placebo, so that relapse rates can be compared.</dd></div><div class="gloss-row"><dt>Montgomery-Åsberg Depression Rating Scale (MADRS)</dt><dd>A clinician-rated questionnaire scoring the severity of depressive symptoms, where higher totals mean more severe depression.</dd></div><div class="gloss-row"><dt>Hazard ratio</dt><dd>A measure comparing how quickly an event such as relapse happens in two groups; a value below 1 means the event occurred less often or later in the treated group.</dd></div><div class="gloss-row"><dt>Number needed to treat</dt><dd>The number of patients who must receive a treatment for one additional person to benefit compared with the comparison condition.</dd></div><div class="gloss-row"><dt>Long-term potentiation</dt><dd>A lasting strengthening of the connection between two nerve cells after repeated activity, widely used as a laboratory marker of synaptic plasticity.</dd></div></dl>
+</section>
+
+  <section class="refs">
+    <h2>References</h2>
+    <ol>
+      <li id="ref-1"><span class="ref-authors">McIntyre, R. S. et al.</span> <a href="https://doi.org/10.1002/wps.21120">Treatment‐resistant depression: definition, prevalence, detection, management, and investigational interventions.</a> <em>World Psychiatry</em> (2023). <span class="ref-cites">Cited by 752</span></li>
+<li id="ref-2"><span class="ref-authors">McIntyre, R. S. &amp; Jain, R.</span> <a href="https://doi.org/10.1007/s40263-024-01114-y">Glutamatergic Modulators for Major Depression from Theory to Clinical Use.</a> <em>CNS Drugs</em> (2024). <span class="ref-cites">Cited by 60</span></li>
+<li id="ref-3"><span class="ref-authors">Zaki, N. et al.</span> <a href="https://doi.org/10.1093/ijnp/pyaf027">Safety and efficacy with esketamine in treatment-resistant depression: long-term extension study.</a> <em>The International Journal of Neuropsychopharmacology</em> (2025). <span class="ref-cites">Cited by 36</span></li>
+<li id="ref-4"><span class="ref-authors">Serretti, A.</span> <a href="https://doi.org/10.9758/cpn.26.1487">Treatment-resistant Depression in the Post-ketamine Era: Unmet Needs beyond Rapid Response.</a> <em>Clinical psychopharmacology and neuroscience : the official scientific journal of the Korean College of Neuropsychopharmacology</em> (2026).</li>
+<li id="ref-5"><span class="ref-authors">Popova, V. et al.</span> <a href="https://doi.org/10.1176/appi.ajp.2019.19020172">Efficacy and Safety of Flexibly Dosed Esketamine Nasal Spray Combined With a Newly Initiated Oral Antidepressant in Treatment-Resistant Depression: A Randomized Double-Blind Active-Controlled Study.</a> <em>American Journal of Psychiatry</em> (2019). <span class="ref-cites">Cited by 889</span></li>
+<li id="ref-6"><span class="ref-authors">Fedgchin, M. et al.</span> <a href="https://doi.org/10.1093/ijnp/pyz039">Efficacy and Safety of Fixed-Dose Esketamine Nasal Spray Combined With a New Oral Antidepressant in Treatment-Resistant Depression: Results of a Randomized, Double-Blind, Active-Controlled Study (TRANSFORM-1).</a> <em>The International Journal of Neuropsychopharmacology</em> (2019). <span class="ref-cites">Cited by 599</span></li>
+<li id="ref-7"><span class="ref-authors">Janik, A. et al.</span> <a href="https://doi.org/10.1001/jamapsychiatry.2025.1317">Esketamine Monotherapy in Adults With Treatment-Resistant Depression.</a> <em>JAMA Psychiatry</em> (2025). <span class="ref-cites">Cited by 46</span></li>
+<li id="ref-8"><span class="ref-authors">Janik, A. et al.</span> <a href="https://doi.org/10.1001/jamapsychiatry.2025.1317">Esketamine Monotherapy in Adults With Treatment-Resistant Depression: A Randomized Clinical Trial.</a> <em>JAMA psychiatry</em> (2025). <span class="ref-cites">Cited by 24</span></li>
+<li id="ref-9"><span class="ref-authors">Xie, J., Pu, C. &amp; Sun, M.</span> <a href="https://doi.org/10.3389/fpsyt.2026.1774549">Intranasal esketamine plus oral antidepressant for treatment-resistant depression: acute induction and maintenance relapse-prevention outcomes in a systematic review and meta-analysis.</a> <em>Frontiers in psychiatry</em> (2026).</li>
+<li id="ref-10"><span class="ref-authors">Daly, E. et al.</span> <a href="https://doi.org/10.1001/jamapsychiatry.2019.1189">Efficacy of Esketamine Nasal Spray Plus Oral Antidepressant Treatment for Relapse Prevention in Patients With Treatment-Resistant Depression.</a> <em>JAMA Psychiatry</em> (2019). <span class="ref-cites">Cited by 780</span></li>
+<li id="ref-11"><span class="ref-authors">Le, G. H. et al.</span> <a href="https://doi.org/10.1016/j.jad.2025.121081">A systematic review of ketamine and esketamine-induced long-term potentiation and synaptic scaling: Do the molecular and synaptic plasticity effects inform dosing intervals?</a> <em>Journal of affective disorders</em> (2026).</li>
+<li id="ref-12"><span class="ref-authors">Wajs, E. et al.</span> <a href="https://doi.org/10.4088/jcp.19m12891">Esketamine Nasal Spray Plus Oral Antidepressant in Patients With Treatment-Resistant Depression.</a> <em>The Journal of Clinical Psychiatry</em> (2020). <span class="ref-cites">Cited by 293</span></li>
+<li id="ref-13"><span class="ref-authors">Song, H., Luo, Y. &amp; Fang, L.</span> <a href="https://doi.org/10.2147/ndt.s486118">Esketamine Nasal Spray: Rapid Relief for TRD and Suicide Prevention—Mechanisms and Pharmacodynamics.</a> <em>Neuropsychiatric Disease and Treatment</em> (2024). <span class="ref-cites">Cited by 13</span></li>
+<li id="ref-14"><span class="ref-authors">Turtulli, S. &amp; Papadaki, E.</span> <a href="https://doi.org/10.3390/jcm15155922">Psychoactive and Neurobiological Effects of Ketamine in Humans: A Scoping Review of Clinical Evidence.</a> <em>Journal of clinical medicine</em> (2026).</li>
+<li id="ref-15"><span class="ref-authors">Pettorruso, M. et al.</span> <a href="https://doi.org/10.1016/j.psychres.2023.115378">Predicting outcome with Intranasal Esketamine treatment: A machine-learning, three-month study in Treatment-Resistant Depression (ESK-LEARNING).</a> <em>Psychiatry Research</em> (2023). <span class="ref-cites">Cited by 58</span></li>
+<li id="ref-16"><span class="ref-authors">Rodolico, A. et al.</span> <a href="https://doi.org/10.3389/fpsyt.2024.1325399">Efficacy and safety of ketamine and esketamine for unipolar and bipolar depression: an overview of systematic reviews with meta-analysis.</a> <em>Frontiers in Psychiatry</em> (2024). <span class="ref-cites">Cited by 31</span></li>
+<li id="ref-17"><span class="ref-authors">Viniegra, J. P. B.</span> <a href="https://doi.org/10.7759/cureus.107343">Management of Treatment-Resistant Depression: An Updated Narrative Review of Current and Emerging Treatments.</a> <em>Cureus</em> (2026).</li>
+<li id="ref-18"><span class="ref-authors">Chrenek, C. et al.</span> <a href="https://doi.org/10.3389/fpsyt.2023.1283733">Use of ketamine for treatment resistant depression: updated review of literature and practical applications to a community ketamine program in Edmonton, Alberta, Canada.</a> <em>Frontiers in Psychiatry</em> (2024). <span class="ref-cites">Cited by 23</span></li>
+<li id="ref-19"><span class="ref-authors">Martiadis, V. et al.</span> <a href="https://doi.org/10.3390/jcm15041629">Integrating Psychiatric, Psychotherapeutic, and Nursing Care in Intranasal Esketamine for Treatment-Resistant Depression.</a> <em>Journal of Clinical Medicine</em> (2026). <span class="ref-cites">Cited by 10</span></li>
+    </ol>
+  </section>
+
+  <section class="back-section">
+<h2>Additional information</h2>
+<p><span class="run-in">Data availability.</span> No new data were generated. All evidence cited is published and openly indexed; 19 of the 19 cited records resolve through the links in the reference list.</p>
+<p><span class="run-in">Author contributions.</span> Search planning, source curation and drafting were carried out by an automated pipeline (articlegen, opus). No human author wrote or verified the text before publication of this draft.</p>
+<p><span class="run-in">Competing interests.</span> None declared.</p>
+<p><span class="run-in">Peer review.</span> This article has not been peer reviewed and is not a publication of record.</p>
+</section>
+
+  <footer class="colophon">
+    <strong>Not medical or clinical advice.</strong> This is a machine-generated summary of the cited journal articles, 5 of 19 read in full, the rest from their abstracts, for background only. It is not a substitute for professional judgement, primary sources, or clinical guidelines. Verify every claim, figure, and dose against the cited papers before acting on it.
+  </footer>
+  </article>
+</main>
+<script>
+function shareArticle() {
+  if (navigator.share) {
+    navigator.share({ title: document.title, url: window.location.href }).catch(function() {});
+  } else {
+    copyArticleLink();
+  }
+}
+function copyArticleLink() {
+  navigator.clipboard.writeText(window.location.href).then(function() {
+    var t = document.getElementById('shareToast');
+    if (t) {
+      t.style.display = 'inline';
+      setTimeout(function() { t.style.display = 'none'; }, 2500);
+    }
+  }).catch(function() {});
+}
+function toggleArticleTheme() {
+  var cur = document.documentElement.getAttribute('data-theme');
+  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var effective = cur || (isSysDark ? 'dark' : 'light');
+  var next = effective === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('articlegen_theme', next);
+  updateArticleThemeIcon();
+}
+function updateArticleThemeIcon() {
+  var icon = document.getElementById('themeIcon');
+  if (!icon) return;
+  var cur = document.documentElement.getAttribute('data-theme');
+  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var effective = cur || (isSysDark ? 'dark' : 'light');
+  icon.innerHTML = effective === 'dark' ? '&#9789;' : '&#9788;';
+}
+document.addEventListener('DOMContentLoaded', updateArticleThemeIcon);
+</script>
+</body>
+</html>

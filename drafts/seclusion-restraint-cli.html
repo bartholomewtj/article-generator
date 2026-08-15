@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Multicomponent organisational programmes reduce seclusion and restraint in acute psychiatric inpatient care, but the supporting designs are weak</title>
+<script>
+  (function() {
+    var saved = localStorage.getItem('articlegen_theme') || 'system';
+    if (saved === 'dark' || saved === 'light') {
+      document.documentElement.setAttribute('data-theme', saved);
+    }
+  })();
+</script>
+<style>
+  :root, html[data-theme="light"] {
+    --bg: #ffffff;
+    --surface: #f7f7f5;
+    --ink: #14171a;
+    --ink-2: #3c4249;
+    --muted: #6a7178;
+    --accent: #17457f;
+    --link: #1b5aa8;
+    --rule: #dfdfda;
+    --rule-strong: #b9bab5;
+    --seg-direct: #184f95;
+    --seg-related: #2a78d6;
+    --seg-tangential: #86b6ef;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14150f;
+      --surface: #1e1f1c;
+      --ink: #f2f1ea;
+      --ink-2: #cfcec5;
+      --muted: #9d9d94;
+      --accent: #9dc4f5;
+      --link: #86b6ef;
+      --rule: #33342f;
+      --rule-strong: #4c4d47;
+      --seg-direct: #86b6ef;
+      --seg-related: #3987e5;
+      --seg-tangential: #184f95;
+      color-scheme: dark;
+    }
+  }
+  html[data-theme="dark"] {
+    --bg: #14150f;
+    --surface: #1e1f1c;
+    --ink: #f2f1ea;
+    --ink-2: #cfcec5;
+    --muted: #9d9d94;
+    --accent: #9dc4f5;
+    --link: #86b6ef;
+    --rule: #33342f;
+    --rule-strong: #4c4d47;
+    --seg-direct: #86b6ef;
+    --seg-related: #3987e5;
+    --seg-tangential: #184f95;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Iowan Old Style", "Charter", Georgia, "Times New Roman", serif;
+    font-size: 1.02rem;
+    line-height: 1.62;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Fluid column: phones keep the viewport width exactly as before (the 40rem
+     floor only binds once the screen exceeds it); desktops scale with the
+     window up to 52rem. The wide-screen font bump below grows the rem, so the
+     ceiling is ~985px of column while the measure stays near 75 characters —
+     wider than this stops being readable prose, which is why journals cap it. */
+  main { max-width: clamp(40rem, 72vw, 52rem); margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+  @media (min-width: 1200px) {
+    html { font-size: 112.5%; }
+  }
+  .sans, .meta-line, .subject-line, .keywords, .di-caption, .fig-legend, .key-points,
+  .refs ol, .toolbar, .colophon, table, .meta-label {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+
+  /* ---- masthead ---------------------------------------------------- */
+  header.masthead { border-top: 3px solid var(--ink); padding-top: 0.9rem; margin-bottom: 2rem; }
+  .article-type {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 0.9rem;
+  }
+  h1 {
+    font-size: clamp(1.7rem, 4.2vw, 2.3rem);
+    line-height: 1.22; font-weight: 700; letter-spacing: -0.005em;
+    margin: 0 0 0.9rem;
+  }
+  /* Full contrast, body-text size, above the fold. The point of issue #91 is
+     that a disclosure in muted 0.78rem type is not a disclosure. */
+  .ai-disclosure {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.92rem; font-weight: 600; line-height: 1.45; color: var(--ink);
+    margin: 0 0 0.9rem; padding: 0.6rem 0.8rem;
+    background: var(--surface); border-left: 3px solid var(--ink);
+  }
+  .meta-line {
+    font-size: 0.78rem; color: var(--muted); margin: 0 0 0.35rem;
+    padding-bottom: 0.9rem; border-bottom: 1px solid var(--rule);
+  }
+  .subject-line { font-size: 0.78rem; color: var(--muted); margin: 0 0 0.9rem; }
+  .meta-label {
+    font-size: 0.68rem; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted); margin-right: 0.4rem;
+  }
+
+  /* ---- abstract & key points --------------------------------------- */
+  .abstract { margin: 0 0 1.2rem; }
+  .abstract p { margin: 0; font-size: 1.06rem; line-height: 1.6; color: var(--ink-2); }
+  .abstract .run-in-head {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink); margin-right: 0.5rem;
+  }
+  .keywords { font-size: 0.8rem; color: var(--muted); margin: 0 0 2rem; }
+  aside.key-points {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    padding: 1.1rem 1.3rem 1.2rem; margin: 0 0 2.2rem; border-radius: 3px;
+  }
+  aside.key-points h2 {
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 0.7rem;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  aside.key-points ul { margin: 0; padding-left: 1.1rem; }
+  .key-points-note { color: var(--muted); font-size: 0.78rem !important;
+                     font-style: italic; margin: 0 0 0.7rem 0 !important; }
+  sup.flag { font-size: 0.72em; line-height: 0; vertical-align: super; }
+  sup.flag a { color: var(--muted); text-decoration: none; font-weight: 700; }
+  aside.key-points li { margin-bottom: 0.5rem; font-size: 0.95rem; line-height: 1.55; }
+  aside.key-points li:last-child { margin-bottom: 0; }
+
+  /* ---- body -------------------------------------------------------- */
+  h2 {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 1.02rem; font-weight: 700; letter-spacing: 0.01em;
+    margin: 2.2rem 0 0.7rem; color: var(--ink);
+  }
+  p { margin: 0 0 1rem; }
+  .body-section p + p { text-indent: 1.2em; }
+  .run-in { font-weight: 700; font-style: italic; }
+  a { color: var(--link); }
+  sup.cite { font-size: 0.68em; line-height: 0; font-weight: 600; letter-spacing: 0.02em; }
+  sup.cite a { color: var(--link); text-decoration: none; padding: 0 0.02em; }
+  sup.cite a:hover { text-decoration: underline; }
+
+  /* ---- display items ----------------------------------------------- */
+  .display { margin: 1.8rem 0 2rem; }
+  .di-caption {
+    font-size: 0.8rem; line-height: 1.5; color: var(--muted); margin: 0.7rem 0 0;
+  }
+  .di-label { font-weight: 700; color: var(--ink); }
+  aside.box {
+    background: var(--surface); border: 1px solid var(--rule-strong);
+    padding: 1.1rem 1.3rem 1.2rem; border-radius: 3px;
+  }
+  aside.box .di-caption { margin: 0 0 0.7rem; font-size: 0.92rem; color: var(--ink); }
+  aside.box p { font-size: 0.95rem; line-height: 1.55; margin: 0 0 0.6rem; }
+  aside.box p:last-child { margin-bottom: 0; }
+  .box-cite { color: var(--muted); font-size: 0.85rem !important; }
+  .box-note { color: var(--muted); font-size: 0.78rem !important; font-style: italic;
+              margin-top: 0.75rem !important; }
+  figure.figure { margin: 1.8rem 0 2rem; padding: 1rem 0 0; border-top: 1px solid var(--rule); }
+  .fig-svg { width: 100%; height: auto; display: block; }
+  .fig-grid { stroke: var(--rule); stroke-width: 1; }
+  .fig-axis { stroke: var(--rule-strong); stroke-width: 1; }
+  .fig-tick { fill: var(--muted); font-size: 11px;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .fig-value { fill: var(--ink-2); font-size: 11px; font-weight: 600;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .fig-axis-title { fill: var(--muted); font-size: 11px; letter-spacing: 0.04em;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .seg-direct { fill: var(--seg-direct); }
+  .seg-related { fill: var(--seg-related); }
+  .seg-tangential { fill: var(--seg-tangential); }
+  .seg-cited { fill: var(--seg-related); }
+  .fig-legend {
+    display: flex; flex-wrap: wrap; gap: 0.3rem 1.1rem; list-style: none;
+    margin: 0.6rem 0 0; padding: 0; font-size: 0.78rem; color: var(--muted);
+  }
+  .fig-legend li { display: flex; align-items: center; gap: 0.4rem; }
+  .swatch {
+    display: inline-block; width: 0.68rem; height: 0.68rem; border-radius: 2px;
+    margin-right: 0.35rem; vertical-align: -0.05rem;
+  }
+  .swatch-direct { background: var(--seg-direct); }
+  .swatch-related { background: var(--seg-related); }
+  .swatch-tangential { background: var(--seg-tangential); }
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; min-width: 32rem; border-collapse: collapse; font-size: 0.82rem; }
+  tbody td:nth-child(5) { white-space: nowrap; }
+  thead th {
+    text-align: left; font-weight: 700; color: var(--ink);
+    border-top: 1px solid var(--rule-strong); border-bottom: 1px solid var(--rule-strong);
+    padding: 0.45rem 0.5rem; white-space: nowrap;
+  }
+  tbody td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--rule); color: var(--ink-2); }
+  tbody tr:last-child td { border-bottom: 1px solid var(--rule-strong); }
+  .t-num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .t-venue { color: var(--muted); }
+
+  /* ---- back matter -------------------------------------------------- */
+  .back-section { margin-top: 2.2rem; }
+  .back-section > h2:first-child, .refs h2 { margin-top: 0; }
+  .back-section p { font-size: 0.92rem; line-height: 1.58; color: var(--ink-2); }
+  .glossary dl { margin: 0; }
+  .gloss-row { display: flex; gap: 0.75rem; padding: 0.4rem 0; border-bottom: 1px solid var(--rule); }
+  .gloss-row dt { flex: 0 0 9.5rem; font-weight: 700; font-size: 0.92rem; }
+  .gloss-row dd { margin: 0; font-size: 0.92rem; color: var(--ink-2); }
+  .gloss-row:last-child { border-bottom: none; }
+  .refs { margin-top: 2.4rem; border-top: 2px solid var(--ink); padding-top: 1.1rem; }
+  .refs ol { margin: 0; padding-left: 1.5rem; font-size: 0.82rem; line-height: 1.5; }
+  .refs li { margin-bottom: 0.55rem; color: var(--ink-2); }
+  .refs li:target { background: var(--surface); border-radius: 2px; }
+  .refs a { color: var(--link); text-decoration: none; }
+  .refs a:hover { text-decoration: underline; }
+  .ref-authors { color: var(--ink); }
+  .ref-cites { color: var(--muted); }
+  footer.colophon {
+    margin-top: 2.4rem; padding-top: 1rem; border-top: 1px solid var(--rule);
+    font-size: 0.78rem; line-height: 1.55; color: var(--muted);
+  }
+
+  /* ---- toolbar ------------------------------------------------------ */
+  .toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0 2rem; }
+  .tool-btn {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    background: transparent; color: var(--ink-2);
+    border: 1px solid var(--rule-strong); border-radius: 2px;
+    padding: 0.35rem 0.7rem; font-size: 0.78rem; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+  }
+  .tool-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .share-toast { font-size: 0.78rem; color: var(--accent); align-self: center; display: none; }
+
+  @media (max-width: 34rem) {
+    .gloss-row { display: block; }
+    .gloss-row dt { margin-bottom: 0.15rem; }
+    .body-section p + p { text-indent: 0; }
+  }
+  @media print {
+    body { font-size: 10.5pt; background: #fff; color: #000; }
+    .toolbar { display: none; }
+    a, sup.cite a { color: #000; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <article>
+  <header class="masthead">
+    <p class="article-type">Evidence Review</p>
+    <h1>Multicomponent organisational programmes reduce seclusion and restraint in acute psychiatric inpatient care, but the supporting designs are weak</h1>
+    <p class="ai-disclosure">Written by a language model from the cited research, from 5 full texts and the abstracts of the other 12. No human author wrote or checked this text. Not peer reviewed.</p>
+    <p class="meta-line">Generated 15 August 2026 &middot; 17 sources cited, 2006–2026 &middot; Full text read for 5 of 17 sources &middot; Not peer reviewed</p>
+    <p class="subject-line"><span class="meta-label">Subject</span>Reducing seclusion and restraint in acute psychiatric inpatient care: what works</p>
+
+    <div class="toolbar">
+      <button class="tool-btn" onclick="shareArticle()">Share</button>
+      <button class="tool-btn" onclick="copyArticleLink()">Copy link</button>
+      <button class="tool-btn" onclick="toggleArticleTheme()"><span id="themeIcon">&#9789;</span> Theme</button>
+      <span id="shareToast" class="share-toast">Link copied</span>
+    </div>
+
+    <div class="abstract">
+      <p><span class="run-in-head">Abstract</span>Seclusion and restraint — the involuntary confinement of a patient, and the physical, mechanical or chemical restriction of movement — remain common in acute psychiatric inpatient care, despite the absence of evidence that they carry therapeutic benefit and despite documented physical and psychological harm to patients and staff. Regulators in several countries have set reduction or elimination targets, and a range of interventions has followed: staff training in de-escalation, multicomponent organisational programmes, ward-level models of care, advance crisis planning and dedicated staff roles. Here we review which of these approaches is associated with lower measured use of seclusion and restraint in adult acute settings, how strong the underlying designs are, and what conditions appear to determine whether a programme transfers between wards. The evidence indicates that multicomponent programmes combining leadership commitment, routine data use, workforce development and patient involvement accompany substantial reductions, yet almost all supporting studies are uncontrolled before-and-after evaluations at medium or high risk of bias. Ward context, staffing levels and the processes by which incidents escalate appear to shape outcomes as much as the programme chosen. Definitive controlled trials, and economic evaluations of adequate quality, remain scarce.</p>
+    </div>
+    <p class="keywords"><span class="meta-label">Keywords</span> seclusion and restraint reduction; restrictive practices; acute psychiatric inpatient care; six core strategies; safewards; de-escalation training; joint crisis plan; coercion</p>
+  </header>
+
+  <section class="body-section">
+<h2>Introduction</h2>
+<p>Coercive containment remains a routine feature of acute psychiatric inpatient care. A meta-analysis cited within a Canadian pilot study estimated that, on average, 14.4% of inpatients in mental health settings experience physical or mechanical restraint, 15.8% experience seclusion and 25.6% experience chemical restraint.<sup class="cite"><a href="#ref-1">1</a></sup> Harms are well documented rather than speculative: a systematic review of coercive interventions in adult psychiatry, summarised in a review of child and adolescent practice, estimated the incidence of post-traumatic stress disorder after seclusion or restraint at between 25% and 47%.<sup class="cite"><a href="#ref-2">2</a></sup> Cochrane reviews cited within a realist review of youth settings concluded that no controlled studies evaluate the value of seclusion or restraint in serious mental illness, which leaves the practices without a demonstrated therapeutic rationale.<sup class="cite"><a href="#ref-6">6</a></sup></p>
+<p>Regulatory frameworks have narrowed the permissible grounds for these practices. The Project BETA consensus statement summarised the Centers for Medicare and Medicaid Services conditions of participation, under which seclusion is defined as involuntary confinement in a room a patient is physically prevented from leaving, and a drug counts as a restraint when it is used to manage behaviour rather than as standard treatment for the patient&#x27;s condition.<sup class="cite"><a href="#ref-3">3</a></sup> Australian national safety priorities have gone further, framing reduction and, where possible, elimination as an explicit policy goal, although a nursing commentary from that period noted that many clinicians regarded elimination in acute care as unrealistic.<sup class="cite"><a href="#ref-4">4</a></sup></p>
+<p>This review considers what interventions have been evaluated against measured rates of seclusion and restraint in adult acute inpatient settings, what the underlying designs permit, and which contextual factors appear to govern transfer between wards. The direct adult evidence is dominated by uncontrolled before-and-after evaluations, with one appraisal of comparative studies providing the most rigorous synthesis.<sup class="cite"><a href="#ref-5">5</a></sup> Several of the most quantitatively detailed reduction results come from child, adolescent and residential settings; these are treated here as extrapolation and labelled as such, since no controlled adult replication of those specific programmes was identified among the sources reviewed.<sup class="cite"><a href="#ref-2">2</a>,<a href="#ref-6">6</a></sup></p>
+</section>
+
+<figure class="display figure">
+<svg class="fig-svg" viewBox="0 0 660 250" role="img" aria-label="Cited sources by publication year, segmented by relevance"><line class="fig-grid" x1="40.0" x2="648.0" y1="206.0" y2="206.0"></line><text class="fig-tick" x="32.0" y="209.5" text-anchor="end">0</text><line class="fig-grid" x1="40.0" x2="648.0" y1="145.3" y2="145.3"></line><text class="fig-tick" x="32.0" y="148.8" text-anchor="end">2</text><line class="fig-grid" x1="40.0" x2="648.0" y1="84.7" y2="84.7"></line><text class="fig-tick" x="32.0" y="88.2" text-anchor="end">4</text><line class="fig-grid" x1="40.0" x2="648.0" y1="24.0" y2="24.0"></line><text class="fig-tick" x="32.0" y="27.5" text-anchor="end">6</text><path class="fig-seg seg-related" d="M77.8,204.0 L77.8,179.7 Q77.8,175.7 81.8,175.7 L119.8,175.7 Q123.8,175.7 123.8,179.7 L123.8,204.0 Z"><title>2005–09: 1 related</title></path><text class="fig-value" x="100.8" y="169.7" text-anchor="middle">1</text><text class="fig-tick" x="100.8" y="224.0" text-anchor="middle">2005–09</text><path class="fig-seg seg-direct" d="M199.4,204.0 L199.4,179.7 Q199.4,175.7 203.4,175.7 L241.4,175.7 Q245.4,175.7 245.4,179.7 L245.4,204.0 Z"><title>2010–14: 1 direct</title></path><text class="fig-value" x="222.4" y="169.7" text-anchor="middle">1</text><text class="fig-tick" x="222.4" y="224.0" text-anchor="middle">2010–14</text><rect class="fig-seg seg-direct" x="321.0" y="175.7" width="46.0" height="28.3"><title>2015–19: 1 direct</title></rect><path class="fig-seg seg-related" d="M321.0,173.7 L321.0,58.3 Q321.0,54.3 325.0,54.3 L363.0,54.3 Q367.0,54.3 367.0,58.3 L367.0,173.7 Z"><title>2015–19: 4 related</title></path><text class="fig-value" x="344.0" y="48.3" text-anchor="middle">5</text><text class="fig-tick" x="344.0" y="224.0" text-anchor="middle">2015–19</text><path class="fig-seg seg-direct" d="M442.6,204.0 L442.6,58.3 Q442.6,54.3 446.6,54.3 L484.6,54.3 Q488.6,54.3 488.6,58.3 L488.6,204.0 Z"><title>2020–24: 5 direct</title></path><text class="fig-value" x="465.6" y="48.3" text-anchor="middle">5</text><text class="fig-tick" x="465.6" y="224.0" text-anchor="middle">2020–24</text><rect class="fig-seg seg-direct" x="564.2" y="175.7" width="46.0" height="28.3"><title>2025–29: 1 direct</title></rect><path class="fig-seg seg-related" d="M564.2,173.7 L564.2,58.3 Q564.2,54.3 568.2,54.3 L606.2,54.3 Q610.2,54.3 610.2,58.3 L610.2,173.7 Z"><title>2025–29: 4 related</title></path><text class="fig-value" x="587.2" y="48.3" text-anchor="middle">5</text><text class="fig-tick" x="587.2" y="224.0" text-anchor="middle">2025–29</text><line class="fig-axis" x1="40.0" x2="648.0" y1="206.0" y2="206.0"></line><text class="fig-axis-title" x="330.0" y="242.0" text-anchor="middle">Year of publication</text><text class="fig-axis-title" x="-115.0" y="12" text-anchor="middle" transform="rotate(-90)">Cited sources</text></svg>
+<ul class="fig-legend"><li><span class="swatch swatch-direct"></span>Direct</li><li><span class="swatch swatch-related"></span>Related</li></ul>
+<figcaption class="di-caption"><span class="di-label">Fig. 1 |</span> Composition of the evidence base. Cited sources by year of publication, segmented by how directly each addresses the review question. Bar labels give the number of sources in each period; the underlying records are listed in Table 1.</figcaption>
+</figure>
+
+<section class="body-section">
+<h2>Multicomponent organisational programmes</h2>
+<p>The strongest synthesis of adult acute settings sets a cautious ceiling on what can be claimed. Gaynes and colleagues identified 17 comparative studies of violence prevention and de-escalation strategies, and rated only two approaches — structured risk assessment and multimodal interventions consistent with Six Core Strategies principles — as supported at low strength of evidence for reducing seclusion and restraint.<sup class="cite"><a href="#ref-5">5</a></sup> Every other intervention examined, whether preventive or de-escalatory, fell into the insufficient category, and all but one study carried a medium or high risk of bias.<sup class="cite"><a href="#ref-5">5</a></sup></p>
+<p>Larger observational reductions have nonetheless been reported over long implementation periods. The Project BETA consensus statement summarised an 11-year programme across nine Pennsylvania state hospitals in which the seclusion rate fell from 4.2 to 0.3 episodes per 1,000 patient-days and mean seclusion duration from 10.8 to 1.3 hours, while the restraint rate fell from 3.5 to 1.2 episodes per 1,000 patient-days.<sup class="cite"><a href="#ref-3">3</a></sup> The same source reported that data on staff injury indicated no increased risk of assault, and described a separate five-year hospital initiative in which regression analysis attributed most of a 75% reduction in incidents to changes in how critical cases were identified and reviewed.<sup class="cite"><a href="#ref-3">3</a></sup> Results across these series are not uniform: the statement also described a retrospective analysis at a large inner-city hospital where restraint use fell significantly but assaults on patients and staff rose, which the authors attributed in part to staff having received no specific training in managing violent patients.<sup class="cite"><a href="#ref-3">3</a></sup></p>
+<p>Whether reduction raises risk to staff has not been settled by controlled work. An Australian nursing commentary observed that no controlled studies had examined the effect of reducing seclusion and restraint on occupational injury, while anecdotal accounts from the United States indicated no increase in assaults and possibly fewer.<sup class="cite"><a href="#ref-4">4</a></sup> The same commentary noted that Pennsylvania state hospitals had virtually eliminated both practices and that systematic use of the six core interventions had produced marked reductions across varied settings, though those claims rested on programme reports rather than trials.<sup class="cite"><a href="#ref-4">4</a></sup></p>
+<p>Evidence from younger populations is more granular but does not transfer directly to adult acute wards. In a review of 18 studies of child and adolescent inpatient units, a Six Core Strategies implementation across three United States children&#x27;s facilities reported statistically significant falls in combined seclusion and restraint of 62%, 86% and 69% per 1,000 client days, and a decade-long quality improvement project at a paediatric psychiatric hospital reported mechanical restraints falling from 485 to zero and physical restraints from 3,033 to 379.<sup class="cite"><a href="#ref-2">2</a></sup> A feasibility study in an Australian acute adolescent ward, using archival mixed-methods data, reported elimination of seclusion together with significant reductions in restraint use and nursing sick leave in the 12 months after implementation of the same framework.<sup class="cite"><a href="#ref-7">7</a></sup> Both remain uncontrolled pre-post designs, and the adolescent findings are extrapolation when applied to adults.</p>
+</section>
+
+<aside class="display box" aria-labelledby="box-1">
+<p class="di-caption" id="box-1"><span class="di-label">Box 1 |</span> Most relevant source: Preventing and De-escalating Aggressive Behavior Among Adult Psychiatric Patients: A Systematic Review of the Evidence</p>
+<p class="box-cite">Gaynes et al. (2017) · Psychiatric Services<sup class="cite"><a href="#ref-5">5</a></sup> · <a href="https://doi.org/10.1176/appi.ps.201600314">doi:10.1176/appi.ps.201600314</a></p>
+<p><span class="run-in">Method.</span> Reviewers systematically searched relevant databases for comparative studies — trials and cohort studies — of strategies to prevent or de-escalate aggression among adult psychiatric patients in acute care settings, requiring outcomes on aggression, seclusion or restraint. Two reviewers independently rated risk of bias for each study and strength of evidence for each outcome.</p>
+<p><span class="run-in">Results.</span> Seventeen primary studies met the inclusion criteria. Structured risk assessment was associated with reductions in both aggression and use of seclusion and restraint, and multimodal interventions consistent with Six Core Strategies principles with reduced seclusion and restraint, each at low strength of evidence; the strength of evidence for all other preventive and de-escalation strategies was rated insufficient.</p>
+<p><span class="run-in">Limitations.</span> All but one included study carried a medium or high risk of bias, so the review could not establish comparative effectiveness. Information on characteristics that might modify effectiveness, such as race or ethnicity, was especially sparse.</p>
+<p class="box-note">Selected for closeness to the review question, not for study quality; no quality appraisal was performed.</p>
+</aside>
+
+<section class="body-section">
+<h2>Implementation conditions and fidelity</h2>
+<p>Programme effects appear to depend heavily on how implementation is conducted. An integrative review of 19 articles on Safewards in adult inpatient and forensic units, appraised with the Mixed Methods Appraisal Tool and a narrative instrument for discussion papers, found that the model can reduce containment and conflict, but that this outcome varied across the literature and that fidelity measures were themselves limited.<sup class="cite"><a href="#ref-8">8</a></sup> Safewards comprises six originating domains of conflict — staff team, patient community, patient characteristics, life outside hospital, regulatory framework and physical environment — and ten discrete staff interventions, and the original cluster randomised trial indicated that the model could reduce restrictive practices, which prompted wide international uptake.<sup class="cite"><a href="#ref-8">8</a></sup> The review also identified staff involvement in implementation as a recurring determinant of success, and noted that only two of the included papers examined the model from the consumer point of view.<sup class="cite"><a href="#ref-8">8</a></sup></p>
+<p>Trauma-informed care shows a comparable dependence on organisational preconditions. Bryson and colleagues screened 693 abstracts published between 2000 and 2015 and retained 13 articles describing whole-system implementations in youth psychiatric or residential settings, covering the Attachment, Self-Regulation and Competency framework, Six Core Strategies, Collaborative Problem Solving, the Sanctuary Model, Risking Connection and the Fairy Tale Model.<sup class="cite"><a href="#ref-6">6</a></sup> Five factors were associated with successful implementation: senior leadership commitment, sufficient staff support, amplifying the voices of patients and families, aligning policy and programming with trauma-informed principles, and using data to motivate change.<sup class="cite"><a href="#ref-6">6</a></sup> The authors concluded that coercive measures may be reduced either by targeting them directly or by implementing broader therapeutic models, and that the relative efficacy of the two routes remains untested; the population is youth, so inference to adult acute wards is extrapolation.<sup class="cite"><a href="#ref-6">6</a></sup></p>
+<p>Where those preconditions are absent, reduction appears to stall. Nineteen studies from 11 Eastern Mediterranean countries, synthesised narratively under PRISMA 2020 guidance, reported nursing knowledge deficits across multiple settings, predominantly negative attitudes towards restraint, and recurrent problems of inadequate training, chronic understaffing and limited access to alternatives.<sup class="cite"><a href="#ref-9">9</a></sup> Individuals with mental illness in those studies consistently described restraint as humiliating, punitive and physically distressing.<sup class="cite"><a href="#ref-9">9</a></sup> The included studies were predominantly cross-sectional with convenience samples, so the review supports description of the barriers rather than estimation of their effect.<sup class="cite"><a href="#ref-9">9</a></sup></p>
+</section>
+
+<section class="body-section">
+<h2>Training, dedicated roles and post-incident practice</h2>
+<p>De-escalation training is mandated widely but has been evaluated poorly. The EDITION programme co-designed an enhanced de-escalation intervention and tested it in an uncontrolled feasibility trial across ten inpatient wards in two United Kingdom mental health trusts, spanning acute, psychiatric intensive care and low, medium and high secure forensic settings.<sup class="cite"><a href="#ref-10">10</a></sup> Conflict and containment were measured with the Patient-Staff Conflict Checklist over 24 weeks divided into pre-intervention, embedding and post-intervention phases; regression analyses indicated that reductions in both conflict and containment were predicted by study phase, and no adverse events related to the intervention occurred.<sup class="cite"><a href="#ref-10">10</a></sup> The uncontrolled design and self-selecting sample mean this constitutes a feasibility signal rather than an effect estimate.</p>
+<p>One of the few controlled evaluations tested a dedicated staff role rather than a training package. A bi-phasic time series study compared a psychiatric intensive care unit that created a reducing restrictive interventions advocate — a post that met patients and carers and advised, trained, supervised and debriefed the multidisciplinary team — with a control unit, across 19 months before and 19 months after implementation.<sup class="cite"><a href="#ref-11">11</a></sup> The intervention unit showed significant reductions in seclusion, full restraint and standing holds, and interviews with the postholder, ward manager and organisational lead described safety culture changes considered unlikely without the role.<sup class="cite"><a href="#ref-11">11</a></sup></p>
+<p>Post-incident debriefing, a component of most multicomponent programmes, has almost no standalone evidence. A Cochrane review located a single randomised controlled trial of debriefing after coercive measures in adults with schizophrenia or schizophrenia-type psychosis, in which 422 people were randomised and 109 participated.<sup class="cite"><a href="#ref-12">12</a></sup> The trial found a point estimate favouring more rather than fewer repeat seclusions, with a wide confidence interval spanning no effect, and no evidence of benefit for peritraumatic distress or satisfaction with care; all outcomes were graded very low certainty.<sup class="cite"><a href="#ref-12">12</a></sup> This apparent divergence from the packaged programmes is best read as a difference in what was tested — one isolated component against treatment as usual, rather than an organisational change strategy.</p>
+</section>
+
+<section class="body-section">
+<h2>Patient participation and perceived coercion</h2>
+<p>Interventions that formalise patient preferences have been evaluated mainly on process and climate outcomes. A pilot mixed-methods study of the Joint Crisis Plan, conducted across a psychiatric emergency department, a psychiatric intensive care unit, an acute care unit and a forensic unit in Quebec, combined 16 interviews with a pre-post comparison involving 57 healthcare providers and 53 inpatients.<sup class="cite"><a href="#ref-1">1</a></sup> Implementation difficulties complicated evaluation of effects on seclusion and restraint use, but a moderate change in violence prevention climate, of effect size 0.40, was detected from the provider perspective.<sup class="cite"><a href="#ref-1">1</a></sup> Qualitatively, inpatients valued the reflective process of completing the plan while providers focused on its technical aspects.<sup class="cite"><a href="#ref-1">1</a></sup></p>
+<p>Appetite for the tool preceded any demonstration of its performance. In a pre-implementation survey at the same Quebec institution, 84.8% of individuals with severe mental illness and healthcare providers judged that a joint crisis plan would meet a critical need in the province, while identifying lack of organisational support, insufficient training and perceived complexity as likely barriers.<sup class="cite"><a href="#ref-1">1</a></sup> Training in the pilot combined a 90-minute online module on the concept of crisis and shared decision-making with a 90-minute in-person session using clinical scenarios, followed by a one-month trial period during which the research team attended the wards several times weekly.<sup class="cite"><a href="#ref-1">1</a></sup></p>
+<p>Clinician beliefs remain a substantial constraint on such approaches. In an online survey of 512 nurses across Australian psychiatric inpatient and emergency settings, respondents generally regarded seclusion and restraint as necessary last-resort methods and tended to disagree that containment could be eliminated, while accepting that its use damages relationships with consumers.<sup class="cite"><a href="#ref-13">13</a></sup> Seclusion was viewed significantly more favourably than mechanical restraint, and empathy, rapport and trauma-informed principles were the factors respondents most often identified as reducing the likelihood of containment.<sup class="cite"><a href="#ref-13">13</a></sup></p>
+<p>Doedens and colleagues, reviewing the nursing literature systematically, traced a shift over two decades from a therapeutic paradigm, in which coercive measures were held to benefit patients, to a safety paradigm in which they are viewed as undesirable but necessary for ward safety.<sup class="cite"><a href="#ref-14">14</a></sup> That review found the literature relating staff characteristics to actual use of coercion to be inconclusive, reported that nurses&#x27; perception of how intrusive a measure is appears influenced by how often they use it, and identified nurses&#x27; own perceived safety as the more promising target for further study.<sup class="cite"><a href="#ref-14">14</a></sup></p>
+</section>
+
+<section class="body-section">
+<h2>Variation in use, ward context and cost</h2>
+<p>Where restraint occurs, and whether it escalates, appear to be partly separable problems. A retrospective observational study of 41,685 incidents recorded across a large English National Health Service trust between June 2024 and May 2025 found restraint prevalence highest in older adult wards (12.93%) and low secure units (12.86%), and higher on mixed (11.55%) and female (9.47%) wards than male wards (6.73%).<sup class="cite"><a href="#ref-15">15</a></sup> Escalation from restraint to seclusion was highest in medium secure units (6.22%) and acute wards (4.72%) and minimal in high secure and older adult wards, and multilevel modelling suggested that ward-level context contributed to variation in seclusion outcomes.<sup class="cite"><a href="#ref-15">15</a></sup> Counterfactual simulation in the same study suggested that, in high-risk settings, interrupting escalation may lower seclusion rates more than an equivalent reduction in restraint incidents.</p>
+<p>Staffing recurs as the resource on which relational alternatives depend. Thematic analysis of semi-structured interviews with 130 staff and 32 service users during a restraint minimisation initiative generated five themes, including insufficient staff to do the job, detriment to staff and service users, the burden of non-clinical paperwork, false economies, and the observation that alternative interventions such as de-escalation could not be delivered at prevailing staffing levels.<sup class="cite"><a href="#ref-16">16</a></sup> The finding is qualitative and drawn from a single initiative, so it identifies a mechanism of failure rather than quantifying it.</p>
+<p>Economic evidence is thin relative to the sums involved. The EDITION report noted that physical restraint costs United Kingdom mental health services £6.1 million and enhanced observations £88 million per annum.<sup class="cite"><a href="#ref-10">10</a></sup> Luigi and colleagues appraised 20 economic studies of non-pharmacological interventions targeting aggression and restrictive practices, identified through searches covering 2000 to 2025 and mostly conducted on acute wards: eleven reported intervention costs only, twelve reported savings, of which eight permitted cost analyses, and just two interventions yielded both clinical benefits and net savings.<sup class="cite"><a href="#ref-17">17</a></sup> Reporting quality was weak, with few sensitivity analyses to model uncertainty, heterogeneity or distributional effects.<sup class="cite"><a href="#ref-17">17</a></sup></p>
+</section>
+
+<aside class="key-points">
+<h2>Key points</h2>
+<p class="key-points-note">Every figure in this review was located in the material read for the cited sources — their abstracts, and the open-access full text where one was retrieved.</p>
+<ul>
+<li>The only systematic review of adult acute settings identified 17 comparative studies and rated just two strategies — structured risk assessment and multimodal Six Core Strategies-type programmes — as supported, at low strength of evidence; all but one included study carried a medium or high risk of bias.<sup class="cite"><a href="#ref-5">5</a></sup></li>
+<li>A controlled bi-phasic time series comparing a psychiatric intensive care unit that created a dedicated reducing restrictive interventions advocate with a control unit, over 19 months before and after, reported significant falls in seclusion, full restraint and standing holds.<sup class="cite"><a href="#ref-11">11</a></sup></li>
+<li>A Cochrane review found only one randomised trial of post-incident debriefing after coercive measures, in which 422 people were randomised and 109 participated; the point estimate favoured more repeat seclusions, with a confidence interval spanning no effect and very low certainty throughout.<sup class="cite"><a href="#ref-12">12</a></sup></li>
+<li>Extrapolating from child and adolescent inpatient units, a review of 18 studies found that most evaluated interventions — among them trauma-informed care, Six Core Strategies, collaborative and proactive solutions, dialectical behaviour therapy and sensory rooms — reduced seclusion or restraint, and two child-centred trauma-informed initiatives eliminated mechanical restraint, although many reports did not state statistical significance.<sup class="cite"><a href="#ref-2">2</a></sup></li>
+<li>Analysis of 41,685 incidents across one English trust found restraint prevalence highest in older adult (12.93%) and low secure (12.86%) settings, while escalation to seclusion was concentrated in medium secure (6.22%) and acute (4.72%) wards, indicating two distinct targets for reduction.<sup class="cite"><a href="#ref-15">15</a></sup></li>
+<li>Across 20 economic evaluations of interventions targeting aggression and restrictive practices, only two interventions demonstrated both clinical benefit and net savings, and few studies included sensitivity analyses.<sup class="cite"><a href="#ref-17">17</a></sup></li>
+</ul>
+</aside>
+
+<section class="body-section">
+<h2>Conclusions and outlook</h2>
+<p>What is reasonably established is narrow. Multicomponent organisational programmes that combine leadership commitment, routine use of incident data, workforce development, prevention tools, patient and family involvement and structured debriefing are consistently accompanied by lower rates of seclusion and restraint across long observational series, and structured risk assessment carries comparable support; both, however, rest on low strength of evidence in the only systematic appraisal of adult acute settings.<sup class="cite"><a href="#ref-3">3</a>,<a href="#ref-5">5</a></sup> Reduction has not been shown to increase assaults on staff in the series that reported injury data.<sup class="cite"><a href="#ref-3">3</a></sup></p>
+<p>What remains open is whether these associations are causal, and which components carry the effect. Isolated components perform poorly when tested alone, as the single randomised trial of post-incident debriefing illustrates.<sup class="cite"><a href="#ref-12">12</a></sup> Controlled evaluation is scarce: the strongest adult design among the sources reviewed compared one intervention unit against one control unit over matched 19-month periods,<sup class="cite"><a href="#ref-11">11</a></sup> while the largest United Kingdom training evaluation was explicitly a feasibility trial without a control arm.<sup class="cite"><a href="#ref-10">10</a></sup> Ward-level variation in escalation and staffing may account for a meaningful share of the differences between wards that are otherwise attributed to programmes.<sup class="cite"><a href="#ref-15">15</a>,<a href="#ref-16">16</a></sup></p>
+<p>The evidence that would settle these questions is identifiable. Definitive multi-site randomised or cluster-randomised trials with prospectively defined containment outcomes and fidelity measurement, of the kind the EDITION feasibility work was designed to enable, would separate programme effect from secular trend.<sup class="cite"><a href="#ref-10">10</a></sup> Future evaluations would benefit from reporting cost alongside clinical outcomes, given how few existing economic studies permit any cost-benefit inference,<sup class="cite"><a href="#ref-17">17</a></sup> and from incorporating consumer-reported outcomes, which remain the largest gap in the Safewards literature.<sup class="cite"><a href="#ref-8">8</a></sup></p>
+</section>
+
+  <section class="back-section">
+<h2>Methods</h2>
+<p><span class="run-in">Search strategy.</span> Candidate records were retrieved on 15 August 2026 from OpenAlex and Europe PMC, using the search strings ‘seclusion restraint reduction acute psychiatric inpatient units intervention’; ‘Six Core Strategies restraint seclusion reduction inpatient mental health’; ‘coercive measures psychiatric hospital systematic review effectiveness’; ‘Safewards trial conflict containment acute mental health wards’. Records without a retrievable abstract were discarded, leaving 20 for screening. Each remaining record was assessed for how directly it addresses Reducing seclusion and restraint in acute psychiatric inpatient care: what works and labelled direct, related or background; 17 were cited here and are listed in Table 1.</p>
+<p><span class="run-in">Evidence handling.</span> Titles and abstracts were read for every record, and the open-access full texts of 5 sources were retrieved from Europe PMC and read alongside them (marked in Table 1); claims resting on the remaining sources draw on no data beyond an abstract. Decimals, percentages, effect estimates and quantities carrying a clinical unit were then checked automatically, each against the sources its own sentence cites, within exactly the material shown to the model — the abstracts plus those full-text excerpts. A figure that could not be located, or that appears only in a source other than the one cited, is flagged under Limitations.</p>
+<p><span class="run-in">Generation.</span> Search planning, source curation and drafting were performed by a large language model (opus). Source retrieval, relevance tabulation, citation numbering, Table 1, Fig. 1 and the statistical check are deterministic and were not model-generated.</p>
+</section>
+
+  <section class="back-section">
+<h2>Evidence assessment</h2>
+<p>Of the 17 sources cited, 8 address the review question directly, 9 are related and 0 provide background only; they were published in 2006–2026. The composition of the evidence base is shown in Fig. 1.</p>
+<p id="limitations"><span class="run-in">Limitations.</span> This synthesis was prepared from the open-access full texts of 5 cited sources and the abstracts of the remaining 12. Where only an abstract was available, effect estimates, methodological detail, and the limitations that authors report only in a full text were unavailable, so the strength of those studies could not be appraised here.</p>
+</section>
+
+  <div class="display table-wrap" aria-labelledby="table-1">
+<p class="di-caption" id="table-1"><span class="di-label">Table 1 |</span> Characteristics of the cited evidence. Relevance is the curation label for how directly each source addresses the review question; citation counts are as reported by the indexing database. Read records whether the model saw the source's open-access full text or its abstract only.</p>
+<div class="table-scroll"><table>
+<thead><tr><th>Ref.</th><th>Study</th><th>Year</th><th>Source</th><th>Relevance</th><th>Read</th><th>Cited by</th></tr></thead>
+<tbody><tr><td class="t-num"><a href="#ref-1">1</a></td><td>Goulet et al.</td><td class="t-num">2024</td><td class="t-venue">Healthcare (Basel, Switzerland)</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Full text</td><td class="t-num">—</td></tr><tr><td class="t-num"><a href="#ref-2">2</a></td><td>Perers et al.</td><td class="t-num">2021</td><td class="t-venue">Psychiatric Quarterly</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Full text</td><td class="t-num">78</td></tr><tr><td class="t-num"><a href="#ref-3">3</a></td><td>Knox &amp; Holloman</td><td class="t-num">2012</td><td class="t-venue">Western Journal of Emergency Medicine</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Full text</td><td class="t-num">230</td></tr><tr><td class="t-num"><a href="#ref-4">4</a></td><td>Grigg</td><td class="t-num">2006</td><td class="t-venue">International Journal of Mental Health Nursing</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">21</td></tr><tr><td class="t-num"><a href="#ref-5">5</a></td><td>Gaynes et al.</td><td class="t-num">2017</td><td class="t-venue">Psychiatric Services</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td><td class="t-num">125</td></tr><tr><td class="t-num"><a href="#ref-6">6</a></td><td>Bryson et al.</td><td class="t-num">2017</td><td class="t-venue">International Journal of Mental Health Systems</td><td><span class="swatch swatch-related"></span>Related</td><td>Full text</td><td class="t-num">188</td></tr><tr><td class="t-num"><a href="#ref-7">7</a></td><td>Lee‐Aube et al.</td><td class="t-num">2023</td><td class="t-venue">Journal of Psychiatric and Mental Health Nursing</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td><td class="t-num">4</td></tr><tr><td class="t-num"><a href="#ref-8">8</a></td><td>Mullen et al.</td><td class="t-num">2022</td><td class="t-venue">International journal of mental health nursing</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Full text</td><td class="t-num">36</td></tr><tr><td class="t-num"><a href="#ref-9">9</a></td><td>Almutairi et al.</td><td class="t-num">2026</td><td class="t-venue">Healthcare (Basel, Switzerland)</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">—</td></tr><tr><td class="t-num"><a href="#ref-10">10</a></td><td>Price et al.</td><td class="t-num">2024</td><td class="t-venue">Health Technology Assessment</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td><td class="t-num">18</td></tr><tr><td class="t-num"><a href="#ref-11">11</a></td><td>Green et al.</td><td class="t-num">2025</td><td class="t-venue">BMJ open quality</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td><td class="t-num">—</td></tr><tr><td class="t-num"><a href="#ref-12">12</a></td><td>Välimäki et al.</td><td class="t-num">2025</td><td class="t-venue">The Cochrane database of systematic reviews</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">2</td></tr><tr><td class="t-num"><a href="#ref-13">13</a></td><td>Gerace &amp; Muir‐Cochrane</td><td class="t-num">2018</td><td class="t-venue">International Journal of Mental Health Nursing</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">102</td></tr><tr><td class="t-num"><a href="#ref-14">14</a></td><td>Doedens et al.</td><td class="t-num">2019</td><td class="t-venue">Journal of Psychiatric and Mental Health Nursing</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">122</td></tr><tr><td class="t-num"><a href="#ref-15">15</a></td><td>Ugwuocha et al.</td><td class="t-num">2026</td><td class="t-venue">—</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">—</td></tr><tr><td class="t-num"><a href="#ref-16">16</a></td><td>McKeown et al.</td><td class="t-num">2019</td><td class="t-venue">Journal of Psychiatric and Mental Health Nursing</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">75</td></tr><tr><td class="t-num"><a href="#ref-17">17</a></td><td>Luigi et al.</td><td class="t-num">2025</td><td class="t-venue">International journal of mental health systems</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td><td class="t-num">—</td></tr></tbody>
+</table></div>
+</div>
+
+  <section class="back-section glossary">
+<h2>Glossary</h2>
+<dl><div class="gloss-row"><dt>Seclusion</dt><dd>Involuntary confinement of a patient alone in a room or area that the patient is physically prevented from leaving.</dd></div><div class="gloss-row"><dt>Restraint</dt><dd>Any manual, physical, mechanical or drug-based method used to immobilise a patient or reduce free movement of the body.</dd></div><div class="gloss-row"><dt>Six Core Strategies</dt><dd>A multicomponent reduction framework built on leadership for organisational change, use of data, workforce development, prevention tools, patient and family inclusion, and debriefing after incidents.</dd></div><div class="gloss-row"><dt>Safewards</dt><dd>A model of six sources of ward conflict plus ten discrete staff interventions, designed to reduce the cycle between conflict and containment on inpatient units.</dd></div><div class="gloss-row"><dt>Joint Crisis Plan</dt><dd>An advance document in which a person records treatment preferences, warning signs and preferred alternatives to coercion, agreed jointly with the clinical team and relatives.</dd></div><div class="gloss-row"><dt>Strength of evidence</dt><dd>A formal grading of how much confidence a body of studies supports for a given outcome, separate from the risk of bias of any single study.</dd></div></dl>
+</section>
+
+  <section class="refs">
+    <h2>References</h2>
+    <ol>
+      <li id="ref-1"><span class="ref-authors">Goulet, M. H. et al.</span> <a href="https://doi.org/10.3390/healthcare12242532">Joint Crisis Plan in Mental Health Settings: A Reflective Process More than an Intervention Tool?</a> <em>Healthcare (Basel, Switzerland)</em> (2024).</li>
+<li id="ref-2"><span class="ref-authors">Perers, C. et al.</span> <a href="https://doi.org/10.1007/s11126-021-09887-x">Methods and Strategies for Reducing Seclusion and Restraint in Child and Adolescent Psychiatric Inpatient Care.</a> <em>Psychiatric Quarterly</em> (2021). <span class="ref-cites">Cited by 78</span></li>
+<li id="ref-3"><span class="ref-authors">Knox, D. &amp; Holloman, G.</span> <a href="https://doi.org/10.5811/westjem.2011.9.6867">Use and Avoidance of Seclusion and Restraint: Consensus Statement of the American Association for Emergency Psychiatry Project BETA Seclusion and Restraint Workgroup.</a> <em>Western Journal of Emergency Medicine</em> (2012). <span class="ref-cites">Cited by 230</span></li>
+<li id="ref-4"><span class="ref-authors">Grigg, M.</span> <a href="https://doi.org/10.1111/j.1447-0349.2006.00427.x">Eliminating seclusion and restraint in Australia.</a> <em>International Journal of Mental Health Nursing</em> (2006). <span class="ref-cites">Cited by 21</span></li>
+<li id="ref-5"><span class="ref-authors">Gaynes, B. N. et al.</span> <a href="https://doi.org/10.1176/appi.ps.201600314">Preventing and De-escalating Aggressive Behavior Among Adult Psychiatric Patients: A Systematic Review of the Evidence.</a> <em>Psychiatric Services</em> (2017). <span class="ref-cites">Cited by 125</span></li>
+<li id="ref-6"><span class="ref-authors">Bryson, S. A. et al.</span> <a href="https://doi.org/10.1186/s13033-017-0137-3">What are effective strategies for implementing trauma-informed care in youth inpatient psychiatric and residential treatment settings? A realist systematic review.</a> <em>International Journal of Mental Health Systems</em> (2017). <span class="ref-cites">Cited by 188</span></li>
+<li id="ref-7"><span class="ref-authors">Lee‐Aube, A. et al.</span> <a href="https://doi.org/10.1111/jpm.13000">Reducing seclusion and restraint in an acute adolescent psychiatric ward: A feasibility study.</a> <em>Journal of Psychiatric and Mental Health Nursing</em> (2023). <span class="ref-cites">Cited by 4</span></li>
+<li id="ref-8"><span class="ref-authors">Mullen, A. et al.</span> <a href="https://doi.org/10.1111/inm.13001">Safewards: An integrative review of the literature within inpatient and forensic mental health units.</a> <em>International journal of mental health nursing</em> (2022). <span class="ref-cites">Cited by 36</span></li>
+<li id="ref-9"><span class="ref-authors">Almutairi, A. S. et al.</span> <a href="https://doi.org/10.3390/healthcare14091161">Physical Restraints and Seclusion in Psychiatric Settings in the Eastern Mediterranean Region: A Systematic Review of the Perspectives of Nurses and Individuals with Mental Illness.</a> <em>Healthcare (Basel, Switzerland)</em> (2026).</li>
+<li id="ref-10"><span class="ref-authors">Price, O. et al.</span> <a href="https://doi.org/10.3310/fggw6874">Development and evaluation of a de-escalation training intervention in adult acute and forensic units: the EDITION systematic review and feasibility trial.</a> <em>Health Technology Assessment</em> (2024). <span class="ref-cites">Cited by 18</span></li>
+<li id="ref-11"><span class="ref-authors">Green, E. et al.</span> <a href="https://doi.org/10.1136/bmjoq-2024-002956">Restraint reduction during psychiatric intensive care: a controlled bi-phasic time series evaluation of a culture change intervention.</a> <em>BMJ open quality</em> (2025).</li>
+<li id="ref-12"><span class="ref-authors">Välimäki, M., Varpula, J. &amp; Lantta, T.</span> <a href="https://doi.org/10.1002/14651858.cd014487.pub2">Post-incident debriefing for people with schizophrenia after coercive measures.</a> <em>The Cochrane database of systematic reviews</em> (2025). <span class="ref-cites">Cited by 2</span></li>
+<li id="ref-13"><span class="ref-authors">Gerace, A. &amp; Muir‐Cochrane, E.</span> <a href="https://doi.org/10.1111/inm.12522">Perceptions of nurses working with psychiatric consumers regarding the elimination of seclusion and restraint in psychiatric inpatient settings and emergency departments: An Australian survey.</a> <em>International Journal of Mental Health Nursing</em> (2018). <span class="ref-cites">Cited by 102</span></li>
+<li id="ref-14"><span class="ref-authors">Doedens, P. et al.</span> <a href="https://doi.org/10.1111/jpm.12586">Influence of nursing staff attitudes and characteristics on the use of coercive measures in acute mental health services—A systematic review.</a> <em>Journal of Psychiatric and Mental Health Nursing</em> (2019). <span class="ref-cites">Cited by 122</span></li>
+<li id="ref-15"><span class="ref-authors">Ugwuocha, N. W. et al.</span> <a href="https://doi.org/10.21203/rs.3.rs-9924877/v1">A service evaluation of restraint, seclusion and escalation in inpatient mental health care: a retrospective observational study in England.</a> (2026).</li>
+<li id="ref-16"><span class="ref-authors">McKeown, M. et al.</span> <a href="https://doi.org/10.1111/jpm.12532">“Catching your tail and firefighting”: The impact of staffing levels on restraint minimization efforts.</a> <em>Journal of Psychiatric and Mental Health Nursing</em> (2019). <span class="ref-cites">Cited by 75</span></li>
+<li id="ref-17"><span class="ref-authors">Luigi, M. et al.</span> <a href="https://doi.org/10.1186/s13033-025-00692-8">Economic data on interventions for reducing aggression and restrictive interventions in inpatient mental health: a systematic review.</a> <em>International journal of mental health systems</em> (2025).</li>
+    </ol>
+  </section>
+
+  <section class="back-section">
+<h2>Additional information</h2>
+<p><span class="run-in">Data availability.</span> No new data were generated. All evidence cited is published and openly indexed; 17 of the 17 cited records resolve through the links in the reference list.</p>
+<p><span class="run-in">Author contributions.</span> Search planning, source curation and drafting were carried out by an automated pipeline (articlegen, opus). No human author wrote or verified the text before publication of this draft.</p>
+<p><span class="run-in">Competing interests.</span> None declared.</p>
+<p><span class="run-in">Peer review.</span> This article has not been peer reviewed and is not a publication of record.</p>
+</section>
+
+  <footer class="colophon">
+    <strong>Not medical or clinical advice.</strong> This is a machine-generated summary of the cited journal articles, 5 of 17 read in full, the rest from their abstracts, for background only. It is not a substitute for professional judgement, primary sources, or clinical guidelines. Verify every claim, figure, and dose against the cited papers before acting on it.
+  </footer>
+  </article>
+</main>
+<script>
+function shareArticle() {
+  if (navigator.share) {
+    navigator.share({ title: document.title, url: window.location.href }).catch(function() {});
+  } else {
+    copyArticleLink();
+  }
+}
+function copyArticleLink() {
+  navigator.clipboard.writeText(window.location.href).then(function() {
+    var t = document.getElementById('shareToast');
+    if (t) {
+      t.style.display = 'inline';
+      setTimeout(function() { t.style.display = 'none'; }, 2500);
+    }
+  }).catch(function() {});
+}
+function toggleArticleTheme() {
+  var cur = document.documentElement.getAttribute('data-theme');
+  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var effective = cur || (isSysDark ? 'dark' : 'light');
+  var next = effective === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('articlegen_theme', next);
+  updateArticleThemeIcon();
+}
+function updateArticleThemeIcon() {
+  var icon = document.getElementById('themeIcon');
+  if (!icon) return;
+  var cur = document.documentElement.getAttribute('data-theme');
+  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var effective = cur || (isSysDark ? 'dark' : 'light');
+  icon.innerHTML = effective === 'dark' ? '&#9789;' : '&#9788;';
+}
+document.addEventListener('DOMContentLoaded', updateArticleThemeIcon);
+</script>
+</body>
+</html>
