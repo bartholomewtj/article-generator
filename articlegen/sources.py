@@ -95,6 +95,37 @@ _OA_FIELDS = (
 )
 
 
+# Inline formatting tags the publishers' JATS leaves in a title. Named
+# explicitly rather than matched as `<[^>]+>` (what `_strip_markup` does to
+# abstracts): a real title like "Outcomes in adults aged <65 versus >80 years"
+# contains a substring a generic tag pattern would eat whole, taking the visible
+# text with it. Every tag listed here is character-level, so removing it never
+# joins two words.
+_TITLE_MARKUP_RE = re.compile(
+    r"</?(?:scp|sc|i|b|u|em|strong|italic|bold|underline|monospace|sub|sup|span)\b[^>]*>",
+    re.IGNORECASE,
+)
+
+
+def _strip_title_markup(title: str) -> str:
+    """Remove publisher markup from a title, leaving the visible text intact.
+
+    OpenAlex returns JATS tags inline ("The <scp>N-PACT</scp> team"), which
+    reached Table 1, the reference list and the writer's prompt verbatim — and
+    defeated dedupe, because `_normalize_title` kept "scp" as a word and the
+    tagged and untagged copies of one paper no longer matched (issue #140).
+
+    The tag goes without a replacement space, then whitespace is collapsed and
+    the gaps the tags leave beside brackets and punctuation are closed, so
+    "( N-PACT ):" reads "(N-PACT):" whichever way the publisher spaced it.
+    """
+    text = _TITLE_MARKUP_RE.sub("", title)
+    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"([(\[])\s+", r"\1", text)
+    text = re.sub(r"\s+([)\]:;,.])", r"\1", text)
+    return text
+
+
 @dataclass
 class Paper:
     title: str
@@ -113,6 +144,12 @@ class Paper:
     pmcid: str = ""
     is_open_access: bool = False
     full_text: str = ""
+
+    def __post_init__(self) -> None:
+        # The one place a title is cleaned. Four search functions build Papers
+        # and a fifth would be added without remembering to call this, so the
+        # cleaning belongs to the object rather than to each parse site.
+        self.title = _strip_title_markup(self.title)
 
     @property
     def author_line(self) -> str:

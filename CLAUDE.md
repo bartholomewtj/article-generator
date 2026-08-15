@@ -96,6 +96,7 @@ behaviour it describes.
 | Register rules fire on investigator voice, not synthesis voice | `test_register_rules_are_scoped_to_the_synthesis_voice` |
 | Sources travel with a revision only when usable | `test_revision_carries_sources_only_when_they_can_be_used` |
 | Every article still matches the writer's schema | `test_real_articles_still_match_the_schema` |
+| Titles carry no publisher markup | `test_titles_arrive_without_markup` |
 
 **Not pinned by a test** — these need the reasoning, because nothing else
 carries it:
@@ -244,6 +245,15 @@ and sections intact.
   An empty pmcid means nobody asked — `sources.resolve_pmcid` looks the DOI up
   first. Full texts get bracketed citation numbers stripped at parse time — they
   collide with the SOURCE-index scheme.
+- **Titles are stripped of publisher markup in `Paper.__post_init__`** — the
+  one choke point, so a fifth search source gets it for free. OpenAlex passes
+  JATS through (`<scp>`, `<i>`, `<sub>`…), which printed raw in Table 1 and
+  the reference list and defeated dedupe, since `_normalize_title` kept `scp`
+  as a word and cited one paper twice (#140). `_TITLE_MARKUP_RE` lists the
+  tags by name instead of sweeping `<[^>]+>` like `_strip_markup` does to
+  abstracts: a title reading "adults aged <65 versus >80" would otherwise
+  lose the middle of itself. Europe PMC titles keep their `_strip_markup`
+  call as well — that one catches general HTML the named list does not.
 - **Relevance gate.** `curate_sources` labels each paper direct/related/
   tangential to the *exact* topic; the writer is told the counts and must flag
   when nothing is directly on-topic. Prevents a "schizophrenia" article quietly

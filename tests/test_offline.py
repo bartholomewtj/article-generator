@@ -1433,6 +1433,77 @@ def test_arxiv_parsing() -> None:
           gather.index('"arxiv"') > gather.index('"europe_pmc"'))
 
 
+def test_titles_arrive_without_markup() -> None:
+    """Publisher markup never reaches a Paper title (issue #140).
+
+    OpenAlex passes JATS through, so a real cited title arrived as
+    "The <scp>Nurse-Police</scp> ... (<scp>N-PACT</scp>): ...". The tags reached
+    Table 1, the reference list and the writer's prompt, and they defeated
+    dedupe: `_normalize_title` keeps "scp" as a word, so the tagged and untagged
+    copies of one paper were cited as two references.
+    """
+    from articlegen.sources import Paper, _normalize_title, _strip_title_markup
+    from articlegen import sources
+
+    clean = "The Nurse-Police Assistance Crisis Team (N-PACT): A new role for nursing"
+
+    # Both spacings the publisher may send: tags tight against the bracket, and
+    # tags with the space the markup itself introduced.
+    tight = ("The <scp>Nurse-Police</scp> Assistance Crisis Team "
+             "(<scp>N-PACT</scp>): A new role for nursing")
+    spaced = ("The <scp>Nurse-Police</scp> Assistance Crisis Team "
+              "( <scp>N-PACT</scp> ): A new role for nursing")
+    check("tags removed and spacing normalised", _strip_title_markup(tight) == clean)
+    check("and the spaces the tags left are closed too",
+          _strip_title_markup(spaced) == clean)
+
+    # Case and attributes.
+    check("uppercase tags go too", _strip_title_markup("A <SCP>MDMA</SCP> trial")
+          == "A MDMA trial")
+    check("attributes do not save a tag",
+          _strip_title_markup('Effects of <i class="genus">Lactobacillus</i> on IBS')
+          == "Effects of Lactobacillus on IBS")
+    check("sub/sup go too",
+          _strip_title_markup("Serum 25(OH)D<sub>3</sub> and CO<sub>2</sub>")
+          == "Serum 25(OH)D3 and CO2")
+
+    # Negative control: comparison operators are not markup. A generic
+    # `<[^>]+>` sweep eats "<65 versus >" and the title loses its meaning.
+    operators = "Outcomes in adults aged <65 versus >80 years"
+    check("comparison operators survive", _strip_title_markup(operators) == operators)
+
+    # The choke point: every Paper, whichever API built it.
+    check("Paper cleans its own title", Paper(title=tight, abstract="a").title == clean)
+
+    # Which is what restores dedupe.
+    check("tagged and untagged copies now dedupe together",
+          _normalize_title(Paper(title=tight, abstract="a").title)
+          == _normalize_title(Paper(title=clean, abstract="a").title))
+
+    # And through a real OpenAlex parse, since that is where it came from.
+    payload = {"results": [{
+        "id": "https://openalex.org/W1", "title": tight,
+        "publication_year": 2024, "cited_by_count": 3,
+        "abstract_inverted_index": {"An": [0], "abstract.": [1]},
+        "authorships": [{"author": {"display_name": "Ann Ab"}}],
+        "primary_location": {"source": {"display_name": "J Psychiatr Nurs"},
+                             "landing_page_url": "https://example.org/1"},
+        "doi": "10.1000/npact",
+    }]}
+
+    class FakeResp:
+        def json(self):
+            return payload
+
+    real = sources._get_with_retry
+    try:
+        sources._get_with_retry = lambda url, params, headers: FakeResp()
+        papers = sources._openalex_page("nurse police", limit=1)
+    finally:
+        sources._get_with_retry = real
+    check("an OpenAlex record parses with a clean title", papers[0].title == clean)
+
+
 def test_arxiv_rate_limit_is_honoured() -> None:
     """arXiv asks for three seconds between requests; there is no key to throttle.
 
@@ -4568,7 +4639,8 @@ def main(argv: list[str] | None = None) -> int:
         test_source_failures_are_distinguishable,
         test_search_cache, test_front_end_models_match_the_allowlist,
         test_polite_pool_identification, test_europe_pmc_parsing,
-        test_arxiv_parsing, test_arxiv_rate_limit_is_honoured,
+        test_arxiv_parsing, test_titles_arrive_without_markup,
+        test_arxiv_rate_limit_is_honoured,
         test_ungrounded_citations_leave_no_trace,
         test_full_text_grounding, test_pipeline_fetches_full_text,
         test_pmcid_is_resolved_by_doi,
