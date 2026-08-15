@@ -19,8 +19,8 @@ from adw_modules.data_types import AgentCall, GenericOutput, PhaseParams
 
 
 def main(prompt: str, agent: str = "builder",
-         config: str = "adws/adw_sssf_config/sssf.config.yaml", adw_id: str | None = None) -> int:
-    cfg = agents.load_config(config)
+         config: str = "adws/adw_sssf_config/sssf.config.yaml", adw_id: str | None = None, roster: str | None = None) -> int:
+    cfg = agents.load_config(config, roster)
     agents.validate(cfg, [agent])
     run = session.ensure(cfg, adw_id)
 
@@ -41,5 +41,9 @@ if __name__ == "__main__":
     parser.add_argument("--agent", default="builder", help="agent name from the config")
     parser.add_argument("--config", default="adws/adw_sssf_config/sssf.config.yaml")
     parser.add_argument("--adw-id", default=None, help="join or pin an existing session")
+    parser.add_argument("--roster", default=None,
+                        help="cost tier from rosters.yaml "
+                             "if rosters.yaml is present; "
+                             "defaults to adws/adw_sssf_config/.roster")
     args = parser.parse_args()
-    sys.exit(main(utils.resolve_prompt(args.prompt), args.agent, args.config, args.adw_id))
+    sys.exit(main(utils.resolve_prompt(args.prompt), args.agent, args.config, args.adw_id, args.roster))

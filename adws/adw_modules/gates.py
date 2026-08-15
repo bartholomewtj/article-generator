@@ -70,13 +70,27 @@ def json_parses(envelope: EnvelopeBase, run) -> GateReport:
     return report
 
 
+def _deleted_from_head(path: str) -> bool:
+    """True when the path is tracked in HEAD but gone from the working tree —
+    the one honest way a claimed change can point at a file that does not exist."""
+    result = subprocess.run(["git", "cat-file", "-e", f"HEAD:{path}"],
+                            capture_output=True)
+    return result.returncode == 0
+
+
 def diff_matches_claims(envelope: EnvelopeBase, run) -> GateReport:
-    """Every file claimed changed must exist on disk."""
+    """Every file claimed changed must exist on disk, or be a real deletion
+    (tracked in HEAD, absent from the tree)."""
     report = GateReport()
     for f in getattr(envelope, "changed_files", []):
         p = Path(f)
-        report.check(f, p.exists(),
-                     f"exists, {_size(p)}" if p.exists() else "claimed changed file does not exist")
+        if p.exists():
+            report.check(f, True, f"exists, {_size(p)}")
+        else:
+            deleted = _deleted_from_head(f)
+            report.check(f, deleted,
+                         "deleted — tracked in HEAD, absent from the tree" if deleted
+                         else "claimed changed file does not exist")
     return report
 
 
