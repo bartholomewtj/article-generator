@@ -254,6 +254,20 @@ there are no errors, no revision occurs and warnings remain informational.
 rule and would cause the brief to reference sources that `enforce_style` does
 not provide for register-only fixes.
 
+### `#146` — a second revision pass, gated on progress
+
+Two of three runs finished with exactly one residual style error after a
+revision that had already worked: 3 → 1 and 2 → 1. One error is enough for
+Limitations to brand the article "a working draft rather than a finished
+review", so the last error was costing the article's framing for want of one
+more targeted edit.
+
+The gate is progress, not a retry count. `enforce_style` loops only through the
+accept branch, and acceptance already required strictly fewer errors, so an
+error the model cannot fix still costs exactly one call. `MAX_STYLE_PASSES` is
+2 rather than 3 because the residual being paid for is one error; nothing on
+record suggests a third pass has anything to do.
+
 ---
 
 ## Grounding and provenance

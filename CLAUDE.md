@@ -64,10 +64,10 @@ tests/test_journal_conformance.py conventions as assertions over 5 fixtures
 
 **`pipeline.generate_draft()`, and nowhere else**: source pre-flight →
 `plan_queries` → `gather_evidence` → `curate_sources` → full-text fetch →
-`write_article` → `enforce_style` (one `revise_prose` pass if `check_style`
-finds errors) → `check_statistics` → a `Draft` carrying article, papers,
-curation, verification, style report and `provenance` (queries, model, date,
-databases, full_text_sources).
+`write_article` → `enforce_style` (up to `MAX_STYLE_PASSES` `revise_prose`
+passes if `check_style` finds errors) → `check_statistics` → a `Draft` carrying
+article, papers, curation, verification, style report and `provenance` (queries,
+model, date, databases, full_text_sources).
 
 Callers differ **only** in what they do with the `Draft`. Never re-implement a
 stage in a caller — the web handler once had its own copy that silently skipped
@@ -96,6 +96,7 @@ behaviour it describes.
 | The article shape is not a preference (`TONE_LABEL`, `LENGTH_LABEL`, `DEPTH_LABEL` are constants) | `test_house_style_is_fixed_not_a_preference` |
 | Register rules fire on investigator voice, not synthesis voice | `test_register_rules_are_scoped_to_the_synthesis_voice` |
 | Sources travel with a revision only when usable | `test_revision_carries_sources_only_when_they_can_be_used` |
+| A second style pass runs only after the first reduced the errors | `test_a_second_style_pass_runs_only_after_progress` |
 | Every article still matches the writer's schema | `test_real_articles_still_match_the_schema` |
 | Titles carry no publisher markup | `test_titles_arrive_without_markup` |
 | One paper is one candidate, however its DOI is spelled | `test_candidate_papers_dedupe_by_doi` |
@@ -166,8 +167,8 @@ copy because the front end shows it in a **sandboxed** iframe; files written to
 ## Prose style (enforced, not prompted)
 
 `style.py` turns `docs/journal-style.md` §13–18 into a deterministic check.
-`enforce_style` sends `revision_brief()` back through `revise_prose` **once**,
-and keeps the revision only if it reduces the error count *and* leaves citations
+`enforce_style` sends `revision_brief()` back through `revise_prose`, and
+keeps each revision only if it reduces the error count *and* leaves citations
 and sections intact.
 
 - **The revision is a patch, not a new article.** `revise_prose` asks for a list
@@ -176,6 +177,15 @@ and sections intact.
   model invented means it restructured the article, which a style pass may not
   do. `too-few-sections` is the one failure that still buys a whole rewrite
   (`rewrite_whole=True`). Measurements: `docs/decisions.md`.
+- **A second pass is allowed, and only after the first one worked.**
+  `MAX_STYLE_PASSES` is 2, and the loop repeats only through the accept
+  branch — which requires strictly fewer errors — so a stuck error costs one
+  call rather than looping. Two runs on record ended at 3 → 1 and 2 → 1
+  errors, and a single residual is enough to print the "working draft rather
+  than a finished review" line in Limitations (#146). Each pass recomputes
+  `rewrite_whole` and `needs_sources` from the *current* report, so the
+  `SUBSTANCE_RULES` split applies on pass 2 exactly as on pass 1. →
+  `test_a_second_style_pass_runs_only_after_progress`
 - **Warnings ride along on a revision; they never buy one.**
   `RIDE_ALONG_WARNINGS` (long-sentence, wordiness, passive-voice) are appended
   to `revision_brief()` only when errors already triggered the pass. The

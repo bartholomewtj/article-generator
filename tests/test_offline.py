@@ -3181,6 +3181,110 @@ def test_warnings_ride_along_on_a_revision() -> None:
           "Also fix these" not in sample_brief)
 
 
+def test_a_second_style_pass_runs_only_after_progress() -> None:
+    """A second revision pass is allowed, and only after the first one worked.
+
+    Two of three measured runs ended with exactly one residual style error after
+    a productive revision (3 -> 1 and 2 -> 1), which is enough to print the
+    "working draft rather than a finished review" line in Limitations. So
+    `enforce_style` may go round twice — but the second pass is gated on the
+    first having been accepted, and acceptance means strictly fewer errors. An
+    error the model cannot fix costs one call, never a loop (#146).
+    """
+    from articlegen import pipeline
+
+    stats = {"sentences": 20, "mean_sentence_words": 22.0, "hedges_per_sentence": 0.3,
+             "passive_ratio": 0.2}
+
+    def report_with(n_errors, rule="contraction"):
+        return {"issues": [{"rule": rule, "severity": "error", "where": "whole article",
+                            "detail": "d", "excerpt": ""} for _ in range(n_errors)],
+                "stats": stats}
+
+    article = {"sections": [{"heading": "Introduction", "paragraphs": ["Prose."]}],
+               "references": []}
+
+    def run(error_counts):
+        """Drive enforce_style with a scripted sequence of error counts.
+
+        `error_counts[0]` is the initial check; each later entry is the check on
+        the revision produced by that pass. Returns (passes_run, final_report).
+        """
+        seq = list(error_counts)
+        calls = {"check": 0, "revise": 0, "sources": []}
+
+        def fake_check(a, **kw):
+            i = min(calls["check"], len(seq) - 1)
+            calls["check"] += 1
+            return report_with(seq[i])
+
+        def fake_revise(a, brief, **kwargs):
+            calls["revise"] += 1
+            calls["sources"].append(kwargs.get("papers"))
+            return dict(a)
+
+        saved = pipeline.revise_prose, pipeline.check_style
+        try:
+            pipeline.revise_prose = fake_revise
+            pipeline.check_style = fake_check
+            out_article, out_report = pipeline.enforce_style(article)
+        finally:
+            pipeline.revise_prose, pipeline.check_style = saved
+        return calls, out_report
+
+    # 1. Improves, then clears: two passes run and the draft comes back clean.
+    calls, report = run([3, 1, 0])
+    check("a productive first pass buys a second", calls["revise"] == 2)
+    check("and a cleared draft is what comes back",
+          not [i for i in report["issues"] if i["severity"] == "error"])
+
+    # 2. Improves, then stalls: the cap stops it at two.
+    calls, report = run([3, 1, 1])
+    check("progress then a stall stops at the two-pass cap", calls["revise"] == 2)
+    check("and the better of the two drafts is kept",
+          len([i for i in report["issues"] if i["severity"] == "error"]) == 1)
+
+    # 3. No improvement on the first pass: no second pass at all.
+    calls, _ = run([2, 2])
+    check("a pass that did not improve buys no second pass", calls["revise"] == 1)
+
+    # 4. A revision that gets worse is discarded and stops the loop.
+    calls, report = run([2, 3])
+    check("a worse revision buys no second pass", calls["revise"] == 1)
+    check("and the original draft is kept",
+          len([i for i in report["issues"] if i["severity"] == "error"]) == 2)
+
+    # 5. The cap is two, stated once.
+    check("the pass cap is a named constant set to two",
+          pipeline.MAX_STYLE_PASSES == 2)
+
+    # 6. The substance split still applies on the second pass: if what is left
+    #    is a thinness failure, the sources travel with that call too.
+    seq = [("recycled-phrasing", 3), ("recycled-phrasing", 1), ("recycled-phrasing", 0)]
+    calls = {"check": 0, "revise": 0, "sources": []}
+
+    def fake_check(a, **kw):
+        rule, n = seq[min(calls["check"], len(seq) - 1)]
+        calls["check"] += 1
+        return report_with(n, rule=rule)
+
+    def fake_revise(a, brief, **kwargs):
+        calls["revise"] += 1
+        calls["sources"].append(kwargs.get("papers"))
+        return dict(a)
+
+    papers = ["paper-stand-in"]
+    saved = pipeline.revise_prose, pipeline.check_style
+    try:
+        pipeline.revise_prose = fake_revise
+        pipeline.check_style = fake_check
+        pipeline.enforce_style(article, papers=papers)
+    finally:
+        pipeline.revise_prose, pipeline.check_style = saved
+    check("the sources travel on both passes of a substance failure",
+          calls["sources"] == [papers, papers])
+
+
 def test_tangential_sources_stay_out_of_the_writer_prompt() -> None:
     """Background-only sources cost tokens the relevance gate exists to refuse.
 
@@ -5168,6 +5272,7 @@ def main(argv: list[str] | None = None) -> int:
         test_revision_replaces_blocks_rather_than_the_article,
         test_revision_carries_sources_only_when_they_can_be_used,
         test_warnings_ride_along_on_a_revision,
+        test_a_second_style_pass_runs_only_after_progress,
         test_disclosure_is_above_the_fold_and_derived,
         test_display_items_are_selected_once_for_both_formats,
         test_failed_style_gate_is_visible_in_the_article,
