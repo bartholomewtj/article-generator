@@ -3081,6 +3081,106 @@ def test_revision_carries_sources_only_when_they_can_be_used() -> None:
           "do not introduce new claims" in register)
 
 
+def test_warnings_ride_along_on_a_revision() -> None:
+    """Warning-level style findings ride along only when errors triggered a revision.
+
+    `check_style` flags long sentences, wordiness and passive voice as warnings.
+    They never trigger a revision on their own — `enforce_style` returns early
+    when there are no errors — but once the model is revising anyway, warnings
+    in the same blocks ride along in `revision_brief()` as secondary items to fix
+    (#145).
+
+    The acceptance rule and source-passing split stay keyed strictly on errors.
+    """
+    from articlegen import demo, pipeline, style
+    from articlegen.style import (
+        LONG_SENTENCE_WORDS, RIDE_ALONG_WARNINGS, SUBSTANCE_RULES, check_style, errors, revision_brief,
+    )
+
+    # 1. Real prose, end to end: fixture trips a contraction error and a long-sentence warning.
+    long_sentence = "This analysis indicates that " + " ".join(["evidence"] * (LONG_SENTENCE_WORDS + 5)) + "."
+    article_1 = {
+        "sections": [{
+            "heading": "Introduction",
+            "paragraphs": [f"It's clear that results matter. {long_sentence}"]
+        }]
+    }
+    rep_1 = check_style(article_1)
+    rules_fired_1 = {i["rule"] for i in rep_1["issues"]}
+    check("fixture produces a contraction error", "contraction" in rules_fired_1)
+    check("fixture produces a long-sentence warning", "long-sentence" in rules_fired_1)
+    brief_1 = revision_brief(rep_1)
+    check("brief contains the contraction error first", "Contraction" in brief_1)
+    check("brief contains the secondary warning section",
+          "Also fix these while you are in the same blocks" in brief_1)
+    check("long-sentence warning rides along in the brief", "word sentence; split it" in brief_1)
+
+    # 2. Every long sentence rides along, not just the first.
+    long_sentence_2 = "A secondary review shows that " + " ".join(["finding"] * (LONG_SENTENCE_WORDS + 5)) + "."
+    article_2 = {
+        "sections": [{
+            "heading": "Introduction",
+            "paragraphs": [
+                f"It's clear that results matter. {long_sentence}",
+                f"They're observing that {long_sentence_2}",
+            ]
+        }]
+    }
+    rep_2 = check_style(article_2)
+    brief_2 = revision_brief(rep_2)
+    check("every long sentence rides along in the brief",
+          brief_2.count("word sentence; split it") == 2)
+
+    # 3. Warnings alone buy no revision.
+    called = []
+
+    def fake_revise(article, brief, **kwargs):
+        called.append(True)
+        raise RuntimeError("revise_prose should not be called for warnings alone")
+
+    stats = {"sentences": 20, "mean_sentence_words": 22.0, "hedges_per_sentence": 0.3,
+             "passive_ratio": 0.2}
+
+    def report_with(rule, severity="error"):
+        return {"issues": [{"rule": rule, "severity": severity, "where": "whole article",
+                            "detail": "d", "excerpt": ""}], "stats": stats}
+
+    saved = pipeline.revise_prose, pipeline.check_style
+    try:
+        pipeline.revise_prose = fake_revise
+        pipeline.check_style = lambda a, **kw: report_with("long-sentence", severity="warning")
+        dummy_art = {"sections": [{"heading": "Introduction", "paragraphs": ["Prose."]}]}
+        res_art, res_rep = pipeline.enforce_style(dummy_art)
+        check("warnings alone do not trigger revise_prose", len(called) == 0)
+        check("enforce_style returns original article unchanged when warnings-only", res_art == dummy_art)
+    finally:
+        pipeline.revise_prose, pipeline.check_style = saved
+
+    # 4. under-length does not ride along.
+    mixed_report = {
+        "issues": [
+            {"rule": "contraction", "severity": "error", "where": "Introduction",
+             "detail": "Contraction 'it\\'s'", "excerpt": "it's"},
+            {"rule": "under-length", "severity": "warning", "where": "whole article",
+             "detail": "500 words of body prose", "excerpt": ""},
+        ],
+        "stats": stats,
+    }
+    mixed_brief = revision_brief(mixed_report)
+    check("under-length warning does not ride along in the brief",
+          "under-length" not in mixed_brief and "words of body prose" not in mixed_brief)
+    check("register brief with under-length warning still forbids new material",
+          "do not introduce new claims or numbers" in mixed_brief)
+    check("and does not ask for sources", "SOURCES below" not in mixed_brief)
+
+    # 5. The curated sample is untouched.
+    sample_rep = check_style(demo.SAMPLE_ARTICLE)
+    check("curated demo.SAMPLE_ARTICLE has zero style errors", errors(sample_rep) == [])
+    sample_brief = revision_brief(sample_rep)
+    check("warning-only sample brief has no 'Also fix these' section",
+          "Also fix these" not in sample_brief)
+
+
 def test_tangential_sources_stay_out_of_the_writer_prompt() -> None:
     """Background-only sources cost tokens the relevance gate exists to refuse.
 
@@ -5067,6 +5167,7 @@ def main(argv: list[str] | None = None) -> int:
         test_tangential_sources_stay_out_of_the_writer_prompt,
         test_revision_replaces_blocks_rather_than_the_article,
         test_revision_carries_sources_only_when_they_can_be_used,
+        test_warnings_ride_along_on_a_revision,
         test_disclosure_is_above_the_fold_and_derived,
         test_display_items_are_selected_once_for_both_formats,
         test_failed_style_gate_is_visible_in_the_article,

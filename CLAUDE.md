@@ -176,6 +176,13 @@ and sections intact.
   model invented means it restructured the article, which a style pass may not
   do. `too-few-sections` is the one failure that still buys a whole rewrite
   (`rewrite_whole=True`). Measurements: `docs/decisions.md`.
+- **Warnings ride along on a revision; they never buy one.**
+  `RIDE_ALONG_WARNINGS` (long-sentence, wordiness, passive-voice) are appended
+  to `revision_brief()` only when errors already triggered the pass. The
+  early return, `needs_sources` and the acceptance rule all stay keyed on
+  errors. `under-length` is deliberately out: it is a substance rule, so
+  letting it in would make the brief ask for sources `enforce_style` did not
+  send. → `test_warnings_ride_along_on_a_revision`
 - **Errors**: second person, contractions, rhetorical questions, exclamations,
   boosters, claims of proof, first person outside the `here we review` frame,
   under-hedging (`MIN_HEDGES_PER_SENTENCE = 0.20`), clinical directives.

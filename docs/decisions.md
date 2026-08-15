@@ -231,6 +231,29 @@ the pipeline performs. `curate_sources` ranks on topic fit alone, so one draft
 boxed a scoping review as the "key study" while an adequately powered trial sat
 in the body.
 
+### `#145` — long-sentence warnings survived every draft
+
+Measured across three recent runs: 21 long-sentence warnings total (4, 5 and 12
+per draft), mean sentence length 28–30 words, including a 61-word sentence in a
+Conclusions section. One run logged "Prose style: clean" while printing 12
+long-sentence lines in its diagnostic output. Because `long-sentence` was a
+warning rather than an error, `revision_brief()` excluded it: the revision pass
+fixed error-level issues and left every long sentence in place.
+
+Warnings were excluded from the brief originally because a warning is a matter
+of degree and must not be able to spend an LLM revision call on its own.
+Promoting `long-sentence` to an error would have bought a revision for every
+single long sentence and put sentence length into the acceptance count, which
+is calibrated strictly on journal-breaking errors.
+
+The fix is ride-along: `RIDE_ALONG_WARNINGS` (long-sentence, wordiness,
+passive-voice) are appended to `revision_brief()` under a secondary "Also fix
+these" heading only when errors have already triggered the revision pass. If
+there are no errors, no revision occurs and warnings remain informational.
+`under-length` is excluded from the ride-along set because it is a substance
+rule and would cause the brief to reference sources that `enforce_style` does
+not provide for register-only fixes.
+
 ---
 
 ## Grounding and provenance
