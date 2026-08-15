@@ -121,7 +121,8 @@ automatic. Under the hood, the `draft` stage:
 
 ```
 title ──▶ the model plans search queries
-      ──▶ Semantic Scholar + OpenAlex return papers (with abstracts)
+      ──▶ Semantic Scholar + OpenAlex + Europe PMC + arXiv return papers
+          (with abstracts)
       ──▶ each source is labelled direct / related / background
       ──▶ the model writes the review, citing sources inline as [1], [2, 3]…
       ──▶ rendered to drafts/<date>-<slug>.html  +  .md, listed in drafts/index.html
@@ -220,6 +221,12 @@ Markdown, for easy editing), and refreshes `index.html` (your review queue).
 - Coverage depends on what the open scholarly APIs return; niche or very recent
   topics may surface fewer papers. Under heavy shared rate limits a run can come
   back empty — wait a minute and retry, or add the optional keys above.
+- **Four databases are searched, and two of them are specialised.** Europe PMC
+  covers biomedicine and arXiv covers computing, physics, engineering and
+  statistics, so a given topic usually draws on one or the other rather than
+  both. A clinical topic getting nothing from arXiv is normal. Papers found only
+  on arXiv are preprints — the reference list labels them "arXiv preprint", and
+  a preprint has not been peer reviewed.
 - Search results are cached for 24 hours, so re-running the same topic is
   instant and costs nothing against those shared limits. This matters more than
   it sounds: the free tiers refuse often enough that a second attempt at the
@@ -240,7 +247,8 @@ articlegen/
   llm.py       provider layer: OpenRouter or Claude, auto-detected from keys
   ideas.py     LLM call: theme -> shortlist of article ideas
   writer.py    LLM calls: plan queries, write the article (structured JSON)
-  sources.py   Semantic Scholar + OpenAlex fetching, dedupe, ranking
+  sources.py   Semantic Scholar + OpenAlex + Europe PMC + arXiv fetching,
+               dedupe, ranking
   render.py    structured article -> journal-format HTML, Markdown, drafts/ index
   verify.py    deterministic check of every figure against the abstracts
   style.py     deterministic check of the prose against journal writing conventions

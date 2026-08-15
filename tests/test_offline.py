@@ -1068,7 +1068,7 @@ def test_source_failures_are_distinguishable() -> None:
     from articlegen.pipeline import NoPapersFound
 
     real = (sources.search_semantic_scholar, sources.search_openalex,
-            sources.search_europe_pmc)
+            sources.search_europe_pmc, sources.search_arxiv)
     refuse = lambda msg: lambda q, limit=15: (_ for _ in ()).throw(
         sources.SearchFailure(msg))
     try:
@@ -1079,10 +1079,11 @@ def test_source_failures_are_distinguishable() -> None:
         sources.search_semantic_scholar = refuse("HTTP 429 after 3 attempts")
         sources.search_openalex = refuse("HTTP 403")
         sources.search_europe_pmc = refuse("HTTP 503 after 3 attempts")
+        sources.search_arxiv = refuse("HTTP 429 after 3 attempts")
         outcomes: list[dict] = []
         papers = sources.gather_evidence(["x"], outcomes=outcomes)
         check("no papers when all refuse", papers == [])
-        check("every failure recorded", len([o for o in outcomes if o["error"]]) == 3)
+        check("every failure recorded", len([o for o in outcomes if o["error"]]) == 4)
         check("the reason is kept", any("429" in o["error"] for o in outcomes))
 
         # Two sources down, one fine — the run must survive.
@@ -1097,7 +1098,7 @@ def test_source_failures_are_distinguishable() -> None:
     finally:
         sources.clear_search_cache()
         (sources.search_semantic_scholar, sources.search_openalex,
-         sources.search_europe_pmc) = real
+         sources.search_europe_pmc, sources.search_arxiv) = real
 
     check("NoPapersFound carries the distinction",
           NoPapersFound("x", sources_failed=True).sources_failed is True)
@@ -1155,7 +1156,7 @@ def test_search_cache() -> None:
     from articlegen import sources
 
     real = (sources.search_semantic_scholar, sources.search_openalex,
-            sources.search_europe_pmc)
+            sources.search_europe_pmc, sources.search_arxiv)
     calls = {"n": 0, "fail": 0}
     try:
         sources.clear_search_cache()
@@ -1171,6 +1172,7 @@ def test_search_cache() -> None:
         sources.search_semantic_scholar = counting
         sources.search_openalex = failing
         sources.search_europe_pmc = failing
+        sources.search_arxiv = failing
 
         first: list[dict] = []
         got_first = sources.gather_evidence(["topic a"], outcomes=first)
@@ -1186,9 +1188,9 @@ def test_search_cache() -> None:
 
         # A refusal is cached too, so a rate-limited source is not re-attempted
         # by every request that arrives while the limit is still in force.
-        check("a refusal is cached, not retried", calls["fail"] == 2)
+        check("a refusal is cached, not retried", calls["fail"] == 3)
         check("and is still reported as a failure",
-              sum(1 for o in second if o["error"]) == 2)
+              sum(1 for o in second if o["error"]) == 3)
 
         # A different query is a different key — the cache must not answer for
         # a topic nobody searched.
@@ -1201,7 +1203,7 @@ def test_search_cache() -> None:
     finally:
         sources.clear_search_cache()
         (sources.search_semantic_scholar, sources.search_openalex,
-         sources.search_europe_pmc) = real
+         sources.search_europe_pmc, sources.search_arxiv) = real
 
 
 def test_polite_pool_identification() -> None:
@@ -1329,6 +1331,136 @@ def test_europe_pmc_parsing() -> None:
           '"europe_pmc"' in inspect.getsource(sources.gather_evidence))
 
 
+def test_arxiv_parsing() -> None:
+    """arXiv Atom entries parse into Papers, and an error entry is not one.
+
+    arXiv is the only source that returns XML rather than JSON, the only one
+    with no citation counts, and the only one that reports a bad query as a
+    normal-looking entry — parsed naively that becomes a source titled "Error"
+    in the reference list of a real article.
+    """
+    from articlegen import sources
+
+    atom = """<?xml version="1.0" encoding="UTF-8"?>
+    <feed xmlns="http://www.w3.org/2005/Atom"
+          xmlns:arxiv="http://arxiv.org/schemas/atom">
+      <entry>
+        <id>http://arxiv.org/abs/2306.08302v3</id>
+        <published>2023-06-14T17:59:59Z</published>
+        <title>Gravity batteries
+  for grid storage</title>
+        <summary>  Storage costs fell by
+  38% over the decade.
+        </summary>
+        <author><name>Ada Lovelace</name></author>
+        <author><name>Alan Turing</name></author>
+        <arxiv:doi>10.1000/arxiv-example</arxiv:doi>
+        <arxiv:journal_ref>Nature Energy 9, 1 (2024)</arxiv:journal_ref>
+      </entry>
+      <entry>
+        <id>http://arxiv.org/abs/2401.00001v1</id>
+        <published>bad-date</published>
+        <title>A preprint that was never published</title>
+        <summary>An abstract.</summary>
+        <author><name>Grace Hopper</name></author>
+      </entry>
+      <entry>
+        <id>http://arxiv.org/api/errors#incorrect_id_format</id>
+        <title>Error</title>
+        <summary>incorrect id format for 1234</summary>
+      </entry>
+      <entry>
+        <id>http://arxiv.org/abs/2401.00002v1</id>
+        <title>No abstract</title>
+        <summary>   </summary>
+      </entry>
+    </feed>"""
+
+    class FakeResp:
+        text = atom
+
+    seen = {}
+    real = sources._get_with_retry
+    try:
+        sources._get_with_retry = lambda url, params, headers: (
+            seen.update(params) or FakeResp())
+        papers = sources.search_arxiv("gravity battery storage", limit=3)
+    finally:
+        sources._get_with_retry = real
+
+    check("the error entry and the abstract-less one are dropped", len(papers) == 2)
+    published, preprint = papers
+    check("the title is unwrapped to one line",
+          published.title == "Gravity batteries for grid storage")
+    check("statistics survive the line the abstract was wrapped at",
+          "fell by 38% over the decade." in published.abstract)
+    check("the year comes from the published date", published.year == 2023)
+    check("authors keep given-name-first order",
+          published.authors == ["Ada Lovelace", "Alan Turing"])
+    check("a journal_ref is preferred over the preprint label",
+          published.venue == "Nature Energy 9, 1 (2024)")
+    check("the arxiv doi is picked up", published.doi == "10.1000/arxiv-example")
+    check("no journal_ref says preprint, so the reference list can",
+          preprint.venue == "arXiv preprint")
+    check("an unparseable date becomes None", preprint.year is None)
+    check("arXiv publishes no citation counts", published.citation_count == 0)
+    check("the abs url is kept as the link",
+          preprint.url == "http://arxiv.org/abs/2401.00001v1")
+
+    # The query expression, not the raw topic: `all:gravity battery storage`
+    # searches arXiv for "gravity" alone.
+    check("multi-word topics are ANDed, not sent verbatim",
+          seen["search_query"] == "all:gravity AND all:battery AND all:storage")
+    # `all:the` alone would match the whole archive, which is the only reason
+    # function words are dropped — ANDing one excludes nothing.
+    check("function words are dropped, short content words are not",
+          sources._arxiv_query("AI in the ED") == "all:AI AND all:ED")
+    check("a query of nothing but function words still searches for them",
+          sources._arxiv_query("in the of") == "all:in AND all:the AND all:of")
+    check("the term count is capped",
+          sources._arxiv_query(" ".join(f"term{i}" for i in range(20))
+                               ).count(" AND ") == sources._ARXIV_MAX_TERMS - 1)
+
+    check("source is named in DATABASE_NAMES", "arxiv" in sources.DATABASE_NAMES)
+
+    import inspect
+    gather = inspect.getsource(sources.gather_evidence)
+    check("gather_evidence queries arxiv", '"arxiv"' in gather)
+    # Dedupe is first-seen-wins on the normalised title, so a preprint sharing a
+    # title with the published version must lose. That is purely an ordering
+    # property of this tuple.
+    check("arXiv is queried last, so the published version wins dedupe",
+          gather.index('"arxiv"') > gather.index('"europe_pmc"'))
+
+
+def test_arxiv_rate_limit_is_honoured() -> None:
+    """arXiv asks for three seconds between requests; there is no key to throttle.
+
+    Ignoring it gets the egress IP blocked, and on the hosted backend that IP is
+    shared with every other user of the deployment.
+    """
+    from articlegen import sources
+
+    class FakeResp:
+        text = '<feed xmlns="http://www.w3.org/2005/Atom"></feed>'
+
+    slept = []
+    real_get, real_sleep = sources._get_with_retry, sources.time.sleep
+    real_last = sources._arxiv_last_call
+    try:
+        sources._get_with_retry = lambda url, params, headers: FakeResp()
+        sources.time.sleep = lambda s: slept.append(s)
+        sources._arxiv_last_call = 0.0
+        sources.search_arxiv("first")
+        check("the first call in a cold process does not wait", not slept)
+        sources.search_arxiv("second")
+        check("a back-to-back call waits out the interval",
+              len(slept) == 1 and 0 < slept[0] <= sources._ARXIV_MIN_INTERVAL)
+    finally:
+        sources._get_with_retry, sources.time.sleep = real_get, real_sleep
+        sources._arxiv_last_call = real_last
+
+
 def test_methods_names_only_sources_that_answered() -> None:
     """The Methods section must not claim a database that returned nothing.
 
@@ -1393,8 +1525,8 @@ def test_methods_names_only_sources_that_answered() -> None:
     # A source that refuses once is not retried for the remaining queries:
     # three tries with backoff is ~10s, and the limits are per-minute.
     real = (sources.search_semantic_scholar, sources.search_openalex,
-            sources.search_europe_pmc)
-    calls = {"ss": 0, "oa": 0, "ep": 0}
+            sources.search_europe_pmc, sources.search_arxiv)
+    calls = {"ss": 0, "oa": 0, "ep": 0, "ax": 0}
     try:
         sources.clear_search_cache()
 
@@ -1410,24 +1542,30 @@ def test_methods_names_only_sources_that_answered() -> None:
             calls["ep"] += 1
             raise sources.SearchFailure("HTTP 503 after 3 attempts")
 
+        def failing_ax(q, limit=15):
+            calls["ax"] += 1
+            raise sources.SearchFailure("HTTP 503 after 3 attempts")
+
         sources.search_semantic_scholar = failing_ss
         sources.search_openalex = working_oa
         sources.search_europe_pmc = failing_ep
+        sources.search_arxiv = failing_ax
         outcomes: list[dict] = []
         got = sources.gather_evidence(["q1", "q2", "q3"], outcomes=outcomes)
 
         check("each failing source is tried once, not per query",
-              calls["ss"] == 1 and calls["ep"] == 1)
+              calls["ss"] == 1 and calls["ep"] == 1 and calls["ax"] == 1)
         check("the working source is still tried every query", calls["oa"] == 3)
         check("the run still succeeds on one source", len(got) == 3)
+        # Three sources fail on q1 and are skipped for q2 and q3: 3 x 2.
         check("skips are recorded, not silent",
-              sum(1 for o in outcomes if "skipped" in o["error"]) == 4)
+              sum(1 for o in outcomes if "skipped" in o["error"]) == 6)
         answered = {o["source"] for o in outcomes if o["count"]}
         check("only the answering source counts as answered", answered == {"openalex"})
     finally:
         sources.clear_search_cache()
         (sources.search_semantic_scholar, sources.search_openalex,
-         sources.search_europe_pmc) = real
+         sources.search_europe_pmc, sources.search_arxiv) = real
 
 
 def test_citation_renumbering() -> None:
@@ -3661,15 +3799,17 @@ def test_full_text_grounding() -> None:
     dup_title = "The same study twice"
     oa_copy = Paper(title=dup_title, abstract="a", pmcid="PMC77", is_open_access=True)
     plain_copy = Paper(title=dup_title, abstract="a")
-    reals = (sources.search_semantic_scholar, sources.search_openalex, sources.search_europe_pmc)
+    reals = (sources.search_semantic_scholar, sources.search_openalex,
+             sources.search_europe_pmc, sources.search_arxiv)
     try:
         sources.search_semantic_scholar = lambda q, limit=15: []
         sources.search_openalex = lambda q, limit=15: [plain_copy]
         sources.search_europe_pmc = lambda q, limit=15: [oa_copy]
+        sources.search_arxiv = lambda q, limit=15: []
         merged = sources.gather_evidence(["q"], use_cache=False)
     finally:
         (sources.search_semantic_scholar, sources.search_openalex,
-         sources.search_europe_pmc) = reals
+         sources.search_europe_pmc, sources.search_arxiv) = reals
     check("dedupe keeps one copy", len(merged) == 1)
     check("which inherits the duplicate's PMCID",
           merged[0].pmcid == "PMC77" and merged[0].is_open_access)
@@ -4428,6 +4568,7 @@ def main(argv: list[str] | None = None) -> int:
         test_source_failures_are_distinguishable,
         test_search_cache, test_front_end_models_match_the_allowlist,
         test_polite_pool_identification, test_europe_pmc_parsing,
+        test_arxiv_parsing, test_arxiv_rate_limit_is_honoured,
         test_ungrounded_citations_leave_no_trace,
         test_full_text_grounding, test_pipeline_fetches_full_text,
         test_pmcid_is_resolved_by_doi,
