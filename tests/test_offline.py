@@ -2837,6 +2837,88 @@ def test_claude_cli_provider() -> None:
               llm._extract_json_object("core_entity: safety planning") ==
               "core_entity: safety planning")
 
+        # -- deterministic repair (#147) ---------------------------------------
+        # 3 of 5 write_article calls on cli:opus returned non-JSON at least once,
+        # and one run died after its retry on "Expecting ',' delimiter: line 1
+        # column 4942" — a complete article object one comma short.
+        check("a missing comma between two values is repaired",
+              llm._repair_json('{"a": "one" "b": "two"}') == {"a": "one", "b": "two"})
+        check("and the same slip between two objects in an array",
+              llm._repair_json(
+                  '{"sections": [{"heading": "H1"} {"heading": "H2"}]}')
+              == {"sections": [{"heading": "H1"}, {"heading": "H2"}]})
+        check("a trailing comma before } or ] is dropped",
+              llm._repair_json('{"a": [1, 2,], "b": 3,}') == {"a": [1, 2], "b": 3})
+        check("a bare newline inside a string is escaped",
+              llm._repair_json('{"a": "line one\nline two"}')
+              == {"a": "line one\nline two"})
+        # The acceptance rule is parses AND dict. This repairs into valid JSON
+        # that no caller of generate_json can use.
+        check("a repair that yields a list is refused",
+              llm._repair_json('[1, 2,]') is None)
+        # A refusal is prose. There is nothing in it to salvage, and inventing a
+        # dict from an apology would hand the pipeline a fake article.
+        check("a refusal does not repair into anything",
+              llm._repair_json("I'm sorry, I can't help with that.") is None)
+        check("neither does a YAML reply",
+              llm._repair_json("core_entity: safety planning\nqueries:\n  - a") is None)
+        # The pass is a no-op on anything that already parses: in valid JSON a
+        # value is only ever followed by , : } ] or the end.
+        _valid = '{"a": "x, y", "b": [1, 2], "c": {"d": "has } and \\" quote"}}'
+        check("valid JSON passes through the repair untouched",
+              llm._repair_json_text(_valid) == _valid)
+
+        near_miss_calls = []
+
+        def near_miss_proc(args_, **kwargs):
+            near_miss_calls.append(kwargs["input"])
+
+            class P:
+                returncode, stderr = 0, ""
+                stdout = _json.dumps({
+                    "type": "result", "subtype": "success", "is_error": False,
+                    "usage": {}, "duration_ms": 1,
+                    "result": '{"article": "body" "title": "T"}',
+                })
+            return P()
+
+        try:
+            subprocess.run = near_miss_proc
+            __import__("shutil").which = lambda name: "/fake/claude"
+            out = llm.generate_json("P", {"type": "object"}, model="cli:sonnet")
+        finally:
+            subprocess.run = real_run
+            __import__("shutil").which = real_which
+
+        check("a near-miss reply is repaired on the first call, no retry spent",
+              out == {"article": "body", "title": "T"} and len(near_miss_calls) == 1)
+
+        unfixable_calls = []
+
+        def unfixable_proc(args_, **kwargs):
+            unfixable_calls.append(kwargs["input"])
+
+            class P:
+                returncode, stderr = 0, ""
+                stdout = _json.dumps({
+                    "type": "result", "subtype": "success", "is_error": False,
+                    "usage": {}, "duration_ms": 1,
+                    "result": "Just plain conversational prose with no JSON at all.",
+                })
+            return P()
+
+        try:
+            subprocess.run = unfixable_proc
+            __import__("shutil").which = lambda name: "/fake/claude"
+            llm.generate_json("P", {"type": "object"}, model="cli:sonnet")
+            check("an unfixable reply raises after two calls", False)
+        except RuntimeError as exc:
+            check("an unfixable reply raises after two calls",
+                  len(unfixable_calls) == 2 and "twice" in str(exc))
+        finally:
+            subprocess.run = real_run
+            __import__("shutil").which = real_which
+
         calls = []
 
         def yaml_then_json(args_, **kwargs):

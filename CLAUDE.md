@@ -416,11 +416,16 @@ and sections intact.
   prepend *this file* to every call. `--effort high` always on `claude-cli`;
   subscription time is not metered per token, so `deep` and `api_key` are
   ignored and neither is an oversight.
-- **`claude-cli` enforces no response schema**, unlike the API paths. Three
+- **`claude-cli` enforces no response schema**, unlike the API paths. Four
   defences, all load-bearing: the format demand is repeated at the *end* of the
   user prompt, a fenced or prose-wrapped object is recovered by string-aware
-  brace matching, and an unparseable reply is retried once. A **refusal** is not
-  retried: same model, same answer. Suppress MCP servers with
+  brace matching, a near-miss is repaired deterministically — trailing commas,
+  a missing comma at a value boundary, bare newlines inside strings — and
+  accepted **only if it then parses to a dict**, and an unparseable reply is
+  retried once. Repair runs before each retry decision, never instead of one,
+  and never as an LLM call: a model asked to fix its own JSON rewrites it, and
+  the near-miss it was meant to save is what gets lost (#147). A **refusal** is
+  not retried: same model, same answer. Suppress MCP servers with
   `--strict-mcp-config` and an empty `--mcp-config`, or pay a 10x prompt tax.
 - **`gemini-cli`'s `--json-schema` genuinely enforces the schema** and returns
   the parsed object in `structured_output`. It is the one CLI path as reliable

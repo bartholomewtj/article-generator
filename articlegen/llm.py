@@ -298,6 +298,85 @@ def _extract_json_object(text: str) -> str:
     return text
 
 
+def _repair_json_text(text: str) -> str:
+    """Single-pass deterministic repair of common JSON syntax slips.
+
+    Deterministic rather than an LLM retry: asking a model to fix its own
+    JSON rewrites the prose and risks losing the article (#147).
+
+    Applies three narrow string-aware fixes:
+    1. Escapes bare newlines (\\n) and carriage returns (\\r) inside string literals.
+    2. Drops trailing commas before '}' or ']'.
+    3. Inserts a comma between adjacent value boundaries: closing token
+       ('"', '}', ']') followed by an opening token ('"', '{', '[').
+    """
+    out: list[str] = []
+    in_string = False
+    escaped = False
+    n = len(text)
+
+    for i, ch in enumerate(text):
+        if in_string:
+            if escaped:
+                escaped = False
+                out.append(ch)
+            elif ch == "\\":
+                escaped = True
+                out.append(ch)
+            elif ch == '"':
+                in_string = False
+                out.append(ch)
+                j = i + 1
+                while j < n and text[j] in " \t\r\n":
+                    j += 1
+                if j < n and text[j] in ('"', '{', '['):
+                    out.append(",")
+            elif ch == "\n":
+                out.append("\\n")
+            elif ch == "\r":
+                out.append("\\r")
+            else:
+                out.append(ch)
+            continue
+
+        if ch == '"':
+            in_string = True
+            out.append(ch)
+        elif ch == ",":
+            j = i + 1
+            while j < n and text[j] in " \t\r\n":
+                j += 1
+            if j < n and text[j] in ("}", "]"):
+                continue
+            out.append(ch)
+        elif ch in ("}", "]"):
+            out.append(ch)
+            j = i + 1
+            while j < n and text[j] in " \t\r\n":
+                j += 1
+            if j < n and text[j] in ('"', '{', '['):
+                out.append(",")
+        else:
+            out.append(ch)
+
+    return "".join(out)
+
+
+def _repair_json(text: str) -> dict | None:
+    """Parse candidate text after deterministic repair, accepting only dicts.
+
+    The dict check is load-bearing: callers of generate_json expect a mapping,
+    and repairing non-dict JSON (such as a list '[1, 2,]') would hand the
+    pipeline an unusable payload.
+    """
+    candidate = _repair_json_text(text)
+    try:
+        obj = json.loads(candidate)
+    except json.JSONDecodeError:
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
 # Appended to the end of the user prompt, not just the system prompt. The
 # system prompt already said "JSON only" when Sonnet replied in YAML — with a
 # long source payload in between, the instruction nearest the end of the
@@ -445,7 +524,15 @@ def _claude_cli_generate(prompt: str, schema: dict, system: str | None, model: s
     envelope, cleaned = _run(preamble + prompt + _CLI_JSON_DEMAND)
     try:
         return json.loads(cleaned)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as exc:
+        repaired = _repair_json(cleaned)
+        if repaired is not None:
+            print(
+                f"[articlegen] claude-cli {model} returned near-miss JSON; "
+                f"repaired deterministically ({exc})",
+                file=sys.stderr, flush=True,
+            )
+            return repaired
         print(
             f"[articlegen] claude-cli {model} replied with non-JSON; retrying once",
             file=sys.stderr, flush=True,
@@ -455,11 +542,19 @@ def _claude_cli_generate(prompt: str, schema: dict, system: str | None, model: s
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError as exc:
+        repaired = _repair_json(cleaned)
+        if repaired is not None:
+            print(
+                f"[articlegen] claude-cli {model} returned near-miss JSON; "
+                f"repaired deterministically ({exc})",
+                file=sys.stderr, flush=True,
+            )
+            return repaired
         raise RuntimeError(
             f"{model} did not return valid JSON via the CLI, twice (stop_reason="
             f"{envelope.get('stop_reason')}): {exc}\n"
             "The CLI cannot enforce a response schema the way the API providers can, "
-            "so a conversational reply lands here.\n"
+            "so a conversational reply lands here (repair did not help).\n"
             f"First 500 chars: {cleaned[:500]!r}"
         ) from exc
 

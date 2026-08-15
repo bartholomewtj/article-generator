@@ -84,6 +84,19 @@ The CLI enforces no response schema, unlike the API paths. The first real call
 answered a JSON-schema prompt in YAML and cost the whole run at the first of
 eight stages.
 
+### `#147` — repairing near-miss JSON on `claude-cli`
+
+`claude-cli` cannot enforce a response schema. Measured: 3 of 5 `write_article`
+calls on `cli:opus` returned non-JSON at least once, and one run died after its
+retry with `Expecting ',' delimiter: line 1 column 4942` — a complete article
+one comma short.
+
+Repair is deterministic rather than an LLM retry: asking a model to fix its own
+JSON rewrites the text, and the article we were trying to salvage is what gets
+lost. Acceptance requires both valid JSON and a dict root — callers of
+`generate_json` expect a mapping, so a repair that yields a list or scalar is
+unusable.
+
 ### `gemini-cli` — do not step the shallow calls down a tier
 
 It is a one-line change and it looks free: both cheap tiers report
