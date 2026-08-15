@@ -21,7 +21,8 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from .llm import resolve_provider
-from .sources import DATABASE_NAMES, Paper, fetch_full_text, gather_evidence, resolve_pmcid
+from .sources import (DATABASE_NAMES, Paper, fetch_full_text, full_text_order,
+                      gather_evidence, resolve_pmcid)
 from .style import (SUBSTANCE_RULES, check_style, errors as style_errors,
                     format_report as format_style, revision_brief)
 from .verify import check_statistics
@@ -349,7 +350,8 @@ def generate_draft(
             "Re-run, or draft on a different provider.")
 
     # Full-text grounding: after curation, fetch the open-access full text of
-    # the sources that earned it — direct/related labels, in rank order.
+    # the sources that earned it — direct before related, newest first inside a
+    # tier, search rank breaking ties (#143).
     #
     # This step used to be skipped whenever the provider was Groq, whose
     # per-minute token ceiling could not fit a single full text. Groq is gone,
@@ -367,9 +369,9 @@ def generate_draft(
     relevance = curation.get("relevance") or {}
     log("Fetching open-access full texts...")
     requests_spent = 0
-    # Still direct and related only, in rank order. Tangential sources are
-    # deliberately excluded even when that leaves the target unmet: they are
-    # background, and handing the writer 12,000 characters of an off-topic
+    # Still direct and related only, relevance then recency. Tangential sources
+    # are deliberately excluded even when that leaves the target unmet: they
+    # are background, and handing the writer 12,000 characters of an off-topic
     # paper is exactly the topic drift the relevance gate exists to prevent.
     # Why the loop stopped is a different question from how many it got, and
     # they need completely different fixes: a request cap that bites is a
@@ -379,15 +381,14 @@ def generate_draft(
     # (#84). Each tally below is one of the exits.
     eligible = no_open_access = fetch_failed = 0
     stopped = "ran out of eligible sources"
-    for index, paper in enumerate(papers, start=1):
+    for index in full_text_order(papers, relevance):
+        paper = papers[index - 1]
         if len(fetched) >= FULLTEXT_TARGET:
             stopped = f"target of {FULLTEXT_TARGET} reached"
             break
         if requests_spent >= MAX_FULLTEXT_REQUESTS:
             stopped = f"request cap of {MAX_FULLTEXT_REQUESTS} reached"
             break
-        if relevance.get(index) not in ("direct", "related"):
-            continue
         eligible += 1
         if not paper.pmcid and paper.doi:
             requests_spent += 1
@@ -448,7 +449,7 @@ def generate_draft(
         # Which sources (1-based indices) the writer saw full text for. The
         # Methods section is written from this — like `databases`, it records
         # what actually happened, never what was intended.
-        "full_text_sources": fetched,
+        "full_text_sources": sorted(fetched),
     }
 
     return Draft(

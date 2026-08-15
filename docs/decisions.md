@@ -375,6 +375,30 @@ labels better under truncation — but the margin here is wide, not marginal, so
 that would change the explanation and not the verdict. If it is ever re-run,
 a larger `--chars` is the only version worth trying, under the same rule.
 
+### `#143` — the deep reads went to the oldest papers
+
+Measured on a recent run: the read-subset skew line reported `read n=5 median
+year 2019, median citations 122; abstract-only n=15 median year 2023` — the five
+full texts went to older, highly-cited papers while the most current
+directly-relevant syntheses got abstract-only treatment. The article then
+printed the standing limitation that abstract-only sources could not be
+appraised — about exactly the papers doing the most work.
+
+Rank order sorts on topic overlap then citation weight, so citation weight
+inside `_rank_score` pulled old, heavily-cited work to the top of the fetch
+list. Raising `FULLTEXT_TARGET` was not the fix: the excerpt budget is already
+full at 5 × 12,000 characters (`FULLTEXT_PER_PAPER_CHARS` × `FULLTEXT_TARGET` =
+`FULLTEXT_TOTAL_CHARS`).
+
+The fix is ordering only (`full_text_order`): attempt the eligible set in
+relevance order (direct before related), newest publication year first within a
+tier, search rank breaking remaining ties. Tangential and unlabelled sources are
+still excluded even if the target goes unmet.
+
+What to watch next: the skew line on the next few real runs. If the read subset
+now runs *newer* than the abstract-only rest, that is the change working, not a
+new problem.
+
 ---
 
 ## Web app and deployment

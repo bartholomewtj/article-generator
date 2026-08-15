@@ -4311,8 +4311,8 @@ def test_pipeline_fetches_full_text() -> None:
         pipeline.enforce_style = lambda a, **kw: (a, {"issues": [], "stats": {}})
 
         draft = pipeline.generate_draft("topic")
-        check("direct and related sources are fetched, tangential is not",
-              fetched_pmcids == ["PMC1", "PMC3", "PMC4"])
+        check("direct sources are fetched before related, tangential never",
+              fetched_pmcids == ["PMC1", "PMC4", "PMC3"])
         check("papers carry their full text", draft.papers[0].full_text == "body text")
         check("provenance records which sources were read in full",
               draft.provenance["full_text_sources"] == [1, 3, 4])
@@ -4331,6 +4331,45 @@ def test_pipeline_fetches_full_text() -> None:
     finally:
         (pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
          pipeline.write_article, pipeline.fetch_full_text, pipeline.enforce_style) = saved
+
+
+def test_full_text_order_favours_direct_and_recent() -> None:
+    """Deep reads go to the directly relevant and the current, in that order.
+
+    Rank order sorts on topic overlap then citation weight, so the five full
+    texts landed on old, heavily-cited papers: one measured run read a subset
+    at median year 2019 / 122 citations against an abstract-only rest at median
+    2023, and the article then printed the "could not be appraised" limitation
+    about the newest directly-relevant syntheses (#143). Relevance tier first,
+    then year, then search rank.
+    """
+    from articlegen.sources import Paper, full_text_order
+
+    papers = [
+        Paper(title="related new", abstract="a", year=2024),      # 1
+        Paper(title="direct old", abstract="a", year=2011),       # 2
+        Paper(title="tangential new", abstract="a", year=2025),   # 3
+        Paper(title="direct new", abstract="a", year=2023),       # 4
+        Paper(title="related old", abstract="a", year=2015),      # 5
+        Paper(title="unlabelled", abstract="a", year=2026),       # 6
+        Paper(title="direct undated", abstract="a"),              # 7
+    ]
+    relevance = {1: "related", 2: "direct", 3: "tangential",
+                 4: "direct", 5: "related", 7: "direct"}
+
+    order = full_text_order(papers, relevance)
+    check("direct-newest, direct-older, then related-newest",
+          order == [4, 2, 7, 1, 5])
+    check("tangential sources are never offered for fetch", 3 not in order)
+    check("an unlabelled source is never offered either", 6 not in order)
+
+    # Ties fall back to search rank, which is what the pipeline did before this
+    # change — so an all-one-tier, all-one-year pool is untouched by it.
+    same = [Paper(title=f"p{i}", abstract="a", year=2020) for i in range(1, 5)]
+    check("equal tier and year keeps the incoming rank order",
+          full_text_order(same, {i: "direct" for i in range(1, 5)}) == [1, 2, 3, 4])
+    check("no labels means nothing is fetched",
+          full_text_order(same, {}) == [])
 
 
 def test_pmcid_is_resolved_by_doi() -> None:
@@ -4918,6 +4957,7 @@ def main(argv: list[str] | None = None) -> int:
         test_arxiv_rate_limit_is_honoured,
         test_ungrounded_citations_leave_no_trace,
         test_full_text_grounding, test_pipeline_fetches_full_text,
+        test_full_text_order_favours_direct_and_recent,
         test_pmcid_is_resolved_by_doi,
         test_unpaywall_fallback_in_resolve_pmcid,
         test_methods_names_only_sources_that_answered,

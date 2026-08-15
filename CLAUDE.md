@@ -91,6 +91,7 @@ behaviour it describes.
 | The stored API key is tab-only (`sessionStorage`) unless opted in | `test_api_key_is_session_only_by_default` |
 | Nothing needing a key costs a round trip to discover it | `test_first_visit_does_not_dead_end` |
 | The full-text dependencies fail loudly enough to diagnose | `test_full_text_dependencies_fail_loudly_enough_to_diagnose` |
+| Deep reads go to direct and recent sources first | `test_full_text_order_favours_direct_and_recent` |
 | A doomed run is refused before the caller is billed | `test_dead_sources_fail_before_the_caller_is_billed` |
 | The article shape is not a preference (`TONE_LABEL`, `LENGTH_LABEL`, `DEPTH_LABEL` are constants) | `test_house_style_is_fixed_not_a_preference` |
 | Register rules fire on investigator voice, not synthesis voice | `test_register_rules_are_scoped_to_the_synthesis_voice` |
@@ -218,6 +219,14 @@ and sections intact.
   `MAX_FULLTEXT_REQUESTS` (18) stops a topic with no open-access literature
   spending a request per paper. **Tangential sources are never fetched**, even
   when the target goes unmet.
+- **The fetch order is relevance then recency, not rank** (`full_text_order`).
+  Rank sorts on topic overlap then citation weight, so the five deep reads
+  went to old, heavily-cited work — a measured run read median year 2019 /
+  122 citations against an abstract-only rest at median 2023, and the article
+  printed "abstract-only, could not be appraised" about the most current
+  directly-relevant syntheses (#143). Direct before related, newest first
+  inside a tier, search rank breaking ties. The eligible *set* is unchanged;
+  tangential and unlabelled sources are still never fetched.
 - **Every run says *why* full-text fetching stopped.** "4 of 19" is not an
   answer: a request cap that bit is a tuning problem, genuinely absent open
   access is a property of the literature and not fixable here, and the log used

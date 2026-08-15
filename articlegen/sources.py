@@ -932,6 +932,34 @@ def full_text_excerpts(papers: list[Paper]) -> dict[int, str]:
     return out
 
 
+# Which eligible sources get a deep read, and in what order. The set is the
+# same as it always was (direct and related, never tangential); only the order
+# changed. Rank order put citation weight ahead of everything, so the five deep
+# reads went to old, heavily-cited papers: one measured run read a subset with
+# median year 2019 and 122 citations while the abstract-only rest ran at median
+# 2023 (#143). The article then prints "abstract-only, could not be appraised"
+# about the most current directly-relevant work — the papers doing the most.
+FULLTEXT_RELEVANCE_ORDER = ("direct", "related")
+
+
+def full_text_order(papers: list[Paper], relevance: dict[int, str]) -> list[int]:
+    """1-based indices to attempt full text for, best candidate first.
+
+    Direct before related; newest first inside a tier; search rank breaks the
+    remaining ties, which is the order the whole pipeline used before. A paper
+    with no year sorts as if year 0 — an undated record is not evidence of
+    being current. Tangential and unlabelled sources are absent from the
+    result: they are never fetched, whether or not the target is met.
+    """
+    tier = {label: n for n, label in enumerate(FULLTEXT_RELEVANCE_ORDER)}
+    ranked = []
+    for index, paper in enumerate(papers, start=1):
+        label = relevance.get(index)
+        if label in tier:
+            ranked.append((tier[label], -(paper.year or 0), index))
+    return [index for _, _, index in sorted(ranked)]
+
+
 def fetch_full_text(paper: Paper, use_cache: bool = True) -> str:
     """The paper's open-access full text as plain text, or "" when unavailable.
 
