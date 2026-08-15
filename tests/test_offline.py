@@ -4719,7 +4719,8 @@ def test_curation_truncation_is_off_until_measured() -> None:
     """The token saving is real; the risk to the relevance gate is untested.
 
     Truncating the abstracts sent to curation would cut ~39,000 input tokens to
-    roughly 15,000 for 20 papers. But curation *is* the relevance gate, and two
+    roughly 15,000 for 20 papers (the default pool then; it is now
+    `DEFAULT_MAX_PAPERS`). But curation *is* the relevance gate, and two
     things downstream read its labels: `style._required_sections` scales the
     section floor with the `direct` count, and `write_article` omits
     `tangential` sources from the prompt entirely (issue #117).
@@ -4786,6 +4787,52 @@ def test_curation_truncation_is_off_until_measured() -> None:
           'CRITICAL = ("direct", "tangential")' in harness)
     check("it says outright that agreement on 'related' is not enough",
           "'related' alone is not enough" in harness)
+
+
+def test_the_candidate_pool_is_big_enough_to_curate() -> None:
+    """The pool default is one constant, and 20 was too small to be curated.
+
+    Three runs on 2026-08-15 collected exactly 20 candidates and cited 16-19 of
+    them — the relevance gate discarding almost nothing — and a landmark cluster
+    RCT named by a run's own planned query never made the pool (issue #141).
+
+    The number lived in four places, and one of them was a hardcoded argument in
+    the web handler rather than a default. Raising the pipeline default alone
+    would have left the deployed web app on 20 with nothing to show for it.
+    """
+    import inspect
+
+    from articlegen import cli, pipeline, sources, web, writer
+
+    check("the pool default is 40", sources.DEFAULT_MAX_PAPERS == 40)
+
+    for mod, fn in ((sources, sources.gather_evidence),
+                    (pipeline, pipeline.generate_draft)):
+        default = inspect.signature(fn).parameters["max_papers"].default
+        check(f"{fn.__name__} defaults to the constant",
+              default == sources.DEFAULT_MAX_PAPERS)
+
+    parser = cli.build_parser()
+    args = parser.parse_args(["draft", "a topic"])
+    check("the CLI flag defaults to the constant",
+          args.max_papers == sources.DEFAULT_MAX_PAPERS)
+
+    handler = inspect.getsource(web.ArticleGenHandler._handle_draft)
+    check("the web handler reads the constant rather than its own number",
+          "max_papers=DEFAULT_MAX_PAPERS" in handler)
+
+    # The whole point of one constant: no caller may carry a second copy of the
+    # number. A stale literal here is how the web path would sit on the old pool
+    # while everything else moved.
+    for mod in (cli, pipeline, sources, web):
+        check(f"{mod.__name__} hardcodes no candidate cap of its own",
+              "max_papers=20" not in inspect.getsource(mod)
+              and "max_papers: int = 20" not in inspect.getsource(mod))
+
+    # The bigger pool is paid for in curation tokens, never in truncation.
+    # Truncating at 400 chars was measured in #117 and destabilised the gate.
+    check("a bigger pool did not buy itself truncated abstracts",
+          writer.CURATION_ABSTRACT_CHARS is None)
 
 
 def test_claude_md_still_describes_this_code() -> None:
@@ -4940,6 +4987,7 @@ def main(argv: list[str] | None = None) -> int:
         test_model_comparison_harness,
         test_full_text_run_says_why_it_stopped,
         test_curation_truncation_is_off_until_measured,
+        test_the_candidate_pool_is_big_enough_to_curate,
         test_claude_md_still_describes_this_code,
         test_real_articles_still_match_the_schema,
         test_openrouter_routing,

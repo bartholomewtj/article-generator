@@ -210,7 +210,7 @@ Markdown, for easy editing), and refreshes `index.html` (your review queue).
 | Command | Key options |
 |---------|-------------|
 | `ideas <theme>` | `-n` (how many, default 6), `-o` (output .md path) |
-| `draft <title>` | `--open`, `--style "<audience/tone>"`, `--max-papers N`, `--name <stem>` |
+| `draft <title>` | `--open`, `--style "<audience/tone>"`, `--max-papers N` (default 40), `--name <stem>` |
 | `queue` | `--open` |
 | `demo` | `--open`, `-o` |
 

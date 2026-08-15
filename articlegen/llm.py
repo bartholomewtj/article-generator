@@ -693,8 +693,8 @@ def _anthropic_generate(prompt, schema, system, model, deep, api_key=None) -> di
         # `max_tokens` caps thinking *and* the reply together, and on Claude
         # Opus 5 adaptive thinking is on whenever the parameter is omitted — so
         # the ceiling that was ample for a bare JSON reply on Opus 4.8 can now
-        # truncate one mid-object. The curation call in particular grades twenty
-        # sources at once.
+        # truncate one mid-object. The curation call in particular grades the
+        # whole candidate pool — forty sources by default.
         response = client.beta.messages.create(
             max_tokens=16000,
             output_config={"format": {"type": "json_schema", "schema": schema}},

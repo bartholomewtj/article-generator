@@ -21,6 +21,7 @@ from .ideas import format_ideas_console, generate_ideas, ideas_to_markdown
 from .llm import resolve_provider
 from .pipeline import NoPapersFound, generate_draft
 from .render import build_index, render_article, render_markdown
+from .sources import DEFAULT_MAX_PAPERS
 
 IDEAS_DIR = "ideas"
 DRAFTS_DIR = "drafts"
@@ -195,7 +196,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_draft.add_argument("topic", help="The article title/idea to write")
     p_draft.add_argument("--name", help="Draft filename stem (default: <date>-<slug>)")
     p_draft.add_argument("--style", default="", help='Audience/tone note, e.g. "for high-school students"')
-    p_draft.add_argument("--max-papers", type=int, default=20, help="Max candidate papers (default: 20)")
+    p_draft.add_argument("--max-papers", type=int, default=DEFAULT_MAX_PAPERS,
+                         help=f"Max candidate papers (default: {DEFAULT_MAX_PAPERS})")
     p_draft.add_argument("--open", action="store_true", help="Open the draft in your browser when done")
     p_draft.set_defaults(func=cmd_draft)
 

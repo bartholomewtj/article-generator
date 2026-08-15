@@ -1085,9 +1085,18 @@ def _merge_duplicate(kept: Paper, dup: Paper) -> None:
         kept.is_preprint = kept.is_preprint or _looks_like_preprint("", kept.url)
 
 
+# The pool the relevance gate gets to work on. At 20 it barely worked: three
+# measured runs collected exactly 20 candidates and cited 16-19 of them, and a
+# landmark cluster RCT named by a run's own planned query never made the pool
+# (#141). Curation cost scales with this number and that is the accepted price
+# — the alternative, truncating the abstracts sent to curation, was measured in
+# #117 and destabilises the gate, so CURATION_ABSTRACT_CHARS stays None.
+DEFAULT_MAX_PAPERS = 40
+
+
 def gather_evidence(
     queries: list[str],
-    max_papers: int = 20,
+    max_papers: int = DEFAULT_MAX_PAPERS,
     # Records without a retrievable abstract are discarded, and the yield is
     # poor: a real run of three queries against both APIs returned 10 usable
     # papers, which is thin for a review and leaves each section restating the

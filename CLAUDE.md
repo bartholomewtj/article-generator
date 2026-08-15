@@ -100,6 +100,7 @@ behaviour it describes.
 | Titles carry no publisher markup | `test_titles_arrive_without_markup` |
 | One paper is one candidate, however its DOI is spelled | `test_candidate_papers_dedupe_by_doi` |
 | A preprint is labelled wherever it is listed | `test_preprints_are_marked_as_preprints` |
+| The candidate-pool default lives in one constant | `test_the_candidate_pool_is_big_enough_to_curate` |
 
 **Not pinned by a test** — these need the reasoning, because nothing else
 carries it:
@@ -214,6 +215,16 @@ and sections intact.
 
 ## Sources and grounding
 
+- **The candidate pool is `DEFAULT_MAX_PAPERS` (40), defined in `sources.py` and
+  read by every entry point** — the CLI flag's default, `generate_draft`, and
+  the web handler. At 20 the relevance gate barely discarded anything: three
+  measured runs collected exactly 20 candidates and cited 16-19 of them, and a
+  landmark cluster RCT named by a run's own planned query never made the pool
+  (#141). A bigger pool is paid for in curation tokens, **never in truncated
+  abstracts** — `CURATION_ABSTRACT_CHARS` stays `None` (#117). Two knock-ons
+  are expected rather than bugs: the Methods "screened" count roughly doubles,
+  and `MAX_FULLTEXT_REQUESTS` (18) now binds before `FULLTEXT_TARGET` more
+  often, so the stop-reason NOTE fires routinely.
 - **Abstracts plus open-access full text.** `FULLTEXT_TARGET` (5) matches what
   `full_text_excerpts` can show (5 × 12,000 = 60,000 chars);
   `MAX_FULLTEXT_REQUESTS` (18) stops a topic with no open-access literature

@@ -21,8 +21,8 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from .llm import resolve_provider
-from .sources import (DATABASE_NAMES, Paper, fetch_full_text, full_text_order,
-                      gather_evidence, resolve_pmcid)
+from .sources import (DATABASE_NAMES, DEFAULT_MAX_PAPERS, Paper, fetch_full_text,
+                      full_text_order, gather_evidence, resolve_pmcid)
 from .style import (SUBSTANCE_RULES, check_style, errors as style_errors,
                     format_report as format_style, revision_brief)
 from .verify import check_statistics
@@ -286,7 +286,7 @@ def generate_draft(
     topic: str,
     *,
     style_note: str = "",
-    max_papers: int = 20,
+    max_papers: int = DEFAULT_MAX_PAPERS,
     model: str | None = None,
     api_key: str | None = None,
     log: Logger = _silent,

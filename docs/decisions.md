@@ -399,6 +399,46 @@ What to watch next: the skew line on the next few real runs. If the read subset
 now runs *newer* than the abstract-only rest, that is the change working, not a
 new problem.
 
+### `#141` — a pool of 20 was inclusion, not curation
+
+Three mental-health runs on 2026-08-15 each collected **exactly 20** candidates
+and cited 16-19 of them. Hitting the cap every time is the tell: the pool was
+capped, not exhausted, so the direct/related/tangential gate was choosing from a
+list that had already been cut for it.
+
+The cost was specific. The seclusion run planned the query "Safewards trial
+conflict containment acute mental health wards" and the Bowers Safewards cluster
+RCT still never made the pool — it reached the article only second-hand, quoted
+inside an integrative review. Twenty slots ranked with a recency weight fill
+with recent reviews, and the landmark primary trial they all cite is what gets
+squeezed out.
+
+The default is now `DEFAULT_MAX_PAPERS = 40`, defined once in `sources.py` and
+read by `gather_evidence`, `generate_draft`, the `--max-papers` flag and the web
+handler. It was previously written out four times, and the web handler's copy
+was a hardcoded argument rather than a default — raising the pipeline default
+alone would have left the deployed app on 20.
+
+**Paid for in tokens, not in truncation.** Curation grades every candidate on a
+full abstract, so the curation call roughly doubles (~13,000 input tokens
+measured at 20). That is the accepted price. Truncating those abstracts is the
+one thing that must not be traded here: `#117` measured it and it destabilises
+the gate, so `CURATION_ABSTRACT_CHARS` stays `None`.
+
+What to watch on the next few real runs:
+
+- **Does the gate now discard?** Cited-of-collected should fall well below the
+  16-19 of 20 that prompted this. If runs still cite nearly everything, the
+  problem is the gate's labelling, not the pool size.
+- **`per_query` is still 25 and was not raised.** A topic that comes back with
+  fewer than 40 candidates is a thin literature, not a bug — but if that is the
+  common case, the cap is not the binding constraint and this change is inert.
+- **The full-text stop reason.** The eligible list doubles while
+  `MAX_FULLTEXT_REQUESTS` stays 18, so "request cap reached" should become the
+  usual exit and its NOTE should fire routinely. That is the log doing its job.
+  Whether 18 is still the right number is a separate question with its own
+  measurement.
+
 ---
 
 ## Web app and deployment
