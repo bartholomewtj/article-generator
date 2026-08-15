@@ -93,7 +93,7 @@ def _preflight_sources(topic: str, log: Logger) -> None:
     outcomes: list[dict] = []
     log("Checking the scholarly APIs are answering...")
     papers = gather_evidence([topic], max_papers=1, per_query=1, topic=topic,
-                             log=_silent, outcomes=outcomes)
+                             log=_silent, outcomes=outcomes, patient=False)
     failures = [o for o in outcomes if o["error"]]
     if outcomes and len(failures) == len(outcomes):
         reasons = "; ".join(sorted({f"{o['source']}: {o['error']}" for o in failures}))

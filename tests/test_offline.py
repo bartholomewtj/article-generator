@@ -1206,6 +1206,101 @@ def test_search_cache() -> None:
          sources.search_europe_pmc, sources.search_arxiv) = real
 
 
+def test_first_semantic_scholar_refusal_buys_one_patient_round() -> None:
+    """The first Semantic Scholar refusal of a run buys one patient retry (#148).
+
+    Measured over four runs spanning more than an hour: every first keyless
+    Semantic Scholar query returned HTTP 429 after its three tries, the
+    `exhausted` set then skipped the source for the rest of that run, and every
+    draft that session was written without it.
+
+    The patient wait stays at _MAX_BACKOFF (30s) and is scoped to Semantic
+    Scholar only, once per run. A second refusal still exhausts the source for
+    the run, and non-retryable failures or probe runs (patient=False) get no wait.
+    """
+    from articlegen import sources
+
+    check("the patient wait stays within the backoff cap",
+          sources._S2_PATIENT_WAIT <= sources._MAX_BACKOFF)
+
+    real_get = sources._get_with_retry
+    real_sleep = sources.time.sleep
+    reals = (sources.search_semantic_scholar, sources.search_openalex,
+             sources.search_europe_pmc, sources.search_arxiv)
+    try:
+        sources.clear_search_cache()
+
+        # 1. First refusal buys a second round; scoped to S2; second refusal exhausts for the run
+        url_calls: dict[str, int] = {}
+        waits: list[float] = []
+
+        def fake_get_429(url, params=None, headers=None, tries=3):
+            url_calls[url] = url_calls.get(url, 0) + 1
+            exc = sources.SearchFailure("HTTP 429 after 3 attempts")
+            exc.retry_later = True
+            raise exc
+
+        def fake_sleep(seconds):
+            waits.append(seconds)
+
+        sources._get_with_retry = fake_get_429
+        sources.time.sleep = fake_sleep
+        sources.search_europe_pmc = lambda q, limit=15: []
+        sources.search_arxiv = lambda q, limit=15: []
+
+        outs: list[dict] = []
+        sources.gather_evidence(["q one", "q two"], outcomes=outs)
+
+        s2_calls = url_calls.get(sources.SEMANTIC_SCHOLAR_URL, 0)
+        oa_calls = url_calls.get(sources.OPENALEX_URL, 0)
+
+        check("first Semantic Scholar refusal buys a second round", s2_calls == 2)
+        check("exactly one patient wait was recorded, matching _S2_PATIENT_WAIT",
+              waits == [sources._S2_PATIENT_WAIT])
+        check("patient round is scoped to Semantic Scholar (OpenAlex called once)",
+              oa_calls == 1)
+        check("second S2 refusal still exhausts the source for the run",
+              any(o["source"] == "semantic_scholar" and o["query"] == "q two"
+                  and "skipped (already failed this run)" in o["error"] for o in outs))
+
+        # 2. Non-retryable failure gets no patient wait (maintains _MAX_BACKOFF invariant)
+        sources.clear_search_cache()
+        url_calls.clear()
+        waits.clear()
+
+        def fake_get_non_retryable(url, params=None, headers=None, tries=3):
+            url_calls[url] = url_calls.get(url, 0) + 1
+            exc = sources.SearchFailure("HTTP 400")
+            exc.retry_later = False
+            raise exc
+
+        sources._get_with_retry = fake_get_non_retryable
+        outs_non_retryable: list[dict] = []
+        sources.gather_evidence(["q three"], outcomes=outs_non_retryable)
+
+        check("non-retryable failure gets no patient wait",
+              url_calls.get(sources.SEMANTIC_SCHOLAR_URL, 0) == 1 and waits == [])
+
+        # 3. Pre-flight probe (patient=False) does not buy the round
+        sources.clear_search_cache()
+        url_calls.clear()
+        waits.clear()
+        sources._get_with_retry = fake_get_429
+        outs_probe: list[dict] = []
+        sources.gather_evidence(["q four"], outcomes=outs_probe, patient=False)
+
+        check("pre-flight probe (patient=False) buys no patient wait",
+              url_calls.get(sources.SEMANTIC_SCHOLAR_URL, 0) == 1 and waits == [])
+
+    finally:
+        sources.clear_search_cache()
+        sources._get_with_retry = real_get
+        sources.time.sleep = real_sleep
+        (sources.search_semantic_scholar, sources.search_openalex,
+         sources.search_europe_pmc, sources.search_arxiv) = reals
+        sources._s2_patient_round_spent = False
+
+
 def test_polite_pool_identification() -> None:
     """We must identify ourselves, and respect a cool-off the server asks for.
 
@@ -5329,6 +5424,7 @@ def main(argv: list[str] | None = None) -> int:
         test_draft_summary, test_rate_limit,
         test_keepalive_connection_reuse, test_substance_checks,
         test_source_failures_are_distinguishable,
+        test_first_semantic_scholar_refusal_buys_one_patient_round,
         test_search_cache, test_front_end_models_match_the_allowlist,
         test_polite_pool_identification, test_europe_pmc_parsing,
         test_arxiv_parsing, test_titles_arrive_without_markup,

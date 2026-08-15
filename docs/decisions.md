@@ -517,6 +517,29 @@ tendency rather than a guarantee: a future draft may still occasionally lead wit
 a quoted figure if no first-hand alternative exists or if the model leans toward
 it. Refs #142.
 
+### `#148` — keyless Semantic Scholar 429'd for a whole session
+
+Measured across four runs spanning more than an hour: every FIRST Semantic
+Scholar query returned HTTP 429 after 3 attempts, and the `exhausted` set
+then (correctly, per design) skipped the source for the rest of each run.
+Net effect: Semantic Scholar contributed nothing all session, and every draft
+ran on the remaining databases.
+
+Weakening the `exhausted` set was rejected: re-attempting a dead source on
+every query wasted ~10s each time. Raising `_MAX_BACKOFF` or waiting out a
+cool-off longer than the 30s cap was also rejected: a user is watching a
+progress bar.
+
+The code-side change is narrow: `_S2_PATIENT_WAIT` gives ONLY the first Semantic
+Scholar attempt of a run one extra retry round after waiting at the existing
+`_MAX_BACKOFF` ceiling (30s) before declaring the failure that exhausts the
+source. `_preflight_sources` passes `patient=False` so the probe fails fast
+without adding 30s. A failure with `retry_later = False` (non-retryable HTTP
+status or cool-off past `_MAX_BACKOFF`) gets no wait.
+
+The real fix remains setting the free `SEMANTIC_SCHOLAR_API_KEY`, which is an ops
+task and stays open. Refs #148, stays open.
+
 ---
 
 ## Web app and deployment

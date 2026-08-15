@@ -66,6 +66,23 @@ _UA_BASE = "articlegen/0.1.0 (+https://github.com/bartholomewtj/article-generato
 # egress IPs.
 _MAX_BACKOFF = 30.0
 
+# One extra, patient attempt for the FIRST Semantic Scholar call of a run.
+# Measured over four runs spanning more than an hour (#148): every first
+# keyless Semantic Scholar query returned HTTP 429 after its three tries, the
+# `exhausted` set then skipped the source for the rest of that run, and every
+# draft that session was written without it.
+#
+# The wait sits AT _MAX_BACKOFF, never above it: 30s is the most this codebase
+# is willing to make a caller with a progress bar wait. Semantic Scholar only,
+# once per run, and once it has failed the source is exhausted exactly as
+# before. This does not replace SEMANTIC_SCHOLAR_API_KEY — it only buys back
+# the case where the limit clears inside half a minute.
+_S2_PATIENT_WAIT = _MAX_BACKOFF
+
+# Spent per run. Reset by gather_evidence, which is the run boundary — the same
+# pattern as _recency_query_refused.
+_s2_patient_round_spent = False
+
 # How long a search result stays usable. The literature for a topic does not
 # change hour to hour, but the free tiers of these APIs refuse constantly — so
 # the same query re-run an hour later is far more likely to fail than to return
@@ -262,26 +279,46 @@ def _get_with_retry(url: str, params: dict, headers: dict, tries: int = 3) -> re
                 return resp
             last = f"HTTP {resp.status_code}"
             if resp.status_code not in (429, 500, 502, 503):
-                raise SearchFailure(last)  # non-retryable
+                exc = SearchFailure(last)  # non-retryable
+                exc.retry_later = False
+                raise exc
         if attempt < tries - 1:
             wait = _retry_delay(resp, delay)
             if wait is None:
-                raise SearchFailure(f"{last}, cool-off longer than {_MAX_BACKOFF:.0f}s")
+                exc = SearchFailure(f"{last}, cool-off longer than {_MAX_BACKOFF:.0f}s")
+                exc.retry_later = False
+                raise exc
             time.sleep(wait)
             delay *= 2
-    raise SearchFailure(f"{last} after {tries} attempts")
+    exc = SearchFailure(f"{last} after {tries} attempts")
+    exc.retry_later = True
+    raise exc
 
 
 def search_semantic_scholar(query: str, limit: int = 15) -> list[Paper]:
+    """Query Semantic Scholar Graph API.
+
+    This is the one source with a patient retry round: under shared rate limits
+    the first call routinely 429s after three quick tries (#148), so we give it
+    one extra attempt after a 30s wait before declaring failure and exhausting
+    the source for the run.
+    """
+    global _s2_patient_round_spent
     headers = {}
     api_key = os.environ.get("SEMANTIC_SCHOLAR_API_KEY")
     if api_key:
         headers["x-api-key"] = api_key
-    resp = _get_with_retry(
-        SEMANTIC_SCHOLAR_URL,
-        params={"query": query, "limit": limit, "fields": _SS_FIELDS},
-        headers=headers,
-    )
+    params = {"query": query, "limit": limit, "fields": _SS_FIELDS}
+    try:
+        resp = _get_with_retry(SEMANTIC_SCHOLAR_URL, params=params, headers=headers)
+    except SearchFailure as exc:
+        # `retry_later` defaults True: an unlabelled failure costs one wait,
+        # which is cheaper than missing the case this exists for.
+        if _s2_patient_round_spent or not getattr(exc, "retry_later", True):
+            raise
+        _s2_patient_round_spent = True   # set BEFORE the wait: spent is spent,
+        time.sleep(_S2_PATIENT_WAIT)     # whether or not this round succeeds
+        resp = _get_with_retry(SEMANTIC_SCHOLAR_URL, params=params, headers=headers)
     papers = []
     for item in resp.json().get("data") or []:
         if not item.get("abstract"):
@@ -1108,6 +1145,7 @@ def gather_evidence(
     log=lambda msg: None,
     outcomes: list[dict] | None = None,
     use_cache: bool = True,
+    patient: bool = True,
 ) -> list[Paper]:
     """Run every query against every source, dedupe, and return the best candidates,
     ranked by a blend of topic relevance, citations, and recency.
@@ -1121,9 +1159,16 @@ def gather_evidence(
     `use_cache=False` forces a live probe of every source. Only the diagnostic
     endpoint wants this — it exists to answer "can this host reach its sources
     *right now*", which a cached answer cannot. Drafting always leaves it on.
+
+    `patient=False` starts the run with the patient retry round already spent
+    (used by pre-flight probes to fail fast without adding 30s).
     """
-    global _recency_query_refused
+    global _recency_query_refused, _s2_patient_round_spent
     _recency_query_refused = False
+    # patient=False starts the run with the round already spent. The pre-flight
+    # probe uses it: it exists to fail FAST before the caller is billed, so it
+    # must never add 30s to a run that is about to work.
+    _s2_patient_round_spent = not patient
     by_title: dict[str, Paper] = {}
     by_doi: dict[str, Paper] = {}
     collected: list[Paper] = []

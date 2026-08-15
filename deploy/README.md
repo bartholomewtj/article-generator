@@ -61,7 +61,7 @@ own, and every visitor brings theirs.
 | `ARTICLEGEN_TRUST_PROXY` | auto on Render | Read the caller's address from the rightmost `X-Forwarded-For` entry. Turn on only behind a proxy that rewrites the header — otherwise any caller can pick their own rate-limit bucket. Render is detected automatically. |
 | `ARTICLEGEN_SOURCE_PROBE` | `1` | Check the scholarly APIs are answering before the first paid LLM call. Set `0` to skip. |
 | `OPENALEX_MAILTO` | unset | Your email; OpenAlex "polite pool". |
-| `SEMANTIC_SCHOLAR_API_KEY` | unset | Optional; raises Semantic Scholar's rate limit. Set as a *secret*. |
+| `SEMANTIC_SCHOLAR_API_KEY` | unset | Recommended (free; without it the source refuses nearly every call, #148). Set as a *secret*. |
 
 ## Two things about the free tier
 

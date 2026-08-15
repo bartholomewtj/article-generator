@@ -83,6 +83,7 @@ behaviour it describes.
 | Every caller runs the one pipeline | `test_pipeline_is_shared` |
 | API keys travel as arguments, never through `os.environ` | `test_per_request_api_key` |
 | Methods names only databases that actually answered | `test_methods_names_only_sources_that_answered` |
+| The first Semantic Scholar refusal of a run buys one patient retry | `test_first_semantic_scholar_refusal_buys_one_patient_round` |
 | Verification searches exactly what the writer was shown | `test_full_text_grounding` |
 | A cited sentence is checked against its own sources | `test_statistic_verification` |
 | Flagged figures are marked where the number is | `test_unverified_figures_are_marked_inline` |
@@ -351,6 +352,20 @@ and sections intact.
 - **arXiv gets a 3s client-side throttle** (`_ARXIV_MIN_INTERVAL`). There is no
   key, so the penalty for ignoring their documented interval falls on the
   egress IP — shared, on the hosted backend.
+- **Keyless Semantic Scholar is effectively dead under the shared rate limit —
+  measured, four runs over more than an hour (#148)**: every *first* Semantic
+  Scholar query returned HTTP 429 after its three tries, `exhausted` then
+  skipped it for the rest of the run, and the drafts that session were
+  written without it. **Setting the free `SEMANTIC_SCHOLAR_API_KEY` is the fix
+  worth doing on any machine that runs drafts.** No code change recovers this.
+  The one code-side concession: `_S2_PATIENT_WAIT`, a single extra attempt
+  after one wait at the `_MAX_BACKOFF` ceiling, on the first Semantic Scholar
+  call of a run only. Semantic Scholar only, once per run, and the source is
+  exhausted after it exactly as before. A failure marked `retry_later = False`
+  (non-retryable status, or a cool-off past the cap) is **not** waited on —
+  that is `_MAX_BACKOFF` doing its job. `_preflight_sources` passes
+  `patient=False`: it exists to fail fast before the caller is billed, so the
+  probe must not add 30s to a run that is about to work. → `test_first_semantic_scholar_refusal_buys_one_patient_round`
 - **A source that refuses once is skipped for the rest of the run**
   (`gather_evidence`'s `exhausted` set). Note the interaction with
   `_MAX_BACKOFF`: a source asking for a cool-off longer than 30s fails
@@ -538,7 +553,8 @@ index.html on GitHub Pages  ──POST /api/draft──▶  backend on Render
   regex covering `[...]=`, `.update(` and `.setdefault(`, then runs a real call
   through a fake transport and asserts `os.environ` is byte-identical.
 - Set `OPENROUTER_API_KEY` or `ANTHROPIC_API_KEY`, or use `--model cli:opus`
-  with no key at all. Optional: `SEMANTIC_SCHOLAR_API_KEY`, `OPENALEX_MAILTO`.
+  with no key at all. Recommended: `SEMANTIC_SCHOLAR_API_KEY` (free; without it
+  Semantic Scholar 429s on effectively every call, #148). Optional: `OPENALEX_MAILTO`.
 
 ## Conventions
 
