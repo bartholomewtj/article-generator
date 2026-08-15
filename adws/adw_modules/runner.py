@@ -74,6 +74,22 @@ class Run:
         self.agent_map[agent] = entry
         self._agent_map_path.write_text(json.dumps(self.agent_map, indent=2))
 
+    # ── what each agent changed (git's account, for the commit phases) ──────
+    def paths_touched(self, *agents: str) -> list[str]:
+        """Every repo path these agents changed in this run, across all phases.
+
+        A builder is asked once and corrected several times; the commit phase
+        owns all of it, so the paths are merged over every phase the agent ran
+        — including phases replayed from the checkpoint on a resume.
+        """
+        by_agent = self.tracer.paths_touched(self.adw_id)
+        out: list[str] = []
+        for name in agents:
+            for path in by_agent.get(name, []):
+                if path not in out:
+                    out.append(path)
+        return out
+
     # ── usage (run totals mirror what the tracer accumulates in sqlite) ─────
     def add_usage(self, tokens: int, cost: float) -> None:
         self.tokens += tokens

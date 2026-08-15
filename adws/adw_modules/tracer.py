@@ -279,6 +279,30 @@ class Tracer:
             out[name] = payload_json   # later rows overwrite earlier ones -- newest wins
         return out
 
+    def paths_touched(self, adw_id: str) -> dict[str, list[str]]:
+        """agent name -> every repo path it changed in this run, in order seen.
+
+        Read back out of the events rather than kept in memory, for the same
+        reason completed_envelopes is: a resumed run replays phases it never
+        executed, and a commit phase still has to stage what those phases
+        changed. Written by agents.execute() from permissions.enforce(), so
+        this is git's account of what the agent touched, not the agent's.
+        """
+        out: dict[str, list[str]] = {}
+        rows = self.conn.execute(
+            "SELECT payload_json FROM events WHERE adw_id = ? AND type = 'log' "
+            "AND name = 'paths_touched' ORDER BY rowid", (adw_id,)).fetchall()
+        for (payload_json,) in rows:
+            try:
+                payload = json.loads(payload_json or "{}")
+            except ValueError:
+                continue
+            seen = out.setdefault(str(payload.get("agent") or ""), [])
+            for path in payload.get("paths") or []:
+                if path not in seen:
+                    seen.append(str(path))
+        return out
+
     def agent_session_row(self, adw_id: str, agent: AgentConfig, session_id: str,
                           context_tokens: int = 0, context_window: int = 0) -> None:
         """The agent's config row is the source of truth for its label and color.

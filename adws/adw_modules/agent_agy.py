@@ -16,7 +16,11 @@ Five things are load-bearing here:
    conversation's id arrives on the init event and continuing it is
    `--conversation <id>`. So the ledger maps SSSF session keys to the
    conversation ids the CLI minted — same contract as the other interfaces
-   (same key = same context window), different bookkeeping.
+   (same key = same context window), different bookkeeping. The ledger
+   follows the CLI every call, not just the first: agy answers a
+   `--conversation` it no longer has by warning and opening a fresh one under
+   its own id, and a ledger left pointing at the rejected id would start a new
+   context window on every phase for the rest of the run (issue #37).
 
 2. **There is no system-prompt flag.** The first send of a session folds the
    system prompt into the prompt file above a divider; continuations send only
@@ -287,14 +291,26 @@ def _compose_first_prompt(system_prompt: str, prompt: str) -> str:
 
 
 def _classify_failure(result_obj: dict, stderr: str) -> tuple[str, str]:
-    """Judge a non-SUCCESS result: ("rate_limit" | "upstream", detail)."""
-    detail = " ".join(str(result_obj.get(key) or "") for key in
-                      ("status", "error", "response")) + " " + stderr
-    haystack = detail.lower()
+    """Judge a non-SUCCESS result: ("rate_limit" | "upstream", detail).
+
+    The structured result event is the account of what went wrong; stderr is
+    reported only when it says nothing. agy warns on stderr about things that
+    are not the failure — a `--conversation` id it no longer has being the
+    common one — and leading with that sent a reader after the wrong cause on
+    a run whose real failure was a response timeout (issue #37).
+
+    Detection still reads BOTH: a missed rate limit costs a run that would
+    have retried, so breadth wins there even though narrowness wins in the
+    message.
+    """
+    structured = " ".join(str(result_obj.get(key) or "") for key in
+                          ("status", "error", "response")).strip()
+    haystack = f"{structured} {stderr}".lower()
     for marker in RATE_LIMIT_MARKERS:
         if marker in haystack:
             return "rate_limit", f"matched {marker!r}"
-    return "upstream", detail.strip()[:400] or "no detail in the result event"
+    detail = structured or stderr.strip()
+    return "upstream", detail[:400] or "no detail in the result event"
 
 
 def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
@@ -397,10 +413,17 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
     if on_exit:
         on_exit(process.pid)
 
-    # Only remember the conversation once the CLI finished cleanly — recording
-    # a crashed start would send the next call to --conversation an id whose
-    # context may hold nothing.
-    if not conversation and minted and result.returncode == 0:
+    # Remember whatever conversation the CLI actually used, once it finished
+    # cleanly — recording a crashed start would send the next call to
+    # --conversation an id whose context may hold nothing.
+    #
+    # A `minted` that differs from the id we PASSED means agy did not resume
+    # the conversation it was given: it warns "conversation <id> not found"
+    # and opens a new one under an id of its own. Following it is the only way
+    # the next phase resumes anything; leaving the ledger pointing at the id
+    # agy has already rejected would start a fresh context on every call for
+    # the rest of the run, which is what issue #37 measured.
+    if minted and result.returncode == 0 and minted != conversation:
         _record_conversation(session_dir, request.session_id, minted)
 
     status = str(((terminal or {}).get("result") or {}).get("status") or "")

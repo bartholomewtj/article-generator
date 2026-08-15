@@ -62,16 +62,24 @@ REVIEW_NOTES = ("Read diff_path in full before ruling. changed_files is from git
                 "not the builder. Judge the code on disk.")
 
 
-def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw_id: str | None = None) -> int:
-    cfg = agents.load_config(config)
+def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw_id: str | None = None, roster: str | None = None) -> int:
+    cfg = agents.load_config(config, roster)
     agents.validate(cfg, REQUIRED_AGENTS)
     run = session.ensure(cfg, adw_id)
     baseline = git_helper.rev("HEAD")     # pinned before this run commits anything
 
-    def commit(ph, envelope) -> None:
-        """Commit what the preceding phase produced, in that agent's own words."""
+    def commit(ph, envelope, *owners: str) -> None:
+        """Commit what `owners` produced, in that agent's own words.
+
+        Staged to the paths those agents actually changed, not the whole tree:
+        three commit phases share one working tree, and a run resumed between
+        two of them would otherwise sweep the later phase's work into the
+        earlier phase's message.
+        """
         message = envelope.commit_message or f"sssf({run.adw_id}): {envelope.summary}"
-        ph.log(sha=git_helper.commit_all(message), message=message)
+        paths = run.paths_touched(*owners)
+        ph.log(sha=git_helper.commit_paths(message, paths), message=message,
+               files=len(paths))
 
     def record(ph, result) -> None:
         """Log a deterministic block's verdict — the same shape every ADW uses."""
@@ -90,7 +98,7 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
 
     with run.phase(PhaseParams(name="commit_plan", kind="code", owner="git",
                                description="Put the spec on record before any code exists to blur it")) as ph:
-        commit(ph, plan)
+        commit(ph, plan, "planner")
     review_base = git_helper.rev("HEAD")   # plan commit — reviewer's diff is "since this"
 
     with run.phase(PhaseParams(name="build", kind="agent", owner="builder",
@@ -168,7 +176,7 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
     if verified:
         with run.phase(PhaseParams(name="commit_build", kind="code", owner="git",
                                    description="Land the code only now: green suite, approved review")) as ph:
-            commit(ph, build)
+            commit(ph, build, "builder")
 
         with run.phase(PhaseParams(name="changes", kind="code", owner="git",
                                    description="Diff the whole run against its pinned baseline, for the documenter")) as ph:
@@ -191,7 +199,7 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
 
         with run.phase(PhaseParams(name="commit_docs", kind="code", owner="git",
                                    description="Ship the write-up in its own commit, beside the code it describes")) as ph:
-            commit(ph, document)
+            commit(ph, document, "documenter")
 
     return run.finish(accepted=verified,
                       reason="the suite or the review never came back clean")
@@ -202,5 +210,9 @@ if __name__ == "__main__":
     parser.add_argument("prompt", help="inline text or a path to a prompt file")
     parser.add_argument("--config", default="adws/adw_sssf_config/sssf.config.yaml")
     parser.add_argument("--adw-id", default=None, help="join or pin an existing session")
+    parser.add_argument("--roster", default=None,
+                        help="cost tier from rosters.yaml "
+                             "if rosters.yaml is present; "
+                             "defaults to adws/adw_sssf_config/.roster")
     args = parser.parse_args()
-    sys.exit(main(utils.resolve_prompt(args.prompt), args.config, args.adw_id))
+    sys.exit(main(utils.resolve_prompt(args.prompt), args.config, args.adw_id, args.roster))

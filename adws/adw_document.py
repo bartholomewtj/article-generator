@@ -35,8 +35,8 @@ DOCUMENT_NOTES = ("Read diff_path in full before writing. Document only what the
 
 
 def main(prompt: str, base: str = "main",
-         config: str = "adws/adw_sssf_config/sssf.config.yaml", adw_id: str | None = None) -> int:
-    cfg = agents.load_config(config)
+         config: str = "adws/adw_sssf_config/sssf.config.yaml", adw_id: str | None = None, roster: str | None = None) -> int:
+    cfg = agents.load_config(config, roster)
     agents.validate(cfg, REQUIRED_AGENTS)
     run = session.ensure(cfg, adw_id)
 
@@ -73,5 +73,9 @@ if __name__ == "__main__":
     parser.add_argument("--base", default="main", help="ref the change is measured against")
     parser.add_argument("--config", default="adws/adw_sssf_config/sssf.config.yaml")
     parser.add_argument("--adw-id", default=None, help="join or pin an existing session")
+    parser.add_argument("--roster", default=None,
+                        help="cost tier from rosters.yaml "
+                             "if rosters.yaml is present; "
+                             "defaults to adws/adw_sssf_config/.roster")
     args = parser.parse_args()
-    sys.exit(main(utils.resolve_prompt(args.prompt), args.base, args.config, args.adw_id))
+    sys.exit(main(utils.resolve_prompt(args.prompt), args.base, args.config, args.adw_id, args.roster))

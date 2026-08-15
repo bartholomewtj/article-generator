@@ -30,8 +30,8 @@ REQUIRED_AGENTS = ["builder"]
 MAX_FIX_LOOPS = 3
 
 
-def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw_id: str | None = None) -> int:
-    cfg = agents.load_config(config)
+def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw_id: str | None = None, roster: str | None = None) -> int:
+    cfg = agents.load_config(config, roster)
     agents.validate(cfg, REQUIRED_AGENTS)
     run = session.ensure(cfg, adw_id)
 
@@ -76,5 +76,9 @@ if __name__ == "__main__":
     parser.add_argument("prompt", help="inline text or a path to a prompt file")
     parser.add_argument("--config", default="adws/adw_sssf_config/sssf.config.yaml")
     parser.add_argument("--adw-id", default=None, help="join or pin an existing session")
+    parser.add_argument("--roster", default=None,
+                        help="cost tier from rosters.yaml "
+                             "if rosters.yaml is present; "
+                             "defaults to adws/adw_sssf_config/.roster")
     args = parser.parse_args()
-    sys.exit(main(utils.resolve_prompt(args.prompt), args.config, args.adw_id))
+    sys.exit(main(utils.resolve_prompt(args.prompt), args.config, args.adw_id, args.roster))
