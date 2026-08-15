@@ -251,6 +251,27 @@ preprint with higher citation counts would displace the peer-reviewed
 article. Merging field by field enriches the kept record while preserving
 first-seen identity.
 
+### `#144` — preprints were indistinguishable from peer-reviewed papers
+
+A draft cited a Research Square preprint (DOI `10.21203/rs.3.rs-9924877/v1`)
+beside a Cochrane review with nothing to tell them apart; the only difference on
+the page was a blank journal cell in Table 1's Source column. The masthead's
+"Not peer reviewed" refers to the generated article itself, not its sources.
+
+Preprints are now detected in `articlegen/sources.py` using API type metadata
+(OpenAlex `type == "preprint"`, Europe PMC `PPR`, arXiv unconditionally) with
+an identifier fallback (`_looks_like_preprint`) in `Paper.__post_init__` for
+DOI prefixes like Research Square and bioRxiv/medRxiv. `10.1101` requires a
+following digit (`10.1101/\d`) because Cold Spring Harbor Laboratory Press
+uses the same prefix for both preprints and its peer-reviewed journals (such as
+Genome Research, `10.1101/gr.*`).
+
+The preprint flag is never merged across duplicate records in
+`_merge_duplicate` because first-seen identity wins and arXiv is queried last
+specifically to favour published versions over preprints. `articlegen/render.py`
+marks preprints in Table 1's Source column and appends `(preprint, not peer
+reviewed)` to reference entries in HTML and Markdown.
+
 ### `#75` — the article contradicted itself about its own evidence
 
 A shipped article said "full texts of 7 sources were retrieved" in Methods and

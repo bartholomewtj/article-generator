@@ -91,7 +91,7 @@ _search_cache: dict[tuple[str, str, int], tuple[float, list["Paper"], str]] = {}
 _SS_FIELDS = "title,abstract,year,authors,venue,citationCount,externalIds,url"
 _OA_FIELDS = (
     "id,title,publication_year,authorships,primary_location,"
-    "cited_by_count,abstract_inverted_index,doi"
+    "cited_by_count,abstract_inverted_index,doi,type"
 )
 
 
@@ -126,6 +126,38 @@ def _strip_title_markup(title: str) -> str:
     return text
 
 
+# DOI prefixes owned by preprint servers. A prefix belongs to one registrant, so
+# matching one is an identity check rather than a guess — which is what makes
+# this safe as a fallback for the sources that publish no type metadata.
+#
+# 10.1101 needs the extra digit. Cold Spring Harbor Laboratory Press registered
+# that prefix and uses it for BOTH bioRxiv/medRxiv postings (10.1101/2024.03.01.
+# 583912, or an older bare 10.1101/123456) and its peer-reviewed journals
+# (10.1101/gr.*, 10.1101/gad.*, 10.1101/cshperspect.*). A bare `10.1101` check
+# would print "not peer reviewed" under every Genome Research paper — a false
+# flag is a wrong warning printed in the article, which is worse than a miss.
+_PREPRINT_DOI_RES = (
+    re.compile(r"^10\.21203/"),          # Research Square
+    re.compile(r"^10\.1101/\d"),         # bioRxiv / medRxiv (digit, not a journal code)
+    re.compile(r"^10\.48550/arxiv\."),   # arXiv's own registered DOIs
+)
+
+_PREPRINT_URL_RE = re.compile(r"arxiv\.org/(?:abs|pdf)/", re.IGNORECASE)
+
+
+def _looks_like_preprint(doi: str, url: str) -> bool:
+    """True when the identifier itself says the record is a preprint posting.
+
+    The fallback for sources that return no usable type metadata (issue #144).
+    Identifier-only on purpose: a title or an abstract can say anything, and a
+    venue string arrives too inconsistently to key a printed claim on.
+    """
+    normalised = _normalize_doi(doi)
+    if normalised and any(rx.match(normalised) for rx in _PREPRINT_DOI_RES):
+        return True
+    return bool(url and _PREPRINT_URL_RE.search(url))
+
+
 @dataclass
 class Paper:
     title: str
@@ -144,12 +176,19 @@ class Paper:
     pmcid: str = ""
     is_open_access: bool = False
     full_text: str = ""
+    is_preprint: bool = False
 
     def __post_init__(self) -> None:
         # The one place a title is cleaned. Four search functions build Papers
         # and a fifth would be added without remembering to call this, so the
         # cleaning belongs to the object rather than to each parse site.
         self.title = _strip_title_markup(self.title)
+        # The identifier fallback lives here for the same reason the title clean
+        # does: one choke point, so a fifth search source inherits it. A parser
+        # that already knows from the API's type metadata sets the flag True
+        # before construction, and this never clears it.
+        if not self.is_preprint:
+            self.is_preprint = _looks_like_preprint(self.doi, self.url)
 
     @property
     def author_line(self) -> str:
@@ -248,6 +287,10 @@ def search_semantic_scholar(query: str, limit: int = 15) -> list[Paper]:
         if not item.get("abstract"):
             continue
         external_ids = item.get("externalIds") or {}
+        # Semantic Scholar's publicationTypes enum has no preprint value, and
+        # externalIds["ArXiv"] is present on plenty of published papers, so keying
+        # on it would false-flag them. The DOI fallback covers Research Square,
+        # bioRxiv and arXiv-registered DOIs coming through this source.
         papers.append(
             Paper(
                 title=item.get("title") or "",
@@ -327,6 +370,7 @@ def _openalex_page(query: str, limit: int, from_year: int | None = None) -> list
                 url=location.get("landing_page_url") or item.get("id") or "",
                 doi=item.get("doi") or "",
                 source="OpenAlex",
+                is_preprint=(item.get("type") == "preprint"),
             )
         )
     return papers
@@ -456,6 +500,7 @@ def search_europe_pmc(query: str, limit: int = 15) -> list[Paper]:
                 # Both flags are needed: isOpenAccess without inEPMC means the
                 # OA copy lives somewhere Europe PMC cannot serve from.
                 is_open_access=(item.get("isOpenAccess") == "Y" and item.get("inEPMC") == "Y"),
+                is_preprint=(src == "PPR" or "preprint" in (item.get("pubType") or "").lower()),
             )
         )
     return papers
@@ -558,6 +603,9 @@ def search_arxiv(query: str, limit: int = 15) -> list[Paper]:
             if (name := (a.findtext(f"{_ATOM}name") or "").strip())
         ]
         journal_ref = _collapse(entry.findtext(f"{_ARXIV_NS}journal_ref") or "")
+        # Unconditionally True: even when the entry carries a journal_ref, the
+        # record we link and cite is the arXiv posting, not the journal's
+        # version of record.
         papers.append(
             Paper(
                 title=_collapse(entry.findtext(f"{_ATOM}title") or ""),
@@ -571,6 +619,7 @@ def search_arxiv(query: str, limit: int = 15) -> list[Paper]:
                 url=entry_id,
                 doi=(entry.findtext(f"{_ARXIV_NS}doi") or "").strip(),
                 source="arXiv",
+                is_preprint=True,
             )
         )
     return papers
@@ -973,6 +1022,11 @@ def _merge_duplicate(kept: Paper, dup: Paper) -> None:
     published version, and a preprint that happened to carry more metadata
     would otherwise take its place in the reference list.
 
+    The preprint flag is never OR'd across a merge for the same reason: arXiv
+    losing to a published version must not relabel that published version as
+    a preprint. The flag is only updated if adopting the duplicate's identifier
+    reveals the only identifier we now hold is a preprint one.
+
     The abstract is filled only when the kept copy has none. `verify.py`
     checks statistics against the abstract shown to the writer, so pulling a
     different source's wording in under a record identified by the first
@@ -990,12 +1044,17 @@ def _merge_duplicate(kept: Paper, dup: Paper) -> None:
         kept.year = dup.year
     if dup.doi and not kept.doi:
         kept.doi = dup.doi
+        # Adopting an identifier adopts what it says about the record: if the
+        # only DOI we now hold is a preprint-server one, that is what the
+        # reference link points at.
+        kept.is_preprint = kept.is_preprint or _looks_like_preprint(kept.doi, "")
     if dup.authors and not kept.authors:
         kept.authors = dup.authors
     if dup.venue and not kept.venue:
         kept.venue = dup.venue
     if dup.url and not kept.url:
         kept.url = dup.url
+        kept.is_preprint = kept.is_preprint or _looks_like_preprint("", kept.url)
 
 
 def gather_evidence(

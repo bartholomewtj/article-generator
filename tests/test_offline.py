@@ -1608,6 +1608,175 @@ def test_candidate_papers_dedupe_by_doi() -> None:
         sources.clear_search_cache()
 
 
+def test_preprints_are_marked_as_preprints() -> None:
+    """Preprints are detected and marked in references and Table 1 (issue #144).
+
+    A recent draft cited a Research Square preprint (10.21203/rs.3.rs-9924877/v1)
+    beside a Cochrane review with nothing to tell them apart except a blank journal
+    cell in Table 1.
+    """
+    from articlegen.sources import Paper, _looks_like_preprint
+    from articlegen import render, sources
+
+    # 1. Identifier detection
+    check("Research Square DOI flagged",
+          _looks_like_preprint("10.21203/rs.3.rs-9924877/v1", ""))
+    check("Research Square resolver URL flagged",
+          _looks_like_preprint("https://doi.org/10.21203/rs.3.rs-1/v1", ""))
+    check("bioRxiv/medRxiv date-format DOI flagged",
+          _looks_like_preprint("10.1101/2024.03.01.583912", ""))
+    check("CSH journal Genome Research negative control not flagged",
+          not _looks_like_preprint("10.1101/gr.123456", ""))
+    check("CSH journal Perspectives negative control not flagged",
+          not _looks_like_preprint("10.1101/cshperspect.a012345", ""))
+    check("arXiv registered DOI flagged (mixed-case)",
+          _looks_like_preprint("10.48550/arXiv.2401.00001", ""))
+    check("arXiv URL with no DOI flagged",
+          _looks_like_preprint("", "https://arxiv.org/abs/2401.00001"))
+    check("ordinary journal DOI not flagged",
+          not _looks_like_preprint("10.1001/jamapsychiatry.2025.1317", ""))
+    check("empty identifier not flagged",
+          not _looks_like_preprint("", ""))
+
+    # 2. The choke point in Paper.__post_init__
+    p_preprint = Paper(title="T", abstract="a", doi="10.21203/rs.3.rs-1/v1")
+    check("Paper dataclass identifies preprint on construction", p_preprint.is_preprint is True)
+    p_journal = Paper(title="T", abstract="a", doi="10.1001/jamapsychiatry.2025.1317")
+    check("Paper dataclass leaves journal paper unflagged", p_journal.is_preprint is False)
+
+    # 3. Parsers
+    # OpenAlex type=preprint
+    oa_payload = {"results": [{
+        "id": "https://openalex.org/W1", "title": "OA Preprint",
+        "publication_year": 2024, "cited_by_count": 0,
+        "abstract_inverted_index": {"An": [0], "abstract.": [1]},
+        "authorships": [{"author": {"display_name": "Author A"}}],
+        "primary_location": {"source": {"display_name": ""},
+                             "landing_page_url": "https://example.org/1"},
+        "doi": "10.1000/ordinary-doi",
+        "type": "preprint",
+    }]}
+
+    class FakeOAResp:
+        def json(self):
+            return oa_payload
+
+    # Europe PMC source=PPR vs source=MED
+    epmc_payload = {"resultList": {"result": [
+        {
+            "id": "PPR123", "source": "PPR", "title": "EPMC Preprint",
+            "pubYear": "2024", "authorList": {"author": [{"fullName": "Author B"}]},
+            "abstractText": "EPMC preprint abstract.", "doi": "10.1000/ordinary-epmc-doi",
+            "pubType": "preprint",
+        },
+        {
+            "id": "MED123", "source": "MED", "title": "EPMC Journal Paper",
+            "pubYear": "2024", "authorList": {"author": [{"fullName": "Author C"}]},
+            "abstractText": "EPMC journal abstract.", "doi": "10.1000/ordinary-med-doi",
+            "journalInfo": {"journal": {"title": "Journal of Medicine"}},
+        },
+    ]}}
+
+    class FakeEPMCResp:
+        def json(self):
+            return epmc_payload
+
+    # arXiv Atom XML sample
+    atom = """<?xml version="1.0" encoding="UTF-8"?>
+    <feed xmlns="http://www.w3.org/2005/Atom"
+          xmlns:arxiv="http://arxiv.org/schemas/atom">
+      <entry>
+        <id>http://arxiv.org/abs/2401.00001v1</id>
+        <published>2024-01-01T00:00:00Z</published>
+        <title>arXiv Paper</title>
+        <summary>arXiv abstract</summary>
+        <author><name>Author D</name></author>
+        <arxiv:doi>10.1000/arxiv-doi</arxiv:doi>
+        <arxiv:journal_ref>Nature Energy 9, 1 (2024)</arxiv:journal_ref>
+      </entry>
+    </feed>"""
+
+    class FakeArxivResp:
+        text = atom
+
+    real_get = sources._get_with_retry
+    try:
+        sources._get_with_retry = lambda url, params, headers: FakeOAResp()
+        oa_papers = sources._openalex_page("test query", limit=1)
+        check("OpenAlex type=preprint sets is_preprint", oa_papers[0].is_preprint is True)
+
+        sources._get_with_retry = lambda url, params, headers: FakeEPMCResp()
+        epmc_papers = sources.search_europe_pmc("test query", limit=2)
+        check("Europe PMC PPR source sets is_preprint", epmc_papers[0].is_preprint is True)
+        check("Europe PMC MED source leaves is_preprint False", epmc_papers[1].is_preprint is False)
+
+        sources._get_with_retry = lambda url, params, headers: FakeArxivResp()
+        arxiv_papers = sources.search_arxiv("test query", limit=1)
+        check("arXiv search unconditionally sets is_preprint", arxiv_papers[0].is_preprint is True)
+    finally:
+        sources._get_with_retry = real_get
+
+    # 4. Rendering
+    paper_preprint = Paper(
+        title="Preprint Study",
+        abstract="Abstract of preprint",
+        authors=["Alice Smith"],
+        doi="10.21203/rs.3.rs-9924877/v1",
+        year=2024,
+        venue="",
+    )
+    paper_journal = Paper(
+        title="Cochrane Review",
+        abstract="Abstract of Cochrane review",
+        authors=["Bob Jones"],
+        doi="10.1002/14651858.CD001",
+        year=2023,
+        venue="Cochrane Database Syst Rev",
+    )
+    cited_pair = [paper_preprint, paper_journal]
+
+    t_html = render._table_html(cited_pair, {})
+    check("Table 1 HTML marks preprint in Source column", "Preprint" in t_html)
+    check("Table 1 HTML keeps journal venue", "Cochrane Database Syst Rev" in t_html)
+
+    t_md = render._table_markdown(cited_pair, {})
+    check("Table 1 Markdown marks preprint in Source column", "Preprint" in t_md)
+    check("Table 1 Markdown keeps journal venue", "Cochrane Database Syst Rev" in t_md)
+
+    article_payload = {
+        "title": "A Test Review Article",
+        "abstract": "Summary with references [1] and [2].",
+        "keywords": ["testing"],
+        "evidence_note": "Evidence note [1].",
+        "featured_study": {"source_index": 1, "method": "Trial", "results": "Results"},
+        "sections": [
+            {"heading": "Introduction", "paragraphs": ["Intro referencing [1] and [2]."]},
+            {"heading": "Conclusions", "paragraphs": ["Conclusion [1]."]},
+        ],
+        "key_points": ["Key point referencing [2]."],
+        "glossary": [],
+        "references": [1, 2],
+    }
+
+    h_out = render.render_article(article_payload, cited_pair, "test topic", None, None, None)
+    md_out = render.render_markdown(article_payload, cited_pair, "test topic", None, None, None)
+
+    marker = "(preprint, not peer reviewed)"
+    check("HTML render has preprint marker exactly once", h_out.count(marker) == 1)
+    check("Markdown render has preprint marker exactly once", md_out.count(marker) == 1)
+
+    # 5. _merge_duplicate adoption
+    kept_no_doi = Paper(title="Duplicate Study", abstract="Abs", doi="", url="")
+    dup_preprint_doi = Paper(title="Duplicate Study", abstract="Abs", doi="10.21203/rs.3.rs-9924877/v1")
+    sources._merge_duplicate(kept_no_doi, dup_preprint_doi)
+    check("adopting preprint DOI in merge sets is_preprint", kept_no_doi.is_preprint is True)
+
+    kept_published = Paper(title="Published Paper", abstract="Abs", doi="10.1001/jamapsychiatry.2025.1317", is_preprint=False)
+    dup_arxiv = Paper(title="Published Paper", abstract="Abs", doi="10.48550/arXiv.1", is_preprint=True)
+    sources._merge_duplicate(kept_published, dup_arxiv)
+    check("published paper does not inherit preprint flag across merge when kept has DOI", kept_published.is_preprint is False)
+
+
 def test_arxiv_rate_limit_is_honoured() -> None:
     """arXiv asks for three seconds between requests; there is no key to throttle.
 
@@ -4745,6 +4914,7 @@ def main(argv: list[str] | None = None) -> int:
         test_polite_pool_identification, test_europe_pmc_parsing,
         test_arxiv_parsing, test_titles_arrive_without_markup,
         test_candidate_papers_dedupe_by_doi,
+        test_preprints_are_marked_as_preprints,
         test_arxiv_rate_limit_is_honoured,
         test_ungrounded_citations_leave_no_trace,
         test_full_text_grounding, test_pipeline_fetches_full_text,

@@ -493,12 +493,18 @@ def _table_rows(cited: list[Paper], labels: dict[int, str]) -> list[dict]:
     rows = []
     for n, paper in enumerate(cited, start=1):
         label = labels.get(n)
+        # A preprint with no journal shows a blank Source cell, which was the
+        # only tell the reader got (#144). Say it instead.
+        venue = paper.venue or "—"
+        if paper.is_preprint:
+            venue = f"{paper.venue} (preprint)" if paper.venue else "Preprint"
         rows.append({
             "n": n,
             "paper": paper,
             "study": _short_author(paper),
             "year": paper.year or "n.d.",
-            "venue": paper.venue or "—",
+            "venue": venue,
+            "preprint": bool(paper.is_preprint),
             "label": label if label in RELEVANCE_LABELS else "",
             "relevance": RELEVANCE_LABELS.get(label, "—") if label else "—",
             "cited_by": f"{paper.citation_count:,}" if paper.citation_count else "—",
@@ -1273,9 +1279,10 @@ def render_article(
             f' <span class="ref-cites">Cited by {paper.citation_count:,}</span>'
             if paper.citation_count else ""
         )
+        preprint = " (preprint, not peer reviewed)" if paper.is_preprint else ""
         refs_html.append(
             f'<li id="ref-{n}"><span class="ref-authors">{html.escape(_reference_authors(paper))}</span> '
-            f'{title_html}{venue} ({paper.year or "n.d."}).{cites}</li>'
+            f'{title_html}{venue} ({paper.year or "n.d."}).{preprint}{cites}</li>'
         )
 
     span = _year_range(cited)
@@ -1775,9 +1782,10 @@ def render_markdown(
         venue = f" *{paper.venue}*" if paper.venue else ""
         link = f" <{paper.link}>" if paper.link else ""
         cites = f" Cited by {paper.citation_count:,}." if paper.citation_count else ""
+        preprint = " (preprint, not peer reviewed)" if paper.is_preprint else ""
         lines.append(
             f"{n}. {_reference_authors(paper)} {_titled(paper.title)}{venue} "
-            f"({paper.year or 'n.d.'}).{cites}{link}"
+            f"({paper.year or 'n.d.'}).{preprint}{cites}{link}"
         )
     lines.append("")
 

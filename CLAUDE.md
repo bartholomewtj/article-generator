@@ -98,6 +98,7 @@ behaviour it describes.
 | Every article still matches the writer's schema | `test_real_articles_still_match_the_schema` |
 | Titles carry no publisher markup | `test_titles_arrive_without_markup` |
 | One paper is one candidate, however its DOI is spelled | `test_candidate_papers_dedupe_by_doi` |
+| A preprint is labelled wherever it is listed | `test_preprints_are_marked_as_preprints` |
 
 **Not pinned by a test** — these need the reasoning, because nothing else
 carries it:
@@ -263,6 +264,13 @@ and sections intact.
   arXiv-last ordering is what discards a preprint in favour of the published
   version. A value that is not a DOI normalises to `""` rather than itself,
   so a junk field shared by two unrelated records cannot merge them.
+- **Preprints are detected and marked, never excluded or down-ranked.**
+  Preprints are detected from API type metadata where it exists (OpenAlex
+  `type`, Europe PMC `PPR`, arXiv always) with an identifier fallback in
+  `Paper.__post_init__`; `10.1101` needs a following digit because Cold Spring
+  Harbor uses the same prefix for its journals; the flag is never copied across
+  a `_merge_duplicate` because first-seen identity wins; and preprints are
+  marked, never excluded or down-ranked.
 - **Relevance gate.** `curate_sources` labels each paper direct/related/
   tangential to the *exact* topic; the writer is told the counts and must flag
   when nothing is directly on-topic. Prevents a "schizophrenia" article quietly
