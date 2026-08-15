@@ -235,6 +235,22 @@ in the body.
 
 ## Grounding and provenance
 
+### `#139` — one paper, two references
+
+Two of three recent runs cited the same paper twice as separate references:
+`10.1001/jamapsychiatry.2025.1317` (Janik et al.) and `10.1111/jan.16056` (N-PACT).
+The four search sources spell a DOI three ways — resolver URL, mixed case,
+bare — and wording differences in the title (such as a subtitle or markup)
+allowed duplicates to slip past title-based dedupe.
+
+The fix normalises DOIs with `_normalize_doi` and merges duplicate metadata
+field by field into the first-seen record (`_merge_duplicate`). A literal
+"keep the richer record" swap would have broken the invariant that querying
+arXiv last discards a preprint in favour of the published version, since a
+preprint with higher citation counts would displace the peer-reviewed
+article. Merging field by field enriches the kept record while preserving
+first-seen identity.
+
 ### `#75` — the article contradicted itself about its own evidence
 
 A shipped article said "full texts of 7 sources were retrieved" in Methods and

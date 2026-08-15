@@ -97,6 +97,7 @@ behaviour it describes.
 | Sources travel with a revision only when usable | `test_revision_carries_sources_only_when_they_can_be_used` |
 | Every article still matches the writer's schema | `test_real_articles_still_match_the_schema` |
 | Titles carry no publisher markup | `test_titles_arrive_without_markup` |
+| One paper is one candidate, however its DOI is spelled | `test_candidate_papers_dedupe_by_doi` |
 
 **Not pinned by a test** — these need the reasoning, because nothing else
 carries it:
@@ -254,6 +255,14 @@ and sections intact.
   abstracts: a title reading "adults aged <65 versus >80" would otherwise
   lose the middle of itself. Europe PMC titles keep their `_strip_markup`
   call as well — that one catches general HTML the named list does not.
+- **Candidates are deduped by DOI first, then by title** (`_normalize_doi`,
+  `_merge_duplicate`). One paper reached the reference list twice because the
+  four sources spell a DOI three ways — resolver URL, mixed case, bare — and
+  the titles differed by a subtitle (#139). The kept copy's **identity is
+  never swapped, only enriched**: first-seen has to win, because the
+  arXiv-last ordering is what discards a preprint in favour of the published
+  version. A value that is not a DOI normalises to `""` rather than itself,
+  so a junk field shared by two unrelated records cannot merge them.
 - **Relevance gate.** `curate_sources` labels each paper direct/related/
   tangential to the *exact* topic; the writer is told the counts and must flag
   when nothing is directly on-topic. Prevents a "schizophrenia" article quietly

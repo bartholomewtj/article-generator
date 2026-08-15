@@ -368,9 +368,9 @@ def search_openalex(query: str, limit: int = 15) -> list[Paper]:
         _recency_query_refused = True
         return papers
 
-    seen = {(p.doi or _normalize_title(p.title)) for p in papers}
+    seen = {(_normalize_doi(p.doi) or _normalize_title(p.title)) for p in papers}
     for paper in recent:
-        key = paper.doi or _normalize_title(paper.title)
+        key = _normalize_doi(paper.doi) or _normalize_title(paper.title)
         if key not in seen:
             seen.add(key)
             papers.append(paper)
@@ -584,6 +584,27 @@ def _collapse(text: str) -> str:
     unverifiable.
     """
     return re.sub(r"\s+", " ", text).strip()
+
+
+_DOI_PREFIX_RE = re.compile(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", re.IGNORECASE)
+
+
+def _normalize_doi(doi: str) -> str:
+    """One spelling for a DOI, so two records of one paper share a merge key.
+
+    The four search sources spell the same DOI three ways — OpenAlex returns
+    the resolver URL, Semantic Scholar returns mixed case, Europe PMC returns
+    it bare — which is how one paper reached the reference list twice (#139).
+    DOI prefixes and suffixes are case-insensitive for lookup, so lowercasing
+    is safe.
+
+    Anything that is not a DOI returns "" rather than itself: a junk value
+    ("n/a", "unknown") repeated across two unrelated records would otherwise
+    become a merge key and collapse two real papers into one.
+    """
+    text = _DOI_PREFIX_RE.sub("", (doi or "").strip()).strip()
+    text = text.rstrip(".,;").lower()
+    return text if text.startswith("10.") else ""
 
 
 def _normalize_title(title: str) -> str:
@@ -944,6 +965,39 @@ def _search_once(name: str, search, query: str, limit: int) -> tuple[list[Paper]
     return papers, error, False
 
 
+def _merge_duplicate(kept: Paper, dup: Paper) -> None:
+    """Fold a duplicate record's metadata into the copy already collected.
+
+    The kept copy's *identity* is never swapped, only enriched. First-seen has
+    to win: arXiv is queried last precisely so a preprint loses to the
+    published version, and a preprint that happened to carry more metadata
+    would otherwise take its place in the reference list.
+
+    The abstract is filled only when the kept copy has none. `verify.py`
+    checks statistics against the abstract shown to the writer, so pulling a
+    different source's wording in under a record identified by the first
+    source's title and venue would quietly change what a figure is checked
+    against. Every parser already drops records without an abstract, so this
+    branch is a guard, not a common path.
+    """
+    if dup.pmcid and not kept.pmcid:
+        kept.pmcid, kept.is_open_access = dup.pmcid, dup.is_open_access
+    if dup.abstract and not kept.abstract:
+        kept.abstract = dup.abstract
+    if dup.citation_count > kept.citation_count:
+        kept.citation_count = dup.citation_count
+    if kept.year is None and dup.year is not None:
+        kept.year = dup.year
+    if dup.doi and not kept.doi:
+        kept.doi = dup.doi
+    if dup.authors and not kept.authors:
+        kept.authors = dup.authors
+    if dup.venue and not kept.venue:
+        kept.venue = dup.venue
+    if dup.url and not kept.url:
+        kept.url = dup.url
+
+
 def gather_evidence(
     queries: list[str],
     max_papers: int = 20,
@@ -974,8 +1028,8 @@ def gather_evidence(
     """
     global _recency_query_refused
     _recency_query_refused = False
-    seen: set[str] = set()
-    _first_by_title: dict[str, Paper] = {}
+    by_title: dict[str, Paper] = {}
+    by_doi: dict[str, Paper] = {}
     collected: list[Paper] = []
     # A source that has already refused once in this run will almost certainly
     # refuse again — the limits are per-minute and the run takes seconds. Each
@@ -992,11 +1046,11 @@ def gather_evidence(
         # so the module-level names are looked up fresh.
         #
         # arXiv goes last, and the order is load-bearing: dedupe is first-seen-
-        # wins on the normalised title, and a preprint usually shares its title
-        # with the published version. Querying arXiv last means the peer-
-        # reviewed record is the one kept, with the preprint discarded as its
-        # duplicate — the wrong way round would cite preprints for work that
-        # has since appeared in a journal.
+        # wins on the DOI, falling back to the normalised title, and a preprint
+        # usually shares its title with the published version. Querying arXiv
+        # last means the peer-reviewed record is the one kept, with the
+        # preprint discarded as its duplicate — the wrong way round would cite
+        # preprints for work that has since appeared in a journal.
         for name, search in (("semantic_scholar", search_semantic_scholar),
                              ("openalex", search_openalex),
                              ("europe_pmc", search_europe_pmc),
@@ -1032,21 +1086,29 @@ def gather_evidence(
                    else f"FAILED ({error}){suffix}"))
 
             for paper in results:
-                key = _normalize_title(paper.title)
-                if not key:
+                # DOI first, title second. A DOI is a stable identifier; a
+                # title is text, and any wording difference between two
+                # sources' copies of one record used to produce two candidates
+                # — two slots in the capped pool and two entries in a "N
+                # sources cited" count that should have said one (#139).
+                title_key = _normalize_title(paper.title)
+                doi_key = _normalize_doi(paper.doi)
+                if not title_key:
                     continue
-                if key in seen:
-                    # First-seen wins, but a duplicate from Europe PMC may know
-                    # something the kept copy does not: the PMCID that makes
-                    # full text fetchable. Merge that instead of discarding it.
-                    if paper.pmcid:
-                        kept = _first_by_title.get(key)
-                        if kept is not None and not kept.pmcid:
-                            kept.pmcid = paper.pmcid
-                            kept.is_open_access = paper.is_open_access
+                kept = by_doi.get(doi_key) if doi_key else None
+                if kept is None:
+                    kept = by_title.get(title_key)
+                if kept is not None:
+                    _merge_duplicate(kept, paper)
+                    # Register the duplicate's own keys against the kept copy,
+                    # so a third record matching either spelling merges too.
+                    by_title.setdefault(title_key, kept)
+                    if doi_key:
+                        by_doi.setdefault(doi_key, kept)
                     continue
-                seen.add(key)
-                _first_by_title[key] = paper
+                by_title[title_key] = paper
+                if doi_key:
+                    by_doi[doi_key] = paper
                 collected.append(paper)
 
     # Build a keyword set from the topic + core entity for a relevance signal.

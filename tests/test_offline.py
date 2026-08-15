@@ -1504,6 +1504,110 @@ def test_titles_arrive_without_markup() -> None:
     check("an OpenAlex record parses with a clean title", papers[0].title == clean)
 
 
+def test_candidate_papers_dedupe_by_doi() -> None:
+    """Papers are deduped by normalised DOI first, then by title (issue #139).
+
+    Two of three recent runs cited one paper twice because the search sources
+    spell the same DOI three ways (resolver URL, mixed case, bare) and the
+    titles differed by a subtitle or publisher markup.
+    """
+    from articlegen.sources import Paper, _normalize_doi
+    from articlegen import sources
+
+    # 1. _normalize_doi unit checks
+    expected = "10.1001/jamapsychiatry.2025.1317"
+    check("bare lowercase DOI normalises",
+          _normalize_doi("10.1001/jamapsychiatry.2025.1317") == expected)
+    check("mixed-case DOI is lowercased",
+          _normalize_doi("10.1001/JAMAPsychiatry.2025.1317") == expected)
+    check("https://doi.org/ prefix stripped",
+          _normalize_doi("https://doi.org/10.1001/jamapsychiatry.2025.1317") == expected)
+    check("http://dx.doi.org/ prefix stripped",
+          _normalize_doi("http://dx.doi.org/10.1001/jamapsychiatry.2025.1317") == expected)
+    check("doi: prefix stripped and trimmed",
+          _normalize_doi("doi: 10.1001/JAMAPsychiatry.2025.1317") == expected)
+    check("surrounding whitespace and punctuation stripped",
+          _normalize_doi("  https://doi.org/10.1001/jamapsychiatry.2025.1317.  ") == expected)
+    check("empty DOI returns empty string", _normalize_doi("") == "")
+    # Junk values ("n/a", "unknown") must return "" rather than becoming a shared merge key
+    # that would collapse unrelated records into one.
+    check("junk non-DOI returns empty string", _normalize_doi("n/a") == "")
+    check("unknown non-DOI returns empty string", _normalize_doi("unknown") == "")
+
+    reals = (sources.search_semantic_scholar, sources.search_openalex,
+             sources.search_europe_pmc, sources.search_arxiv)
+    try:
+        sources.search_semantic_scholar = lambda q, limit=15: []
+        sources.search_arxiv = lambda q, limit=15: []
+
+        # 2. Different casings/prefixes merge, keeping richer metadata and first-seen identity
+        oa_thin = Paper(
+            title="Janik Study: A Randomized Trial on Psychiatric Care",
+            abstract="Abstract from OpenAlex",
+            doi="https://doi.org/10.1001/jamapsychiatry.2025.1317",
+            citation_count=0,
+            year=None,
+            source="openalex",
+        )
+        epmc_rich = Paper(
+            title="Janik Study",
+            abstract="Abstract from EPMC",
+            doi="10.1001/JAMAPsychiatry.2025.1317",
+            pmcid="PMC55",
+            is_open_access=True,
+            citation_count=12,
+            year=2025,
+            source="europe_pmc",
+        )
+        sources.search_openalex = lambda q, limit=15: [oa_thin]
+        sources.search_europe_pmc = lambda q, limit=15: [epmc_rich]
+        sources.clear_search_cache()
+        merged = sources.gather_evidence(["q"], use_cache=False)
+
+        check("same DOI in different formats merges to one record", len(merged) == 1)
+        # First-seen title wins: this preserves the invariant that arXiv querying last
+        # discards a preprint in favour of the peer-reviewed published version.
+        check("first-seen title is kept",
+              merged[0].title == "Janik Study: A Randomized Trial on Psychiatric Care")
+        check("pmcid is enriched from duplicate",
+              merged[0].pmcid == "PMC55" and merged[0].is_open_access)
+        check("citation count is enriched from duplicate", merged[0].citation_count == 12)
+        check("year is enriched from duplicate", merged[0].year == 2025)
+
+        # 3. No-DOI records still dedupe by title
+        no_doi_1 = Paper(title="No DOI Study", abstract="Abs 1", doi="")
+        no_doi_2 = Paper(title="No DOI Study", abstract="Abs 2", doi="")
+        sources.search_openalex = lambda q, limit=15: [no_doi_1]
+        sources.search_europe_pmc = lambda q, limit=15: [no_doi_2]
+        sources.clear_search_cache()
+        merged_no_doi = sources.gather_evidence(["q"], use_cache=False)
+        check("no-DOI records still dedupe by title", len(merged_no_doi) == 1)
+
+        # 4. Distinct DOIs never merge on DOI
+        diff_1 = Paper(title="Title A", abstract="Abs A", doi="10.1000/1")
+        diff_2 = Paper(title="Title B", abstract="Abs B", doi="10.1000/2")
+        sources.search_openalex = lambda q, limit=15: [diff_1]
+        sources.search_europe_pmc = lambda q, limit=15: [diff_2]
+        sources.clear_search_cache()
+        merged_diff = sources.gather_evidence(["q"], use_cache=False)
+        check("distinct DOIs and titles never merge", len(merged_diff) == 2)
+
+        # Same title with distinct DOIs still merges via title fallback (the preprint case)
+        preprint_pub_1 = Paper(title="Same Title Everywhere", abstract="Pub abs", doi="10.1000/journal.1")
+        preprint_pub_2 = Paper(title="Same Title Everywhere", abstract="Preprint abs", doi="10.48550/arxiv.1")
+        sources.search_openalex = lambda q, limit=15: [preprint_pub_1]
+        sources.search_europe_pmc = lambda q, limit=15: [preprint_pub_2]
+        sources.clear_search_cache()
+        merged_preprint = sources.gather_evidence(["q"], use_cache=False)
+        check("same title with different DOIs merges via title (preprint vs published)",
+              len(merged_preprint) == 1)
+
+    finally:
+        (sources.search_semantic_scholar, sources.search_openalex,
+         sources.search_europe_pmc, sources.search_arxiv) = reals
+        sources.clear_search_cache()
+
+
 def test_arxiv_rate_limit_is_honoured() -> None:
     """arXiv asks for three seconds between requests; there is no key to throttle.
 
@@ -4640,6 +4744,7 @@ def main(argv: list[str] | None = None) -> int:
         test_search_cache, test_front_end_models_match_the_allowlist,
         test_polite_pool_identification, test_europe_pmc_parsing,
         test_arxiv_parsing, test_titles_arrive_without_markup,
+        test_candidate_papers_dedupe_by_doi,
         test_arxiv_rate_limit_is_honoured,
         test_ungrounded_citations_leave_no_trace,
         test_full_text_grounding, test_pipeline_fetches_full_text,
