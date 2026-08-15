@@ -45,8 +45,8 @@ articlegen/
                claude-cli, gemini-cli
   ideas.py     LLM: theme -> shortlist of article ideas
   writer.py    LLM: plan_queries -> curate_sources -> write_article
-  sources.py   Semantic Scholar + OpenAlex + Europe PMC fetch, 24h cache, dedupe,
-               rank; open-access full-text fetch + the excerpt budget
+  sources.py   Semantic Scholar + OpenAlex + Europe PMC + arXiv fetch, 24h
+               cache, dedupe, rank; open-access full-text fetch + excerpt budget
   verify.py    deterministic: flag article statistics absent from what the
                writer was shown (abstracts + full-text excerpts)
   style.py     deterministic: flag prose that breaks journal writing conventions
@@ -261,6 +261,31 @@ and sections intact.
   the same acceptance rule.
 - **Ranking**: topic overlap first, then `citation_weight + recency`, decaying
   over `RECENCY_HALF_LIFE` on the citation term's scale.
+- **arXiv is the fourth search source, and it is not a general one.** It covers
+  what Europe PMC does not — computing, physics, engineering, statistics — and
+  returns *nothing* for the clinical topics this is mostly used for
+  (`seclusion AND restraint AND psychiatric`: 0 results, measured). An empty
+  arXiv outcome on a mental-health topic is the source working, not failing.
+  Three things about it differ from the other three and each is deliberate:
+  it returns **Atom XML, not JSON** (`resp.text`, not `.json()`); it publishes
+  **no citation counts**, so its papers reach `_rank_score` with a citation
+  weight of 0 and rank on overlap and recency alone; and it reports a **bad
+  query as a normal-looking entry** whose id points at `/api/errors`, which
+  parsed naively becomes a source titled "Error" in a real reference list.
+- **`_arxiv_query` ANDs the terms — do not "improve" it to OR or to a phrase.**
+  Measured live: "machine learning emergency department triage" as a five-term
+  AND returns 35 on-topic papers, ORed returns 135,233, quoted returns 0. arXiv
+  reads a space after `all:` as the end of the term, so the raw query searches
+  for its first word alone. Function words are dropped only so a query made of
+  nothing else cannot collapse to `all:the`.
+- **arXiv is queried last and the order is load-bearing.** Dedupe is
+  first-seen-wins on the normalised title and a preprint usually shares its
+  title with the published version, so querying it last is what keeps the
+  peer-reviewed record and discards the preprint. Reordering the tuple in
+  `gather_evidence` starts citing preprints for published work.
+- **arXiv gets a 3s client-side throttle** (`_ARXIV_MIN_INTERVAL`). There is no
+  key, so the penalty for ignoring their documented interval falls on the
+  egress IP — shared, on the hosted backend.
 - **A source that refuses once is skipped for the rest of the run**
   (`gather_evidence`'s `exhausted` set). Note the interaction with
   `_MAX_BACKOFF`: a source asking for a cool-off longer than 30s fails

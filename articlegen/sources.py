@@ -1,6 +1,6 @@
 """Fetch candidate evidence (papers with abstracts) from open scholarly APIs.
 
-Three free, keyless sources are queried:
+Four free, keyless sources are queried:
 
 - Semantic Scholar Graph API (an optional API key raises rate limits — but
   keys are no longer granted to free-domain emails or third-party apps, so
@@ -9,6 +9,10 @@ Three free, keyless sources are queried:
 - OpenAlex (an optional mailto address gets you into the "polite pool")
 - Europe PMC (no key, no mailto; biomedical/life-science coverage, which
   suits the mental-health topics this is mostly used for)
+- arXiv (no key, no mailto; preprints in computing, physics, engineering,
+  statistics and economics — the disciplines Europe PMC does not index, and
+  where a non-clinical topic would otherwise be left to the two general
+  sources alone)
 
 All can be flaky under shared rate limits, so each query tolerates failures —
 as long as one source returns results the pipeline keeps going.
@@ -28,6 +32,7 @@ import requests
 SEMANTIC_SCHOLAR_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
 OPENALEX_URL = "https://api.openalex.org/works"
 EUROPE_PMC_URL = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+ARXIV_URL = "https://export.arxiv.org/api/query"
 UNPAYWALL_URL = "https://api.unpaywall.org/v2/{doi}"
 
 # How each source is named in an article's Methods section. Keyed by the
@@ -36,6 +41,7 @@ DATABASE_NAMES = {
     "semantic_scholar": "Semantic Scholar Graph API",
     "openalex": "OpenAlex",
     "europe_pmc": "Europe PMC",
+    "arxiv": "arXiv",
 }
 
 # Identify ourselves rather than sending requests' default
@@ -416,6 +422,131 @@ def search_europe_pmc(query: str, limit: int = 15) -> list[Paper]:
             )
         )
     return papers
+
+
+# arXiv asks callers to leave three seconds between requests. Nothing enforces
+# it per-key (there is no key), so the penalty for ignoring it is a block on the
+# egress IP — which on the hosted backend is shared. A draft makes one arXiv
+# call per planned query, so honouring it costs at most a few seconds spread
+# across a run that already takes a minute.
+_ARXIV_MIN_INTERVAL = 3.0
+_arxiv_lock = threading.Lock()
+_arxiv_last_call = 0.0
+
+# arXiv's query parser reads a space after `all:` as the end of the term, so a
+# multi-word topic sent verbatim searches for the first word alone. Terms are
+# ANDed instead.
+#
+# Measured against the live API, ANDing is the only one of the three
+# expressions that behaves: "machine learning emergency department triage" as a
+# five-term AND returns 35 on-topic papers, the same words ORed return 135,233
+# about anything with a grid in it, and as a quoted phrase, 0.
+#
+# Function words are dropped before the AND. Not for precision — every paper
+# contains "the", so ANDing it excludes nothing — but because a query made of
+# nothing else would otherwise become `all:the`, which matches the whole
+# archive and ranks it by relevance to "the".
+_ARXIV_MAX_TERMS = 8
+_ARXIV_STOPWORDS = frozenset(
+    "a an and are as at be by for from in is of on or the to with".split())
+
+_ATOM = "{http://www.w3.org/2005/Atom}"
+_ARXIV_NS = "{http://arxiv.org/schemas/atom}"
+
+
+def _arxiv_query(query: str) -> str:
+    """A free-text topic as an arXiv `search_query` expression.
+
+    Short words are kept when they are all there is: "AI in ED" becomes
+    `all:AI AND all:ED`, which returns 123 papers where the quoted phrase
+    returns 0.
+    """
+    words = [w for w in re.split(r"[^A-Za-z0-9]+", query) if w]
+    terms = [w for w in words if w.lower() not in _ARXIV_STOPWORDS] or words
+    return " AND ".join(f"all:{t}" for t in terms[:_ARXIV_MAX_TERMS])
+
+
+def search_arxiv(query: str, limit: int = 15) -> list[Paper]:
+    """Preprints from arXiv, in the disciplines Europe PMC does not cover.
+
+    Two things differ from the other three sources and both are deliberate.
+    arXiv publishes no citation counts, so every paper arrives at `_rank_score`
+    with a citation weight of zero and is ranked on topic overlap and recency
+    alone — right for a preprint server, where the newest work is the point.
+    And these are preprints: `venue` says so unless the record carries a
+    `journal_ref`, because the reference list is the only place a reader learns
+    that a source was never peer reviewed.
+    """
+    import xml.etree.ElementTree as ET
+
+    with _arxiv_lock:
+        global _arxiv_last_call
+        wait = _ARXIV_MIN_INTERVAL - (time.time() - _arxiv_last_call)
+        if wait > 0:
+            time.sleep(wait)
+        _arxiv_last_call = time.time()
+
+    resp = _get_with_retry(
+        ARXIV_URL,
+        params={
+            "search_query": _arxiv_query(query),
+            "start": 0,
+            "max_results": limit,
+            "sortBy": "relevance",
+        },
+        headers={},
+    )
+    # Atom, not JSON — arXiv offers no JSON representation. A malformed body
+    # raises ParseError, which `_search_once` records like any other failure.
+    root = ET.fromstring(resp.text)
+
+    papers = []
+    for entry in root.findall(f"{_ATOM}entry"):
+        entry_id = (entry.findtext(f"{_ATOM}id") or "").strip()
+        # arXiv reports a bad query as a normal-looking entry whose id points at
+        # /api/errors. Parsed as a paper it becomes a source titled "Error".
+        if "/api/errors" in entry_id:
+            continue
+        abstract = _collapse(entry.findtext(f"{_ATOM}summary") or "")
+        if not abstract:
+            continue
+        published = (entry.findtext(f"{_ATOM}published") or "")[:4]
+        try:
+            year = int(published)
+        except ValueError:
+            year = None
+        authors = [
+            name
+            for a in entry.findall(f"{_ATOM}author")
+            if (name := (a.findtext(f"{_ATOM}name") or "").strip())
+        ]
+        journal_ref = _collapse(entry.findtext(f"{_ARXIV_NS}journal_ref") or "")
+        papers.append(
+            Paper(
+                title=_collapse(entry.findtext(f"{_ATOM}title") or ""),
+                abstract=abstract,
+                year=year,
+                authors=authors,
+                venue=journal_ref or "arXiv preprint",
+                # arXiv publishes no citation counts. Left at 0 rather than
+                # guessed; see the docstring.
+                citation_count=0,
+                url=entry_id,
+                doi=(entry.findtext(f"{_ARXIV_NS}doi") or "").strip(),
+                source="arXiv",
+            )
+        )
+    return papers
+
+
+def _collapse(text: str) -> str:
+    """Whitespace-collapse a field. arXiv wraps abstracts and titles at column 80.
+
+    Same reason `_strip_markup` exists: `verify.py` checks a statistic by
+    substring presence, so a figure split across a line break would be reported
+    unverifiable.
+    """
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _normalize_title(title: str) -> str:
@@ -822,9 +953,17 @@ def gather_evidence(
         # called, and two lambdas are both `<lambda>`), and these keys index
         # DATABASE_NAMES and the outcome records. The tuple is rebuilt each call
         # so the module-level names are looked up fresh.
+        #
+        # arXiv goes last, and the order is load-bearing: dedupe is first-seen-
+        # wins on the normalised title, and a preprint usually shares its title
+        # with the published version. Querying arXiv last means the peer-
+        # reviewed record is the one kept, with the preprint discarded as its
+        # duplicate — the wrong way round would cite preprints for work that
+        # has since appeared in a journal.
         for name, search in (("semantic_scholar", search_semantic_scholar),
                              ("openalex", search_openalex),
-                             ("europe_pmc", search_europe_pmc)):
+                             ("europe_pmc", search_europe_pmc),
+                             ("arxiv", search_arxiv)):
             # The cache is consulted before the exhausted set, not after: a hit
             # costs nothing and carries no risk of deepening a throttle, so a
             # source that has already refused this run can still contribute
