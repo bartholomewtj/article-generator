@@ -4077,6 +4077,52 @@ def test_ungrounded_citations_leave_no_trace() -> None:
           rendered("dropped [9] here [2].", {2: 2}) == "dropped here.[2]")
 
 
+def test_second_hand_figures_are_a_last_resort() -> None:
+    """A draft opened its Introduction on three figures the writer never saw at
+    first hand (e.g. "A meta-analysis cited within a Canadian pilot study estimated
+    ... 14.4%"). The number is real in the quoting paper, so verify.check_statistics
+    confirms the quotation, but nobody checked whether the original paper reported it.
+
+    The writer is instructed to avoid second-hand figures in load-bearing slots
+    (title, abstract, key_points, opening claim of Introduction) when first-hand
+    alternatives exist, and to keep "cited within"-style attribution when they are
+    unavoidable. This test pins that the rule survives every system-prompt derivation
+    and does not duplicate substitution targets.
+    """
+    from articlegen import writer
+
+    # 1. Rule is in _WRITER_SYSTEM
+    check("second-hand figure rule is in writer system prompt",
+          "SECOND-HAND" in writer._WRITER_SYSTEM)
+
+    # 2. Names the slots it protects
+    for slot in ("`title`", "`abstract`", "`key_points`", "Introduction"):
+        check(f"second-hand figure rule protects slot: {slot}",
+              slot in writer._WRITER_SYSTEM)
+
+    # 3. Survives every derivation
+    derivations = (
+        ("_WRITER_SYSTEM_FULLTEXT", writer._WRITER_SYSTEM_FULLTEXT),
+        ("_REVISE_SYSTEM", writer._REVISE_SYSTEM),
+        ("_REVISE_SYSTEM_FULLTEXT", writer._REVISE_SYSTEM_FULLTEXT),
+        ("_REVISE_PATCH_SYSTEM", writer._REVISE_PATCH_SYSTEM),
+        ("_REVISE_PATCH_SYSTEM_FULLTEXT", writer._REVISE_PATCH_SYSTEM_FULLTEXT),
+    )
+    for name, prompt in derivations:
+        check(f"second-hand figure rule survives into {name}",
+              "SECOND-HAND" in prompt)
+
+    # 4. No substitution target appears twice in _WRITER_SYSTEM
+    for old, _ in writer._FULLTEXT_SUBSTITUTIONS:
+        check(f"substitution target appears exactly once: {old[:40]}…",
+              writer._WRITER_SYSTEM.count(old) == 1)
+
+    # 5. Preserves honest attribution phrasing
+    for name, prompt in (("_WRITER_SYSTEM", writer._WRITER_SYSTEM),) + derivations:
+        check(f"'cited within' attribution phrasing preserved in {name}",
+              "cited within" in prompt)
+
+
 def test_full_text_grounding() -> None:
     """Full-text mode: fetch only what is truly open access, show a bounded
     excerpt, tell the model the truth about its inputs, and verify statistics
@@ -5004,6 +5050,7 @@ def main(argv: list[str] | None = None) -> int:
         test_preprints_are_marked_as_preprints,
         test_arxiv_rate_limit_is_honoured,
         test_ungrounded_citations_leave_no_trace,
+        test_second_hand_figures_are_a_last_resort,
         test_full_text_grounding, test_pipeline_fetches_full_text,
         test_full_text_order_favours_direct_and_recent,
         test_pmcid_is_resolved_by_doi,

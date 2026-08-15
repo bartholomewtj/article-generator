@@ -439,6 +439,34 @@ What to watch on the next few real runs:
   Whether 18 is still the right number is a separate question with its own
   measurement.
 
+### `#142` — load-bearing statistics arrived second-hand
+
+A draft from the 2026-08-15 runs opened its Introduction with three numbers the
+writer never saw at first hand (14.4%, 15.8% and 25.6% restraint-seclusion
+prevalence; 25–47% PTSD; and a Cochrane review quoted inside a realist review).
+The prose labelled this honestly ("a meta-analysis cited within a Canadian pilot
+study estimated…"), but `verify.check_statistics` searches only the material the
+writer was shown. The quoted figure is present in that text, so it verifies —
+the check can only ever confirm that the quoting paper printed the number, not
+that the originating study reported it. If the quoting paper misquoted, the error
+entered the article with a citation that looked verified.
+
+Chasing nested references — resolving a DOI mentioned inside body text and
+fetching the original study — would introduce a new fetch path, new failure modes,
+and no guarantee the nested work is open access. That path was left out of scope.
+
+Instead, the writer's system prompt now instructs it to avoid building the
+`title`, `abstract`, `key_points` or the opening claim of the Introduction on a
+figure its source attributes to another work, whenever any supplied source
+reports a comparable figure at first hand. Where a second-hand figure is the only
+evidence available, the existing "cited within"-style attribution is preserved so
+the reader can see it is second-hand, citing the source actually read.
+
+Because this is a prompt-side rule without deterministic enforcement, it is a
+tendency rather than a guarantee: a future draft may still occasionally lead with
+a quoted figure if no first-hand alternative exists or if the model leans toward
+it. Refs #142.
+
 ---
 
 ## Web app and deployment

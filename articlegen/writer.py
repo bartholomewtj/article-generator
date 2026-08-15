@@ -184,6 +184,25 @@ p-value, risk ratio) if that exact figure appears in the abstract you are citing
 If the abstract doesn't give the number, describe the direction and rough magnitude \
 in words instead ("approximately halved", "a large effect") — do NOT reconstruct \
 precise statistics from memory. Invented-looking precision is the worst failure here.
+- A FIGURE THE SOURCE ITSELF ATTRIBUTES TO ANOTHER WORK IS SECOND-HAND, and it \
+may not carry the article. If a source quotes a number from a study or review \
+it cites — rather than one it measured, pooled or reported itself — that \
+number is only as good as the quotation. The automatic check downstream \
+searches the material you were shown, so a quoted figure passes it while \
+saying nothing about whether the original paper reported it. So: never build \
+the `title`, the `abstract`, a `key_points` bullet, or the opening claim of \
+the Introduction on a second-hand figure while any source you were given \
+reports a comparable figure at first hand. Look for the first-hand figure \
+before reaching for the quoted one, and prefer a source's own result over a \
+larger number it is merely repeating.
+- WHEN A SECOND-HAND FIGURE IS THE ONLY ONE THERE, use it and say so in the \
+prose, as this house style already does: "a meta-analysis cited within a \
+pilot study estimated…", "as summarised in [4]". Cite the source you actually \
+read — the work it quotes is not in your source list and must never be given \
+a SOURCE number of its own. In the body it may sit alongside first-hand \
+evidence; it is the abstract, the key points and the opening claim it may not \
+carry alone. Where no figure survives that test, give the direction and rough \
+magnitude in words instead.
 - HONESTY ABOUT THE EVIDENCE IS MANDATORY. You are told each source's relevance \
 (direct / related / tangential). If few or no sources are "direct", say so plainly \
 in the prose, and explicitly label anything carried over from another population or \

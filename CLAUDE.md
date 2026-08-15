@@ -100,6 +100,7 @@ behaviour it describes.
 | Titles carry no publisher markup | `test_titles_arrive_without_markup` |
 | One paper is one candidate, however its DOI is spelled | `test_candidate_papers_dedupe_by_doi` |
 | A preprint is labelled wherever it is listed | `test_preprints_are_marked_as_preprints` |
+| A load-bearing figure is not quoted at second hand when a first-hand one exists | `test_second_hand_figures_are_a_last_resort` |
 | The candidate-pool default lives in one constant | `test_the_candidate_pool_is_big_enough_to_curate` |
 
 **Not pinned by a test** — these need the reasoning, because nothing else
