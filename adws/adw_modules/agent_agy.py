@@ -41,7 +41,12 @@ Five things are load-bearing here:
    longer; the flag is raised to hours or every long phase dies looking like a
    hang.
 
-5. **Cost is zero by construction.** agy draws on Gemini subscription quota;
+5. **The `schedule` tool never fires in print mode.** An agent that calls it
+   waits forever, silently. The stream is watched for silence
+   (AGY_IDLE_TIMEOUT_SECONDS, default 10 min): a stalled child is killed and
+   the turn re-sent, and the builder prompt forbids the tool outright.
+
+6. **Cost is zero by construction.** agy draws on Gemini subscription quota;
    there is no per-token bill and the CLI reports no cost. Traces show tokens
    but 0.0 dollars — that is correct, not missing data.
 
@@ -57,12 +62,15 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import queue
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import Callable, Optional
 
-from .control import RateLimited, UpstreamError, fake_rate_limit_due, reset_delay
+from .control import (RateLimited, UpstreamError, capture_limit_event, capture_notice,
+                      fake_rate_limit_due, reset_delay)
 from .data_types import PiRequest, PiResult
 from .utils import now_iso, operator_env
 
@@ -87,6 +95,15 @@ SKIP_PERMISSIONS = os.environ.get("AGY_ASK_PERMISSIONS", "") != "1"
 
 PRINT_TIMEOUT = os.environ.get("AGY_PRINT_TIMEOUT", "240m")
 
+# How long the stream may go silent before the turn is judged stalled. agy's
+# built-in `schedule` tool never fires in print mode, so a builder that calls
+# it ("check vitest in 10 s") sits until --print-timeout — hours — with no
+# events at all (issue #52). A working turn emits a step_update every few
+# seconds; a long test suite is one tool step, but the CLI still streams its
+# start. Silence for this long means nothing is coming. 0 disables the check.
+IDLE_TIMEOUT_SECONDS = float(os.environ.get("AGY_IDLE_TIMEOUT_SECONDS", "600"))
+IDLE_RESEND_SLEEP_SECONDS = 5.0
+
 # `thinking` in the config is pi's seven-rung ladder; agy's --effort has
 # three. Clamp the ends rather than error. Most agy model ids ALREADY carry an
 # effort suffix (gemini-3.6-flash-high), and the CLI rejects --effort beside
@@ -106,11 +123,21 @@ def _effort_args(model_id: str, thinking: str) -> list[str]:
 # Steps that are conversation plumbing, not tool work.
 NON_TOOL_STEPS = {"user_input", "agent_response", "checkpoint", "unknown", ""}
 
+# Where a reader is sent to correct the guess after a captured event. agy's
+# markers are here, not in control.py, and naming the wrong file is how the
+# correction never gets made.
+AGY_MARKER_TABLE = "RATE_LIMIT_MARKERS in adw_modules/agent_agy.py"
+
 # Markers that make a failed result a rate limit rather than an unknown error.
 # Gemini quota exhaustion surfaces as 429 / RESOURCE_EXHAUSTED; per-minute
 # quotas reset fast, so the default sleep is short.
+# "timeout waiting for response" is not a quota event: it is agy's print mode
+# giving up on a stalled response (seen when an agent calls the `schedule`
+# tool, whose wake-up never fires in print mode). The stall is transient per
+# send, so it earns the same sleep-and-resend treatment.
 RATE_LIMIT_MARKERS = ("rate limit", "rate_limit", "429", "resource_exhausted",
-                      "quota", "too many requests")
+                      "quota", "too many requests",
+                      "timeout waiting for response")
 RATE_LIMIT_SLEEP_SECONDS = 120.0
 
 # Fallback ceilings. Gemini 3.x models advertise a 1M window; agy's stream
@@ -313,6 +340,33 @@ def _classify_failure(result_obj: dict, stderr: str) -> tuple[str, str]:
     return "upstream", detail[:400] or "no detail in the result event"
 
 
+def _lines_or_stall(process, idle_seconds: float):
+    """Yield stdout lines; yield None once and stop if the stream goes silent.
+
+    A blocking `for line in process.stdout` cannot notice silence, so a
+    thread reads and the main loop waits on a queue with a timeout. On a
+    stall the child is killed here, so the caller's `process.wait()` returns.
+    """
+    lines: "queue.Queue[Optional[str]]" = queue.Queue()
+
+    def pump():
+        for line in process.stdout:
+            lines.put(line)
+        lines.put(None)
+
+    threading.Thread(target=pump, daemon=True).start()
+    while True:
+        try:
+            line = lines.get(timeout=idle_seconds if idle_seconds > 0 else None)
+        except queue.Empty:
+            process.kill()
+            yield None
+            return
+        if line is None:
+            return
+        yield line
+
+
 def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
         on_spawn: Optional[Callable[[int], None]] = None,
         on_exit: Optional[Callable[[int], None]] = None) -> PiResult:
@@ -372,9 +426,13 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
 
     minted: Optional[str] = None
     terminal: dict | None = None
+    stalled = False
     with raw_path.open("a") as raw:
         assert process.stdout is not None
-        for line in process.stdout:
+        for line in _lines_or_stall(process, IDLE_TIMEOUT_SECONDS):
+            if line is None:
+                stalled = True
+                break
             raw.write(line)
             raw.flush()
             line = line.strip()
@@ -413,6 +471,16 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
     if on_exit:
         on_exit(process.pid)
 
+    if stalled:
+        # Not a rate limit, but it wants the same treatment: sleep briefly and
+        # send again without spending the phase's JSON/gate retries. The
+        # conversation is not recorded (returncode is non-zero), so the
+        # resend starts fresh; whatever the agent wrote to disk is still there.
+        raise RateLimited(
+            f"agy stalled — no stream event for {IDLE_TIMEOUT_SECONDS:.0f}s, killed "
+            "(usually a `schedule`/background wait that never fires in print mode)",
+            IDLE_RESEND_SLEEP_SECONDS, None)
+
     # Remember whatever conversation the CLI actually used, once it finished
     # cleanly — recording a crashed start would send the next call to
     # --conversation an id whose context may hold nothing.
@@ -429,7 +497,15 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
     status = str(((terminal or {}).get("result") or {}).get("status") or "")
     if terminal is not None and status != "SUCCESS":
         verdict, detail = _classify_failure(terminal.get("result") or {}, stderr)
+        # Same reasoning as agent_cc: capture before raising, and capture the
+        # unrecognised bucket too, because that is where a real limit lands if
+        # the markers below are wrong. Issue #9.
+        captured = capture_limit_event(terminal, verdict, detail, raw_path,
+                                       source="agy")
         if verdict == "rate_limit":
+            notice = capture_notice(captured, verdict, AGY_MARKER_TABLE)
+            if notice:
+                print(notice)
             raise RateLimited(f"rate limited — {detail}",
                               RATE_LIMIT_SLEEP_SECONDS, terminal)
         raise UpstreamError(
@@ -439,8 +515,7 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
             f"  the CLI said: {detail}\n"
             "  what to do: read the last lines of the raw stream at\n"
             f"    {raw_path}\n"
-            "  if it turns out to be a rate limit, add its shape to "
-            "RATE_LIMIT_MARKERS in adw_modules/agent_agy.py")
+            + capture_notice(captured, verdict, AGY_MARKER_TABLE))
 
     if result.returncode != 0 and not result.text:
         raise RuntimeError(f"agy exited {result.returncode}: {stderr.strip()[-800:]}")

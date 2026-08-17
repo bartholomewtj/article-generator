@@ -64,7 +64,7 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
                    diff=changeset.diff_path)
 
         stalled = False
-        with run.phase(PhaseParams(name=f"review_{i}", kind="agent", owner="reviewer",
+        with run.phase(PhaseParams(name=f"review_{i}", kind="agent", owner="reviewer", retries=1,
                                    description="Rule on every requirement in the spec, against the code on disk")) as ph:
             review = ph.call(AgentCall(output_type=ReviewOutput, prompt=prompt,
                                        previous=changes.as_envelope(changeset, REVIEW_NOTES),

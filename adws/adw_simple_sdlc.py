@@ -139,7 +139,7 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
                    diff=changeset.diff_path)
 
         stalled = False
-        with run.phase(PhaseParams(name=f"review_{i}", kind="agent", owner="reviewer",
+        with run.phase(PhaseParams(name=f"review_{i}", kind="agent", owner="reviewer", retries=1,
                                    description="Confirm the build matches the plan")) as ph:
             review = ph.call(AgentCall(output_type=ReviewOutput, prompt=prompt,
                                        previous=changes.as_envelope(changeset, REVIEW_NOTES),
