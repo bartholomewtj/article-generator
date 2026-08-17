@@ -36,9 +36,15 @@ _FILE_LINE = re.compile(
 _COMMAND = re.compile(
     r'\b(?:pytest|docker run|just \w+|git (?:diff|status|log|show)\b'
     r'|python[^\n]*\.py|scripts/[\w./-]+\.py)')
+# The scope check ("only these files changed") is settled by `git diff --stat`
+# or `git status --short`, whose outcomes are "N files changed" and status
+# lines like "M src/x.yaml" -- so those count too. Batch 11 of #62 died on the
+# reviewer quoting exactly that output and the gate not recognising it.
 _OUTCOME = re.compile(
     r'\b(?:\d+\s+(?:passed|failed|skipped|errors?|coords?|entries)'
-    r'|exit(?:\s+code)?\s+\d+|no\s+(?:errors|mismatches|changes))\b', re.I)
+    r'|\d+\s+files?\s+changed'
+    r'|exit(?:\s+code)?\s+\d+|no\s+(?:errors|mismatches|changes))\b'
+    r'|(?:^|\s)[MADR?]{1,2}\s+[\w./\\-]+\.\w+', re.I)
 
 
 def _has_run_evidence(evidence: str) -> bool:

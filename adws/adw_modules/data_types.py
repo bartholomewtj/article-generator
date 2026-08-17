@@ -109,7 +109,7 @@ class ReviewFinding(BaseModel):
 
     requirement: str                # the ask, in the requester's words
     met: bool
-    evidence: str = ""              # where it lives, or what is missing
+    evidence: str = ""              # met: "path/file.ext:LINE ..." or a command + its result; not met: what is missing
 
 
 class ReviewOutput(EnvelopeBase):
