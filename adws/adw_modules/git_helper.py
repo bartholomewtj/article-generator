@@ -66,8 +66,8 @@ def commit_paths(message: str, paths: list[str]) -> str:
     pending = set(changed_files())
     owned = [p for p in dict.fromkeys(paths) if p in pending]
     scoped = _git("status", "--porcelain", "--", *owned) if owned else ""
-    head_message = _git("log", "-1", "--pretty=%B") if ref_exists("HEAD") else ""
-    if control.commit_already_made(scoped, head_message, message):
+    recent = _git("log", "-20", "--pretty=%B%x1e") if ref_exists("HEAD") else ""
+    if control.commit_already_made(scoped, recent, message):
         return _git("rev-parse", "--short", "HEAD")
     if not owned:
         raise RuntimeError(
@@ -96,8 +96,8 @@ def commit_all(message: str) -> str:
         raise RuntimeError(_NOT_A_REPO)
     _git("add", "-A")
     porcelain = _git("status", "--porcelain")
-    head_message = _git("log", "-1", "--pretty=%B") if ref_exists("HEAD") else ""
-    if control.commit_already_made(porcelain, head_message, message):
+    recent = _git("log", "-20", "--pretty=%B%x1e") if ref_exists("HEAD") else ""
+    if control.commit_already_made(porcelain, recent, message):
         return _git("rev-parse", "--short", "HEAD")
     if not porcelain:
         raise RuntimeError("nothing to commit — the preceding phases changed no files")

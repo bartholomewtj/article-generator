@@ -11,6 +11,7 @@ import json
 import os
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 
 # ── exceptions ────────────────────────────────────────────────────────────
@@ -68,7 +69,7 @@ class BudgetExceeded(SystemExit):
 
 RATE_LIMIT_TYPES = {"rate_limit_error", "rate_limit", "usage_limit_error"}
 RATE_LIMIT_MARKERS = ("rate limit", "rate_limit", "usage limit",
-                      "too many requests", "429")
+                      "session limit", "too many requests", "429")
 
 # Where a reset time might be, in the order we look. Values are read as:
 #   > 1_000_000_000  -> unix epoch seconds
@@ -140,6 +141,89 @@ def classify_result_event(event: dict) -> tuple[str, str]:
         return "upstream", detail
 
     return "ok", ""
+
+
+# --- Capture ------------------------------------------------------------
+#
+# The detection table above is guessed, and issue #9 has been waiting on one
+# thing only: a REAL limit event to check it against. That capture kept not
+# happening because it depended on a person noticing at the time and saving
+# the tail of a raw_output.jsonl that lives under sessions/, which is
+# gitignored and overwritten by the next run.
+#
+# So the run captures it itself. Both verdicts are written, and the second one
+# matters more: if the guessed table is WRONG, a real rate limit does not
+# arrive as "rate_limit" -- it arrives as "upstream", the bucket for terminal
+# errors we don't recognise. Capturing only the events we already classify
+# correctly would record exactly the evidence we don't need.
+#
+# The file sits beside sessions/ rather than inside it, so it is neither
+# churned by the next run nor gitignored: it turns up in `git status` the
+# moment it is written, which is the whole point.
+
+CAPTURE_FILENAME = "limit_events.jsonl"
+
+
+def capture_path(raw_output_path) -> Path:
+    """{data_dir}/limit_events.jsonl, found from an agent's raw stream path.
+
+    Located by walking up to the `sessions/` directory a run writes under, not
+    by counting path segments, so it survives a change in session layout.
+    """
+    path = Path(raw_output_path).resolve()
+    for parent in path.parents:
+        if parent.name == "sessions":
+            return parent.parent / CAPTURE_FILENAME
+    return path.parent / CAPTURE_FILENAME
+
+
+def capture_limit_event(event: dict, verdict: str, detail: str,
+                        raw_output_path, source: str = "") -> Path | None:
+    """Append one full terminal event to the capture file. Returns its path.
+
+    The WHOLE event, untruncated -- the point is the shape, and the shape is
+    what truncation removes. UpstreamError already prints 500 characters, which
+    is enough to read and not enough to correct the table from.
+
+    Never raises. A run that hit a rate limit is already having a bad time;
+    failing to write the evidence must not also fail the run.
+    """
+    if verdict not in ("rate_limit", "upstream"):
+        return None
+    try:
+        path = capture_path(raw_output_path)
+        record = {
+            "captured_at": datetime.now(timezone.utc).isoformat(),
+            "verdict": verdict,
+            "detail": detail,
+            "source": source,
+            "raw_output_path": str(raw_output_path),
+            "event": event,
+        }
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, default=str) + "\n")
+        return path
+    except Exception:
+        return None
+
+
+def capture_notice(path: Path | None, verdict: str,
+                   table: str = "RATE_LIMIT_TYPES / RATE_LIMIT_MARKERS in "
+                                "adw_modules/control.py") -> str:
+    """The line printed under a limit or unknown error, naming the evidence.
+
+    `table` is where THAT adapter keeps its markers — agy's live in
+    agent_agy.py, not here, and sending a reader to the wrong file is how the
+    correction never gets made.
+    """
+    if path is None:
+        return ""
+    if verdict == "rate_limit":
+        return (f"  captured the event to {path}\n"
+                f"  check it against {table} — issue #9 is waiting on exactly this")
+    return (f"  captured the whole event to {path}\n"
+            f"  if it turns out to be a rate limit, its shape belongs in {table}")
 
 
 def _parse_reset_value(value, now: float) -> float | None:
@@ -277,12 +361,17 @@ def replayable(phase_name: str, completed: dict[str, str]) -> bool:
     return phase_name in completed
 
 
-def commit_already_made(porcelain: str, head_message: str, message: str) -> bool:
-    """True when `git commit` would be a no-op repeat of the commit already
-    at HEAD: nothing staged AND HEAD's message is the one we were about to
-    write. This is what makes a resumed run walk past a commit phase instead
-    of dying on "nothing to commit"."""
-    return not porcelain.strip() and head_message.strip() == message.strip()
+def commit_already_made(porcelain: str, recent_messages: str, message: str) -> bool:
+    """True when `git commit` would be a no-op repeat of a commit the branch
+    already carries: nothing staged AND the message we were about to write is
+    already on a recent commit. HEAD alone is not enough — by the time a run
+    is resumed, an engineer may have stacked commits (a harness fix, say) on
+    top of the one the replayed phase wrote, so the last few messages are
+    searched, record-separated by \\x1e. This is what makes a resumed run walk
+    past a commit phase instead of dying on "nothing to commit"."""
+    wanted = message.strip()
+    made = any(m.strip() == wanted for m in recent_messages.split("\x1e"))
+    return not porcelain.strip() and made
 
 
 # --- The fake -------------------------------------------------------------

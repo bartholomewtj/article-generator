@@ -42,9 +42,19 @@ class PermissionBreach(RuntimeError):
     """An agent modified a path it was not permitted to modify."""
 
 
+# Where a snapshot keeps the commit HEAD pointed at. A NUL cannot appear in a
+# path, so this key can never collide with a file. It is compared by enforce()
+# and skipped by changed_paths(); a change of HEAD is not a changed path.
+HEAD_KEY = "\x00HEAD"
+
+
 def _git(args: list[str], cwd) -> str:
     result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
     return result.stdout if result.returncode == 0 else ""
+
+
+def _head(run) -> str:
+    return _git(["rev-parse", "HEAD"], run.repo_root).strip()
 
 
 def snapshot(run) -> dict[str, str]:
@@ -54,8 +64,13 @@ def snapshot(run) -> dict[str, str]:
     file still registers as a change. Untracked files are listed by name.
     Gitignored paths never appear, which is why the session runtime under
     `data_dir` — where handoff files legitimately land — needs no special case.
+
+    HEAD is recorded too, under HEAD_KEY. An agent that commits its own work
+    leaves the working tree clean, so a tree-only comparison would see nothing
+    — no touched paths for the commit phase, and no permission check on what
+    was committed. enforce() uses the recorded HEAD to notice and undo that.
     """
-    fingerprints: dict[str, str] = {}
+    fingerprints: dict[str, str] = {HEAD_KEY: _head(run)}
     for line in _git(["diff", "HEAD", "--numstat"], run.repo_root).splitlines():
         fields = line.split("\t")
         if len(fields) >= 3:
@@ -71,7 +86,43 @@ def snapshot(run) -> dict[str, str]:
 def changed_paths(before: dict[str, str], after: dict[str, str]) -> list[str]:
     """Every path whose state differs — appeared, vanished, or was rewritten."""
     return sorted({p for p in set(before) | set(after)
-                   if before.get(p) != after.get(p)})
+                   if p != HEAD_KEY and before.get(p) != after.get(p)})
+
+
+def _uncommit(run, head_before: str) -> str | None:
+    """If HEAD moved during the phase, put it back and keep the changes in the tree.
+
+    Agents commit their own work (issue #52: an agy builder ran `git commit`,
+    then a release bump on top). The factory owns commits: it lands work only
+    after tests and review pass, scoped to the paths the phase touched, under
+    the envelope's message. So the agent's commits are undone with a mixed
+    reset — the content stays in the working tree, exactly as if the agent had
+    stopped short of committing — and the normal snapshot comparison sees it.
+
+    Only a fast-forward from `head_before` is undone. If HEAD is somewhere
+    else (a checkout, a rebase, a reset by the agent), the history the phase
+    started from may be gone and a reset here could lose more; that is
+    reported, not repaired. Returns a description of what happened, or None
+    when HEAD did not move.
+    """
+    head_now = _head(run)
+    if not head_before or not head_now or head_before == head_now:
+        return None
+    ancestor = subprocess.run(["git", "merge-base", "--is-ancestor", head_before, "HEAD"],
+                              cwd=run.repo_root, capture_output=True)
+    if ancestor.returncode != 0:
+        raise PermissionBreach(
+            f"HEAD moved from {head_before[:7]} to {head_now[:7]} during the phase and "
+            "the old HEAD is not an ancestor of the new one — the agent rewrote or "
+            "switched history. Not touching it; inspect the repo by hand.")
+    count = _git(["rev-list", "--count", f"{head_before}..HEAD"], run.repo_root).strip()
+    reset = subprocess.run(["git", "reset", "-q", "--mixed", head_before],
+                           cwd=run.repo_root, capture_output=True, text=True)
+    if reset.returncode != 0:
+        raise PermissionBreach(
+            f"the agent made {count} commit(s) during the phase and they could not be "
+            f"undone: {reset.stderr.strip()[-300:]}")
+    return f"undid {count} commit(s) the agent made; the changes stay in the working tree"
 
 
 def _glob(pattern: str) -> re.Pattern:
@@ -170,6 +221,9 @@ def enforce(run, phase, agent: AgentConfig, before: dict[str, str]) -> list[str]
     reporting a failure, so anything the agent introduced outside its allowlist
     is rolled back before the phase dies. What it cannot undo, it names.
     """
+    undone = _uncommit(run, before.get(HEAD_KEY, ""))
+    if undone:
+        run.console.note(f"{agent.name} {undone}")
     after = snapshot(run)
     touched = changed_paths(before, after)
     breaches = [p for p in touched if not permitted(p, agent, run.cfg)]

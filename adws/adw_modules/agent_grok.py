@@ -42,7 +42,7 @@ from typing import Callable, Optional
 # Grok's stream is Claude Code's dialect, so the stream-side machinery is
 # imported rather than copied. These are private to agent_cc by convention,
 # but this module is the second consumer the convention anticipated.
-from .agent_cc import (ToolCallTracker, _context_tokens,  # noqa: F401 — ToolCallTracker is part of this module's interface
+from .agent_cc import (ToolCallTracker, apply_session_cost, _context_tokens,  # noqa: F401 — ToolCallTracker is part of this module's interface
                        _is_new_session, _pi_shaped_usage, _record_session)
 from .control import RateLimited, UpstreamError, classify_result_event, fake_rate_limit_due, reset_delay
 from .data_types import PiRequest, PiResult
@@ -210,9 +210,7 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
             elif etype == "result":
                 if event.get("result"):
                     result.text = str(event["result"])
-                cost = float(event.get("total_cost_usd") or 0.0)
-                result.cost += cost
-                result.usage.total_cost += cost
+                apply_session_cost(result, event)
                 terminal = event
 
             if on_event:
@@ -226,7 +224,10 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
     # Only mark the session created once the CLI actually made it — recording
     # up front would send the next call to --resume a session a crashed start
     # never wrote.
-    if starting and result.returncode == 0:
+    # A terminal result event counts too: the CLI wrote the session before it
+    # reported (say) a rate limit and exited non-zero, so the retry has to
+    # --resume it -- sending --session-id again fails with 'already in use'.
+    if starting and (result.returncode == 0 or terminal is not None):
         _record_session(session_dir, request.session_id)
 
     if terminal is not None:

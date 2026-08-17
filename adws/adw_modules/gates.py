@@ -27,8 +27,32 @@ _FILE_LINE = re.compile(
 )
 
 
+# A run the reviewer claims to have made, plus what it returned. Some
+# requirements have no line to point at -- "the suite passes", "the verifier
+# passes", "only these two files changed" are settled by running something,
+# not by opening a file. A command with its outcome is that kind of place.
+# A bare assertion still fails: "the suite passes" names no command and no
+# result.
+_COMMAND = re.compile(
+    r'\b(?:pytest|docker run|just \w+|git (?:diff|status|log|show)\b'
+    r'|python[^\n]*\.py|scripts/[\w./-]+\.py)')
+_OUTCOME = re.compile(
+    r'\b(?:\d+\s+(?:passed|failed|skipped|errors?|coords?|entries)'
+    r'|exit(?:\s+code)?\s+\d+|no\s+(?:errors|mismatches|changes))\b', re.I)
+
+
+def _has_run_evidence(evidence: str) -> bool:
+    e = evidence or ""
+    return bool(_COMMAND.search(e) and _OUTCOME.search(e))
+
+
 def _has_file_line(evidence: str) -> bool:
-    return bool(_FILE_LINE.search(evidence or ""))
+    """Did the reviewer name somewhere it actually looked?
+
+    A file:line, or a command with the result it returned. Anything else --
+    "looks good", a blank string, an unbacked claim -- is not evidence.
+    """
+    return bool(_FILE_LINE.search(evidence or "")) or _has_run_evidence(evidence)
 
 
 def _size(path: Path) -> str:
