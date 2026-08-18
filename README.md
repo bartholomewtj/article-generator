@@ -150,11 +150,11 @@ title ──▶ the model plans search queries
   ("clearly", "striking"), claims of proof and under-hedging are errors — and any
   failures go back to the model once for a targeted revision.
 - **Evidence-grounded, and honest about it.** The writer sees real abstracts —
-  and, for the most relevant sources with an open-access copy on Europe PMC,
-  the full text too — and cites them; every superscript links to a numbered
-  reference with a link back to the paper (DOI when available). Before writing,
-  each source is scored for how *directly* it addresses the exact topic — so
-  the article can say when direct evidence is thin instead of quietly
+  and, for the most relevant sources when an open-access copy can be
+  retrieved, the full text too — and cites them; every superscript links to a
+  numbered reference with a link back to the paper (DOI when available). Before
+  writing, each source is scored for how *directly* it addresses the exact topic
+  — so the article can say when direct evidence is thin instead of quietly
   substituting adjacent work. A deterministic check flags any statistic absent
   from the material the writer was actually shown, and Fig. 1 and Table 1 are
   built from the fetched records rather than written by the model. Clinical
@@ -239,27 +239,45 @@ Markdown, for easy editing), and refreshes `index.html` (your review queue).
   it sounds: the free tiers refuse often enough that a second attempt at the
   same query is likelier to fail than to find anything new.
 - The article is AI-written from **abstracts, plus the open-access full texts**
-  of the most relevant sources when Europe PMC can serve them. The Methods
-  section and Table 1's Read column state exactly how deeply each source was
-  read. Treat it as a well-sourced starting point: follow the source links
-  before relying on any specific claim.
+  of the most relevant sources when an open-access copy can be retrieved. The
+  Methods section and Table 1's Read column state exactly how deeply each
+  source was read. Treat it as a well-sourced starting point: follow the source
+  links before relying on any specific claim.
+
+### Full text via the `papers` CLI (optional)
+
+With the `papers` CLI installed (from the separate `paperfetch` project),
+full text is retrieved from any open-access copy across Unpaywall, OpenAlex,
+Semantic Scholar, and preprint servers — not just Europe PMC — so non-biomedical
+topics and arXiv papers stop being abstract-only.
+
+- **Install:** `pip install -e` the private `paperfetch` repository, then set
+  `PAPERS_MAILTO=you@example.com` to a real email address (scholarly APIs require
+  it and block made-up addresses; defaults to `OPENALEX_MAILTO` if unset).
+- **Executable path:** If `papers` is not on your PATH, set
+  `ARTICLEGEN_PAPERS_CMD="python -m papers"`.
+- **Optional:** Without `papers`, articlegen behaves exactly as before,
+  retrieving full text from Europe PMC only.
+- **Hosted deployment:** The hosted backend on Render does not have `paperfetch`
+  installed yet, so the public web app remains Europe PMC only.
 
 ## Layout
 
 ```
 articlegen/
-  cli.py       subcommands (ideas / draft / queue / demo / web)
-  pipeline.py  the draft pipeline — every caller, CLI and web, runs this one
-  web.py       HTTP server + JSON API behind the web front end
-  llm.py       provider layer: OpenRouter or Claude, auto-detected from keys
-  ideas.py     LLM call: theme -> shortlist of article ideas
-  writer.py    LLM calls: plan queries, write the article (structured JSON)
-  sources.py   Semantic Scholar + OpenAlex + Europe PMC + arXiv fetching,
-               dedupe, ranking
-  render.py    structured article -> journal-format HTML, Markdown, drafts/ index
-  verify.py    deterministic check of every figure against the abstracts
-  style.py     deterministic check of the prose against journal writing conventions
-  demo.py      built-in sample for `articlegen demo`
+  cli.py        subcommands (ideas / draft / queue / demo / web)
+  pipeline.py   the draft pipeline — every caller, CLI and web, runs this one
+  web.py        HTTP server + JSON API behind the web front end
+  llm.py        provider layer: OpenRouter or Claude, auto-detected from keys
+  ideas.py      LLM call: theme -> shortlist of article ideas
+  writer.py     LLM calls: plan queries, write the article (structured JSON)
+  sources.py    Semantic Scholar + OpenAlex + Europe PMC + arXiv fetching,
+                dedupe, ranking
+  paperfetch.py optional: full text via the separate papers CLI (paperfetch)
+  render.py     structured article -> journal-format HTML, Markdown, drafts/ index
+  verify.py     deterministic check of every figure against the abstracts
+  style.py      deterministic check of the prose against journal writing conventions
+  demo.py       built-in sample for `articlegen demo`
 docs/
   journal-style.md   the journal conventions we follow, and their sources
 tests/

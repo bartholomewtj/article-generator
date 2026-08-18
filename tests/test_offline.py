@@ -95,9 +95,9 @@ def test_per_request_api_key() -> None:
     # that can see a key.
     import re as _re
 
-    from articlegen import cli, pipeline, sources
+    from articlegen import cli, paperfetch, pipeline, sources
 
-    modules = (llm, web, writer, ideas, pipeline, cli, sources)
+    modules = (llm, web, writer, ideas, pipeline, cli, sources, paperfetch)
     assign = _re.compile(
         r"os\.environ\s*(?:\[[^\]]*\]\s*=(?!=)|\.update\s*\(|\.setdefault\s*\()")
     for module in modules:
@@ -4760,6 +4760,220 @@ def test_pipeline_fetches_full_text() -> None:
          pipeline.write_article, pipeline.fetch_full_text, pipeline.enforce_style) = saved
 
 
+def test_full_text_comes_from_the_papers_cli_when_it_is_there() -> None:
+    """The papers CLI (paperfetch) is tried first for open-access full text,
+    falling back to Europe PMC when absent or failing soft.
+    """
+    import json
+    import tempfile
+    from dataclasses import dataclass
+    from articlegen import paperfetch, pipeline, sources
+    from articlegen.sources import Paper
+
+    @dataclass
+    class FakeProc:
+        stdout: str = ""
+        stderr: str = ""
+        returncode: int = 0
+
+    class FakeResp:
+        def __init__(self, data=None, text=""):
+            self._data, self.text = data, text
+
+        def json(self):
+            return self._data if self._data is not None else {}
+
+    real_run = paperfetch.subprocess.run
+    real_which = paperfetch.shutil.which
+    real_get_with_retry = sources._get_with_retry
+
+    def reset_paperfetch():
+        paperfetch._AVAILABLE = None
+        paperfetch._ARGV = []
+        paperfetch._WARNED = False
+        sources.clear_search_cache()
+
+    try:
+        # 1. `ok` -> text returned, [3] stripped, full_text_via set to "papers"
+        reset_paperfetch()
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, suffix=".txt") as tf:
+            tf.write("Body text with 441 participants [3].")
+            tf_path = tf.name
+
+        try:
+            ok_record = json.dumps({
+                "status": "ok", "doi": "10.1234/sample", "read": tf_path,
+            })
+            run_calls = []
+            paperfetch.subprocess.run = lambda argv, **kw: (
+                run_calls.append((argv, kw)), FakeProc(stdout=ok_record, returncode=0)
+            )[1]
+            paperfetch.shutil.which = lambda cmd: "papers" if cmd == "papers" else None
+
+            p1 = Paper(title="p1", abstract="abs", doi="10.1234/sample")
+            text1 = sources.fetch_full_text(p1)
+            check("ok record returns text", "Body text with 441 participants" in text1)
+            check("brackets stripped from papers text", "[3]" not in text1)
+            check("paper.full_text_via is papers", p1.full_text_via == "papers")
+            check("subprocess.run was called once", len(run_calls) == 1)
+
+            # 2. Cached by DOI (different spelling: https://doi.org/10.1234/sample)
+            p2 = Paper(title="p2", abstract="abs", doi="https://doi.org/10.1234/sample")
+            text2 = sources.fetch_full_text(p2)
+            check("second fetch with equivalent DOI served from cache", text2 == text1)
+            check("cached hit sets full_text_via", p2.full_text_via == "papers")
+            check("subprocess was not called a second time", len(run_calls) == 1)
+        finally:
+            if os.path.exists(tf_path):
+                try:
+                    os.remove(tf_path)
+                except OSError:
+                    pass
+
+        # 3. Every non-ok status falls through to Europe PMC
+        fake_xml = "<article><body><sec><title>Body</title><p>Europe PMC body text</p></sec></body></article>"
+        epmc_calls = []
+        sources._get_with_retry = lambda url, params, headers: (
+            epmc_calls.append(url), FakeResp(text=fake_xml)
+        )[1]
+
+        def raise_timeout(argv):
+            raise paperfetch.subprocess.TimeoutExpired(argv, 120)
+
+        non_ok_cases = [
+            ("queued_ckn", lambda argv, **kw: FakeProc(stdout=json.dumps({"status": "queued_ckn"}), returncode=2)),
+            ("no_doi", lambda argv, **kw: FakeProc(stdout=json.dumps({"status": "no_doi"}), returncode=1)),
+            ("exit 1 empty stdout", lambda argv, **kw: FakeProc(stdout="", returncode=1)),
+            ("TimeoutExpired", lambda argv, **kw: raise_timeout(argv)),
+            ("bad JSON", lambda argv, **kw: FakeProc(stdout="not json", returncode=0)),
+            ("missing file", lambda argv, **kw: FakeProc(stdout=json.dumps({"status": "ok", "read": "C:\\nonexistent\\missing_12345.txt"}), returncode=0)),
+        ]
+
+        for case_name, runner in non_ok_cases:
+            reset_paperfetch()
+            epmc_calls.clear()
+            paperfetch.shutil.which = lambda cmd: "papers"
+            paperfetch.subprocess.run = runner
+
+            # Test paper with both DOI and PMCID/is_open_access
+            p = Paper(title="p", abstract="a", doi="10.9999/x", pmcid="PMC123", is_open_access=True)
+            res = sources.fetch_full_text(p)
+            check(f"non-ok case '{case_name}' falls through to Europe PMC", "Europe PMC body text" in res)
+            check(f"non-ok case '{case_name}' sets full_text_via to europe_pmc", p.full_text_via == "europe_pmc")
+            check(f"non-ok case '{case_name}' made Europe PMC request", len(epmc_calls) == 1)
+
+        # 4. Not on PATH -> today's behaviour
+        reset_paperfetch()
+        epmc_calls.clear()
+        run_called = []
+        paperfetch.shutil.which = lambda cmd: None
+        os.environ.pop("ARTICLEGEN_PAPERS_CMD", None)
+        paperfetch.subprocess.run = lambda argv, **kw: (run_called.append(argv), FakeProc())[1]
+
+        p_no_papers = Paper(title="p", abstract="a", doi="10.8888/y", pmcid="PMC456", is_open_access=True)
+        res_no_papers = sources.fetch_full_text(p_no_papers)
+        check("papers not on PATH -> available is False", not paperfetch.available())
+        check("papers not on PATH -> subprocess.run never called", len(run_called) == 0)
+        check("papers not on PATH -> Europe PMC produces text", "Europe PMC body text" in res_no_papers)
+        check("papers not on PATH -> full_text_via is europe_pmc", p_no_papers.full_text_via == "europe_pmc")
+
+        # 5. ARTICLEGEN_PAPERS_CMD="python -m papers"
+        reset_paperfetch()
+        cmd_calls = []
+        os.environ["ARTICLEGEN_PAPERS_CMD"] = "python -m papers"
+        try:
+            paperfetch.subprocess.run = lambda argv, **kw: (
+                cmd_calls.append((argv, kw)),
+                FakeProc(stdout=json.dumps({"status": "no_doi"}), returncode=1),
+            )[1]
+            paperfetch.fetch_via_papers("10.5555/cmd")
+            check("ARTICLEGEN_PAPERS_CMD was split into argv list", len(cmd_calls) == 1)
+            argv_used, kw_used = cmd_calls[0]
+            check("argv is list", isinstance(argv_used, list))
+            check("argv matches expected split command + get + doi",
+                  argv_used == ["python", "-m", "papers", "get", "10.5555/cmd"])
+            check("shell=True is absent from kwargs", "shell" not in kw_used or not kw_used["shell"])
+        finally:
+            os.environ.pop("ARTICLEGEN_PAPERS_CMD", None)
+
+        # 6. Pipeline loop: DOI-only paper fetched when papers available, skipped when not
+        reset_paperfetch()
+        doi_paper = Paper(title="doi only", abstract="a", doi="10.7777/doionly")
+        article = {"title": "t", "abstract": "x", "keywords": [], "sections": [],
+                   "key_points": [], "glossary": [], "references": [1]}
+        curation = {"relevance": {1: "direct"}, "most_relevant_index": 1, "counts": {"direct": 1}}
+
+        saved_pipe = (pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
+                      pipeline.write_article, pipeline.fetch_full_text, pipeline.enforce_style)
+        try:
+            pipeline.plan_queries = lambda topic, **kw: (["q"], "core")
+            pipeline.gather_evidence = lambda queries, **kw: (
+                kw.get("outcomes", []).append(
+                    {"source": "openalex", "query": "q", "count": 1, "error": "", "cached": False}
+                ),
+                [doi_paper],
+            )[1]
+            pipeline.curate_sources = lambda topic, p, **kw: curation
+            pipeline.write_article = lambda topic, p, **kw: dict(article)
+            pipeline.enforce_style = lambda a, **kw: (a, {"issues": [], "stats": {}})
+
+            # With papers available:
+            logs_with = []
+            paperfetch.shutil.which = lambda cmd: "papers"
+            def fake_fetch_ft_papers(p, **kw):
+                p.full_text_via = "papers"
+                return "text from papers"
+            pipeline.fetch_full_text = fake_fetch_ft_papers
+
+            reset_paperfetch()
+            draft_with = pipeline.generate_draft("topic", log=logs_with.append)
+            check("pipeline fetches DOI-only paper when papers available",
+                  draft_with.provenance["full_text_sources"] == [1])
+            check("pipeline log contains 'via papers'", any("via papers" in ln for ln in logs_with))
+            check("provenance records full_text_via breakdown",
+                  draft_with.provenance.get("full_text_via") == {"papers": 1, "europe_pmc": 0})
+
+            # With papers unavailable:
+            logs_without = []
+            paperfetch.shutil.which = lambda cmd: None
+            doi_paper.full_text = ""
+            doi_paper.full_text_via = ""
+            reset_paperfetch()
+            draft_without = pipeline.generate_draft("topic", log=logs_without.append)
+            check("pipeline skips DOI-only paper when papers unavailable",
+                  draft_without.provenance["full_text_sources"] == [])
+            check("pipeline stopped because names no open-access copy",
+                  any("1 had no open-access copy" in ln for ln in logs_without))
+        finally:
+            (pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
+             pipeline.write_article, pipeline.fetch_full_text, pipeline.enforce_style) = saved_pipe
+
+        # 7. No env leak & PAPERS_MAILTO derivation
+        reset_paperfetch()
+        env_calls = []
+        paperfetch.shutil.which = lambda cmd: "papers"
+        paperfetch.subprocess.run = lambda argv, **kw: (
+            env_calls.append((argv, kw)),
+            FakeProc(stdout=json.dumps({"status": "no_doi"}), returncode=1),
+        )[1]
+        os.environ["OPENALEX_MAILTO"] = "test@example.com"
+        os.environ.pop("PAPERS_MAILTO", None)
+        before_env = dict(os.environ)
+        try:
+            paperfetch.fetch_via_papers("10.1111/envtest")
+            after_env = dict(os.environ)
+            check("fetch_via_papers does not leak into os.environ", before_env == after_env)
+            check("subprocess received PAPERS_MAILTO from OPENALEX_MAILTO",
+                  env_calls[0][1].get("env", {}).get("PAPERS_MAILTO") == "test@example.com")
+        finally:
+            os.environ.pop("OPENALEX_MAILTO", None)
+    finally:
+        paperfetch.subprocess.run = real_run
+        paperfetch.shutil.which = real_which
+        sources._get_with_retry = real_get_with_retry
+        reset_paperfetch()
+
+
 def test_full_text_order_favours_direct_and_recent() -> None:
     """Deep reads go to the directly relevant and the current, in that order.
 
@@ -5329,9 +5543,10 @@ def test_claude_md_still_describes_this_code() -> None:
 
     # Every module, not a subset — a constant named in the docs is stale
     # wherever it lives, and a partial sweep fails on correct text.
-    from articlegen import llm, pipeline, render, sources, style, verify, web, writer
+    from articlegen import (llm, paperfetch, pipeline, render, sources, style,
+                            verify, web, writer)
 
-    modules = (llm, pipeline, render, sources, style, verify, web, writer)
+    modules = (llm, paperfetch, pipeline, render, sources, style, verify, web, writer)
     # Env vars and front-end constants are not module attributes, so a plain
     # `hasattr` sweep would fail on a dozen names that are perfectly current.
     # Falling back to "appears anywhere in the code" still catches the case
@@ -5434,6 +5649,7 @@ def main(argv: list[str] | None = None) -> int:
         test_ungrounded_citations_leave_no_trace,
         test_second_hand_figures_are_a_last_resort,
         test_full_text_grounding, test_pipeline_fetches_full_text,
+        test_full_text_comes_from_the_papers_cli_when_it_is_there,
         test_full_text_order_favours_direct_and_recent,
         test_pmcid_is_resolved_by_doi,
         test_unpaywall_fallback_in_resolve_pmcid,

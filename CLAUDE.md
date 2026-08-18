@@ -47,6 +47,7 @@ articlegen/
   writer.py    LLM: plan_queries -> curate_sources -> write_article
   sources.py   Semantic Scholar + OpenAlex + Europe PMC + arXiv fetch, 24h
                cache, dedupe, rank; open-access full-text fetch + excerpt budget
+  paperfetch.py optional: full text via the separate papers CLI (paperfetch)
   verify.py    deterministic: flag article statistics absent from what the
                writer was shown (abstracts + full-text excerpts)
   style.py     deterministic: flag prose that breaks journal writing conventions
@@ -104,6 +105,7 @@ behaviour it describes.
 | A preprint is labelled wherever it is listed | `test_preprints_are_marked_as_preprints` |
 | A load-bearing figure is not quoted at second hand when a first-hand one exists | `test_second_hand_figures_are_a_last_resort` |
 | The candidate-pool default lives in one constant | `test_the_candidate_pool_is_big_enough_to_curate` |
+| Full text via the papers CLI never breaks the Europe PMC path | `test_full_text_comes_from_the_papers_cli_when_it_is_there` |
 
 **Not pinned by a test** — these need the reasoning, because nothing else
 carries it:
@@ -244,6 +246,14 @@ and sections intact.
   are expected rather than bugs: the Methods "screened" count roughly doubles,
   and `MAX_FULLTEXT_REQUESTS` (18) now binds before `FULLTEXT_TARGET` more
   often, so the stop-reason NOTE fires routinely.
+- **Full text has two routes: the `papers` CLI (paperfetch) first, Europe PMC as fallback.**
+  When the `papers` CLI is installed and the paper has a DOI, full text is
+  retrieved via `papers get` from any open-access copy (Unpaywall, OpenAlex,
+  Semantic Scholar, preprint servers); otherwise the pipeline falls back to
+  Europe PMC by PMCID. `papers` is optional and absent on the hosted backend.
+  The paper's own `[N]` citation brackets are stripped on **both** routes
+  because they collide with the SOURCE-index scheme. `PAPERS_MAILTO` is
+  required by `papers` and defaults from `OPENALEX_MAILTO`.
 - **Abstracts plus open-access full text.** `FULLTEXT_TARGET` (5) matches what
   `full_text_excerpts` can show (5 × 12,000 = 60,000 chars);
   `MAX_FULLTEXT_REQUESTS` (18) stops a topic with no open-access literature
@@ -554,7 +564,8 @@ index.html on GitHub Pages  ──POST /api/draft──▶  backend on Render
   through a fake transport and asserts `os.environ` is byte-identical.
 - Set `OPENROUTER_API_KEY` or `ANTHROPIC_API_KEY`, or use `--model cli:opus`
   with no key at all. Recommended: `SEMANTIC_SCHOLAR_API_KEY` (free; without it
-  Semantic Scholar 429s on effectively every call, #148). Optional: `OPENALEX_MAILTO`.
+  Semantic Scholar 429s on effectively every call, #148). Optional: `OPENALEX_MAILTO`,
+  `PAPERS_MAILTO`, `ARTICLEGEN_PAPERS_CMD`.
 
 ## Conventions
 
