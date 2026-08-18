@@ -29,6 +29,8 @@ from dataclasses import dataclass, field
 
 import requests
 
+from . import paperfetch
+
 SEMANTIC_SCHOLAR_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
 OPENALEX_URL = "https://api.openalex.org/works"
 EUROPE_PMC_URL = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
@@ -193,6 +195,9 @@ class Paper:
     pmcid: str = ""
     is_open_access: bool = False
     full_text: str = ""
+    # Which fetcher produced `full_text` ("papers" or "europe_pmc"). Set by
+    # fetch_full_text; not populated by search or dedupe.
+    full_text_via: str = ""
     is_preprint: bool = False
 
     def __post_init__(self) -> None:
@@ -904,6 +909,21 @@ def _jats_text(node) -> str:
     return re.sub(r"\s+", " ", " ".join(node.itertext())).strip()
 
 
+_CITATION_BRACKETS_RE = re.compile(r"\[\s*\d+(?:\s*[,–—-]\s*\d+)*\s*\]")
+
+
+def _strip_citation_brackets(text: str) -> str:
+    """Remove the paper's own bracketed citation numbers.
+
+    They collide with the pipeline's [N] SOURCE-index scheme: a writer reading
+    "improves outcomes [ 4 ]" may echo that number as if it were one of ours.
+    Every full-text path runs through this, whichever fetcher produced it.
+    """
+    if not text:
+        return ""
+    return _CITATION_BRACKETS_RE.sub("", text)
+
+
 def _parse_fulltext_xml(xml_text: str) -> str:
     """JATS XML -> plain text of the body, section by section.
 
@@ -936,7 +956,7 @@ def _parse_fulltext_xml(xml_text: str) -> str:
     # collide with the pipeline's [N] SOURCE-index scheme: a writer reading
     # "improves outcomes [ 4 ]" mid-paragraph may echo that number as if it
     # were one of OUR sources. Strip them; the prose keeps its meaning.
-    return re.sub(r"\[\s*\d+(?:\s*[,–—-]\s*\d+)*\s*\]", "", text)
+    return _strip_citation_brackets(text)
 
 
 # Prompt policy for full text, and simultaneously the verification contract:
@@ -997,21 +1017,42 @@ def full_text_order(papers: list[Paper], relevance: dict[int, str]) -> list[int]
     return [index for _, _, index in sorted(ranked)]
 
 
-def fetch_full_text(paper: Paper, use_cache: bool = True) -> str:
+def fetch_full_text(paper: Paper, use_cache: bool = True, log=lambda msg: None) -> str:
     """The paper's open-access full text as plain text, or "" when unavailable.
 
-    Only papers Europe PMC can actually serve (a PMCID plus both OA flags) are
-    fetchable; everything else returns "" and stays abstract-only. Failures are
-    cached briefly, like search refusals, so one dead fetch is not retried
-    across a run.
+    When the `papers` CLI is available and the paper has a DOI, it is tried
+    first. Otherwise falls back to Europe PMC via PMCID.
+    Failures are cached briefly, like search refusals, so one dead fetch is
+    not retried across a run.
     """
+    now = time.time()
+    doi = _normalize_doi(paper.doi)
+    if doi and paperfetch.available(log):
+        key = f"papers:{doi}"
+        if use_cache and _CACHE_TTL > 0:
+            with _cache_lock:
+                entry = _fulltext_cache.get(key)
+                if entry and entry[0] > now:
+                    if entry[1]:
+                        paper.full_text_via = "papers"
+                    return entry[1]
+        text = _strip_citation_brackets(paperfetch.fetch_via_papers(doi, log=log))
+        if _CACHE_TTL > 0:
+            ttl = _CACHE_TTL if text else _CACHE_FAILURE_TTL
+            with _cache_lock:
+                _fulltext_cache[key] = (now + ttl, text)
+        if text:
+            paper.full_text_via = "papers"
+            return text
+
     if not (paper.pmcid and paper.is_open_access):
         return ""
-    now = time.time()
     if use_cache and _CACHE_TTL > 0:
         with _cache_lock:
             entry = _fulltext_cache.get(paper.pmcid)
             if entry and entry[0] > now:
+                if entry[1]:
+                    paper.full_text_via = "europe_pmc"
                 return entry[1]
     try:
         resp = _get_with_retry(
@@ -1023,6 +1064,8 @@ def fetch_full_text(paper: Paper, use_cache: bool = True) -> str:
         ttl = _CACHE_TTL if text else _CACHE_FAILURE_TTL
         with _cache_lock:
             _fulltext_cache[paper.pmcid] = (now + ttl, text)
+    if text:
+        paper.full_text_via = "europe_pmc"
     return text
 
 

@@ -20,9 +20,11 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable
 
+from . import paperfetch
 from .llm import resolve_provider
-from .sources import (DATABASE_NAMES, DEFAULT_MAX_PAPERS, Paper, fetch_full_text,
-                      full_text_order, gather_evidence, resolve_pmcid)
+from .sources import (DATABASE_NAMES, DEFAULT_MAX_PAPERS, Paper, _normalize_doi,
+                      fetch_full_text, full_text_order, gather_evidence,
+                      resolve_pmcid)
 from .style import (SUBSTANCE_RULES, check_style, errors as style_errors,
                     format_report as format_style, revision_brief)
 from .verify import check_statistics
@@ -399,6 +401,7 @@ def generate_draft(
     relevance = curation.get("relevance") or {}
     log("Fetching open-access full texts...")
     requests_spent = 0
+    via_papers = paperfetch.available(log)
     # Still direct and related only, relevance then recency. Tangential sources
     # are deliberately excluded even when that leaves the target unmet: they
     # are background, and handing the writer 12,000 characters of an off-topic
@@ -420,24 +423,39 @@ def generate_draft(
             stopped = f"request cap of {MAX_FULLTEXT_REQUESTS} reached"
             break
         eligible += 1
-        if not paper.pmcid and paper.doi:
+        has_doi = bool(_normalize_doi(paper.doi))
+        if via_papers and has_doi:
+            pass
+        elif not paper.pmcid and paper.doi:
             requests_spent += 1
             # The logger matters: both lookups inside fail soft, and without it
             # a blocked Unpaywall halves full-text coverage invisibly (#104).
             resolve_pmcid(paper, log=log)
-        if not (paper.pmcid and paper.is_open_access):
+        if not (via_papers and has_doi) and not (paper.pmcid and paper.is_open_access):
             no_open_access += 1
             continue
         requests_spent += 1
-        text = fetch_full_text(paper)
+        try:
+            text = fetch_full_text(paper, log=log)
+        except TypeError:
+            text = fetch_full_text(paper)
         if text:
             paper.full_text = text
             fetched.append(index)
         else:
             fetch_failed += 1
+
+    n_papers_via = sum(1 for i in fetched if papers[i - 1].full_text_via == "papers")
+    n_epmc_via = sum(1 for i in fetched if papers[i - 1].full_text_via == "europe_pmc")
+    breakdown = ""
+    if n_papers_via > 0 and n_epmc_via > 0:
+        breakdown = f" ({n_papers_via} via papers, {n_epmc_via} via Europe PMC)"
+    elif n_papers_via > 0:
+        breakdown = f" ({n_papers_via} via papers)"
+
     log(f"  full text retrieved for {len(fetched)} source(s)"
         + (f": {fetched}" if fetched else " (none)")
-        + f" in {requests_spent} request(s)")
+        + f" in {requests_spent} request(s){breakdown}")
     log(f"  stopped because: {stopped}. Of {eligible} eligible source(s), "
         f"{no_open_access} had no open-access copy and {fetch_failed} were "
         "open access but returned no text.")
@@ -480,6 +498,7 @@ def generate_draft(
         # Methods section is written from this — like `databases`, it records
         # what actually happened, never what was intended.
         "full_text_sources": sorted(fetched),
+        "full_text_via": {"papers": n_papers_via, "europe_pmc": n_epmc_via},
     }
 
     return Draft(

@@ -830,12 +830,15 @@ def _methods_paragraphs(
     # `full_text_sources` records which sources the model was actually shown
     # full text for. Like `databases` above, it is never guessed: absent or
     # empty means this draft was abstracts-only and Methods says exactly that.
-    n_full = len(provenance.get("full_text_sources") or [])
+    n_full = len(provenance.get("full_text_sources") or []) if provenance else 0
     if n_full:
+        via = (provenance.get("full_text_via") or {}) if provenance else {}
+        retrieved_from = ("retrieved from Europe PMC" if not via.get("papers")
+                          else "retrieved from their open-access copies")
         handling = (
             f"Titles and abstracts were read for every record, and the open-access "
             f"full text{'s' if n_full != 1 else ''} of {n_full} "
-            f"source{'s were' if n_full != 1 else ' was'} retrieved from Europe PMC "
+            f"source{'s were' if n_full != 1 else ' was'} {retrieved_from} "
             "and read alongside them (marked in Table 1); claims resting on the "
             "remaining sources draw on no data beyond an abstract. Decimals, "
             "percentages, effect estimates and quantities carrying a clinical unit "
