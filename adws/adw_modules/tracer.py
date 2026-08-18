@@ -8,6 +8,7 @@ WAL mode so the UI can read while ADW processes write.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from pathlib import Path
 
@@ -23,7 +24,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   engineer      TEXT,
   started_at    TEXT, ended_at TEXT,
   total_tokens  INTEGER DEFAULT 0, total_cost REAL DEFAULT 0,
-  archived      INTEGER DEFAULT 0   -- review triage, set by the UI; never by a run
+  archived      INTEGER DEFAULT 0,  -- review triage, set by the UI; never by a run
+  pane_id       TEXT                -- Herdr pane the run was launched from (HERDR_PANE_ID), for Collie
 );
 CREATE TABLE IF NOT EXISTS phases (
   phase_id      TEXT PRIMARY KEY,
@@ -96,7 +98,8 @@ MIGRATIONS = [("agent_sessions", "color", "TEXT"),
               ("sessions", "adw_name", "TEXT"),
               ("agent_sessions", "context_tokens", "INTEGER"),
               ("agent_sessions", "context_window", "INTEGER"),
-              ("sessions", "archived", "INTEGER DEFAULT 0")]
+              ("sessions", "archived", "INTEGER DEFAULT 0"),
+              ("sessions", "pane_id", "TEXT")]
 
 
 class Tracer:
@@ -137,10 +140,15 @@ class Tracer:
 
     # ── sessions ────────────────────────────────────────────────────────────
     def session_start(self, adw_id: str, engineer: str, adw_name: str | None = None) -> None:
+        # Herdr exports HERDR_PANE_ID into every pane's shell, so an ADW launched from a
+        # pane (directly, or by an agent's shell tool) inherits it. Collie uses it to hang the
+        # run off the pane that started it. Unset (a scheduler, a plain terminal) stays NULL.
+        pane_id = os.environ.get("HERDR_PANE_ID") or None
         self.conn.execute(
-            "INSERT INTO sessions (adw_id, status, engineer, started_at) VALUES (?,?,?,?) "
-            "ON CONFLICT(adw_id) DO UPDATE SET status='running'",
-            (adw_id, "running", engineer, now_iso()),
+            "INSERT INTO sessions (adw_id, status, engineer, started_at, pane_id) VALUES (?,?,?,?,?) "
+            "ON CONFLICT(adw_id) DO UPDATE SET status='running', "
+            "pane_id=COALESCE(excluded.pane_id, sessions.pane_id)",
+            (adw_id, "running", engineer, now_iso(), pane_id),
         )
         if not adw_name:
             return
