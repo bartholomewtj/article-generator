@@ -1,16 +1,16 @@
 # Next session
 
-_Last handoff: 19 August 2026 — branch `feat/152-homepage-evidence-briefings`, PR #160 open (unmerged)_
+_Last handoff: 19 August 2026 — branch `main`, no open PRs_
 
 ## Where this stopped
 
-**PR #160 is open and waiting for Bart to review and merge.** It repositions
+PR #160 merged (squash, `338eaab`). It repositions
 the public site around "a sourced evidence briefing you can send": new
 title/hero on `index.html`, three featured reviews linked straight into
 `drafts/` above the setup card, drafts index retitled "Evidence reviews",
 README and CLAUDE.md updated, new test
 `test_the_landing_page_leads_with_finished_reviews`. Both suites green,
-grok-4.5 reviewer approved 14/14. Closes #152. Refs #135, stays open.
+grok-4.5 reviewer approved 14/14. Closed #152. #135 still open.
 
 Issue triage the same day: #154, #153, #148, #134 closed as not planned.
 
@@ -23,8 +23,6 @@ see "Watch out for".
 cd /c/claudeOS/Projects/articlegenerator && git checkout main && git pull && python tests/test_offline.py && python tests/test_journal_conformance.py
 ```
 
-If #160 is merged, delete the local branch `feat/152-homepage-evidence-briefings`.
-
 To use full text locally, `papers` must resolve. In Git Bash it is not on
 PATH; either run from PowerShell or set
 `ARTICLEGEN_PAPERS_CMD="python -m papers"` with paperfetch installed
@@ -32,8 +30,9 @@ PATH; either run from PowerShell or set
 
 ## Next thing to do
 
-1. **Merge #160** (or send it back), then look at the live GitHub Pages site
-   once it deploys. Decide whether the queue retitle is enough to close #135.
+1. **Look at the live GitHub Pages site** now that #160 has deployed — check
+   the featured cards and the "Evidence reviews" index. Decide whether that is
+   enough to close #135.
 2. **Regenerate a draft with full text on** and compare against
    `drafts/seclusion-restraint-cli.md` — first real look at #84 (full-text
    coverage) after slice 5. Check the Methods paragraph wording and the
@@ -45,7 +44,7 @@ PATH; either run from PowerShell or set
 ## Open
 
 - #84 full-text coverage (measure), #135 demo drafts index (probably closable
-  after #160), #152 (closes on merge of #160).
+  now #160 is live). Nothing else open.
 
 ## Watch out for
 
