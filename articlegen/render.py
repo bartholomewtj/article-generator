@@ -1904,7 +1904,7 @@ def _markdown_disclaimer(topic: str, article: dict, cited: list[Paper]) -> str:
 
 
 # --------------------------------------------------------------------------
-# review-queue index
+# published reviews index
 # --------------------------------------------------------------------------
 
 _INDEX_TEMPLATE = """<!DOCTYPE html>
@@ -1912,7 +1912,7 @@ _INDEX_TEMPLATE = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Draft review queue</title>
+<title>Evidence reviews</title>
 <script>
   (function() {{
     var saved = localStorage.getItem('articlegen_theme') || 'system';
@@ -1952,13 +1952,13 @@ _INDEX_TEMPLATE = """<!DOCTYPE html>
 <body>
 <main>
   <div class="header-row">
-    <h1>Draft review queue</h1>
+    <h1>Evidence reviews</h1>
     <button class="theme-toggle-btn" onclick="toggleIndexTheme()"><span id="idxThemeIcon">&#9789;</span> Theme</button>
   </div>
   <p class="idx-disclosure">Every article listed here was written by a language
   model from published research. No human author wrote or checked any of them,
   and none has been peer reviewed.</p>
-  <p class="sub">{count} draft(s) · newest first</p>
+  <p class="sub">{count} review(s) · newest first</p>
   <ul>
     {items}
   </ul>

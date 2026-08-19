@@ -2559,6 +2559,31 @@ def test_first_visit_does_not_dead_end() -> None:
     check("but an actionable message is passed through", "_ACTIONABLE" in unexpected)
 
 
+def test_the_landing_page_leads_with_finished_reviews() -> None:
+    """A stranger sees the output before being asked for anything (#152).
+
+    #111 put a link to the drafts index above the key prompt. An index is still
+    one click away from the thing itself, so the landing page now links finished
+    reviews directly. Those links are hardcoded — no manifest, no fetch — which
+    means a renamed or deleted draft becomes a dead link on the public homepage
+    and nothing else would notice.
+    """
+    import re as _re
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    page = open(os.path.join(root, "index.html"), encoding="utf-8").read()
+
+    featured = _re.findall(r'href="(drafts/[^"]+\.html)"', page)
+    check("the landing page links finished reviews directly", 2 <= len(featured) <= 3)
+    for rel in featured:
+        check(f"the featured review exists on disk: {rel}",
+              os.path.exists(os.path.join(root, rel)))
+    check("the featured reviews come before the key prompt",
+          bool(featured) and page.index(featured[0]) < page.index('id="setupCard"'))
+    check("the head frames the output as a briefing, not an article generator",
+          "Research-Grounded Articles on Mobile" not in page)
+
+
 def test_api_key_is_session_only_by_default() -> None:
     """The stored key must not silently outlive the tab, and the page must say why.
 
@@ -5675,6 +5700,7 @@ def main(argv: list[str] | None = None) -> int:
         test_clinical_directives_are_an_error,
         test_full_text_dependencies_fail_loudly_enough_to_diagnose,
         test_first_visit_does_not_dead_end,
+        test_the_landing_page_leads_with_finished_reviews,
         test_api_key_is_session_only_by_default,
         test_house_style_is_fixed_not_a_preference,
         test_register_rules_are_scoped_to_the_synthesis_voice,

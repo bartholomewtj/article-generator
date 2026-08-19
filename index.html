@@ -6,8 +6,8 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>Article Generator — Research-Grounded Articles on Mobile</title>
-<meta name="description" content="Generate evidence-grounded science & tech articles from peer-reviewed literature right from your phone.">
+<title>ArticleGen — sourced evidence briefings you can send</title>
+<meta name="description" content="Turn a topic into a sourced evidence briefing: a journal-style review of the published literature, written as one page you can send as a link.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
@@ -495,6 +495,27 @@
   }
   .build-stamp code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.7rem; }
 
+  /* Featured evidence reviews on the landing page (#152). */
+  .featured { margin-bottom: 1rem; }
+  .featured-label {
+    display: block; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 0.5rem;
+  }
+  .featured-card {
+    display: block; text-decoration: none; color: inherit;
+    border: 1px solid var(--border, rgba(128,128,128,0.3)); border-radius: 14px;
+    padding: 0.85rem 1.1rem; margin-bottom: 0.6rem;
+    transition: border-color 0.15s ease;
+  }
+  .featured-card:hover { border-color: var(--accent); }
+  .featured-title {
+    display: block; font-size: 0.92rem; font-weight: 600; color: var(--ink);
+    line-height: 1.4; margin-bottom: 0.3rem;
+  }
+  .featured-take {
+    display: block; font-size: 0.83rem; line-height: 1.45; color: var(--muted);
+  }
+
   /* The read-only demo path (#111). Deliberately quieter than the primary
      button but above the key prompt, so it reads as "here is the output"
      rather than as a second call to action competing with generating one. */
@@ -560,8 +581,33 @@
 
   <!-- VIEW 1: Theme Input -->
   <div id="themeView" class="view active">
-    <h1 class="hero-title">Turn any theme into an evidence-grounded article</h1>
-    <p class="hero-subtitle">Grounded in real peer-reviewed journal abstracts. Simple, fast, and mobile-first.</p>
+    <h1 class="hero-title">A sourced evidence briefing you can send</h1>
+    <p class="hero-subtitle">Pick a topic; get a journal-style review of the published
+      literature on it — every claim cited to a real paper, every figure checked back
+      against the source it came from, on one page you can share as a link.</p>
+
+    <!-- Three finished reviews, linked straight at the files (#152). A stranger
+         should see the output before being asked for anything. #111 put a link to
+         the drafts index above the key prompt; an index is still one click away
+         from the thing itself, so the reviews come first now.
+         Hardcoded on purpose: no manifest, no fetch, no CMS. When a new draft is
+         worth featuring, edit these anchors.
+         test_the_landing_page_leads_with_finished_reviews checks the files exist. -->
+    <section class="featured">
+      <h2 class="featured-label">Recent evidence briefings</h2>
+      <a class="featured-card" href="drafts/seclusion-restraint-cli.html">
+        <span class="featured-title">Reducing seclusion and restraint in psychiatric inpatient care</span>
+        <span class="featured-take">Multicomponent programmes reduce both, but the supporting study designs are weak.</span>
+      </a>
+      <a class="featured-card" href="drafts/co-responder-cli.html">
+        <span class="featured-title">Police and clinician co-responder models in crisis care</span>
+        <span class="featured-take">Process-level effects are consistent; downstream outcomes are not.</span>
+      </a>
+      <a class="featured-card" href="drafts/2026-08-12-safety-planning-ed-opus-5.html">
+        <span class="featured-title">Safety planning after an emergency department visit</span>
+        <span class="featured-take">Associated with reduced suicidal behaviour in adults, but not in adolescents.</span>
+      </a>
+    </section>
 
     <!-- The read-only path, and it comes first (#111).
          Since the Settings panel narrowed to OpenRouter there is no free way to
@@ -574,10 +620,10 @@
          prompt because a first impression of "paste a credential" is the thing
          worth avoiding. -->
     <a class="demo-band" href="drafts/">
-      <span class="demo-band-label">See what it produces</span>
-      <span class="demo-band-text">Read a finished evidence review — no key, no
+      <span class="demo-band-label">All published reviews</span>
+      <span class="demo-band-text">Every briefing this has produced — no key, no
         account, nothing to set up.</span>
-      <span class="demo-band-go">Open the published drafts →</span>
+      <span class="demo-band-go">Browse all evidence reviews →</span>
     </a>
 
     <!-- The setup is mandatory and used to be invisible: nothing on this view
