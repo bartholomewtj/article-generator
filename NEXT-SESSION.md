@@ -1,24 +1,29 @@
 # Next session
 
-_Last handoff: 18 August 2026 — branch `main`, no open PRs_
+_Last handoff: 19 August 2026 — branch `feat/152-homepage-evidence-briefings`, PR #160 open (unmerged)_
 
 ## Where this stopped
 
-PR #159 merged: articlegen now gets open-access full text through the `papers`
-CLI (the separate, private `paperfetch` project) with the old Europe PMC path
-as fallback. DOI-only papers with no PMCID — arXiv, anything non-biomedical —
-are fetchable for the first time. Closed #150 and #151. Built by the claudeSSSF
-`adw_simple_sdlc` workflow (session e54dda88, $2.53, one clean run) and
-live-checked before merge: a medRxiv DOI with no PMCID returned 33k chars via
-`papers`; a closed DOI returned `""` and fell back.
+**PR #160 is open and waiting for Bart to review and merge.** It repositions
+the public site around "a sourced evidence briefing you can send": new
+title/hero on `index.html`, three featured reviews linked straight into
+`drafts/` above the setup card, drafts index retitled "Evidence reviews",
+README and CLAUDE.md updated, new test
+`test_the_landing_page_leads_with_finished_reviews`. Both suites green,
+grok-4.5 reviewer approved 14/14. Closes #152. Refs #135, stays open.
 
-Earlier this month: PR #156 (ten-fix quality sweep, #139–#147) merged.
+Issue triage the same day: #154, #153, #148, #134 closed as not planned.
+
+Built by claudeSSSF session `1bdf74c3` (~$2.06 notional). Not one clean run —
+see "Watch out for".
 
 ## Resume with
 
 ```bash
 cd /c/claudeOS/Projects/articlegenerator && git checkout main && git pull && python tests/test_offline.py && python tests/test_journal_conformance.py
 ```
+
+If #160 is merged, delete the local branch `feat/152-homepage-evidence-briefings`.
 
 To use full text locally, `papers` must resolve. In Git Bash it is not on
 PATH; either run from PowerShell or set
@@ -27,31 +32,46 @@ PATH; either run from PowerShell or set
 
 ## Next thing to do
 
-1. **Regenerate a draft with full text on** and compare against
+1. **Merge #160** (or send it back), then look at the live GitHub Pages site
+   once it deploys. Decide whether the queue retitle is enough to close #135.
+2. **Regenerate a draft with full text on** and compare against
    `drafts/seclusion-restraint-cli.md` — first real look at #84 (full-text
    coverage) after slice 5. Check the Methods paragraph wording and the
    `(N via papers, M via Europe PMC)` log line.
-2. **Set `SEMANTIC_SCHOLAR_API_KEY`** (free, semanticscholar.org/product/api) —
-   closes the ops half of #148. Keyless S2 is measured-dead under shared limits.
-   paperfetch reads the same variable.
 3. **Decide the hosted deploy question**: Render cannot pip-install the private
    paperfetch repo, so the web app is still abstracts-only outside PMC. Options:
    make paperfetch public, or vendor it into the Docker image. Not urgent.
 
 ## Open
 
-- #84 full-text coverage (should improve now — measure), #148 S2 key (ops),
-  #134 live-smoke secret, #135 demo drafts index, #152–#154 homepage / brief
-  render / cheaper hosted default.
+- #84 full-text coverage (measure), #135 demo drafts index (probably closable
+  after #160), #152 (closes on merge of #160).
 
 ## Watch out for
 
+- **agy CLI 1.1.15 dies after the agent finishes.** Two terminal errors in run
+  `1bdf74c3`, both after the work was done and on disk: the builder's final
+  result came back `ERROR invalid arguments: missing property 'toolSummary'`
+  with the full envelope in `response`; the documenter was refused a
+  `write_to_file` on `context_handoff/document.md` as "not a valid artifact
+  path" (agy treats `.md` as its own artifacts) — the file had already been
+  written. The adapter treats both as unrecognised and fails the phase. Both
+  events are committed in `adws/adw_data/limit_events.jsonl`. Workaround that
+  worked: rerun the build-first ADWs under the same `--adw-id`
+  (`adw_build_test` → `adw_build_review` → `adw_document`), then commit by hand
+  — none of those three commit. Candidate factory fix: accept an agy `ERROR`
+  result whose `response` parses as the envelope. Not filed yet.
+- **`adw_simple_sdlc` has no skip-on-rejoin** — `--adw-id` re-runs the planner
+  and tries to commit the plan again. Resume with the build-first chains, not
+  simple_sdlc.
 - **Live-smoke every ADW slice before merging.** Both suites are offline; the
   paperfetch project found a real bug (S2 429 on `%2F`) that way.
-- **The factory lives in this repo** (`adws/`, `justfile`). `just obs` opens
-  the run visualizer at localhost:4600. Requests go in `requests/` in the
-  four-line shape (see `requests/slice-5-paperfetch.md`); run
-  `uv run adws/adw_simple_sdlc.py requests/<file>.md` from a fresh branch.
+- **The factory lives in this repo** (`adws/`, `justfile`). Requests go in
+  `requests/` in the four-line shape (see
+  `requests/issue-152-homepage-evidence-briefings.md`); run
+  `PYTHONUTF8=1 AGY_PRINT_TIMEOUT=30m uv run adws/adw_simple_sdlc.py requests/<file>.md`
+  from a fresh branch. Roster: opus planner, gemini-3.7-flash builder and
+  documenter (agy), grok-4.5 reviewer.
 - **Two stashes** hold leftovers from a failed pilot run — safe to
   `git stash drop` both. Local branch `fix/quality-improvements` is superseded
   by the #155 squash — safe to delete with `-D`.
