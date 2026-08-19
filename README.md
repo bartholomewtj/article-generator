@@ -3,14 +3,15 @@
 [![Tests](https://github.com/bartholomewtj/article-generator/actions/workflows/tests.yml/badge.svg)](https://github.com/bartholomewtj/article-generator/actions/workflows/tests.yml)
 [![Deployment health](https://github.com/bartholomewtj/article-generator/actions/workflows/health.yml/badge.svg)](https://github.com/bartholomewtj/article-generator/actions/workflows/health.yml)
 
-A **three-stage workflow** for going from a vague interest to a review-ready
-article: **generate ideas → research collated automatically → draft prepared for
-your review** — as a self-contained single-page HTML file (plus Markdown),
-grounded in real journal articles rather than the model's memory.
+Turn a topic into a **sourced evidence briefing** — a journal-style review of the
+published literature, written as one self-contained HTML page (plus Markdown) that
+you can send as a link. Every claim is cited to a real paper, and every figure is
+checked back against the source it came from. Three stages: generate ideas →
+research collated automatically → draft prepared for your review.
 
-## 🚀 Live Working Article Generator
-Open the working web app directly in your browser:
-🔗 **[Live Article Generator Web Site](https://bartholomewtj.github.io/article-generator/)**
+## 🚀 Live site
+
+🔗 **[Open the site](https://bartholomewtj.github.io/article-generator/)**
 
 📄 **[Read a finished article](https://bartholomewtj.github.io/article-generator/drafts/)**
 — no key and no account needed. Generating your own needs an OpenRouter key

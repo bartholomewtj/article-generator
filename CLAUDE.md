@@ -31,6 +31,12 @@ journal-article abstracts and open-access full texts. Two front ends:
    `articlegen web` locally.
 2. **CLI** — `articlegen ideas` / `draft` / `queue` / `demo`.
 
+The public site frames this as a **sourced evidence briefing you can send**; the
+artefact is unchanged — a journal-style Review. The GitHub Pages landing page
+links three finished reviews in `drafts/` directly, above the key prompt (#152,
+extending #111), and the generated drafts index is titled "Evidence reviews"
+rather than "Draft review queue".
+
 Repo: **`bartholomewtj/article-generator`**, default branch `main`.
 `drafts/` is intentionally git-tracked — it's the review surface.
 
