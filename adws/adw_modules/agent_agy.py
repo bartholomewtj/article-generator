@@ -103,6 +103,9 @@ PRINT_TIMEOUT = os.environ.get("AGY_PRINT_TIMEOUT", "240m")
 # start. Silence for this long means nothing is coming. 0 disables the check.
 IDLE_TIMEOUT_SECONDS = float(os.environ.get("AGY_IDLE_TIMEOUT_SECONDS", "600"))
 IDLE_RESEND_SLEEP_SECONDS = 5.0
+# A rejected tool call (missing required property) is transient per send —
+# resend quickly, same loop as a stall. Not a quota event.
+SCHEMA_RESEND_SLEEP_SECONDS = 5.0
 
 # `thinking` in the config is pi's seven-rung ladder; agy's --effort has
 # three. Clamp the ends rather than error. Most agy model ids ALREADY carry an
@@ -139,6 +142,17 @@ RATE_LIMIT_MARKERS = ("rate limit", "rate_limit", "429", "resource_exhausted",
                       "quota", "too many requests",
                       "timeout waiting for response")
 RATE_LIMIT_SLEEP_SECONDS = 120.0
+
+# Tool-call schema blips: the model omitted a field the CLI now requires.
+# Retry the send. Seen on articlegenerator/1bdf74c3 (missing toolSummary).
+RETRY_MARKERS = ("missing property 'toolsummary'",
+                 'missing property "toolsummary"')
+
+# Fatal on retry: agy only lets write_to_file land under its brain folder,
+# so SSSF context_handoff paths never succeed. Fail with this message, not
+# "unfamiliar". The agent can still recover via the shell — see
+# _task_envelope_ok. Seen on articlegenerator/1bdf74c3 documenter.
+ARTIFACT_PATH_MARKER = "is not a valid artifact path"
 
 # Fallback ceilings. Gemini 3.x models advertise a 1M window; agy's stream
 # reports no ceiling of its own, so this is what the UI gets.
@@ -317,8 +331,34 @@ def _compose_first_prompt(system_prompt: str, prompt: str) -> str:
             f"---\n\n# TASK\n\n{prompt}")
 
 
+def _task_envelope_ok(text: str) -> bool:
+    """True when the response carries SSSF's success JSON.
+
+    agy sets result.status ERROR if any tool call had invalid args, even when
+    the agent recovered and finished the task. The envelope is the account of
+    whether the work landed.
+    """
+    if not text:
+        return False
+    candidate = text
+    if "```" in text:
+        for block in text.split("```")[1::2]:
+            block = block.removeprefix("json").strip()
+            if block.startswith("{"):
+                candidate = block
+                break
+    start, end = candidate.find("{"), candidate.rfind("}")
+    if start == -1 or end <= start:
+        return False
+    try:
+        payload = json.loads(candidate[start:end + 1])
+    except ValueError:
+        return False
+    return isinstance(payload, dict) and str(payload.get("status") or "").lower() == "success"
+
+
 def _classify_failure(result_obj: dict, stderr: str) -> tuple[str, str]:
-    """Judge a non-SUCCESS result: ("rate_limit" | "upstream", detail).
+    """Judge a non-SUCCESS result: ("rate_limit" | "retry" | "upstream", detail).
 
     The structured result event is the account of what went wrong; stderr is
     reported only when it says nothing. agy warns on stderr about things that
@@ -328,7 +368,8 @@ def _classify_failure(result_obj: dict, stderr: str) -> tuple[str, str]:
 
     Detection still reads BOTH: a missed rate limit costs a run that would
     have retried, so breadth wins there even though narrowness wins in the
-    message.
+    message. Known tool-schema blips retry; a brain-folder artifact refusal
+    is a recognised stop, not an unfamiliar CLI.
     """
     structured = " ".join(str(result_obj.get(key) or "") for key in
                           ("status", "error", "response")).strip()
@@ -336,6 +377,12 @@ def _classify_failure(result_obj: dict, stderr: str) -> tuple[str, str]:
     for marker in RATE_LIMIT_MARKERS:
         if marker in haystack:
             return "rate_limit", f"matched {marker!r}"
+    for marker in RETRY_MARKERS:
+        if marker in haystack:
+            return "retry", f"matched {marker!r}"
+    if ARTIFACT_PATH_MARKER in haystack:
+        return "upstream", ("agy refused write_to_file: SSSF artifact paths "
+                            "are not in its brain folder")
     detail = structured or stderr.strip()
     return "upstream", detail[:400] or "no detail in the result event"
 
@@ -481,6 +528,12 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
             "(usually a `schedule`/background wait that never fires in print mode)",
             IDLE_RESEND_SLEEP_SECONDS, None)
 
+    status = str(((terminal or {}).get("result") or {}).get("status") or "")
+    body = (terminal or {}).get("result") or {}
+    response_text = str(body.get("response") or result.text or "")
+    recovered = (terminal is not None and status != "SUCCESS"
+                 and _task_envelope_ok(response_text))
+
     # Remember whatever conversation the CLI actually used, once it finished
     # cleanly — recording a crashed start would send the next call to
     # --conversation an id whose context may hold nothing.
@@ -491,15 +544,18 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
     # the next phase resumes anything; leaving the ledger pointing at the id
     # agy has already rejected would start a fresh context on every call for
     # the rest of the run, which is what issue #37 measured.
-    if minted and result.returncode == 0 and minted != conversation:
+    #
+    # Recovered success (CLI ERROR, but the agent still produced the success
+    # envelope) also records: the work landed, the next phase should resume.
+    if minted and minted != conversation and (result.returncode == 0 or recovered):
         _record_conversation(session_dir, request.session_id, minted)
 
-    status = str(((terminal or {}).get("result") or {}).get("status") or "")
-    if terminal is not None and status != "SUCCESS":
-        verdict, detail = _classify_failure(terminal.get("result") or {}, stderr)
+    if terminal is not None and status != "SUCCESS" and not recovered:
+        verdict, detail = _classify_failure(body, stderr)
         # Same reasoning as agent_cc: capture before raising, and capture the
         # unrecognised bucket too, because that is where a real limit lands if
-        # the markers below are wrong. Issue #9.
+        # the markers below are wrong. Issue #9. "retry" is not in the capture
+        # table; it is a known schema blip, not a shape we are still hunting.
         captured = capture_limit_event(terminal, verdict, detail, raw_path,
                                        source="agy")
         if verdict == "rate_limit":
@@ -508,6 +564,19 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
                 print(notice)
             raise RateLimited(f"rate limited — {detail}",
                               RATE_LIMIT_SLEEP_SECONDS, terminal)
+        if verdict == "retry":
+            raise RateLimited(
+                f"agy rejected a tool call — {detail}, so it is being resent",
+                SCHEMA_RESEND_SLEEP_SECONDS, terminal)
+        if detail.startswith("agy refused"):
+            raise UpstreamError(
+                f"{detail}. It is NOT being retried — the same path will be "
+                "refused again.\n"
+                f"  the CLI said: {detail}\n"
+                "  what to do: write the artifact with the shell "
+                "(run_command), not write_to_file, or read the raw stream at\n"
+                f"    {raw_path}\n"
+                + capture_notice(captured, verdict, AGY_MARKER_TABLE))
         raise UpstreamError(
             "agy ended with an error this adapter does not recognise, so it "
             "is NOT being retried — an unfamiliar error is more likely a "
