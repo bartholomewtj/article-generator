@@ -681,3 +681,42 @@ reader returning cold had to read all of it to learn which roughly fifteen
 warnings still constrain a change. Most of those invariants already have a named
 guard test, so the prose was duplicating the test suite and growing every
 session.
+
+### `AGENTS.md` and `GEMINI.md` were removed (August 2026)
+
+An ICM review of the workspace found both sitting at the repo root: two
+byte-identical 427-byte files whose entire content was "read `CLAUDE.md`".
+Neither was tracked, neither was gitignored, and nothing in CI, the hooks or
+the doc-link scripts referenced either name. Some agent tool's `/init` had
+written them and nobody had noticed.
+
+The content was harmless. The links were not. Both pointed at
+../../config/CLAUDE.md and ../../IDENTITY.md — paths that resolve correctly on
+the author's disk, which is the whole trap. They work when you test them, and
+they point a **public** repo at a private layout the first time anyone runs
+`git add -A`. Collie found the same generated pair for the same reason and
+deleted it in its 0.41.2, having also had to unpick it from an entry-doc list
+and a pre-commit pattern first.
+
+Three options: fix the links to be relative-safe, keep the files as pointers,
+or delete them. Deleting won because a pointer file that says only "read the
+other file" costs a read and buys nothing — a cold agent opening it learns to
+open the file it would have opened anyway. What it does buy is a second place
+for the agreement to live, and two hand-maintained agreements drift. One
+AGENTS.md still lives at the claudeOS workspace root, outside this repo,
+because a non-Claude agent starting there has no other route to the rules. A
+repo that already has a `CLAUDE.md` does not need the hop.
+
+Both names went into `.gitignore` rather than being left to vigilance, since
+the tool that wrote them once will write them again. That makes a deliberate
+one need `git add -f`, which is the right way round: the accident is silent and
+the intent is typed.
+
+The copy under `.agents/AGENTS.md` was removed as well, but it was a separate
+case and was *not* simply discarded. It held two real UI rules — matching a
+sub-template's `:root` defaults to the app's dark theme, and opting key inputs
+out of password-manager autofill — that existed nowhere else and that no session ever loaded, because Claude does not
+read that folder. Both moved into the Web app section of `CLAUDE.md` before the
+file went. Content stranded in a runtime folder is a worse failure than a
+redundant pointer: the pointer wastes a read, the stranded rule gets
+rediscovered the expensive way.
