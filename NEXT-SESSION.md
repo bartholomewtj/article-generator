@@ -1,8 +1,18 @@
 # Next session
 
-_Last handoff: 19 August 2026 — branch `main`, no open PRs_
+_Last handoff: 20 August 2026 — branch `docs/drop-agents-gemini-stubs`, PR #161 open_
 
 ## Where this stopped
+
+**PR #161 (open, docs-only).** An ICM review of the workspace found `AGENTS.md`
+and `GEMINI.md` at the repo root — untracked 427-byte stubs written by some
+agent tool's `/init`, both linking this **public** repo at the private claudeOS
+layout. Deleted, and both names gitignored so a regenerated one cannot be
+committed by accident; a deliberate one would need `git add -f`. The two real
+UI rules that were living in `.agents/AGENTS.md` (sub-template `:root` theme
+defaults, password-manager suppression on key inputs) moved into the Web app
+section of `CLAUDE.md` first, and the story is in `docs/decisions.md`. Merge it
+and the tree is clean.
 
 PR #160 merged (squash, `338eaab`). It repositions
 the public site around "a sourced evidence briefing you can send": new
@@ -26,7 +36,7 @@ cd /c/claudeOS/Projects/articlegenerator && git checkout main && git pull && pyt
 To use full text locally, `papers` must resolve. In Git Bash it is not on
 PATH; either run from PowerShell or set
 `ARTICLEGEN_PAPERS_CMD="python -m papers"` with paperfetch installed
-(`pip install -e C:/claudeOS/Projects/paperfetch`). Set `PAPERS_MAILTO`.
+(`pip install -e C:/claudeOS/Projects/tools/paperfetch`). Set `PAPERS_MAILTO`.
 
 ## Next thing to do
 
