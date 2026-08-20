@@ -19,12 +19,20 @@ from .data_types import EnvelopeBase, GateReport
 
 TAIL_CHARS = 1000        # command output kept as evidence on a failure
 
-# A place the reviewer claims to have opened: dir/file:line or file.ext:line.
-# "looks good" and a blank string do not match.
+# A place the reviewer claims to have opened. "looks good" and a blank
+# string do not match. Shapes beyond file:N (#57, #58): pytest/bun node IDs,
+# line ranges, diff-stat prose, and a git SHA.
 _FILE_LINE = re.compile(
-    r'(?:[A-Za-z0-9_.-]+[/\\])+[A-Za-z0-9_.-]+:\d+'
-    r'|[A-Za-z0-9_.-]+\.[A-Za-z0-9]+:\d+'
+    r'(?:[A-Za-z0-9_.-]+[/\\])+[A-Za-z0-9_.-]+(?:::[A-Za-z_][A-Za-z0-9_]*)+'
+    r'|(?:[A-Za-z0-9_.-]+[/\\])+[A-Za-z0-9_.-]+:\d+(?:-\d+)?'
+    r'|[A-Za-z0-9_.-]+\.[A-Za-z0-9]+(?:::[A-Za-z_][A-Za-z0-9_]*)+'
+    r'|[A-Za-z0-9_.-]+\.[A-Za-z0-9]+:\d+(?:-\d+)?'
+    r'|[A-Za-z0-9_.-]+\.[A-Za-z0-9]+[\s:+\-—–]+\d+'
+    r'|[A-Za-z0-9_.-]+\.[A-Za-z0-9]+\s+lines?\s+\d+-\d+'
+    r'|[A-Za-z_][A-Za-z0-9_]*\(\)\s+lines?\s+\d+-\d+'
+    r'|[A-Za-z_][A-Za-z0-9_]*\s+lines?\s+\d+-\d+'
 )
+_SHA = re.compile(r'\b[0-9a-f]{7}(?:[0-9a-f]{33})?\b', re.I)
 
 
 # A run the reviewer claims to have made, plus what it returned. Some
@@ -35,16 +43,26 @@ _FILE_LINE = re.compile(
 # result.
 _COMMAND = re.compile(
     r'\b(?:pytest|docker run|just \w+|git (?:diff|status|log|show)\b'
-    r'|python[^\n]*\.py|scripts/[\w./-]+\.py)')
+    r'|python[^\n]*\.py|scripts/[\w./-]+\.py'
+    r'|bunx?\s+\S+|npm\s+(?:test|run\s+\S+)|npx\s+\S+'
+    r'|vitest\b|tsc\b|cargo\s+test|go\s+test|make\s+\S+)')
 # The scope check ("only these files changed") is settled by `git diff --stat`
 # or `git status --short`, whose outcomes are "N files changed" and status
 # lines like "M src/x.yaml" -- so those count too. Batch 11 of #62 died on the
 # reviewer quoting exactly that output and the gate not recognising it.
+# #57 / #58: "40 tests passed", "clean"/"untouched", a commit SHA, and a
+# comma-list of filenames after git status.
 _OUTCOME = re.compile(
-    r'\b(?:\d+\s+(?:passed|failed|skipped|errors?|coords?|entries)'
+    r'\b(?:\d+\s+(?:tests?\s+)?(?:pass(?:ed)?|fail(?:ed)?)'
+    r'|\d+\s+(?:skipped|errors?|coords?|entries)'
     r'|\d+\s+files?\s+changed'
-    r'|exit(?:\s+code)?\s+\d+|no\s+(?:errors|mismatches|changes))\b'
-    r'|(?:^|\s)[MADR?]{1,2}\s+[\w./\\-]+\.\w+', re.I)
+    r'|exit(?:\s+code)?\s+\d+|no\s+(?:errors|mismatches|changes)'
+    r'|untouched|unchanged|unmodified|clean'
+    r'|absent from (?:the )?(?:diff|changed files))\b'
+    r'|(?:^|\s)[MADR?]{1,2}\s+[\w./\\-]+\.\w+'
+    r'|\b[0-9a-f]{7}(?:[0-9a-f]{33})?\b'
+    r'|[A-Za-z0-9_.-]+\.[A-Za-z0-9]+(?:\s*,\s*[A-Za-z0-9_.-]+\.[A-Za-z0-9]+)+',
+    re.I)
 
 
 def _has_run_evidence(evidence: str) -> bool:
@@ -55,10 +73,12 @@ def _has_run_evidence(evidence: str) -> bool:
 def _has_file_line(evidence: str) -> bool:
     """Did the reviewer name somewhere it actually looked?
 
-    A file:line, or a command with the result it returned. Anything else --
-    "looks good", a blank string, an unbacked claim -- is not evidence.
+    A file:line (or a node ID, line range, diff-stat, SHA), or a command with
+    the result it returned. Anything else -- "looks good", a blank string, an
+    unbacked claim -- is not evidence.
     """
-    return bool(_FILE_LINE.search(evidence or "")) or _has_run_evidence(evidence)
+    e = evidence or ""
+    return bool(_FILE_LINE.search(e) or _SHA.search(e) or _has_run_evidence(e))
 
 
 def _size(path: Path) -> str:
