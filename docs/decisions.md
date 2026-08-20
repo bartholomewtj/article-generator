@@ -702,20 +702,20 @@ Three options: fix the links to be relative-safe, keep the files as pointers,
 or delete them. Deleting won because a pointer file that says only "read the
 other file" costs a read and buys nothing — a cold agent opening it learns to
 open the file it would have opened anyway. What it does buy is a second place
-for the agreement to live, and two hand-maintained agreements drift. The root
-of the workspace keeps one `AGENTS.md`, because a non-Claude agent starting
-there has no other route to the rules; a repo that already has a `CLAUDE.md`
-does not need the hop.
+for the agreement to live, and two hand-maintained agreements drift. One
+AGENTS.md still lives at the claudeOS workspace root, outside this repo,
+because a non-Claude agent starting there has no other route to the rules. A
+repo that already has a `CLAUDE.md` does not need the hop.
 
 Both names went into `.gitignore` rather than being left to vigilance, since
 the tool that wrote them once will write them again. That makes a deliberate
 one need `git add -f`, which is the right way round: the accident is silent and
 the intent is typed.
 
-`.agents/AGENTS.md` was a separate case and was *not* simply deleted. It held
-two real UI rules — matching a sub-template's `:root` defaults to the app's
-dark theme, and opting key inputs out of password-manager autofill — that
-existed nowhere else and that no session ever loaded, because Claude does not
+The copy under `.agents/AGENTS.md` was removed as well, but it was a separate
+case and was *not* simply discarded. It held two real UI rules — matching a
+sub-template's `:root` defaults to the app's dark theme, and opting key inputs
+out of password-manager autofill — that existed nowhere else and that no session ever loaded, because Claude does not
 read that folder. Both moved into the Web app section of `CLAUDE.md` before the
 file went. Content stranded in a runtime folder is a worse failure than a
 redundant pointer: the pointer wastes a read, the stranded rule gets
