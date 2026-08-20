@@ -18,3 +18,7 @@ venv/
 # sssf runtime
 adws/adw_data/sessions/
 adws/adw_data/sssf.db*
+
+# auto-written by agent /init; CLAUDE.md is the working agreement
+/AGENTS.md
+/GEMINI.md

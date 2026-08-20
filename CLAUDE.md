@@ -479,6 +479,19 @@ and sections intact.
   what keeps `contentDocument` reachable for the theme sync, in-place edit and
   save. Older draft files on disk still carry a toolbar and
   `hideArticleToolbar()` hides it.
+- **A sub-template's own `:root` defaults must match the app's.** An iframe or
+  sub-template that ships light defaults flashes white inside the dark app
+  before the theme sync lands, and stays white if the sync fails. Set the same
+  dark defaults (`--bg: #0f1115`, `--ink: #f1f5f9`) and put an explicit
+  `color: var(--ink)` on `p`, `h2`, `h3`, `li`, `blockquote` and `aside` --
+  inheriting from `body` alone leaves elements the UA stylesheet colours.
+- **Key and token inputs must opt out of password managers.** 1Password,
+  LastPass and Bitwarden offer to save an API key as a login, then autofill it
+  over the next text field. On any secret input use
+  `autocomplete="new-password"` (or `off`) plus `data-1p-ignore="true"`,
+  `data-lpignore="true"` and `data-bwignore="true"`, and wrap the
+  settings-modal fields in `<form autocomplete="off" onsubmit="return false;">`
+  so the browser never raises its own save dialog.
 - **The read-only path comes before the key prompt.** There is no free way to
   *generate* anything since the provider list narrowed to OpenRouter, so a
   stranger sent this link would otherwise have to open a payments account
@@ -582,6 +595,13 @@ index.html on GitHub Pages  ──POST /api/draft──▶  backend on Render
 - Add a case to `tests/test_offline.py` for any new pure-logic behaviour.
 - When you fix something that cost real time to find, the invariant goes here
   and the story goes in `docs/decisions.md`.
+- **`AGENTS.md` and `GEMINI.md` were removed, and stay removed.** If either
+  reappears at the repo root, an agent tool's `/init` wrote it, not you --
+  delete rather than fix. This file is the single working agreement, and the
+  template those tools write points a *public* repo at the private
+  `C:\claudeOS` layout it was generated beside. Both names are in `.gitignore`
+  so a regenerated stub cannot be committed by accident; a real one would need
+  `git add -f`.
 - **Never write "does not close #NNN" in a PR body or commit message.** GitHub's
   linked-issue parser matches `close #NNN` and ignores the negation around it,
   so the sentence saying to leave an issue open is what closes it on merge. This
