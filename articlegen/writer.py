@@ -761,6 +761,44 @@ _BRIEFING_SYSTEM_FULLTEXT = _with_fulltext_framing(_BRIEFING_SYSTEM)
 _REVISE_BRIEFING_SYSTEM_FULLTEXT = _with_fulltext_framing(_REVISE_BRIEFING_SYSTEM)
 _REVISE_BRIEFING_PATCH_SYSTEM_FULLTEXT = _with_fulltext_framing(_REVISE_BRIEFING_PATCH_SYSTEM)
 
+_REVISE_FIGURES_PATCH_SYSTEM = _WRITER_SYSTEM + """
+
+You are now REVISING an existing draft rather than writing a new one, and you \
+return ONLY the blocks you changed -- not the whole article.
+
+A deterministic check could not find some of the numbers this draft reports in \
+the material the draft was written from. Your ONLY job is to make each flagged \
+sentence honest. For each one, do exactly one of: delete the number and keep the \
+claim in words; restate the quantity qualitatively; or, when the number is real \
+but credited to the wrong source, move the citation to the source that reports \
+it -- and if you are not certain which source that is, delete the number instead.
+
+You MUST NOT introduce any number that is not already in the draft, add a \
+source, or "correct" a figure to a value you believe is right. Leave every block \
+the brief does not name out of your reply entirely; anything you omit is kept \
+exactly as it is. Every other "[N]" citation marker must survive exactly as it \
+is and stay attached to the same claim.
+"""
+
+_REVISE_BRIEFING_FIGURES_PATCH_SYSTEM = _BRIEFING_SYSTEM + """
+
+You are now REVISING an existing draft rather than writing a new one, and you \
+return ONLY the blocks you changed -- not the whole article.
+
+A deterministic check could not find some of the numbers this draft reports in \
+the material the draft was written from. Your ONLY job is to make each flagged \
+sentence honest. For each one, do exactly one of: delete the number and keep the \
+claim in words; restate the quantity qualitatively; or, when the number is real \
+but credited to the wrong source, move the citation to the source that reports \
+it -- and if you are not certain which source that is, delete the number instead.
+
+You MUST NOT introduce any number that is not already in the draft, add a \
+source, or "correct" a figure to a value you believe is right. Leave every block \
+the brief does not name out of your reply entirely; anything you omit is kept \
+exactly as it is. Every other "[N]" citation marker must survive exactly as it \
+is and stay attached to the same claim.
+"""
+
 
 def clean_search_terms(terms) -> list[str]:
     """Strip, drop blanks, drop case-insensitive duplicates, keep order,
@@ -1191,6 +1229,46 @@ def revise_prose(
         # it named was a block this article does not have. Both mean the draft
         # is unchanged, and returning it as if it were revised would let
         # `enforce_style` log a revision that never happened.
+        raise RuntimeError(
+            "the revision returned no edit that matched a block in the draft "
+            f"({len(result.get('edits') or [])} edit(s) offered)"
+        )
+    return revised
+
+
+def revise_statistics(
+    article: dict,
+    brief: str,
+    model: str | None = None,
+    api_key: str | None = None,
+) -> dict:
+    """Revise a draft's prose to remove or fix unverified/misattributed figures.
+
+    Patch-only: returns only the blocks that changed. No sources are passed in
+    the payload because the model is strictly forbidden from adding new numbers
+    or claims.
+    """
+    draft_json = json.dumps(article, ensure_ascii=False, indent=1)
+    context = (
+        f"{brief}\n\n"
+        "Here is the draft to revise, as JSON:\n\n"
+        f"{draft_json}"
+    )
+    briefing = is_briefing(article)
+    patch_system = (
+        _REVISE_BRIEFING_FIGURES_PATCH_SYSTEM if briefing
+        else _REVISE_FIGURES_PATCH_SYSTEM
+    )
+    result = generate_json(
+        context,
+        _REVISION_SCHEMA,
+        system=patch_system,
+        model=model,
+        deep=True,
+        api_key=api_key,
+    )
+    revised, applied = apply_revisions(article, result.get("edits") or [])
+    if not applied:
         raise RuntimeError(
             "the revision returned no edit that matched a block in the draft "
             f"({len(result.get('edits') or [])} edit(s) offered)"

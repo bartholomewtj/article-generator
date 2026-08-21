@@ -76,7 +76,7 @@ tests/test_journal_conformance.py conventions as assertions over 5 fixtures
 result stops the run) → named-source pass →
 full-text fetch → `write_briefing` (or `write_article` when `long=True`) →
 `enforce_style` (up to `MAX_STYLE_PASSES` `revise_prose` passes if `check_style`
-finds errors) → `check_statistics` → a `Draft` carrying article, papers,
+finds errors) → `enforce_statistics` (one `revise_statistics` pass when figures are flagged) → a `Draft` carrying article, papers,
 curation, verification, style report and `provenance` (queries, model, date,
 databases, full_text_sources).
 
@@ -127,6 +127,9 @@ behaviour it describes.
 | Fig. 1 counts study designs, and falls back to years when it cannot | `test_figure_one_counts_study_designs` |
 | Table 1 prints no citation count | `test_figure_one_counts_study_designs` |
 | Supplied search terms start the plan and are never replaced | `test_idea_search_terms_reach_the_draft` |
+| A figure stated in a paper's title is grounded | `test_statistic_verification` |
+| A hyphenated range is one figure, not two | `test_statistic_verification` |
+| Flagged figures buy one revision, a clean draft buys none | `test_flagged_figures_buy_one_revision` |
 
 **Not pinned by a test** — these need the reasoning, because nothing else
 carries it:
@@ -140,12 +143,22 @@ carries it:
   wording, and Table 1's Read column must agree with Methods. Methods' full-text
   sentence names how many read sources were cited when those two differ, because
   the Read column counts read-and-cited.
-- **`verify.check_statistics` searches exactly the abstracts plus the excerpts
+- **`verify.check_statistics` searches exactly the titles, abstracts plus the excerpts
   the writer was shown** — never the unseen tail of a paper. Both sides call
   `sources.full_text_excerpts`, so nothing has to be recorded per run. A cited
   sentence is checked against *its own* sources: a figure that is real but in
   the wrong source comes back as `misattributed`, not `unverified`, and an
   uncited sentence has no attribution to break (#101).
+- **The figures pass removes, it never researches.** `MAX_STATISTIC_PASSES` is 1
+  and the accepted revision must satisfy three deterministic rules — intact,
+  strictly fewer flags, and `total` not increased. The third one is what stops
+  the model "fixing" a flag by inventing a number that would make the sentence
+  true, which is the exact failure this pass could otherwise cause. An accepted
+  figures revision recomputes the style report, because
+  `render._working_draft_sentence` brands the page from it and the prose just
+  changed. Recompute only — it never buys another prose pass. The statistics
+  haystack is **title + abstract + shown excerpt**, in step with
+  `writer._format_sources`, which prints all three (#189).
 - **Methods must describe the check that runs, not the check you wish ran.** It
   claimed "every numerical value" while `_FIGURE_RE` skipped bare integers, and
   `_unverified_sentence` said "the abstracts" on drafts that had read full
