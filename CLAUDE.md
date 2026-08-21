@@ -100,6 +100,7 @@ behaviour it describes.
 | Flagged figures are marked where the number is | `test_unverified_figures_are_marked_inline` |
 | The article never instructs a clinician | `test_clinical_directives_are_an_error` |
 | Front-end model ids match the server allowlist | `test_front_end_models_match_the_allowlist` |
+| A keyless hosted request writes Luna, never Opus | `test_public_generation_forces_luna_on_the_hosted_key` |
 | The stored API key is tab-only (`sessionStorage`) unless opted in | `test_api_key_is_session_only_by_default` |
 | Nothing needing a key costs a round trip to discover it | `test_first_visit_does_not_dead_end` |
 | The full-text dependencies fail loudly enough to diagnose | `test_full_text_dependencies_fail_loudly_enough_to_diagnose` |
@@ -518,19 +519,32 @@ and sections intact.
   `OPENROUTER_REFUSAL_FALLBACK = anthropic/claude-sonnet-5`. Both CLI providers
   are local-only and absent from `web.ALLOWED_MODELS` (`test_claude_cli_provider`,
   `test_gemini_cli_provider`).
-- **The default is settled: Opus, and it is not up for re-litigation (#85).**
+- **The CLI default is settled: Opus, and it is not up for re-litigation (#85).**
   `anthropic/claude-opus-5` costs $5/$25 per Mtok against Sonnet 5's $2/$10 —
   2.5x on every article — and the owner has taken that trade deliberately. The
   question was never cost, it was whether the draft *adjudicates* its evidence
   base or merely summarises it, and prose quality is the product here. Do not
-  propose Sonnet as the default again. **Sonnet stays as
+  propose Sonnet as the CLI default again. **Sonnet stays as
   `OPENROUTER_REFUSAL_FALLBACK` and that is a separate mechanism** — it is the
   substitute *because* it carries no elevated bio/cyber classifiers, so the
   fallback cannot reproduce the refusal it exists to escape (#45, #79).
   Removing it would leave refusals unhandled on the common route.
+- **The public web app is a different default: `OPENROUTER_PUBLIC_MODEL`
+  (`openai/gpt-5.6-luna`).** Measured against Gemini 3.7 Flash on three
+  psychiatry ED topics: Luna keeps the question on the topic and names the
+  shape of the evidence. A keyless request on the hosted OpenRouter key is
+  **forced** to this model — `_credentials` ignores the payload — so a crafted
+  POST cannot select Opus on the host's bill.
+  `test_public_generation_forces_luna_on_the_hosted_key`. The host pays
+  (~2c/article); `ARTICLEGEN_RATE_LIMIT` / `ARTICLEGEN_RATE_LIMIT_TOTAL` are
+  then a spend cap. Set `ARTICLEGEN_PUBLIC_OPENROUTER_KEY` as a Render
+  **secret**, never in the repo. A visitor who pastes their own key still
+  chooses an allowlisted model and pays themselves.
 - **Model ids live in two places** — `llm.py` and `PROVIDERS` in `index.html`.
   Nothing links them and `web._requested_model` silently drops an unrecognised
   name, so a stale front end quietly stops honouring the model the user picked.
+  The front end's OpenRouter model is `OPENROUTER_PUBLIC_MODEL`, not the CLI
+  default.
 - **A slash makes a model name an OpenRouter slug**, checked *before* the
   `claude` prefix. `anthropic/claude-sonnet-5` routed to Anthropic's SDK is a
   404. No direct provider's model id contains a slash.
@@ -606,13 +620,12 @@ and sections intact.
   `data-lpignore="true"` and `data-bwignore="true"`, and wrap the
   settings-modal fields in `<form autocomplete="off" onsubmit="return false;">`
   so the browser never raises its own save dialog.
-- **The read-only path comes before the key prompt.** There is no free way to
-  *generate* anything since the provider list narrowed to OpenRouter, so a
-  stranger sent this link would otherwise have to open a payments account
-  before seeing the thing work at all (#111). `drafts/` is public and already
-  deployed by the Pages workflow (`path: '.'`), so `.demo-band` on the landing
-  view points at it — above `#setupCard`, because a first impression of "paste
-  a credential" is the thing worth avoiding. Don't reorder them.
+- **The read-only path comes before the key prompt.** `drafts/` is public and
+  already deployed by the Pages workflow (`path: '.'`), so `.demo-band` on the
+  landing view points at it — above `#setupCard`. Generating on the hosted
+  backend is now also free (Luna, host-paid). `#setupCard` is for a local
+  server with no key, or a host whose public secret is unset. Don't reorder
+  the demo band above the card.
 - **A visitor never sees a raw exception.** `_unexpected()` logs the detail
   server-side and returns a sentence, unless the message names something the
   caller can act on (`_ACTIONABLE` — key, credit, rate limit). `NoPapersFound`
@@ -650,7 +663,8 @@ and sections intact.
 
 ```
 index.html on GitHub Pages  ──POST /api/draft──▶  backend on Render
-   (static, holds the key)                        (stateless, holds nothing)
+   (static; visitor key optional)                 (stateless articles;
+                                                  optional hosted Luna key)
 ```
 
 - **Front end**: Pages, deployed by `.github/workflows/deploy-pages.yml` on push
@@ -662,7 +676,9 @@ index.html on GitHub Pages  ──POST /api/draft──▶  backend on Render
   **Blueprint auto-sync is off**, so the `branch:` line is a record, not a
   control. Sleeps after 15 min idle, ~50s to wake.
 - **`GET /api/health`** reports the branch and commit the running service was
-  built from. `.github/workflows/health.yml` runs it daily.
+  built from, plus `public` (whether a visitor can draft without a key) and
+  `public_model` when that is true. It never returns the key.
+  `.github/workflows/health.yml` runs it daily.
 - **`GET /api/diag`** runs one keyless search and reports what *that host* gets
   from the scholarly APIs. Bypasses the cache and is therefore rate-limited —
   each call spends real quota. Its per-source `cached` flag is always `false`.
@@ -698,7 +714,9 @@ index.html on GitHub Pages  ──POST /api/draft──▶  backend on Render
 - Set `OPENROUTER_API_KEY` or `ANTHROPIC_API_KEY`, or use `--model cli:opus`
   with no key at all. Recommended: `SEMANTIC_SCHOLAR_API_KEY` (free; without it
   Semantic Scholar 429s on effectively every call, #148). Optional: `OPENALEX_MAILTO`,
-  `PAPERS_MAILTO`, `ARTICLEGEN_PAPERS_CMD`.
+  `PAPERS_MAILTO`, `ARTICLEGEN_PAPERS_CMD`. The hosted public path uses
+  `ARTICLEGEN_PUBLIC_OPENROUTER_KEY` (Render secret) and writes Luna.
+- **Never commit that public key.** A leak is a bill, not just an outage.
 
 ## Conventions
 

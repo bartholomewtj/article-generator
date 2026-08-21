@@ -18,26 +18,28 @@ kept for later, not deleted.
 🔗 **[Open the site](https://bartholomewtj.github.io/article-generator/)**
 
 📄 **[Read a finished article](https://bartholomewtj.github.io/article-generator/drafts/)**
-— no key and no account needed. Generating your own needs an OpenRouter key
-(roughly 50c–$1 an article); reading what it has already produced does not.
+— no key and no account needed. Generating is free on the public site (GPT-5.6
+Luna, host-paid, rate-limited). Pasting your own OpenRouter key is optional.
 
 ---
 
 ## Use it from your phone (recommended)
 
 1. **Open the site:** [https://bartholomewtj.github.io/article-generator/](https://bartholomewtj.github.io/article-generator/) (or run `articlegen web --open` locally).
-2. **Add a key:** Open Settings (⚙️) and paste an [OpenRouter API key](https://openrouter.ai/keys). It stays in your browser and is sent only with the request you make — never stored on the server. By default it is kept for that browser tab only; see [Where your key is kept](#where-your-key-is-kept) before you tick **Remember this key**. Articles cost roughly 50c–$1 each. The web app offers OpenRouter only; the CLI below also supports Anthropic and a Claude subscription.
-3. **Type a theme:** Enter your topic (e.g. `renewable energy storage`) and optional audience/style notes.
-4. **Choose a draft:** Tap any generated **Draft Idea Card** to launch the evidence-grounded research pipeline.
-5. **Read & Share:** View the rendered article and tap **Share**, **Copy Link**, or **QR Code**.
+2. **Type a theme:** Enter your topic (e.g. `renewable energy storage`) and optional audience/style notes. On the public site you do not need a key.
+3. **Choose a draft:** Tap any generated **Draft Idea Card** to launch the evidence-grounded research pipeline.
+4. **Read & Share:** View the rendered article and tap **Share**, **Copy Link**, or **QR Code**.
+
+The public site writes with **GPT-5.6 Luna**. It is free to you; the host pays, and an hourly cap applies to everyone together. Settings still accepts an [OpenRouter API key](https://openrouter.ai/keys) if you want to use your own credit instead of the shared cap. A remembered key stays in the browser — see [Where your key is kept](#where-your-key-is-kept). The web app offers OpenRouter only; the CLI below also supports Anthropic and a Claude subscription.
 
 **How it fits together.** The page is a front end only — the pipeline below is
 the same Python that the CLI runs, on a small backend the page calls. There is
 no second implementation: an article generated from your phone goes through the
 same relevance gate, prose-style enforcement and statistic verification as one
-generated from the terminal. The hosted backend keeps nothing: it renders your
-article, returns it, and forgets it. Your drafts live in your own browser.
-See [`deploy/`](deploy/README.md) to host the backend yourself.
+generated from the terminal. The hosted backend keeps no articles: it renders,
+returns, and forgets. Public generation uses a host-held OpenRouter key for Luna
+only; a visitor key is sent per request and never stored. Your drafts live in
+your own browser. See [`deploy/`](deploy/README.md) to host the backend yourself.
 
 ### Where your key is kept
 
@@ -73,11 +75,14 @@ doubt. Running `articlegen web` locally avoids the shared origin entirely.
 **OpenRouter is used by default** — with an `OPENROUTER_API_KEY` set it runs
 automatically, and it takes priority if an Anthropic key is also present. To use
 another provider, set `ARTICLEGEN_PROVIDER=anthropic` (or `claude-cli`). Models:
-`anthropic/claude-opus-5` on OpenRouter, `claude-fable-5` on Anthropic,
-`cli:opus` on your subscription, all overridable with `--model`.
+`anthropic/claude-opus-5` on OpenRouter (CLI default), `openai/gpt-5.6-luna` on
+the public web app, `claude-fable-5` on Anthropic, `cli:opus` on your
+subscription, all overridable with `--model`.
 
 **This block is the single place the defaults are described in prose.** Change a
-default in `llm.py` and change it here; nowhere else should restate them.
+default in `llm.py` and change it here; nowhere else should restate them. The
+CLI default (`OPENROUTER_DEFAULT_MODEL`) and the public web default
+(`OPENROUTER_PUBLIC_MODEL`) are two constants on purpose.
 
 **Groq was removed.** It used to be the free default, on a 100,000 tokens/day
 tier that allowed 4–7 articles. Its real cost was a 12,000 tokens/**minute**
@@ -96,14 +101,19 @@ this cannot — it can only ask. When a reply comes back as prose instead,
 `articlegen` asks once more and then gives up on that article. It is the right
 pick for drafting at your own desk, and the wrong one for anything automated.
 
-**Both API providers cost real money, so read this before pasting a key.**
-OpenRouter's default is Claude Opus 5, at roughly **50c–$1 an article**. The
-Anthropic default is Fable 5, at roughly **$1–2**. Those are per article, and a
-failed run still bills you. Neither has a daily cap, which is the point — but it
-also means nothing stops a bad afternoon costing $20.
+**The public web app is the exception: generating there is free to the visitor.**
+It writes with GPT-5.6 Luna on the host's key, at roughly **2c an article** to
+the host, inside the hourly rate limits. A visitor key is optional.
 
-Cheaper options, if writing quality is not what you're trying to fix:
+**CLI and a pasted key still cost real money.** OpenRouter's CLI default is
+Claude Opus 5, at roughly **50c–$1 an article**. The Anthropic default is Fable
+5, at roughly **$1–2**. Those are per article, and a failed run still bills you.
+Neither has a daily cap, which is the point — but it also means nothing stops a
+bad afternoon costing $20.
 
+Cheaper options on the CLI, if writing quality is not what you're trying to fix:
+
+- `--model openai/gpt-5.6-luna` — the public-site model, a few cents an article.
 - `--model meta-llama/llama-3.3-70b-instruct` — well under a cent an article.
 - `--model anthropic/claude-sonnet-5` — a cheaper Claude than either default.
 - `--model cli:opus` — free, on a Claude subscription you already pay for.

@@ -48,9 +48,18 @@ That's the only test that exercises the whole chain.
 
 ## Configuration
 
-`render.yaml` sets these; override them in the dashboard if needed. **None of
-them should ever be an LLM API key** — the backend deliberately has none of its
-own, and every visitor brings theirs.
+`render.yaml` sets these; override them in the dashboard if needed.
+
+**Public generation** needs `ARTICLEGEN_PUBLIC_OPENROUTER_KEY` set as a
+**secret** in the Render dashboard (not in git). Visitors can then draft without
+pasting a key. That path always writes with GPT-5.6 Luna; a crafted request
+cannot select Opus on this bill. You pay OpenRouter ~2c per briefing. The hourly
+caps (`ARTICLEGEN_RATE_LIMIT` 20/IP, `ARTICLEGEN_RATE_LIMIT_TOTAL` 120 everyone)
+are the spend cap — 120 Luna drafts is roughly $2.40. If the secret is unset,
+visitors must paste their own key, as before.
+
+Do not put the secret in `render.yaml`'s `value:`. `sync: false` means Render
+asks for it; leaving it blank disables public generation.
 
 | Variable | Default | What it does |
 |---|---|---|
@@ -62,6 +71,7 @@ own, and every visitor brings theirs.
 | `ARTICLEGEN_SOURCE_PROBE` | `1` | Check the scholarly APIs are answering before the first paid LLM call. Set `0` to skip. |
 | `OPENALEX_MAILTO` | unset | Your email; OpenAlex "polite pool". |
 | `SEMANTIC_SCHOLAR_API_KEY` | unset | Recommended (free; without it the source refuses nearly every call, #148). Set as a *secret*. |
+| `ARTICLEGEN_PUBLIC_OPENROUTER_KEY` | unset | Host-paid public drafts (Luna). Set as a *secret*. Absent: visitors must paste their own key. |
 
 ## Two things about the free tier
 

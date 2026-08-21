@@ -610,16 +610,10 @@
       </a>
     </section>
 
-    <!-- The read-only path, and it comes first (#111).
-         Since the Settings panel narrowed to OpenRouter there is no free way to
-         generate anything here: a stranger sent this link has to open an account
-         on a payments provider and load credit before they can see the thing
-         work. Most will not — they open Settings and leave.
-         But drafts/ is already public and already deployed by the Pages
-         workflow, so the output can be shown to anyone for nothing, and showing
-         the output is the honest demo of what this is. It sits above the key
-         prompt because a first impression of "paste a credential" is the thing
-         worth avoiding. -->
+    <!-- The read-only path, and it comes first (#111). drafts/ is already
+         public. Generating is now also free on the hosted backend (Luna, the
+         host pays, rate-limited). The setup card is only for a local server
+         with no key, or a hosted backend whose public secret is not set. -->
     <a class="demo-band" href="drafts/">
       <span class="demo-band-label">All published briefings</span>
       <span class="demo-band-text">Every briefing this has produced — no key, no
@@ -627,18 +621,15 @@
       <span class="demo-band-go">Browse all evidence briefings →</span>
     </a>
 
-    <!-- The setup is mandatory and used to be invisible: nothing on this view
-         said a key was needed, so a first-time visitor typed a theme, tapped,
-         waited out a ~50s cold start and got a raw alert() telling them to open
-         a gear icon they had not noticed (#95). This card is shown only until a
-         key exists — `refreshSetupCard()` hides it once one is set. -->
+    <!-- Shown only when the backend cannot draft without a visitor key.
+         `refreshSetupCard()` hides it once a key is set or `/api/health`
+         reports `public: true`. -->
     <div class="setup-card" id="setupCard" style="display:none;">
       <p class="setup-title">Before your first briefing</p>
       <p class="setup-body">
-        This site does the research and writing on <strong>your own OpenRouter
-        account</strong>, not ours. You paste a key once; each briefing then costs
-        you roughly 50c–$1. There is no free tier, and nothing works until the
-        key is set.
+        This local server has no OpenRouter key of its own. Paste one in
+        Settings to generate a briefing, or run against the hosted site, which
+        writes with GPT-5.6 Luna at no cost to you.
       </p>
       <button class="btn-primary setup-btn" onclick="openModal('settingsModal')">
         Set up — about 2 minutes
@@ -814,17 +805,19 @@
            unchanged and restoring a provider is a matter of adding its <option>
            and its PROVIDERS entry back. -->
       <select id="providerSelect" class="theme-input" onchange="onProviderChange()" style="display:none;">
-        <option value="openrouter">OpenRouter &mdash; Claude Opus 5</option>
+        <option value="openrouter">OpenRouter &mdash; GPT-5.6 Luna</option>
       </select>
 
       <!-- The panel used to open on an unexplained password box and a list of
            steps, and talk about "prepaid credit" without ever saying what a
            key is or why this site needs one (#95). -->
       <p style="font-size:0.85rem; line-height:1.55; margin:0 0 1rem;">
-        An API key is a password that lets this site use <strong>your</strong>
-        OpenRouter account to do the writing. The site has no account of its
-        own, so nothing works until you add one. You pay OpenRouter directly —
-        roughly 50c–$1 per article — and you can revoke the key at any time.
+        Generating on the public site is free — it writes with GPT-5.6 Luna on
+        the host's OpenRouter account, rate-limited. An API key is a password
+        that lets this site use <strong>your</strong> OpenRouter account
+        instead, so you are not sharing the public hourly cap. That is
+        optional. You pay OpenRouter directly for those runs, and you can
+        revoke the key at any time.
       </p>
 
       <div style="margin-bottom: 1.25rem;">
@@ -938,27 +931,40 @@
 
   const WAKE_HINT_MS = 8000;
 
+  // Hosted Pages talks to Render: assume public Luna until /api/health says
+  // otherwise, so a stranger is not asked for a key during the cold start.
+  // Local `articlegen web` (API_BASE === '') stays false until health reports.
+  let publicGeneration = !!API_BASE;
+
   /** Nudge the sleeping backend awake as soon as the page loads. */
   function warmBackend() {
-    if (!API_BASE) return;   // local `articlegen web` is already running
-    fetch(apiUrl('/api/health'), { method: 'GET' }).catch(function () {});
+    fetch(apiUrl('/api/health'), { method: 'GET' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (info) {
+        if (info && typeof info.public === 'boolean') {
+          publicGeneration = info.public;
+          refreshSetupCard();
+        }
+      })
+      .catch(function () {});
   }
 
-  /** Show/hide the first-run explainer according to whether a key is set. */
+  /** Show/hide the first-run explainer according to whether a key is needed. */
   function refreshSetupCard() {
     const card = document.getElementById('setupCard');
-    if (card) card.style.display = activeKey() ? 'none' : '';
+    if (card) card.style.display = (activeKey() || publicGeneration) ? 'none' : '';
   }
 
   /**
    * Gate every request that needs a key. Returns false and opens Settings
    * rather than letting the visitor wait out a cold start to be told no.
+   * On the hosted public path the host pays, so a missing visitor key is fine.
    */
   function requireKey() {
-    if (activeKey()) return true;
+    if (activeKey() || publicGeneration) return true;
     refreshSetupCard();
     openModal('settingsModal');
-    showToast('Add your OpenRouter key first — this site runs on your account.');
+    showToast('Add your OpenRouter key first — this local server has none of its own.');
     return false;
   }
 
@@ -1224,7 +1230,7 @@
   // key keeps it if that provider comes back.
   const PROVIDERS = {
     openrouter: {
-      model: 'anthropic/claude-opus-5',
+      model: 'openai/gpt-5.6-luna',
       store: 'articlegen_key_openrouter',
       label: 'OpenRouter API Key',
       placeholder: 'sk-or-v1-...'

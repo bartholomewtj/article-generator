@@ -1454,6 +1454,59 @@ def test_front_end_models_match_the_allowlist() -> None:
           bool(listed) and listed <= configured)
 
 
+def test_public_generation_forces_luna_on_the_hosted_key() -> None:
+    """A keyless request on the hosted key must write Luna, never Opus.
+
+    The public site pays from ARTICLEGEN_PUBLIC_OPENROUTER_KEY. If `_credentials`
+    honoured the payload's model, a crafted POST could select
+    `anthropic/claude-opus-5` and bill the host at $5/$25. Visitor-supplied
+    keys still choose any allowlisted model — they are paying.
+    """
+    from articlegen import llm, web
+
+    check("Luna is the public model",
+          llm.OPENROUTER_PUBLIC_MODEL == "openai/gpt-5.6-luna")
+    check("and the server accepts it",
+          llm.OPENROUTER_PUBLIC_MODEL in web.ALLOWED_MODELS)
+    check("CLI default is still Opus",
+          llm.OPENROUTER_DEFAULT_MODEL == "anthropic/claude-opus-5")
+    check("the two defaults are not the same model",
+          llm.OPENROUTER_PUBLIC_MODEL != llm.OPENROUTER_DEFAULT_MODEL)
+
+    saved = {k: os.environ.get(k) for k in (
+        "ARTICLEGEN_PUBLIC_OPENROUTER_KEY", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY")}
+    try:
+        os.environ.pop("OPENROUTER_API_KEY", None)
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+        os.environ["ARTICLEGEN_PUBLIC_OPENROUTER_KEY"] = "sk-or-v1-hosted"
+
+        check("hosted key enables public generation", web.public_generation_enabled())
+        key, model = web._credentials({
+            "model": llm.OPENROUTER_DEFAULT_MODEL, "key": ""})
+        check("keyless hosted request uses the hosted key",
+              key == "sk-or-v1-hosted")
+        check("and forces Luna even if the payload asked for Opus",
+              model == llm.OPENROUTER_PUBLIC_MODEL)
+
+        key, model = web._credentials({
+            "model": llm.OPENROUTER_DEFAULT_MODEL, "key": "sk-or-v1-visitor"})
+        check("a visitor key is used as given", key == "sk-or-v1-visitor")
+        check("and their allowlisted model is honoured",
+              model == llm.OPENROUTER_DEFAULT_MODEL)
+
+        os.environ.pop("ARTICLEGEN_PUBLIC_OPENROUTER_KEY", None)
+        check("no hosted key means public generation is off",
+              not web.public_generation_enabled())
+        key, model = web._credentials({"model": llm.OPENROUTER_PUBLIC_MODEL})
+        check("keyless with no host key has no api_key", key is None)
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
 def test_search_cache() -> None:
     """A repeated query must not cost a second call against the shared quota.
 
@@ -2838,20 +2891,22 @@ def test_first_visit_does_not_dead_end() -> None:
     check("and offer a retry that repeats the same action",
           "retryLastAction()" in page and "lastAction = function ()" in page)
 
-    # 4. The landing view says setup is needed, and the version badge is gone.
+    # 4. The landing view still has a setup card for a keyless local server,
+    #    and the version badge is gone. The hosted path is free (Luna) and
+    #    does not show this card once /api/health reports public.
     check("the landing view explains the setup",
           'id="setupCard"' in page and "Set up — about 2 minutes" in page)
-    check("the explainer hides once a key is set", "refreshSetupCard()" in page)
+    check("the explainer hides once a key is set or the host is public",
+          "refreshSetupCard()" in page and "publicGeneration" in page)
     check("the settings panel says what an API key is",
           "An API key is a password" in page)
+    check("the hosted path says generating is free",
+          "Generating on the public site is free" in page)
     check("the version badge is gone", "SyncFix" not in page and "v2.3" not in page)
 
-    # There is no free way to *generate* anything since the provider list
-    # narrowed to OpenRouter, so a stranger sent this link has to open a
-    # payments account before they can see it work (#111). drafts/ is already
-    # public and already deployed by the Pages workflow, so the output can be
-    # shown for nothing — and it has to come *before* the key prompt, or the
-    # first impression is still "paste a credential".
+    # drafts/ is already public. Generating on the hosted backend is now also
+    # free (host-paid Luna). The finished-work band still sits above the
+    # setup card so a first impression is not "paste a credential".
     readme = open(os.path.join(root, "README.md"), encoding="utf-8").read()
     check("the landing view offers a read-only path",
           'class="demo-band"' in page and 'href="drafts/"' in page)
@@ -2860,6 +2915,8 @@ def test_first_visit_does_not_dead_end() -> None:
     check("it says outright that no key is needed", "no key, no" in page)
     check("README points at it too",
           "Read a finished article" in readme and "no account needed" in readme)
+    check("README says the public site generates for free",
+          "free on the public site" in readme)
 
     # 5. The timeline covers the whole plausible run, not just the first 30s.
     marks = sorted(int(m) for m in _re.findall(r"\}, (\d{4,6})\)", page))
@@ -7614,6 +7671,7 @@ def main(argv: list[str] | None = None) -> int:
         test_source_failures_are_distinguishable,
         test_first_semantic_scholar_refusal_buys_one_patient_round,
         test_search_cache, test_front_end_models_match_the_allowlist,
+        test_public_generation_forces_luna_on_the_hosted_key,
         test_polite_pool_identification, test_europe_pmc_parsing,
         test_arxiv_parsing, test_titles_arrive_without_markup,
         test_candidate_papers_dedupe_by_doi,
