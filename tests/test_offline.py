@@ -1678,6 +1678,13 @@ def test_europe_pmc_parsing() -> None:
             "journalInfo": {"journal": {"title": "J Affect Disord"}},
             "pubType": "research-article; Randomized Controlled Trial",
         },
+        {   # pubTypeList list-form (the real EPMC API shape; pubType flat field is null)
+            "id": "38000004", "source": "MED",
+            "title": "Treatment outcomes in adults with bipolar disorder",
+            "abstractText": "Results of synthesis.",
+            "pubYear": "2023", "citedByCount": 12, "doi": "10.1001/jamapsychiatry.2023.2225",
+            "pubTypeList": {"pubType": ["Meta-Analysis", "research-article", "Systematic Review", "Journal Article"]},
+        },
         {   # sparse: book chapter — no journal, no doi, bad year
             "id": "PPR000002", "source": "PPR",
             "title": "Sparse record",
@@ -1697,18 +1704,22 @@ def test_europe_pmc_parsing() -> None:
     real = sources._get_with_retry
     try:
         sources._get_with_retry = lambda url, params, headers: FakeResp()
-        papers = sources.search_europe_pmc("depression", limit=3)
+        papers = sources.search_europe_pmc("depression", limit=4)
     finally:
         sources._get_with_retry = real
 
-    check("abstract-less record dropped", len(papers) == 2)
-    full, sparse = papers
+    check("abstract-less record dropped", len(papers) == 3)
+    full, meta, sparse = papers
     check("markup stripped from the abstract", "<h4>" not in full.abstract)
     check("statistics survive stripping adjacent tags",
           "Depression affects 20% of adults." in full.abstract)
     check("markup stripped from the title", full.title == "A trial of something")
     check("string year becomes int", full.year == 2026)
     check("publication_types parsed from pubType", "randomized controlled trial" in full.publication_types)
+    check("publication_types parsed from pubTypeList.pubType list",
+          "meta-analysis" in meta.publication_types and "systematic review" in meta.publication_types)
+    check("classify_design identifies synthesis from pubTypeList alone",
+          sources.classify_design(meta) == "synthesis")
     # Europe PMC names arrive surname-first; the renderer takes the last token as
     # the surname, so they are normalised to given-name-first at parse time.
     # Passing `fullName` through printed "SH, K." for "Kim SH" in every reference.
@@ -4461,9 +4472,86 @@ def test_figure_one_counts_study_designs() -> None:
     p_obs = Paper(title="A prospective cohort study", abstract="a")
     check("cohort study classifies as observational", classify_design(p_obs) == "observational")
 
+    # Invariants on label mappings
+    check("DESIGN_LABELS and DESIGN_DISPLAY_ORDER keys match",
+          set(sources.DESIGN_LABELS) == set(sources.DESIGN_DISPLAY_ORDER))
+    for p in (p_proto, p_survey, p_rct, p_qual, p_obs, papers[0]):
+        check(f"classify_design returns valid label for {p.title[:20]}",
+              classify_design(p) in sources.DESIGN_LABELS)
+
+    # Positives from title
+    p_scoping = Paper(title="Coercive practice in acute care: a scoping review", abstract="a")
+    check("scoping review classifies as scoping", classify_design(p_scoping) == "scoping")
+    p_narrative = Paper(title="A narrative review of interventions", abstract="a")
+    check("narrative review classifies as narrative", classify_design(p_narrative) == "narrative")
+    p_consensus = Paper(title="Consensus statement on safety planning", abstract="a")
+    check("consensus statement classifies as consensus", classify_design(p_consensus) == "consensus")
+    p_case_rep = Paper(title="Clozapine toxicity: a case report", abstract="a")
+    check("case report classifies as case", classify_design(p_case_rep) == "case")
+    p_case_ser = Paper(title="Adverse events in inpatient wards: a case series", abstract="a")
+    check("case series classifies as case", classify_design(p_case_ser) == "case")
+
+    # Positives from publication_types alone (with plain titles)
+    check("meta-analysis pubType classifies as synthesis",
+          classify_design(Paper(title="Study on outcomes", abstract="a", publication_types=("meta-analysis",))) == "synthesis")
+    check("systematic review pubType classifies as synthesis",
+          classify_design(Paper(title="Study on outcomes", abstract="a", publication_types=("systematic review",))) == "synthesis")
+    check("scoping review pubType classifies as scoping",
+          classify_design(Paper(title="Study on outcomes", abstract="a", publication_types=("scoping review",))) == "scoping")
+    check("case reports pubType classifies as case",
+          classify_design(Paper(title="Study on outcomes", abstract="a", publication_types=("case reports",))) == "case")
+    check("randomized controlled trial pubType classifies as trial",
+          classify_design(Paper(title="Study on outcomes", abstract="a", publication_types=("randomized controlled trial",))) == "trial")
+    # Hyphenated spellings
+    check("hyphenated case-report pubType classifies as case",
+          classify_design(Paper(title="Study on outcomes", abstract="a", publication_types=("case-report",))) == "case")
+    check("hyphenated systematic-review pubType classifies as synthesis",
+          classify_design(Paper(title="Study on outcomes", abstract="a", publication_types=("systematic-review",))) == "synthesis")
+
+    # Negative controls
+    p_case_ctrl = Paper(title="A case-control study of risk factors", abstract="a")
+    check("case-control study classifies as observational", classify_design(p_case_ctrl) == "observational")
+    p_sys_scoping = Paper(title="A systematic scoping review of care", abstract="a")
+    check("systematic scoping review classifies as synthesis", classify_design(p_sys_scoping) == "synthesis")
+    p_sys_lit = Paper(title="A systematic literature review of care", abstract="a")
+    check("systematic literature review classifies as synthesis", classify_design(p_sys_lit) == "synthesis")
+    p_proto_narr = Paper(title="Protocol for a narrative review of care", abstract="a")
+    check("protocol for narrative review classifies as other", classify_design(p_proto_narr) == "other")
+    p_bare_rev = Paper(title="Care models in psychiatry", abstract="a", publication_types=("review",))
+    check("bare review pubType classifies as other", classify_design(p_bare_rev) == "other")
+
+    # Fetch order (paper_design returns 'other' for scoping, narrative, consensus, case)
+    for p in (p_scoping, p_narrative, p_consensus, p_case_rep, p_case_ser):
+        check(f"paper_design demotes {classify_design(p)} to other", paper_design(p) == "other")
+        check(f"paper_design maps {classify_design(p)} to DESIGN_ORDER", paper_design(p) in sources.DESIGN_ORDER)
+
     for p in (p_proto, p_survey, p_rct, p_qual, p_obs, papers[0]):
         check(f"paper_design maps {classify_design(p)} to DESIGN_ORDER",
               paper_design(p) in ("synthesis", "trial", "other"))
+
+    # Table 1 prints 'Other' instead of '—'
+    survey_rows = render._table_rows([p_survey], {1: "direct"})
+    check("Table 1 prints Other instead of dash for unclassifiable paper", survey_rows[0]["design"] == "Other")
+    all_rows = render._table_rows(papers, labels)
+    check("Table 1 dash not in design column for mixed set", all(r["design"] != "—" for r in all_rows))
+    check("Table 1 HTML contains Other cell", "<td>Other</td>" in render._table_html([p_survey], {1: "direct"}))
+
+    # Fig. 1 width scaling
+    nine_papers = [
+        Paper(title="Systematic review of care", abstract="a", year=2020),
+        Paper(title="Randomised controlled trial of care", abstract="a", year=2021),
+        Paper(title="Prospective cohort study of care", abstract="a", year=2022),
+        Paper(title="Qualitative interview study of care", abstract="a", year=2023),
+        Paper(title="Adverse events: a case report", abstract="a", year=2024),
+        Paper(title="Scoping review of care", abstract="a", year=2025),
+        Paper(title="Narrative review of care", abstract="a", year=2026),
+        Paper(title="Consensus statement on care", abstract="a", year=2026),
+        Paper(title="General overview of services", abstract="a", year=2026),
+    ]
+    nine_labels = {i: "direct" for i in range(1, 10)}
+    nine_fig = render._figure_html(nine_papers, nine_labels)
+    check("nine-bucket figure widens viewBox to 860", 'viewBox="0 0 860 250"' in nine_fig)
+    check("five-bucket figure keeps viewBox at 660", 'viewBox="0 0 660 250"' in html_fig)
 
 
 def html_escaped(value: str, haystack: str) -> bool:

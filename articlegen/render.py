@@ -507,7 +507,7 @@ def _table_rows(cited: list[Paper], labels: dict[int, str]) -> list[dict]:
         if paper.is_preprint:
             venue = f"{paper.venue} (preprint)" if paper.venue else "Preprint"
         d_label = sources.classify_design(paper)
-        design_str = sources.DESIGN_LABELS[d_label] if d_label != "other" else "—"
+        design_str = sources.DESIGN_LABELS[d_label]
         rows.append({
             "n": n,
             "paper": paper,
@@ -528,6 +528,7 @@ def _table_rows(cited: list[Paper], labels: dict[int, str]) -> list[dict]:
 # so a pool of terse or badly indexed titles collapses into "other" — and a bar
 # chart that is 80% "Other" says less than the year histogram it replaced.
 DESIGN_FIGURE_MIN_SHARE = 0.5
+FIGURE_WIDE_BUCKETS = 6
 
 
 def _figure_series(cited: list[Paper], labels: dict[int, str]) -> dict | None:
@@ -665,7 +666,7 @@ def _table_html(cited: list[Paper], labels: dict[int, str]) -> str:
         )
     caption = (
         "Characteristics of the cited evidence. Design is inferred from each record's "
-        "title, journal and index metadata and is left blank where it could not be "
+        "title, journal and index metadata and reads Other where no design could be "
         "inferred; no quality appraisal was performed. Relevance is the curation label "
         "for how directly each source addresses the review question. Read records whether "
         "the model saw the source's open-access full text or its abstract only."
@@ -725,7 +726,8 @@ def _figure_html(cited: list[Paper], labels: dict[int, str]) -> str:
     step = max(1, -(-y_max // 4))          # at most four ticks
     y_top = step * -(-y_max // step)
 
-    width, height = 660.0, 250.0
+    width = 660.0 if len(buckets) <= FIGURE_WIDE_BUCKETS else 860.0
+    height = 250.0
     pad_l, pad_r, pad_t, pad_b = 40.0, 12.0, 24.0, 44.0
     plot_w = width - pad_l - pad_r
     plot_h = height - pad_t - pad_b

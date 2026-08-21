@@ -310,6 +310,17 @@ or reliability score. Table 1 now replaces "Cited by" with the inferred "Design"
 and explicitly notes in its caption that no quality appraisal was performed. Citation
 counts remain where they belong: on the full reference list.
 
+### `#192` — Table 1 Design was a dash
+
+Table 1's Design column was a dash on 7–9 of 12 rows in briefings generated in August 2026.
+Three distinct root causes:
+
+1. `other` rendered as `—` rather than the honest label "Other".
+2. Design families like scoping reviews, narrative reviews, consensus statements, and case reports/series had no dedicated display label or were explicitly forced to "other" or "observational".
+3. Europe PMC search responses store document types in `pubTypeList.pubType` (a list), while the flat `pubType` field is null on every record. Because `Paper.publication_types` parsed only the flat field, Europe PMC records arrived with empty index metadata. A landmark JAMA meta-analysis (Blackman 2023) dashed because its title omitted the words "meta-analysis" while its MEDLINE metadata explicitly carried them.
+
+The parse was fixed to read `pubTypeList.pubType` with fallback to flat `pubType`. Four categories were added (`scoping`, `narrative`, `consensus`, `case`), with `other` printing as "Other". Bare `review` publication types are intentionally not mapped to narrative review because OpenAlex tags systematic reviews that way too. `DESIGN_ORDER` stays `("synthesis", "trial", "other")` so `full_text_order`'s deep-read prioritisation is unchanged, while Fig. 1 expands its viewBox to 860 (`FIGURE_WIDE_BUCKETS = 6`) when more than 6 distinct design buckets are drawn.
+
 ---
 
 ## Grounding and provenance
