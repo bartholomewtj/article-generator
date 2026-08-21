@@ -81,8 +81,7 @@ EFFORT = {"off": "low", "none": "low", "minimal": "low", "low": "low",
 # Grok's builtin tools, as the init event lists them (2026-08-15). Used the
 # same way agent_cc uses DENYABLE_TOOLS: anything a roster `tools:` list does
 # not name is passed as --disallowed-tools, because deny is the half that
-# restricts under bypassPermissions. Roster tool names for a grok agent are in
-# GROK'S vocabulary (run_terminal_command, read_file, ...), not Claude Code's.
+# restricts under bypassPermissions.
 DENYABLE_TOOLS = {
     "run_terminal_command", "read_file", "search_replace", "write", "list_dir",
     "grep", "todo_write", "spawn_subagent", "kill_command_or_subagent",
@@ -91,6 +90,44 @@ DENYABLE_TOOLS = {
     "enter_plan_mode", "exit_plan_mode", "ask_user_question", "web_search",
     "image_gen", "image_edit", "image_to_video", "reference_to_video",
 }
+
+# The roster writes `tools:` in Claude Code's vocabulary, because claude_code
+# is the default runtime. Flipping an agent to grok without rewriting that
+# list used to pass Read/Bash to --tools; grok matched none of them, denied
+# every real tool, and the agent stalled. Translate here so one list means
+# the same thing on every interface — pi already does this in agent_pi.
+CLAUDE_TO_GROK_TOOLS = {
+    "Read": ["read_file"],
+    "Bash": ["run_terminal_command"],
+    "Edit": ["search_replace"],
+    "Write": ["write"],
+    "Grep": ["grep"],
+    "Glob": ["list_dir"],
+    "Task": ["spawn_subagent"],
+    "WebSearch": ["web_search"],
+    # WebFetch has no grok equivalent; dropping it is the same stance pi
+    # takes with Task. Already-lowercase grok names pass through below.
+}
+
+
+def translate_tools(tools: Optional[list[str]]) -> list[str]:
+    """Config tool names in grok's vocabulary.
+
+    Already-lowercase names pass through untouched: they are grok builtins
+    from a roster written before this translation existed.
+    """
+    if not tools:
+        return []
+    out: list[str] = []
+    for name in tools:
+        if name in CLAUDE_TO_GROK_TOOLS:
+            out.extend(CLAUDE_TO_GROK_TOOLS[name])
+        elif name.islower():
+            out.append(name)
+        # Capitalised names with no grok equivalent are dropped: passing
+        # them through is what produced a toolless grok agent.
+    seen = set()
+    return [t for t in out if not (t in seen or seen.add(t))]
 
 # Fallback ceiling until the run's own result event reports better. Grok 4-era
 # models advertise a 256k window; the result event's modelUsage carries no
@@ -163,9 +200,10 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
     # (--session-id on a live session) or silently forgets the plan the agent
     # just wrote (--resume on a missing one).
     cmd += (["--session-id", grok_session] if starting else ["--resume", grok_session])
-    if request.tools:
-        cmd += ["--tools", ",".join(request.tools)]
-        denied = sorted(DENYABLE_TOOLS - set(request.tools))
+    tools = translate_tools(request.tools)
+    if tools:
+        cmd += ["--tools", ",".join(tools)]
+        denied = sorted(DENYABLE_TOOLS - set(tools))
         if denied:
             cmd += ["--disallowed-tools", ",".join(denied)]
 

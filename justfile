@@ -15,6 +15,8 @@ db     := "adws/adw_data/sssf.db"
 
 # where the upstream sssf skill's visualizer app lives (see `just obs`)
 viz    := env_var_or_default("SSSF_VIZ", "~/.claude/skills/sssf/apps/visualizer")
+# cross-repo run board (see `just factory`)
+live   := env_var_or_default("SSSF_LIVE", home_directory() / ".claude/skills/sssf-health/scripts/live.py")
 # this factory's skill checkout — fleet/ lives here, not in stamped repos
 skill  := env_var_or_default("CLAUDESSSF", "~/.claude/skills/claudesssf")
 
@@ -127,3 +129,7 @@ obs:
     @test -f {{db}} || { echo "no trace db at {{db}} yet — run 'just demo' first"; exit 1; }
     @test -d {{viz}}/dist || (echo "first run: building the visualizer ui" && cd {{viz}} && bun install && bun run build)
     bun run {{viz}}/server/index.ts --db '{{justfile_directory()}}/{{db}}'
+
+# every stamped repo's runs, http://127.0.0.1:4620
+factory:
+    python "{{live}}"

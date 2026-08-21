@@ -50,6 +50,40 @@ ROSTER_MARKER = "adws/adw_sssf_config/.roster"
 ROSTER_KEYS = ("coding_agent", "model", "thinking")
 
 
+def infer_coding_agent(model: Optional[str]) -> Optional[str]:
+    """Which interface a model id belongs on, when the agent did not set one.
+
+    The prefix is the route: ``openrouter/`` is cash through pi, a bare
+    ``grok-*`` (or ``xai/grok-*``) is the grok CLI, a bare ``gemini-*``
+    (or ``agy/gemini-*``) is agy, and everything else stays on Claude Code.
+    ``openrouter/x-ai/grok-4.5`` therefore bills OpenRouter; ``grok-4.5``
+    spends the Grok subscription. That is the mix-and-match: change the
+    model, keep or omit ``coding_agent``. An explicit ``coding_agent:`` on
+    the agent (or a roster overlay) still wins — this only fills a gap.
+    """
+    if not model:
+        return None
+    name = str(model).strip()
+    if not name:
+        return None
+    if name.startswith("openrouter/"):
+        return "pi"
+    if "/" in name:
+        prefix, _, bare = name.partition("/")
+        if prefix == "xai" and bare.startswith("grok"):
+            return "grok"
+        if prefix == "agy" and bare.startswith("gemini-"):
+            return "agy"
+        # vendor/model without openrouter/ is not a subscription id — leave
+        # the inherited coding_agent in place so validate() names the miss.
+        return None
+    if name.startswith("grok"):
+        return "grok"
+    if name.startswith("gemini-"):
+        return "agy"
+    return "claude_code"
+
+
 def load_rosters(path: str = ROSTERS_PATH) -> dict:
     """The tier overlays, or {} when the repo has no rosters.yaml."""
     if not Path(path).is_file():
@@ -76,7 +110,13 @@ def load_config(path: str = "adws/adw_sssf_config/sssf.config.yaml",
                 roster: Optional[str] = None) -> SSSFConfig:
     raw = yaml.safe_load(Path(path).read_text()) or {}
     defaults = raw.get("defaults", {}) or {}
-    for agent in raw.get("agents", []) or []:
+    agents_list = raw.get("agents", []) or []
+    # A coding_agent written on the agent itself is a chosen route. An
+    # inherited defaults.coding_agent is not — mix-and-match is "change the
+    # model, the route follows", and that only works if we can replace the
+    # inherited value after we know the model.
+    explicit_route = {a.get("name") for a in agents_list if "coding_agent" in a}
+    for agent in agents_list:
         for key in ("coding_agent", "model", "thinking", "color", "tools", "writes"):
             if key in defaults:
                 agent.setdefault(key, defaults[key])
@@ -86,6 +126,7 @@ def load_config(path: str = "adws/adw_sssf_config/sssf.config.yaml",
     # inherited one, and BEFORE SSSFConfig(**raw), so validate() sees the
     # models that will actually run. Structure — prompts, tools, writes —
     # is never touched: a tier only says who runs each agent.
+    overlay: dict = {}
     name = active_roster(roster)
     if name:
         rosters = load_rosters()
@@ -93,16 +134,24 @@ def load_config(path: str = "adws/adw_sssf_config/sssf.config.yaml",
             raise SystemExit(f"roster {name!r} is not defined in {ROSTERS_PATH} — "
                              f"available: {sorted(rosters) or '(none)'}")
         overlay = (rosters[name] or {}).get("agents", {}) or {}
-        known = {a.get("name") for a in raw.get("agents", []) or []}
+        known = {a.get("name") for a in agents_list}
         for missing in sorted(set(overlay) - known):
             raise SystemExit(f"roster {name!r} assigns agent {missing!r}, which is not "
                              f"in {path} — available: {sorted(known)}")
-        for agent in raw.get("agents", []) or []:
+        for agent in agents_list:
             for key, value in (overlay.get(agent.get("name")) or {}).items():
                 if key not in ROSTER_KEYS:
                     raise SystemExit(f"roster {name!r} sets {key!r} on {agent['name']!r}; "
                                      f"a roster may only set {', '.join(ROSTER_KEYS)}")
                 agent[key] = value
+
+    for agent in agents_list:
+        roster_route = "coding_agent" in (overlay.get(agent.get("name")) or {})
+        if agent.get("name") in explicit_route or roster_route:
+            continue
+        inferred = infer_coding_agent(agent.get("model"))
+        if inferred:
+            agent["coding_agent"] = inferred
 
     return SSSFConfig(**raw)
 
