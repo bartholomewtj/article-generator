@@ -688,6 +688,27 @@ key. Deliberate non-choices: no retry loop (avoids burning quota on repeated
 failures) and no fallback to labelling everything `direct` (which would defeat
 the relevance gate entirely).
 
+### `#189` — statistic check false splits, titles in haystack, and one revision pass
+
+Four Grok 4.6 briefings (21 Aug 2026) showed that 3 of 4 were branded working-draft
+on a pile of ‡ marks, and the hyphenated range split recurred (`4.4-5.2` matched
+`4.4` then `-5.2` as a negative figure no source contained). Organic came back 0/0.
+
+Three fixes landed:
+1. `_paper_haystack` includes `paper.title`: the writer is shown `Title:` above
+   every abstract, and headline effect sizes often live in titles.
+2. A range alternative is placed first in `_FIGURE_RE` so `4.4-5.2` is matched as
+   one quantity, and `_found` requires both endpoints (so a source writing "4.4 to 5.2"
+   still verifies).
+3. When `unverified + misattributed > 0`, `enforce_statistics` runs ONE revision
+   pass (`MAX_STATISTIC_PASSES = 1`) asking the writer to drop the figure, state the
+   claim qualitatively in words, or move the citation. The model is forbidden from
+   inventing numbers or sources, enforced deterministically: the revision is accepted
+   only if intact, strictly fewer flags, and `total` figures not increased. On acceptance,
+   `check_style` is recomputed so the working-draft branding describes the shipped text.
+   A clean first write (0/0) buys zero revision calls. `95% CI` noise did not recur
+   and was left alone.
+
 ---
 
 ## Web app and deployment

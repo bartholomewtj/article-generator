@@ -4745,6 +4745,215 @@ def test_statistic_verification() -> None:
     check("an integer with no clinical unit is not a figure",
           check_statistics(bare, clinical)["total"] == 0)
 
+    # -- title-only figure is grounded (#189) -------------------------------
+    title_only_papers = [
+        Paper(title="Seclusion fell 37% after the intervention", abstract="No numbers here.", year=2021)
+    ]
+    title_art = {
+        "abstract": "", "evidence_note": "",
+        "sections": [{"heading": "H", "paragraphs": ["Seclusion fell 37% [1]."]}],
+        "key_points": [], "references": [1],
+    }
+    v_title = check_statistics(title_art, title_only_papers)
+    check("a figure stated in a paper's title is grounded",
+          "37%" not in v_title["unverified"] and "37%" not in v_title["misattributed"])
+
+    # -- hyphenated range is ONE figure, not two (#189) ---------------------
+    range_papers = [
+        Paper(title="P1", abstract="the interval was 4.4-5.2 and another was from 4.4 to 5.2", year=2020),
+        Paper(title="P2", abstract="the reduction was from -0.38 to -0.12", year=2022),
+    ]
+    grounded_range_art = {
+        "abstract": "", "evidence_note": "",
+        "sections": [{"heading": "H", "paragraphs": [
+            "The interval was 4.4-5.2 [1].",
+            "A second interval was 4.4–5.2 [1].",
+            "The negative reduction was -0.38--0.12 [2].",
+        ]}],
+        "key_points": [], "references": [1, 2],
+    }
+    v_gr = check_statistics(grounded_range_art, range_papers)
+    check("grounded hyphenated range passes", "4.4-5.2" not in v_gr["unverified"])
+    check("en-dash range against hyphenated source passes", "4.4–5.2" not in v_gr["unverified"])
+    check("negative range against 'from to' source passes", "-0.38--0.12" not in v_gr["unverified"])
+    check("single sentence with range has total == 1",
+          check_statistics({"abstract": "", "evidence_note": "",
+                            "sections": [{"heading": "H", "paragraphs": ["the interval was 4.4-5.2 [1]"]}],
+                            "key_points": [], "references": [1]}, range_papers)["total"] == 1)
+
+    absent_range_art = {
+        "abstract": "", "evidence_note": "",
+        "sections": [{"heading": "H", "paragraphs": ["The interval was 9.1-9.8 [1]."]}],
+        "key_points": [], "references": [1],
+    }
+    v_ar = check_statistics(absent_range_art, range_papers)
+    check("absent hyphenated range is flagged as one figure", "9.1-9.8" in v_ar["unverified"])
+    check("hyphenated range is not split into a negative number",
+          "-9.8" not in v_ar["unverified"] and "9.8" not in v_ar["unverified"])
+
+
+def test_flagged_figures_buy_one_revision() -> None:
+    """A draft with unverified figures buys one revision pass, a clean draft buys none.
+
+    `enforce_statistics` runs `check_statistics` and, if any figures are unverified
+    or misattributed, asks the model once (`MAX_STATISTIC_PASSES = 1`) to drop the
+    figure, state it in words, or move the citation. The model is forbidden from
+    inventing numbers or sources, enforced deterministically: a revision that
+    increases `total` is refused (#189).
+    """
+    from articlegen import pipeline, verify
+    from articlegen.sources import Paper
+
+    papers = [Paper(title="P1", abstract="the effect was 0.53", year=2020)]
+    article = {
+        "form": "briefing",
+        "question": "Q?",
+        "answer": "A.",
+        "findings": ["Finding one with 4.91 [1]."],
+        "unknowns": ["Unknown."],
+        "references": [1],
+    }
+
+    # 1. Clean first write buys nothing (no LLM call, original article object returned).
+    calls = {"check": 0, "revise": 0}
+
+    def fake_check_clean(a, p):
+        calls["check"] += 1
+        return {"unverified": [], "misattributed": [], "total": 4, "details": []}
+
+    def fake_revise_never(a, brief, **kwargs):
+        calls["revise"] += 1
+        return dict(a)
+
+    saved_check = pipeline.check_statistics
+    saved_revise = pipeline.revise_statistics
+    saved_style = pipeline.check_style
+    try:
+        pipeline.check_statistics = fake_check_clean
+        pipeline.revise_statistics = fake_revise_never
+        out_art, out_v, out_st = pipeline.enforce_statistics(article, papers)
+        check("clean first write costs zero revision calls", calls["revise"] == 0)
+        check("clean first write returns original article", out_art is article)
+        check("clean first write returns clean verification", not out_v["unverified"])
+    finally:
+        pipeline.check_statistics = saved_check
+        pipeline.revise_statistics = saved_revise
+        pipeline.check_style = saved_style
+
+    # 2. Flags buy exactly one call (MAX_STATISTIC_PASSES == 1).
+    check("MAX_STATISTIC_PASSES is 1", pipeline.MAX_STATISTIC_PASSES == 1)
+
+    calls = {"check": 0, "revise": 0}
+
+    def fake_check_flags(a, p):
+        calls["check"] += 1
+        return {"unverified": ["4.91"], "misattributed": ["2.71"], "total": 2,
+                "details": [{"figure": "4.91", "kind": "unverified", "sentence": "Finding one with 4.91 [1].", "cited": [1]}]}
+
+    def fake_revise_once(a, brief, **kwargs):
+        calls["revise"] += 1
+        return dict(a)
+
+    try:
+        pipeline.check_statistics = fake_check_flags
+        pipeline.revise_statistics = fake_revise_once
+        pipeline.enforce_statistics(article, papers)
+        check("flags buy exactly one revision call", calls["revise"] == 1)
+    finally:
+        pipeline.check_statistics = saved_check
+        pipeline.revise_statistics = saved_revise
+        pipeline.check_style = saved_style
+
+    # 3. A revision that adds a number is refused (total increases).
+    calls = {"check": 0, "revise": 0}
+    logs = []
+
+    def fake_check_seq_increase(a, p):
+        calls["check"] += 1
+        if calls["check"] == 1:
+            return {"unverified": ["4.91"], "misattributed": [], "total": 1,
+                    "details": [{"figure": "4.91", "kind": "unverified", "sentence": "Finding one with 4.91 [1].", "cited": [1]}]}
+        # Revision fixed 4.91, but added 2 new numbers: total is now 2 > 1
+        return {"unverified": [], "misattributed": [], "total": 2, "details": []}
+
+    try:
+        pipeline.check_statistics = fake_check_seq_increase
+        pipeline.revise_statistics = fake_revise_once
+        out_art, out_v, _ = pipeline.enforce_statistics(article, papers, log=logs.append)
+        check("a revision that introduces new numbers is rejected", out_art is article)
+        check("rejection log mentions new numbers", any("introduced new numbers" in m for m in logs))
+    finally:
+        pipeline.check_statistics = saved_check
+        pipeline.revise_statistics = saved_revise
+        pipeline.check_style = saved_style
+
+    # 4. A revision that fixes flags is accepted, and style report is recomputed.
+    calls = {"check": 0, "revise": 0, "style": 0}
+
+    revised_art = dict(article, findings=["Finding one [1]."])
+
+    def fake_check_seq_success(a, p):
+        calls["check"] += 1
+        if calls["check"] == 1:
+            return {"unverified": ["4.91"], "misattributed": [], "total": 1,
+                    "details": [{"figure": "4.91", "kind": "unverified", "sentence": "Finding one with 4.91 [1].", "cited": [1]}]}
+        return {"unverified": [], "misattributed": [], "total": 0, "details": []}
+
+    def fake_revise_success(a, brief, **kwargs):
+        calls["revise"] += 1
+        return revised_art
+
+    def fake_check_style(a, **kw):
+        calls["style"] += 1
+        return {"issues": [], "stats": {"recomputed": True}}
+
+    try:
+        pipeline.check_statistics = fake_check_seq_success
+        pipeline.revise_statistics = fake_revise_success
+        pipeline.check_style = fake_check_style
+        out_art, out_v, out_st = pipeline.enforce_statistics(article, papers)
+        check("revision is accepted", out_art == revised_art)
+        check("verification is updated to clean", len(out_v["unverified"]) == 0)
+        check("check_style was called to recompute style report", calls["style"] == 1)
+        check("style report is recomputed one", out_st.get("stats", {}).get("recomputed") is True)
+    finally:
+        pipeline.check_statistics = saved_check
+        pipeline.revise_statistics = saved_revise
+        pipeline.check_style = saved_style
+
+    # 5. A raising revise_statistics keeps the draft and returns original verification.
+    def fake_revise_raise(a, brief, **kwargs):
+        raise RuntimeError("LLM failure")
+
+    try:
+        pipeline.check_statistics = fake_check_flags
+        pipeline.revise_statistics = fake_revise_raise
+        out_art, out_v, _ = pipeline.enforce_statistics(article, papers)
+        check("raising revision keeps the original draft", out_art is article)
+        check("raising revision keeps original verification", "4.91" in out_v["unverified"])
+    finally:
+        pipeline.check_statistics = saved_check
+        pipeline.revise_statistics = saved_revise
+        pipeline.check_style = saved_style
+
+    # 6. The brief names the three fixes and forbids new numbers.
+    sample_v = {
+        "unverified": ["4.91"],
+        "misattributed": ["2.71"],
+        "total": 2,
+        "details": [
+            {"figure": "4.91", "kind": "unverified", "sentence": "Trial found RR 4.91 [1].", "cited": [1]},
+            {"figure": "2.71", "kind": "misattributed", "sentence": "Trial found SMD 2.71 [2].", "cited": [2]},
+        ],
+    }
+    brief = verify.revision_brief(sample_v)
+    check("brief contains unverified figure", "4.91" in brief)
+    check("brief contains misattributed figure", "2.71" in brief)
+    check("brief contains unverified sentence", "Trial found RR 4.91 [1]." in brief)
+    check("brief contains misattributed sentence", "Trial found SMD 2.71 [2]." in brief)
+    check("brief mentions deleting figure", "Delete the figure" in brief or "delete" in brief.lower())
+    check("brief explicitly forbids new numbers", "MUST NOT introduce any" in brief or "no new number" in brief.lower())
+
 
 def test_ranking() -> None:
     from articlegen.sources import Paper, _rank_score
@@ -6932,7 +7141,8 @@ def main(argv: list[str] | None = None) -> int:
         test_register_rules_are_scoped_to_the_synthesis_voice,
         test_hedging_floor_is_calibrated_against_body_prose,
         test_density_thresholds_are_documented_against_the_corpus,
-        test_statistic_verification, test_ranking, test_recency_actually_counts, test_render_blocks,
+        test_statistic_verification, test_flagged_figures_buy_one_revision,
+        test_ranking, test_recency_actually_counts, test_render_blocks,
         test_display_item_placement, test_legacy_draft_fields,
         test_demo_and_index, test_web_server,
     ):

@@ -29,9 +29,10 @@ from .sources import (DATABASE_NAMES, DEFAULT_MAX_PAPERS, NAMED_SOURCE_LIMIT,
                       named_references, resolve_pmcid)
 from .style import (SUBSTANCE_RULES, check_style, errors as style_errors,
                     format_report as format_style, revision_brief)
-from .verify import check_statistics
+from .verify import check_statistics, revision_brief as statistics_brief
 from .writer import (clean_search_terms, curate_sources, is_briefing,
-                     plan_queries, revise_prose, write_article, write_briefing)
+                     plan_queries, revise_prose, revise_statistics,
+                     write_article, write_briefing)
 
 # A caller that wants progress reporting passes one of these; the default drops it.
 Logger = Callable[[str], None]
@@ -333,6 +334,85 @@ def enforce_style(
     return article, report
 
 
+# How many times a draft's figures may go back to the model. One, not two: this
+# pass removes or rewords, it never researches, so a figure the model could not
+# fix on the first attempt it cannot fix on the second either (#189).
+MAX_STATISTIC_PASSES = 1
+
+
+def enforce_statistics(
+    article: dict,
+    papers: list[Paper],
+    model: str | None = None,
+    api_key: str | None = None,
+    log: Logger = _silent,
+    style_report: dict | None = None,
+    direct_sources: int | None = None,
+) -> tuple[dict, dict, dict]:
+    """Check the figures and, if any missed, ask once for them to be removed.
+
+    Returns (article, verification, style_report) -- all three describing the
+    article that actually ships.
+    """
+    verification = check_statistics(article, papers)
+    unverified = verification.get("unverified") or []
+    misattributed = verification.get("misattributed") or []
+    flagged = len(unverified) + len(misattributed)
+
+    if flagged == 0:
+        log("Statistics: every figure checked out.")
+        return article, verification, style_report or {}
+
+    for attempt in range(1, MAX_STATISTIC_PASSES + 1):
+        log(
+            f"Statistics: {flagged} figure(s) could not be verified in the cited "
+            f"sources; revising (pass {attempt} of {MAX_STATISTIC_PASSES})..."
+        )
+        try:
+            revised = revise_statistics(
+                article, statistics_brief(verification), model=model, api_key=api_key
+            )
+        except Exception as exc:
+            log(f"  revision failed ({exc}); keeping the draft as it stands.")
+            break
+
+        if is_briefing(article):
+            intact = (
+                len(revised.get("references") or []) >= len(article.get("references") or [])
+                and len(revised.get("findings") or []) >= len(article.get("findings") or [])
+            )
+        else:
+            intact = (
+                len(revised.get("references") or []) >= len(article.get("references") or [])
+                and len(revised.get("sections") or []) == len(article.get("sections") or [])
+            )
+
+        revised_v = check_statistics(revised, papers)
+        revised_flagged = len(revised_v.get("unverified") or []) + len(revised_v.get("misattributed") or [])
+        fewer_flags = revised_flagged < flagged
+        no_new_numbers = (revised_v.get("total") or 0) <= (verification.get("total") or 0)
+
+        if not intact or not fewer_flags or not no_new_numbers:
+            if not intact:
+                reason = "revision dropped citations or sections"
+            elif not fewer_flags:
+                reason = "revision did not reduce flagged figures"
+            else:
+                reason = "revision introduced new numbers"
+            log(f"  {reason}; keeping the draft as it stands.")
+            break
+
+        log(f"  revised: {flagged} -> {revised_flagged} flagged figure(s).")
+        article, verification = revised, revised_v
+        style_report = check_style(article, direct_sources=direct_sources)
+        flagged = revised_flagged
+        if flagged == 0:
+            log("  statistics now clean.")
+            break
+
+    return article, verification, style_report or {}
+
+
 def _named_source_pass(
     topic: str,
     papers: list[Paper],
@@ -622,7 +702,11 @@ def generate_draft(
     article, style_report = enforce_style(
         article, model=model, api_key=api_key, log=log, papers=papers, curation=curation
     )
-    verification = check_statistics(article, papers)
+    article, verification, style_report = enforce_statistics(
+        article, papers, model=model, api_key=api_key, log=log,
+        style_report=style_report,
+        direct_sources=((curation or {}).get("counts") or {}).get("direct"),
+    )
 
     # Feeds the deterministic Methods section — the search actually performed.
     #
