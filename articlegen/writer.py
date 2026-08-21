@@ -853,6 +853,10 @@ def curate_sources(
     `abstract_chars` truncates each abstract in the prompt. Only the comparison
     harness passes it; the pipeline uses `CURATION_ABSTRACT_CHARS`, which is
     `None` until the measurement says otherwise.
+
+    This is called a second time for the records the named-source pass added.
+    The caller shifts the returned indices by the existing pool length, so this
+    function must keep returning 1-based indices relative to the list it was handed.
     """
     if not papers:
         return {"relevance": {}, "most_relevant_index": None, "counts": {}}

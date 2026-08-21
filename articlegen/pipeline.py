@@ -22,9 +22,11 @@ from typing import Callable
 
 from . import paperfetch
 from .llm import resolve_provider
-from .sources import (DATABASE_NAMES, DEFAULT_MAX_PAPERS, Paper, _normalize_doi,
-                      fetch_full_text, full_text_order, gather_evidence,
-                      resolve_pmcid)
+from .sources import (DATABASE_NAMES, DEFAULT_MAX_PAPERS, NAMED_SOURCE_LIMIT,
+                      NAMED_SOURCE_PER_QUERY, NAMED_SOURCE_SCAN, Paper,
+                      _normalize_doi, fetch_full_text, full_text_order,
+                      gather_evidence, merge_candidates, named_matches,
+                      named_references, resolve_pmcid)
 from .style import (SUBSTANCE_RULES, check_style, errors as style_errors,
                     format_report as format_style, revision_brief)
 from .verify import check_statistics
@@ -321,6 +323,97 @@ def enforce_style(
     return article, report
 
 
+def _named_source_pass(
+    topic: str,
+    papers: list[Paper],
+    curation: dict,
+    exhausted: set[str],
+    model: str | None = None,
+    api_key: str | None = None,
+    log: Logger = _silent,
+    outcomes: list[dict] | None = None,
+    core_entity: str = "",
+) -> dict:
+    """Follow up papers and trials named in the top curated abstracts.
+
+    Scans the top NAMED_SOURCE_SCAN abstracts, extracts DOIs and study names,
+    queries the scholarly APIs via gather_evidence with patient=False and the
+    shared exhausted set, filters results with named_matches, merges via
+    merge_candidates without renumbering, and re-curates only the newly added records.
+    """
+    relevance = curation.get("relevance") or {}
+    mri = curation.get("most_relevant_index")
+    candidates_to_scan: list[int] = []
+    if isinstance(mri, int) and 1 <= mri <= len(papers) and relevance.get(mri) in ("direct", "related"):
+        candidates_to_scan.append(mri)
+
+    for idx in full_text_order(papers, relevance):
+        if idx not in candidates_to_scan:
+            candidates_to_scan.append(idx)
+
+    scanned_indices = candidates_to_scan[:NAMED_SOURCE_SCAN]
+    requests: list[str] = []
+    for idx in scanned_indices:
+        paper = papers[idx - 1]
+        # Extraction reads abstracts only. Full text is not yet fetched at this
+        # point in the pipeline so that newly added landmark papers can participate
+        # in the full-text deep-read pass.
+        for ref in named_references(paper.abstract):
+            if ref not in requests:
+                requests.append(ref)
+            if len(requests) >= NAMED_SOURCE_LIMIT:
+                break
+        if len(requests) >= NAMED_SOURCE_LIMIT:
+            break
+
+    if not requests:
+        return {"queries": [], "added": 0}
+
+    log(f"Following up {len(requests)} paper(s) named in the top {len(scanned_indices)} abstract(s): "
+        + "; ".join(f"{q!r}" for q in requests))
+
+    extra_records = gather_evidence(
+        requests,
+        max_papers=NAMED_SOURCE_LIMIT * 2,
+        per_query=NAMED_SOURCE_PER_QUERY,
+        topic=topic,
+        core_entity=core_entity,
+        log=log,
+        outcomes=outcomes,
+        exhausted=exhausted,
+        patient=False,
+    )
+
+    matched = [p for p in extra_records if any(named_matches(p, req) for req in requests)]
+    old_len = len(papers)
+    new_papers = merge_candidates(papers, matched, limit=NAMED_SOURCE_LIMIT)
+    log(f"  named-source pass: {len(requests)} requested, {len(extra_records)} records returned, "
+        f"{len(matched)} matched, {len(new_papers)} new after dedupe")
+
+    if new_papers:
+        new_curation = curate_sources(topic, new_papers, model=model, api_key=api_key)
+        new_rel = new_curation.get("relevance") or {}
+        if new_rel:
+            for local_idx, label in new_rel.items():
+                curation.setdefault("relevance", {})[old_len + local_idx] = label
+            merged_rel = curation["relevance"]
+            curation["counts"] = {
+                level: sum(1 for v in merged_rel.values() if v == level)
+                for level in ("direct", "related", "tangential")
+            }
+            new_counts = {
+                level: sum(1 for v in new_rel.values() if v == level)
+                for level in ("direct", "related", "tangential")
+            }
+            log(f"  relevance (new records): {new_counts.get('direct', 0)} direct / "
+                f"{new_counts.get('related', 0)} related / {new_counts.get('tangential', 0)} tangential")
+        else:
+            log("  WARNING: curation of named sources returned no usable labels. "
+                "The new records are unlabelled and will not be fetched in full text.")
+
+    return {"queries": requests, "added": len(new_papers)}
+
+
 def generate_draft(
     topic: str,
     *,
@@ -349,9 +442,10 @@ def generate_draft(
 
     log("Fetching journal articles...")
     outcomes: list[dict] = []
+    exhausted: set[str] = set()
     papers = gather_evidence(
         queries, max_papers=max_papers, topic=topic, core_entity=core_entity,
-        log=log, outcomes=outcomes,
+        log=log, outcomes=outcomes, exhausted=exhausted,
     )
     if not papers:
         failures = [o for o in outcomes if o["error"]]
@@ -390,6 +484,15 @@ def generate_draft(
             f"{len(papers)} sources. The relevance gate is not protecting this "
             "draft from topic drift, and no full text will be fetched. "
             "Re-run, or draft on a different provider.")
+
+    # Named-source pass (issue #165): look up landmark papers/trials named in
+    # the top abstracts, merge into the candidate pool, and re-curate only the
+    # new records. Runs BEFORE the full-text loop so new landmark papers can be
+    # deep-read.
+    named = _named_source_pass(
+        topic, papers, curation, exhausted, model=model, api_key=api_key, log=log,
+        outcomes=outcomes, core_entity=core_entity,
+    )
 
     # Full-text grounding: after curation, fetch the open-access full text of
     # the sources that earned it — direct before related, newest first inside a
@@ -512,6 +615,8 @@ def generate_draft(
         "full_text_sources": sorted(fetched),
         "full_text_via": {"papers": n_papers_via, "europe_pmc": n_epmc_via},
     }
+    if named.get("queries"):
+        provenance["named_sources"] = {"queries": named["queries"], "added": named["added"]}
 
     return Draft(
         topic=topic,

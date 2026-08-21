@@ -503,7 +503,8 @@ entered the article with a citation that looked verified.
 
 Chasing nested references — resolving a DOI mentioned inside body text and
 fetching the original study — would introduce a new fetch path, new failure modes,
-and no guarantee the nested work is open access. That path was left out of scope.
+and no guarantee the nested work is open access. That path was left out of scope
+(until #165 narrowed the scope to DOIs and trial names in the top abstracts).
 
 Instead, the writer's system prompt now instructs it to avoid building the
 `title`, `abstract`, `key_points` or the opening claim of the Introduction on a
@@ -539,6 +540,32 @@ status or cool-off past `_MAX_BACKOFF`) gets no wait.
 
 The real fix remains setting the free `SEMANTIC_SCHOLAR_API_KEY`, which is an ops
 task and stays open. Refs #148, stays open.
+
+### `#165` — the search was one-shot
+
+Search used to be strictly one-shot: `plan_queries` generated 2–4 queries, we
+gathered once, curated, and wrote. A landmark trial that every top abstract
+named but no planned query hit never reached the pool, so its numbers arrived
+quoted inside another paper (#141, #142).
+
+After `curate_sources`, the top `NAMED_SOURCE_SCAN` (3) abstracts are scanned
+deterministically for DOIs and named studies. One extra gather runs for up to
+`NAMED_SOURCE_LIMIT` (8) of them with page size `NAMED_SOURCE_PER_QUERY` (5).
+Returned records are kept only if they pass `named_matches` against the
+requests, and are merged into the candidate pool via `merge_candidates`
+(existing DOI/title dedupe). Merged papers are **appended, never re-ranked**,
+because the 1-based index is the citation scheme and the key to curation
+relevance. Only the new records are re-curated via `curate_sources` with their
+labels shifted by the old pool length.
+
+The named pass shares the run's `exhausted` set and passes `patient=False` so it
+cannot buy a second 30-second Semantic Scholar wait or retry dead sources.
+Methods derives a sentence naming the lookups and added records from
+`provenance["named_sources"]`.
+
+What to measure on the first real runs: how many names extracted, how many
+matched, and whether a DOI-as-free-text query hits across the APIs (if not, a
+targeted DOI lookup is the follow-up).
 
 ---
 

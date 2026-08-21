@@ -1165,6 +1165,191 @@ def _merge_duplicate(kept: Paper, dup: Paper) -> None:
         kept.is_preprint = kept.is_preprint or _looks_like_preprint("", kept.url)
 
 
+# Constants for the named-source pass (issue #165). Read by pipeline.py.
+NAMED_SOURCE_SCAN = 3        # abstracts read for names
+NAMED_SOURCE_LIMIT = 8       # lookups requested, and new records kept
+NAMED_SOURCE_PER_QUERY = 5   # page size for a lookup; we want one exact record
+
+
+# Stoplist of capitalised non-names and apparatus acronyms. The negative
+# controls in test_named_references_reads_names_not_noise are the specification.
+_NAMED_STOPLIST = frozenset(
+    "this the our a an recent previous current prior one two we "
+    "rct prisma consort grade prospero who nice nhs nih usa uk covid pico medline embase cinahl".split()
+)
+
+_DOI_EXTRACT_RE = re.compile(r"10\.\d{4,9}/[^\s\"'<>,;)\]]+")
+
+_STUDY_ADJS_RE = (
+    r"(?:(?:cluster|randomi[sz]ed|controlled|stepped-wedge|multicentre|multicenter|"
+    r"pragmatic|pilot|feasibility|open-label|double-blind|blinded|cross-?over|"
+    r"longitudinal|prospective|retrospective|observational|community|phase\s+[IVX\d]+)\s+)*"
+)
+_STUDY_NOUNS_PATTERN = r"(?:trials?|stud(?:y|ies)|programmes?|programs?|cohorts?|rcts?|interventions?)"
+
+_NAME_THEN_NOUN_RE = re.compile(
+    rf"\b(?P<name>[A-Z][A-Za-z0-9*'-]*(?:\s+[A-Z][A-Za-z0-9*'-]*){{0,2}})\s+"
+    rf"(?P<adjs>(?i:{_STUDY_ADJS_RE}))"
+    rf"(?P<noun>(?i:{_STUDY_NOUNS_PATTERN}))\b"
+)
+
+_NOUN_THEN_ACRONYM_RE = re.compile(
+    rf"\b(?i:{_STUDY_ADJS_RE})"
+    rf"(?P<noun>(?i:{_STUDY_NOUNS_PATTERN}))\s*\(\s*(?P<acronym>[A-Za-z0-9*'-]+)\s*\)"
+)
+
+_STUDY_NOUN_CANONICAL = {
+    "trial": "trial", "trials": "trial",
+    "study": "study", "studies": "study",
+    "programme": "programme", "programmes": "programme",
+    "program": "program", "programs": "program",
+    "cohort": "cohort", "cohorts": "cohort",
+    "rct": "RCT", "rcts": "RCT",
+    "intervention": "intervention", "interventions": "intervention",
+}
+
+
+def _is_sentence_initial(text: str, pos: int) -> bool:
+    prefix = text[:pos].rstrip()
+    if not prefix:
+        return True
+    return bool(re.search(r'(?:[\.\!\?]\s*[\"\')\]]*|[\:\n]\s*)$', prefix))
+
+
+def _is_valid_name_token(token: str, is_sentence_initial: bool) -> bool:
+    t = token.strip(".,;:\"'()")
+    if not t:
+        return False
+    if t.lower() in _NAMED_STOPLIST:
+        return False
+    # ALL-CAPS (>= 3 chars, at least one letter, all alpha characters are uppercase)
+    if len(t) >= 3 and any(c.isalpha() for c in t) and all(c.isupper() for c in t if c.isalpha()):
+        return True
+    # Capitalised word (not sentence-initial, starts with capital letter)
+    if t[0].isupper() and not is_sentence_initial:
+        return True
+    return False
+
+
+def named_references(text: str) -> list[str]:
+    """Extract DOIs and study names mentioned in an abstract.
+
+    Deterministic, ordered, deduped, and capped at NAMED_SOURCE_LIMIT.
+    DOIs come first because they are exact; named studies follow.
+    """
+    dois: list[str] = []
+    for m in _DOI_EXTRACT_RE.finditer(text):
+        raw = m.group(0).rstrip(".,;:)\"'")
+        doi = _normalize_doi(raw)
+        if doi and doi not in dois:
+            dois.append(doi)
+
+    names: list[str] = []
+    # Pattern 1: name-then-noun (e.g. "Safewards trial", "RAISE-ETP study")
+    for m in _NAME_THEN_NOUN_RE.finditer(text):
+        raw_name = m.group("name").strip()
+        tokens = raw_name.split()
+        match_start = m.start("name")
+        while tokens:
+            token_offset = text[match_start:].find(tokens[0])
+            token_pos = match_start + (token_offset if token_offset >= 0 else 0)
+            si = _is_sentence_initial(text, token_pos)
+            if _is_valid_name_token(tokens[0], si):
+                break
+            match_start = token_pos + len(tokens[0])
+            tokens.pop(0)
+
+        if not tokens:
+            continue
+        if any(not _is_valid_name_token(tok, False) for tok in tokens[1:]):
+            continue
+        clean_name = " ".join(tokens)
+        noun_key = m.group("noun").lower()
+        canon_noun = _STUDY_NOUN_CANONICAL.get(noun_key, noun_key)
+        q = f"{clean_name} {canon_noun}"
+        if q not in names and q not in dois:
+            names.append(q)
+
+    # Pattern 2: noun-then-parenthesised acronym (e.g. "... trial (SAFEWARDS)")
+    for m in _NOUN_THEN_ACRONYM_RE.finditer(text):
+        acronym = m.group("acronym").strip()
+        if not _is_valid_name_token(acronym, False):
+            continue
+        noun_key = m.group("noun").lower()
+        canon_noun = _STUDY_NOUN_CANONICAL.get(noun_key, noun_key)
+        q = f"{acronym} {canon_noun}"
+        if q not in names and q not in dois:
+            names.append(q)
+
+    return (dois + names)[:NAMED_SOURCE_LIMIT]
+
+
+_STUDY_NOUNS_RE = re.compile(
+    r"\s+(?:trials?|stud(?:y|ies)|programmes?|programs?|cohorts?|rcts?|interventions?)$",
+    re.IGNORECASE,
+)
+
+
+def named_matches(paper: Paper, request: str) -> bool:
+    """Acceptance rule: True when paper matches what the request asked for.
+
+    A DOI request must match the paper's normalised DOI. A study name request
+    must have its name portion appear in the paper's normalised title.
+    """
+    req_doi = _normalize_doi(request)
+    if req_doi:
+        return bool(paper.doi and _normalize_doi(paper.doi) == req_doi)
+
+    name_part = _STUDY_NOUNS_RE.sub("", request).strip() or request
+    norm_name = _normalize_title(name_part)
+    if not norm_name:
+        return False
+    norm_title = _normalize_title(paper.title)
+    return norm_name in norm_title
+
+
+def merge_candidates(pool: list[Paper], extra: list[Paper], limit: int = NAMED_SOURCE_LIMIT) -> list[Paper]:
+    """Merge extra papers into pool using DOI/title dedupe, appending up to `limit` new records.
+
+    Existing records in `pool` are preserved in order (never re-sorted) and enriched via
+    `_merge_duplicate` if an extra paper matches an existing DOI or title.
+    Returns the list of newly appended Paper objects.
+    """
+    by_title: dict[str, Paper] = {}
+    by_doi: dict[str, Paper] = {}
+    for p in pool:
+        t_key = _normalize_title(p.title)
+        d_key = _normalize_doi(p.doi)
+        if t_key and t_key not in by_title:
+            by_title[t_key] = p
+        if d_key and d_key not in by_doi:
+            by_doi[d_key] = p
+
+    new_papers: list[Paper] = []
+    for paper in extra:
+        title_key = _normalize_title(paper.title)
+        doi_key = _normalize_doi(paper.doi)
+        if not title_key:
+            continue
+        kept = by_doi.get(doi_key) if doi_key else None
+        if kept is None:
+            kept = by_title.get(title_key)
+        if kept is not None:
+            _merge_duplicate(kept, paper)
+            by_title.setdefault(title_key, kept)
+            if doi_key:
+                by_doi.setdefault(doi_key, kept)
+            continue
+        if len(new_papers) < limit:
+            by_title[title_key] = paper
+            if doi_key:
+                by_doi[doi_key] = paper
+            pool.append(paper)
+            new_papers.append(paper)
+
+    return new_papers
+
+
 # The pool the relevance gate gets to work on. At 20 it barely worked: three
 # measured runs collected exactly 20 candidates and cited 16-19 of them, and a
 # landmark cluster RCT named by a run's own planned query never made the pool
@@ -1189,6 +1374,7 @@ def gather_evidence(
     outcomes: list[dict] | None = None,
     use_cache: bool = True,
     patient: bool = True,
+    exhausted: set[str] | None = None,
 ) -> list[Paper]:
     """Run every query against every source, dedupe, and return the best candidates,
     ranked by a blend of topic relevance, citations, and recency.
@@ -1220,7 +1406,7 @@ def gather_evidence(
     # attempt costs three tries with backoff, about ten seconds, so retrying a
     # dead source across every query wasted a third of the gather time.
     # Semantic Scholar's keyless tier currently 429s on every call.
-    exhausted: set[str] = set()
+    exhausted = set() if exhausted is None else exhausted
 
     for query in queries:
         # Keys are explicit rather than derived from `search.__name__`: the name
