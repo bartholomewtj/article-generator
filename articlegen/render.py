@@ -832,6 +832,18 @@ def _methods_paragraphs(
         f"and labelled direct, related or background; {n_cited} were cited here and are "
         "listed in Table 1."
     )
+    named = (provenance.get("named_sources") or {}) if provenance else {}
+    named_queries = [q for q in (named.get("queries") or []) if q]
+    if named_queries:
+        added = int(named.get("added") or 0)
+        search += (
+            f" A second, targeted search then looked up {len(named_queries)} "
+            f"work{'s' if len(named_queries) != 1 else ''} named in the most "
+            f"relevant abstracts ("
+            + "; ".join(f"‘{esc(q)}’" for q in named_queries) + "), which added "
+            + (f"{added} further record{'s' if added != 1 else ''} to the pool."
+               if added else "no further records to the pool.")
+        )
 
     # `full_text_sources` records which sources the model was actually shown
     # full text for. Like `databases` above, it is never guessed: absent or

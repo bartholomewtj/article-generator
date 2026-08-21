@@ -5242,6 +5242,337 @@ def test_unpaywall_fallback_in_resolve_pmcid() -> None:
         sources.clear_search_cache()
 
 
+def test_named_papers_in_abstracts_are_looked_up() -> None:
+    """Papers named in the top abstracts are looked up in a second gather pass.
+
+    Pinned by issue #165: after curation, abstracts are scanned for DOIs and study
+    names, an extra gather runs (capped), new records are appended and re-curated,
+    and provenance records the pass.
+    """
+    from articlegen import pipeline, sources
+    from articlegen.sources import Paper
+
+    # Setup papers: top abstracts contain names and DOIs
+    p1 = Paper(
+        title="Review of containment methods",
+        abstract="The Safewards trial (doi: 10.1001/jama.2015.1234) showed substantial reduction.",
+        year=2024, doi="10.1000/review1",
+    )
+    p2 = Paper(
+        title="Early psychosis interventions",
+        abstract="In the RAISE-ETP study, comprehensive care improved outcomes.",
+        year=2023, doi="10.1000/review2",
+    )
+    p3 = Paper(
+        title="Third relevant paper",
+        abstract="A standard abstract with no named trials or DOIs.",
+        year=2022, doi="10.1000/review3",
+    )
+    p4 = Paper(
+        title="Fourth paper",
+        abstract="Mentions 10.9999/fourth.abstract in a 4th-ranked abstract.",
+        year=2021, doi="10.1000/review4",
+    )
+    p5 = Paper(
+        title="Fifth paper",
+        abstract="Fifth abstract background.",
+        year=2020, doi="10.1000/review5",
+    )
+    initial_papers = [p1, p2, p3, p4, p5]
+
+    initial_curation = {
+        "relevance": {1: "direct", 2: "direct", 3: "related", 4: "related", 5: "tangential"},
+        "most_relevant_index": 1,
+        "counts": {"direct": 2, "related": 2, "tangential": 1},
+    }
+    article = {
+        "title": "Topic", "abstract": "Summary", "keywords": [], "sections": [],
+        "key_points": [], "glossary": [], "references": [1],
+    }
+
+    safewards_matched = Paper(
+        title="The Safewards cluster randomised controlled trial in acute psychiatric wards",
+        abstract="Original Safewards trial abstract text.",
+        year=2015, doi="10.1001/jama.2015.1234",
+    )
+
+    gather_calls: list[dict] = []
+    curate_calls: list[list[Paper]] = []
+
+    saved = (
+        pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
+        pipeline.write_briefing, pipeline.write_article, pipeline.fetch_full_text,
+        pipeline.enforce_style, pipeline.resolve_pmcid,
+    )
+    try:
+        pipeline.plan_queries = lambda topic, **kw: (["query 1"], "core")
+
+        def fake_gather(queries, **kw):
+            gather_calls.append({
+                "queries": list(queries),
+                "patient": kw.get("patient", True),
+                "exhausted": kw.get("exhausted"),
+                "max_papers": kw.get("max_papers"),
+            })
+            if len(gather_calls) == 1:
+                # Main search returns initial papers
+                outcomes = kw.get("outcomes")
+                if outcomes is not None:
+                    outcomes.append({"source": "europe_pmc", "query": queries[0], "count": 5, "error": "", "cached": False})
+                return list(initial_papers)
+            else:
+                # Named pass returns matched paper
+                return [safewards_matched]
+
+        pipeline.gather_evidence = fake_gather
+
+        def fake_curate(topic, papers, **kw):
+            curate_calls.append(list(papers))
+            if len(curate_calls) == 1:
+                return dict(initial_curation)
+            # Second call for new papers: 1-based index
+            return {"relevance": {1: "direct"}, "most_relevant_index": 1, "counts": {"direct": 1}}
+
+        pipeline.curate_sources = fake_curate
+        pipeline.write_briefing = lambda topic, p, **kw: dict(article)
+        pipeline.write_article = pipeline.write_briefing
+        pipeline.enforce_style = lambda a, **kw: (a, {"issues": [], "stats": {}})
+        pipeline.resolve_pmcid = lambda p, **kw: False
+        pipeline.fetch_full_text = lambda p, **kw: ""
+
+        draft = pipeline.generate_draft("topic")
+
+        # 1. Second gather_evidence call happened
+        check("second gather_evidence call happened", len(gather_calls) == 2)
+        second_queries = gather_calls[1]["queries"]
+        check("second gather includes the DOI printed in top abstract",
+              "10.1001/jama.2015.1234" in second_queries)
+        check("second gather includes the trial name",
+              "Safewards trial" in second_queries)
+        check("second gather includes study name from second top abstract",
+              "RAISE-ETP study" in second_queries)
+        check("only top NAMED_SOURCE_SCAN abstracts were scanned (4th abstract not scanned)",
+              "10.9999/fourth.abstract" not in second_queries)
+
+        # 2. Second call shares exhausted set and has patient=False
+        check("second call receives patient=False", gather_calls[1]["patient"] is False)
+        check("second call receives the same exhausted set object as the first",
+              gather_calls[0]["exhausted"] is gather_calls[1]["exhausted"]
+              and isinstance(gather_calls[1]["exhausted"], set))
+
+        # 3. New paper is appended at N+1 without moving existing papers
+        check("first paper identity is preserved at index 0", draft.papers[0] is p1)
+        check("second paper identity is preserved at index 1", draft.papers[1] is p2)
+        check("new paper is appended at index 5 (1-based index 6)",
+              len(draft.papers) == 6 and draft.papers[5] is safewards_matched)
+
+        # 4. Curate_sources was called a second time with only new papers
+        check("second curate_sources received exactly the new papers",
+              len(curate_calls) == 2 and curate_calls[1] == [safewards_matched])
+        check("merged relevance holds label for new paper at index 6",
+              draft.curation["relevance"].get(6) == "direct")
+        check("merged relevance retains existing labels 1..5",
+              all(draft.curation["relevance"].get(i) == initial_curation["relevance"][i] for i in range(1, 6)))
+        check("curation counts are recomputed",
+              draft.curation["counts"] == {"direct": 3, "related": 2, "tangential": 1})
+
+        # 5. Provenance records named_sources
+        check("provenance contains named_sources", "named_sources" in draft.provenance)
+        check("provenance records queries and added count",
+              draft.provenance["named_sources"]["added"] == 1
+              and "10.1001/jama.2015.1234" in draft.provenance["named_sources"]["queries"])
+
+        # 6. Caps check: abstract with 20 DOIs requests at most NAMED_SOURCE_LIMIT
+        gather_calls.clear()
+        curate_calls.clear()
+        many_dois_abstract = " ".join(f"10.1000/doi{i}" for i in range(20))
+        p_many = Paper(title="Many DOIs", abstract=many_dois_abstract, year=2024, doi="10.1000/many")
+
+        def fake_gather_caps(queries, **kw):
+            gather_calls.append({"queries": list(queries)})
+            if len(gather_calls) == 1:
+                return [p_many]
+            # Return 20 matching papers
+            return [Paper(title=f"Paper {q}", abstract="a", doi=q) for q in queries] * 4
+
+        pipeline.gather_evidence = fake_gather_caps
+        pipeline.curate_sources = lambda topic, p, **kw: {"relevance": {i: "direct" for i in range(1, len(p) + 1)}, "most_relevant_index": 1, "counts": {"direct": len(p)}}
+
+        draft_caps = pipeline.generate_draft("topic")
+        check("queries requested is capped at NAMED_SOURCE_LIMIT",
+              len(gather_calls[1]["queries"]) <= sources.NAMED_SOURCE_LIMIT)
+        check("new records added is capped at NAMED_SOURCE_LIMIT",
+              len(draft_caps.papers) <= 1 + sources.NAMED_SOURCE_LIMIT)
+
+        # 7. Nothing named -> no second gather and no named_sources key
+        gather_calls.clear()
+        plain_paper = Paper(title="Plain", abstract="No names or DOIs here.", year=2024, doi="10.1000/plain")
+        pipeline.gather_evidence = lambda queries, **kw: (gather_calls.append(queries), [plain_paper])[1]
+        pipeline.curate_sources = lambda topic, p, **kw: {"relevance": {1: "direct"}, "most_relevant_index": 1, "counts": {"direct": 1}}
+
+        draft_none = pipeline.generate_draft("topic")
+        check("nothing named -> gather_evidence called only once", len(gather_calls) == 1)
+        check("nothing named -> no named_sources in provenance", "named_sources" not in draft_none.provenance)
+    finally:
+        (
+            pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
+            pipeline.write_briefing, pipeline.write_article, pipeline.fetch_full_text,
+            pipeline.enforce_style, pipeline.resolve_pmcid,
+        ) = saved
+
+
+def test_named_references_reads_names_not_noise() -> None:
+    """The extractor pulls DOIs and named studies, rejecting noise and apparatus words."""
+    from articlegen.sources import NAMED_SOURCE_LIMIT, _NAMED_STOPLIST, named_references
+
+    # Positive controls
+    pos1 = named_references("the Safewards cluster randomised controlled trial")
+    check("extracts Safewards trial", pos1 == ["Safewards trial"])
+
+    pos2 = named_references("(doi: 10.1001/jama.2015.1234)")
+    check("extracts DOI from abstract", pos2 == ["10.1001/jama.2015.1234"])
+
+    pos3 = named_references("the RAISE-ETP study")
+    check("extracts RAISE-ETP study", pos3 == ["RAISE-ETP study"])
+
+    pos4 = named_references("a stepped-wedge trial (STAR)")
+    check("extracts parenthesised acronym as STAR trial", pos4 == ["STAR trial"])
+
+    # Negative controls
+    check("rejects sentence-initial 'This study'", named_references("This study found…") == [])
+    check("rejects sentence-initial 'Recent trials'", named_references("Recent trials suggest…") == [])
+    check("rejects apparatus acronym (RCT)", named_references("a randomised controlled trial (RCT)") == [])
+    check("rejects PRISMA guideline mention", named_references("reported using PRISMA") == [])
+    check("rejects sentence-initial 'The trial'", named_references("The trial was registered") == [])
+
+    # Sweep all 14 abstracts in tests/real_abstracts.json
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    real_abstracts_path = os.path.join(root, "tests", "real_abstracts.json")
+    with open(real_abstracts_path, encoding="utf-8") as f:
+        real_abstracts = json.load(f)
+
+    check("real_abstracts has 14 entries", len(real_abstracts) == 14)
+    for i, entry in enumerate(real_abstracts, start=1):
+        refs = named_references(entry.get("abstract", ""))
+        check(f"real abstract {i} extraction stays within NAMED_SOURCE_LIMIT",
+              len(refs) <= NAMED_SOURCE_LIMIT)
+        for ref in refs:
+            tokens = ref.lower().split()
+            for tok in tokens:
+                clean_tok = tok.strip(".,;:\"'()")
+                # The trailing study noun is permitted (e.g. trial, study); verify name tokens aren't stoplisted apparatus words
+                if clean_tok in ("trial", "study", "programme", "program", "cohort", "rct", "intervention"):
+                    continue
+                check(f"real abstract {i} extracted query token {tok!r} is not in stoplist",
+                      clean_tok not in _NAMED_STOPLIST)
+
+
+def test_named_sources_merge_without_renumbering() -> None:
+    """merge_candidates enriches duplicates and appends new records; named_matches filters properly."""
+    from articlegen.sources import Paper, merge_candidates, named_matches
+
+    # 1. named_matches
+    p_doi = Paper(title="Any Title", abstract="a", doi="10.1001/jama.2015.1234")
+    check("named_matches accepts exact DOI",
+          named_matches(p_doi, "10.1001/jama.2015.1234"))
+    check("named_matches accepts formatted DOI URL",
+          named_matches(p_doi, "https://doi.org/10.1001/jama.2015.1234"))
+    check("named_matches rejects different DOI",
+          not named_matches(p_doi, "10.1001/other.5678"))
+
+    p_title = Paper(
+        title="The Safewards cluster randomised controlled trial in acute psychiatric wards",
+        abstract="a",
+        doi="10.1016/j.ijnurstu.2015.07.001",
+    )
+    check("named_matches accepts matching study name",
+          named_matches(p_title, "Safewards trial"))
+    check("named_matches rejects non-matching study name",
+          not named_matches(p_title, "RAISE-ETP study"))
+
+    # 2. merge_candidates dedupe and append
+    original_p1 = Paper(title="Original Paper Title", abstract="orig abstract", doi="10.1234/test.doi")
+    pool = [original_p1]
+
+    # Duplicates by DOI (different formats) and title
+    dup1 = Paper(title="Original Paper Title Subtitle", abstract="dup abstract", doi="https://doi.org/10.1234/TEST.DOI", year=2021)
+    dup2 = Paper(title="original paper title", abstract="dup2 abstract", doi="doi: 10.1234/test.doi", citation_count=42)
+
+    appended = merge_candidates(pool, [dup1, dup2])
+    check("duplicates are not appended", appended == [])
+    check("pool length unchanged after duplicates", len(pool) == 1)
+    check("original paper identity preserved", pool[0] is original_p1)
+    check("metadata enriched onto original paper (year)", pool[0].year == 2021)
+    check("metadata enriched onto original paper (citation_count)", pool[0].citation_count == 42)
+
+    # Genuine new papers with limit
+    new1 = Paper(title="New Paper One", abstract="a", doi="10.9999/new1")
+    new2 = Paper(title="New Paper Two", abstract="a", doi="10.9999/new2")
+    new3 = Paper(title="New Paper Three", abstract="a", doi="10.9999/new3")
+
+    appended_new = merge_candidates(pool, [new1, new2, new3], limit=2)
+    check("merge_candidates honours limit", len(appended_new) == 2 and appended_new == [new1, new2])
+    check("pool has 3 papers", len(pool) == 3)
+    check("existing indices never move", pool[0] is original_p1 and pool[1] is new1 and pool[2] is new2)
+
+
+def test_methods_names_the_named_source_pass() -> None:
+    """Methods describes the targeted named-source pass when present, and omits it otherwise."""
+    from articlegen import render
+
+    prov_with_named = {
+        "queries": ["main query"],
+        "databases": ["Europe PMC"],
+        "date": "21 August 2026",
+        "model": "claude-opus-5",
+        "named_sources": {
+            "queries": ["10.1001/jama.2015.1234", "Safewards <trial>"],
+            "added": 1,
+        },
+    }
+
+    html_out = render._methods_html(prov_with_named, screened=10, n_cited=3, topic="seclusion")
+    md_out = "\n".join(render._methods_markdown(prov_with_named, screened=10, n_cited=3, topic="seclusion"))
+
+    check("html contains named sources sentence",
+          "A second, targeted search then looked up 2 works named in the most relevant abstracts" in html_out)
+    check("html contains added count sentence",
+          "which added 1 further record to the pool." in html_out)
+    check("html escapes special characters in queries",
+          "Safewards &lt;trial&gt;" in html_out)
+
+    check("markdown contains named sources sentence",
+          "A second, targeted search then looked up 2 works named in the most relevant abstracts" in md_out)
+    check("markdown contains added count sentence",
+          "which added 1 further record to the pool." in md_out)
+
+    prov_zero_added = {
+        "queries": ["main query"],
+        "databases": ["Europe PMC"],
+        "date": "21 August 2026",
+        "named_sources": {
+            "queries": ["Safewards trial"],
+            "added": 0,
+        },
+    }
+    html_zero = render._methods_html(prov_zero_added, screened=10, n_cited=3, topic="seclusion")
+    check("zero added reports 'no further records to the pool.'",
+          "which added no further records to the pool." in html_zero)
+
+    prov_none = {
+        "queries": ["main query"],
+        "databases": ["Europe PMC"],
+        "date": "21 August 2026",
+    }
+    html_none = render._methods_html(prov_none, screened=10, n_cited=3, topic="seclusion")
+    md_none = "\n".join(render._methods_markdown(prov_none, screened=10, n_cited=3, topic="seclusion"))
+
+    check("absent named_sources leaves HTML methods unchanged",
+          "second, targeted search" not in html_none)
+    check("absent named_sources leaves Markdown methods unchanged",
+          "second, targeted search" not in md_none)
+
+
 def _validate(instance, schema: dict, path: str = "") -> list[str]:
     """The slice of JSON Schema `_ARTICLE_SCHEMA` actually uses.
 
@@ -5748,6 +6079,10 @@ def main(argv: list[str] | None = None) -> int:
         test_full_text_order_favours_direct_and_recent,
         test_pmcid_is_resolved_by_doi,
         test_unpaywall_fallback_in_resolve_pmcid,
+        test_named_papers_in_abstracts_are_looked_up,
+        test_named_references_reads_names_not_noise,
+        test_named_sources_merge_without_renumbering,
+        test_methods_names_the_named_source_pass,
         test_methods_names_only_sources_that_answered,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
         test_prose_style_check, test_rules_do_not_reject_real_journal_prose,

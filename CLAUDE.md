@@ -72,12 +72,12 @@ tests/test_journal_conformance.py conventions as assertions over 5 fixtures
 ```
 
 **`pipeline.generate_draft()`, and nowhere else**: source pre-flight →
-`plan_queries` → `gather_evidence` → `curate_sources` → full-text fetch →
-`write_briefing` (or `write_article` when `long=True`) → `enforce_style` (up
-to `MAX_STYLE_PASSES` `revise_prose` passes if `check_style` finds errors) →
-`check_statistics` → a `Draft` carrying article, papers, curation,
-verification, style report and `provenance` (queries, model, date, databases,
-full_text_sources).
+`plan_queries` → `gather_evidence` → `curate_sources` → named-source pass →
+full-text fetch → `write_briefing` (or `write_article` when `long=True`) →
+`enforce_style` (up to `MAX_STYLE_PASSES` `revise_prose` passes if `check_style`
+finds errors) → `check_statistics` → a `Draft` carrying article, papers,
+curation, verification, style report and `provenance` (queries, model, date,
+databases, full_text_sources).
 
 Callers differ **only** in what they do with the `Draft`. Never re-implement a
 stage in a caller — the web handler once had its own copy that silently skipped
@@ -103,6 +103,8 @@ behaviour it describes.
 | Nothing needing a key costs a round trip to discover it | `test_first_visit_does_not_dead_end` |
 | The full-text dependencies fail loudly enough to diagnose | `test_full_text_dependencies_fail_loudly_enough_to_diagnose` |
 | Deep reads go to direct and recent sources first | `test_full_text_order_favours_direct_and_recent` |
+| Papers named in the top abstracts are looked up once, capped | `test_named_papers_in_abstracts_are_looked_up` |
+| A merged record never renumbers the pool | `test_named_sources_merge_without_renumbering` |
 | A doomed run is refused before the caller is billed | `test_dead_sources_fail_before_the_caller_is_billed` |
 | The article shape is not a preference (`TONE_LABEL`, `LENGTH_LABEL`, `DEPTH_LABEL` are constants) | `test_house_style_is_fixed_not_a_preference` |
 | Default artefact is a briefing; the Review is `--long` | `test_briefing_is_the_default_artefact` |
@@ -323,6 +325,7 @@ and sections intact.
   arXiv-last ordering is what discards a preprint in favour of the published
   version. A value that is not a DOI normalises to `""` rather than itself,
   so a junk field shared by two unrelated records cannot merge them.
+- **The search is no longer one-shot; after curation the top `NAMED_SOURCE_SCAN` abstracts are scanned for DOIs and study names**, one extra gather runs for up to `NAMED_SOURCE_LIMIT` of them, matched records merge through the existing DOI/title dedupe and are **appended, never re-ranked**, because the index is the citation scheme; only the new records are re-curated; the pass shares the run's `exhausted` set and runs with `patient=False`, so it cannot buy a second 30-second Semantic Scholar wait.
 - **Preprints are detected and marked, never excluded or down-ranked.**
   Preprints are detected from API type metadata where it exists (OpenAlex
   `type`, Europe PMC `PPR`, arXiv always) with an identifier fallback in
