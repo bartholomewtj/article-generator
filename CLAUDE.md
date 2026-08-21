@@ -129,6 +129,8 @@ behaviour it describes.
 | Fig. 1 counts study designs, and falls back to years when it cannot | `test_figure_one_counts_study_designs` |
 | Table 1 prints no citation count | `test_figure_one_counts_study_designs` |
 | Supplied search terms start the plan and are never replaced | `test_idea_search_terms_reach_the_draft` |
+| A generic "name" is never looked up | `test_generic_named_lookups_are_skipped` |
+| Paraphrased terms buy one distinct extra query | `test_paraphrase_terms_buy_a_distinct_query` |
 | A figure stated in a paper's title is grounded | `test_statistic_verification` |
 | A hyphenated range is one figure, not two | `test_statistic_verification` |
 | Flagged figures buy one revision, a clean draft buys none | `test_flagged_figures_buy_one_revision` |
@@ -294,9 +296,14 @@ and sections intact.
   (#172). Supplied terms are copied into the query list **in code** and the
   model may append **at most one** more specific query — a planner that
   returns four replacements cannot displace them. `MAX_PLANNED_QUERIES` (4)
-  and `MAX_SUPPLIED_QUERIES` (3) bound both ends. With no terms supplied the
-  old one-shot prompt runs unchanged: the ideas stage is not mandatory and
-  `draft "topic"` on its own must keep working.
+  and `MAX_SUPPLIED_QUERIES` (3) bound both ends. When the supplied or planned
+  terms all search one route (`query_routes` <= 1 under
+  `NEAR_DUPLICATE_OVERLAP`), one additional **distinct** query is required and
+  a paraphrase is rejected once and re-asked; the supplied terms are still
+  copied in code and never replaced (#190). With no terms supplied the old
+  one-shot prompt runs unchanged: the ideas stage is not mandatory and
+  `draft "topic"` on its own must keep working. →
+  `test_paraphrase_terms_buy_a_distinct_query`
 - **The candidate pool is `DEFAULT_MAX_PAPERS` (40), defined in `sources.py` and
   read by every entry point** — the CLI flag's default, `generate_draft`, and
   the web handler. At 20 the relevance gate barely discarded anything: three
@@ -416,7 +423,7 @@ and sections intact.
   arXiv-last ordering is what discards a preprint in favour of the published
   version. A value that is not a DOI normalises to `""` rather than itself,
   so a junk field shared by two unrelated records cannot merge them.
-- **The search is no longer one-shot; after curation the top `NAMED_SOURCE_SCAN` abstracts are scanned for DOIs and study names**, one extra gather runs for up to `NAMED_SOURCE_LIMIT` of them, matched records merge through the existing DOI/title dedupe and are **appended, never re-ranked**, because the index is the citation scheme; only the new records are re-curated; the pass shares the run's `exhausted` set and runs with `patient=False`, so it cannot buy a second 30-second Semantic Scholar wait.
+- **The search is no longer one-shot; after curation the top `NAMED_SOURCE_SCAN` abstracts are scanned for DOIs and study names**, one extra gather runs for up to `NAMED_SOURCE_LIMIT` of them, matched records merge through the existing DOI/title dedupe and are **appended, never re-ranked**, because the index is the citation scheme; only the new records are re-curated; the pass shares the run's `exhausted` set and runs with `patient=False`, so it cannot buy a second 30-second Semantic Scholar wait. The extraction skips generic tokens — number words, structured-abstract headers, two-letter acronyms and hyphenated descriptors — and a name that matches more than `NAMED_MATCH_RATE_MAX` of what came back, over a floor of `NAMED_MATCH_MIN_MATCHES`, is dropped after the lookup because it is describing the literature rather than naming a paper (`filter_named_matches`, #190). → `test_generic_named_lookups_are_skipped`
 - **Preprints are detected and marked, never excluded or down-ranked.**
   Preprints are detected from API type metadata where it exists (OpenAlex
   `type`, Europe PMC `PPR`, arXiv always) with an identifier fallback in

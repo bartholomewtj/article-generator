@@ -24,9 +24,9 @@ from . import paperfetch
 from .llm import resolve_provider
 from .sources import (DATABASE_NAMES, DEFAULT_MAX_PAPERS, NAMED_SOURCE_LIMIT,
                       NAMED_SOURCE_PER_QUERY, NAMED_SOURCE_SCAN, Paper,
-                      _normalize_doi, fetch_full_text, full_text_order,
-                      gather_evidence, merge_candidates, named_matches,
-                      named_references, resolve_pmcid)
+                      _normalize_doi, fetch_full_text, filter_named_matches,
+                      full_text_order, gather_evidence, merge_candidates,
+                      named_matches, named_references, resolve_pmcid)
 from .style import (SUBSTANCE_RULES, check_style, errors as style_errors,
                     format_report as format_style, revision_brief)
 from .verify import check_statistics, revision_brief as statistics_brief
@@ -476,11 +476,14 @@ def _named_source_pass(
         patient=False,
     )
 
-    matched = [p for p in extra_records if any(named_matches(p, req) for req in requests)]
+    matched, dropped = filter_named_matches(extra_records, requests)
     old_len = len(papers)
     new_papers = merge_candidates(papers, matched, limit=NAMED_SOURCE_LIMIT)
     log(f"  named-source pass: {len(requests)} requested, {len(extra_records)} records returned, "
         f"{len(matched)} matched, {len(new_papers)} new after dedupe")
+    if dropped:
+        log("    dropped as generic (matched most of what came back): "
+            + "; ".join(f"{q!r}" for q in dropped))
 
     if new_papers:
         new_curation = curate_sources(topic, new_papers, model=model, api_key=api_key)
@@ -535,7 +538,7 @@ def generate_draft(
             + "; ".join(supplied) + " (the planner may add one more)")
     log(f"Planning search queries for: {topic}")
     queries, core_entity = plan_queries(
-        topic, model=model, api_key=api_key, search_terms=supplied
+        topic, model=model, api_key=api_key, search_terms=supplied, log=log
     )
     log("Queries: " + "; ".join(queries) + (f"  (core: {core_entity})" if core_entity else ""))
 
