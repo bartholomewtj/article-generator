@@ -795,7 +795,8 @@ def _join_list(items: list[str]) -> str:
 
 
 def _methods_paragraphs(
-    provenance: dict | None, screened: int, n_cited: int, topic: str, esc=lambda s: s
+    provenance: dict | None, screened: int, n_cited: int, topic: str, esc=lambda s: s,
+    n_full_cited: int | None = None,
 ) -> dict[str, str]:
     """The three Methods paragraphs as sentences, before any markup.
 
@@ -854,11 +855,16 @@ def _methods_paragraphs(
         via = (provenance.get("full_text_via") or {}) if provenance else {}
         retrieved_from = ("retrieved from Europe PMC" if not via.get("papers")
                           else "retrieved from their open-access copies")
+        marked = (
+            "(marked in Table 1)"
+            if n_full_cited is None or n_full_cited == n_full
+            else f"({n_full_cited} of which are cited here and marked in Table 1)"
+        )
         handling = (
             f"Titles and abstracts were read for every record, and the open-access "
             f"full text{'s' if n_full != 1 else ''} of {n_full} "
             f"source{'s were' if n_full != 1 else ' was'} {retrieved_from} "
-            "and read alongside them (marked in Table 1); claims resting on the "
+            f"and read alongside them {marked}; claims resting on the "
             "remaining sources draw on no data beyond an abstract. Decimals, "
             "percentages, effect estimates and quantities carrying a clinical unit "
             "were then checked automatically, each against the sources its own "
@@ -886,8 +892,13 @@ def _methods_paragraphs(
     return {"search": search, "handling": handling, "generation": generation}
 
 
-def _methods_html(provenance: dict | None, screened: int, n_cited: int, topic: str) -> str:
-    parts = _methods_paragraphs(provenance, screened, n_cited, topic, html.escape)
+def _methods_html(
+    provenance: dict | None, screened: int, n_cited: int, topic: str,
+    n_full_cited: int | None = None,
+) -> str:
+    parts = _methods_paragraphs(
+        provenance, screened, n_cited, topic, html.escape, n_full_cited=n_full_cited
+    )
     return (
         '<section class="back-section">\n<h2>Methods</h2>\n'
         f'<p><span class="run-in">Search strategy.</span> {parts["search"]}</p>\n'
@@ -1451,7 +1462,8 @@ def render_article(
             abstract=_prose(_summary_text(article), cite_map, valid_numbers, flags),
             keywords=keywords_html,
             body=body_html,
-            methods=_methods_html(provenance, len(papers), len(cited), topic),
+            methods=_methods_html(provenance, len(papers), len(cited), topic,
+                                  n_full_cited=_full_text_count(cited)),
             assessment=_assessment_html(cited, counts, verification, style_report),
             table=table,
             glossary=_glossary_html(article),
@@ -1944,7 +1956,8 @@ def render_markdown(
         if key_points_md and len(sections) <= 1:
             lines += [key_points_md, ""]
 
-    lines += _methods_markdown(provenance, len(papers), len(cited), topic)
+    lines += _methods_markdown(provenance, len(papers), len(cited), topic,
+                               n_full_cited=_full_text_count(cited))
     lines += _assessment_markdown(cited, counts, verification, style_report)
     if table_md:
         lines += [table_md, ""]
@@ -2045,8 +2058,13 @@ def _figure_markdown(cited: list[Paper], labels: dict[int, str]) -> str:
     return "\n".join(lines)
 
 
-def _methods_markdown(provenance: dict | None, screened: int, n_cited: int, topic: str) -> list[str]:
-    parts = _methods_paragraphs(provenance, screened, n_cited, topic)
+def _methods_markdown(
+    provenance: dict | None, screened: int, n_cited: int, topic: str,
+    n_full_cited: int | None = None,
+) -> list[str]:
+    parts = _methods_paragraphs(
+        provenance, screened, n_cited, topic, n_full_cited=n_full_cited
+    )
     return [
         "## Methods",
         "",

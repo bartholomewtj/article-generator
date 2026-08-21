@@ -762,7 +762,7 @@ def test_draft_summary() -> None:
         verification={"unverified": []},
         style_report={"issues": [], "stats": {}},
     )
-    check("counts cited sources", clean.summary().startswith("3 sources cited"))
+    check("counts cited sources", clean.summary().startswith("3 of 5 screened sources cited"))
     check("counts direct sources", "2 directly on-topic" in clean.summary())
     check("clean prose reported", "prose style clean" in clean.summary())
 
@@ -783,7 +783,7 @@ def test_draft_summary() -> None:
     check("style issues flagged", "prose-style issue(s)" in summary)
 
     out_of_range = Draft(topic="t", article={"references": [1, 99, "x"]}, papers=papers)
-    check("ignores out-of-range references", out_of_range.summary().startswith("1 sources cited"))
+    check("ignores out-of-range references", out_of_range.summary().startswith("1 of 5 screened sources cited"))
 
 
 def test_rate_limit() -> None:
@@ -3565,6 +3565,117 @@ def test_tangential_sources_stay_out_of_the_writer_prompt() -> None:
           all(f"abstract of paper {i}" in captured["prompt"] for i in range(1, 6)))
 
 
+def test_the_writer_cites_a_working_set() -> None:
+    """The candidate pool is 40 so the relevance gate has something to throw away
+    (#141). The shipped drafts still cited almost everything: safety-planning 20/20,
+    seclusion 17/20 (#167). The writer must cite a working set of about 12, while
+    the candidate pool stays 40.
+    """
+    from articlegen import render, sources, writer
+    from articlegen.sources import Paper
+
+    # 1. The pool did not shrink.
+    check("candidate pool default stays 40", sources.DEFAULT_MAX_PAPERS == 40)
+    check("curation abstracts are not truncated", writer.CURATION_ABSTRACT_CHARS is None)
+
+    # 2. The constant exists and is 12.
+    check("TARGET_CITED_SOURCES is 12", writer.TARGET_CITED_SOURCES == 12)
+
+    # 3. One rule string, in both prompts.
+    check("working-set rule in briefing system prompt",
+          writer._WORKING_SET_RULE in writer._BRIEFING_SYSTEM)
+    check("working-set rule in writer system prompt",
+          writer._WORKING_SET_RULE in writer._WRITER_SYSTEM)
+    check("working-set rule text contains target count",
+          str(writer.TARGET_CITED_SOURCES) in writer._WORKING_SET_RULE)
+
+    # 4. The inclusion instruction is gone.
+    check("inclusion instruction removed from writer prompt",
+          "cite the related and tangential sources too" not in writer._WRITER_SYSTEM)
+    check("writer prompt notes tangential sources were withheld",
+          "sources labelled tangential have already been withheld" in writer._WRITER_SYSTEM)
+
+    # 5. Full-text variants still carry the rule.
+    check("working-set rule survives in full-text writer prompt",
+          writer._WORKING_SET_RULE in writer._WRITER_SYSTEM_FULLTEXT)
+    check("working-set rule survives in full-text briefing prompt",
+          writer._WORKING_SET_RULE in writer._BRIEFING_SYSTEM_FULLTEXT)
+
+    # 6. The run's own numbers reach the model.
+    papers_40 = [Paper(title=f"P{i}", abstract=f"Abstract {i}", year=2024) for i in range(1, 41)]
+    relevance_40 = {i: ("tangential" if i <= 4 else ("direct" if i <= 20 else "related")) for i in range(1, 41)}
+    curation_40 = {
+        "relevance": relevance_40,
+        "counts": {"direct": 16, "related": 20, "tangential": 4},
+        "most_relevant_index": 5,
+    }
+    captured = {}
+
+    def fake_generate(prompt, schema, **kwargs):
+        captured["prompt"] = prompt
+        return {"title": "t", "sections": [], "question": "q", "answer": "a", "findings": [], "unknowns": [], "open_these": []}
+
+    real = writer.generate_json
+    try:
+        writer.generate_json = fake_generate
+        writer.write_briefing("topic", papers_40, curation=curation_40)
+        briefing_prompt = captured["prompt"]
+        writer.write_article("topic", papers_40, curation=curation_40)
+        article_prompt = captured["prompt"]
+    finally:
+        writer.generate_json = real
+
+    for name, prompt in (("briefing", briefing_prompt), ("article", article_prompt)):
+        check(f"{name} prompt includes WORKING SET", "WORKING SET" in prompt)
+        check(f"{name} prompt reports screened count", "40 records were screened" in prompt)
+        check(f"{name} prompt reports shown count", "36 are reproduced below" in prompt)
+        check(f"{name} prompt specifies target cited count",
+              f"about {writer.TARGET_CITED_SOURCES} of them" in prompt)
+
+    # 7. A thin pool is not asked for twelve.
+    papers_6 = [Paper(title=f"P{i}", abstract=f"Abstract {i}", year=2024) for i in range(1, 7)]
+    relevance_6 = {1: "tangential", 2: "direct", 3: "direct", 4: "related", 5: "related", 6: "related"}
+    curation_6 = {
+        "relevance": relevance_6,
+        "counts": {"direct": 2, "related": 3, "tangential": 1},
+        "most_relevant_index": 2,
+    }
+    try:
+        writer.generate_json = fake_generate
+        writer.write_briefing("topic", papers_6, curation=curation_6)
+    finally:
+        writer.generate_json = real
+    thin_prompt = captured["prompt"]
+    check("thin pool reports 5 reproduced below", "5 are reproduced below" in thin_prompt)
+    check("thin pool does not ask for about 12", "about 12" not in thin_prompt)
+
+    # 8. Methods prints screened and cited as two different numbers.
+    prov = {"queries": ["q"], "databases": ["Europe PMC"], "date": "21 August 2026"}
+    m_html = render._methods_html(prov, screened=40, n_cited=12, topic="x")
+    m_md = "\n".join(render._methods_markdown(prov, screened=40, n_cited=12, topic="x"))
+    check("methods HTML shows screened and cited as two different numbers",
+          "leaving 40" in m_html and "12 were cited here" in m_html)
+    check("methods markdown shows screened and cited as two different numbers",
+          "leaving 40" in m_md and "12 were cited here" in m_md)
+
+    # 9. Methods does not over-claim the Read column.
+    prov_ft = {
+        "queries": ["q"],
+        "databases": ["Europe PMC"],
+        "date": "21 August 2026",
+        "full_text_sources": [1, 2, 3, 4, 5],
+    }
+    m_ft_partial = render._methods_html(prov_ft, screened=40, n_cited=12, topic="x", n_full_cited=3)
+    check("methods HTML specifies cited count when full-text cited differs from fetched",
+          "3 of which are cited here and marked in Table 1" in m_ft_partial)
+    check("methods HTML omits bare marker when full-text cited differs",
+          "(marked in Table 1)" not in m_ft_partial)
+
+    m_ft_all = render._methods_html(prov_ft, screened=40, n_cited=12, topic="x", n_full_cited=5)
+    check("methods HTML uses bare marker when all fetched full texts are cited",
+          "(marked in Table 1)" in m_ft_all)
+
+
 def test_gemini_cli_provider() -> None:
     """Drafting on a Gemini subscription, through the Antigravity CLI.
 
@@ -6310,6 +6421,7 @@ def main(argv: list[str] | None = None) -> int:
         test_claude_cli_provider,
         test_gemini_cli_provider,
         test_tangential_sources_stay_out_of_the_writer_prompt,
+        test_the_writer_cites_a_working_set,
         test_revision_replaces_blocks_rather_than_the_article,
         test_revision_carries_sources_only_when_they_can_be_used,
         test_warnings_ride_along_on_a_revision,

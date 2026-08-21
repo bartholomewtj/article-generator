@@ -615,6 +615,29 @@ What to measure on the first real runs: how many names extracted, how many
 matched, and whether a DOI-as-free-text query hits across the APIs (if not, a
 targeted DOI lookup is the follow-up).
 
+### `#167` — the pool was curated, the reference list was not
+
+The candidate pool was raised to 40 for `#141` so the relevance gate would have
+material to discard. The shipped drafts that followed still cited almost everything
+they screened: safety-planning cited 20 of 20 and seclusion cited 17 of 20.
+Screening that keeps everything is inclusion, not curation, and a one-page
+briefing cannot carry seventeen papers.
+
+The briefing prompt already had one weak line (`- Cite about a dozen sources...`),
+but it was buried mid-list under SUBSTANCE, never repeated in the per-run context,
+and no number reached the model from the actual run. `_WRITER_SYSTEM` was actively
+instructing the opposite — *"Lead with the strongest DIRECT evidence, and cite the
+related and tangential sources too"* — which was also factually false about its own
+inputs, because `_writer_context` drops tangential sources from the prompt.
+
+The fix defines `TARGET_CITED_SOURCES = 12` and splices a single shared rule
+string (`_WORKING_SET_RULE`) into both `_BRIEFING_SYSTEM` and `_WRITER_SYSTEM`.
+In addition, `_writer_context` adds a per-run `WORKING SET` instruction with the
+run's actual screened and shown counts (with a thin-pool branch if shown <= 12).
+`Draft.summary()` now reports `N of M screened sources cited`, which gives the free
+acceptance measurement on the next few real runs: cited-of-screened should fall
+well below the old 16–19 of 20.
+
 ---
 
 ## Web app and deployment

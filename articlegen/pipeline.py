@@ -198,7 +198,7 @@ class Draft:
         n_unverified = len(self.verification.get("unverified") or [])
         n_misattributed = len(self.verification.get("misattributed") or [])
 
-        parts = f"{len(cited)} sources cited"
+        parts = f"{len(cited)} of {len(self.papers)} screened sources cited"
         if direct is not None:
             parts += f"; {direct} directly on-topic"
         if n_unverified:

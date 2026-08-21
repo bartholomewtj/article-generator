@@ -254,6 +254,30 @@ right disorder but a different question. Useful for context, not direct evidence
 Be strict. A famous review that never studies the specific topic is "tangential" or \
 "related", not "direct". Then name the single most relevant study to feature."""
 
+# The writer screens the whole candidate pool and cites a working set of about
+# this many sources. The pool is deliberately larger — `sources.DEFAULT_MAX_PAPERS`
+# is 40 — so the relevance gate has something to discard (#141). What it then
+# discarded was almost nothing: the shipped drafts cited 20 of 20 and 17 of 20
+# (#167). Screening that keeps everything is inclusion, not curation, and a
+# one-page briefing cannot carry seventeen papers.
+#
+# Not a preference. The same argument as TONE_LABEL/LENGTH_LABEL: the shape of
+# the artefact is fixed, and the reader does not choose it.
+TARGET_CITED_SOURCES = 12
+
+# One string, used verbatim in both system prompts, so the briefing and the
+# `--long` Review cannot drift apart on the one rule they share.
+_WORKING_SET_RULE = f"""\
+- CITE A WORKING SET, NOT EVERYTHING YOU WERE SHOWN. The candidate list is \
+deliberately longer than this piece needs, so that screening has something to \
+discard, and sources labelled tangential have already been withheld from it. \
+Cite about {TARGET_CITED_SOURCES} sources: the direct ones first, and a related \
+source only when it earns a specific point no direct source makes — a mechanism, \
+an adjacent population, a contrast. Report what a related source found under its \
+own label, never as a direct finding, and label evidence carried over from \
+another population as extrapolation. A source you have nothing specific to say \
+about does not belong in the reference list."""
+
 _WRITER_SYSTEM = """\
 You write Review articles for a leading scientific journal — the register of a \
 Nature Reviews or Science Review piece: precise, hedged, impersonal, and readable \
@@ -298,10 +322,7 @@ extrapolated from Y"). Never imply an evidence base that the direct sources don'
 support. Do NOT state counts or tallies of the evidence — how many sources were \
 cited, how many are direct, related or background, and the year range are computed \
 and printed for you. Every count you write is one that can contradict them.
-- Lead with the strongest DIRECT evidence, and cite the related and tangential \
-sources too: they carry mechanism, context and adjacent-population findings, and \
-the house style asks for extrapolation to be labelled, not left out. Report what \
-each found under its own label — just don't let it masquerade as a direct finding.
+""" + _WORKING_SET_RULE + """
 - featured_study: summarize the single most relevant study's method and results \
 FROM ITS ABSTRACT ONLY. Prefer the most-relevant source you were given. It is \
 printed as a boxed display item, so it must stand alone.
@@ -484,8 +505,7 @@ SUBSTANCE:
 FOUND. "The evidence suggests these strategies may be effective" is not a finding.
 - Attribute findings to their study, not to a vague body of evidence. Name the \
 design and the population in the prose.
-- Cite about a dozen sources, preferring direct ones. Related sources only when \
-they earn a specific point.
+""" + _WORKING_SET_RULE + """
 - Hedge to the evidence in front of you, and vary how: "in a single small trial", \
 "consistently across three cohorts", "no controlled study has tested".
 
@@ -946,6 +966,22 @@ def _writer_context(
             "NOT reproduced below, because they are background only. The numbering "
             "below is unchanged and has gaps where they were. Cite only sources you "
             "can actually see.\n\n"
+        )
+    shown = len(papers) - len(omit)
+    if shown > TARGET_CITED_SOURCES:
+        context += (
+            f"WORKING SET. {len(papers)} records were screened and {shown} are "
+            f"reproduced below. Cite about {TARGET_CITED_SOURCES} of them — the "
+            f"ones that carry the {kind}. Leaving a screened source uncited is "
+            "the expected outcome of screening, not an omission; the counts the "
+            "reader sees are computed from what you cite.\n\n"
+        )
+    else:
+        context += (
+            f"WORKING SET. {len(papers)} records were screened and {shown} are "
+            f"reproduced below. Cite the ones that carry the {kind} and no more; "
+            "a source you have nothing specific to say about does not belong in "
+            "the reference list.\n\n"
         )
     context += _format_sources(papers, relevance, excerpts, omit=omit)
     return context, use_full_text

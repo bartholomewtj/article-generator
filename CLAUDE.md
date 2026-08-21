@@ -118,6 +118,7 @@ behaviour it describes.
 | A preprint is labelled wherever it is listed | `test_preprints_are_marked_as_preprints` |
 | A load-bearing figure is not quoted at second hand when a first-hand one exists | `test_second_hand_figures_are_a_last_resort` |
 | The candidate-pool default lives in one constant | `test_the_candidate_pool_is_big_enough_to_curate` |
+| The writer cites a working set, not everything screened | `test_the_writer_cites_a_working_set` |
 | Full text via the papers CLI never breaks the Europe PMC path | `test_full_text_comes_from_the_papers_cli_when_it_is_there` |
 
 **Not pinned by a test** — these need the reasoning, because nothing else
@@ -129,7 +130,9 @@ carries it:
   unrecorded search says so and names nothing. A fallback constant is how a
   false claim came back the first time (#75). Same rule for the full-text count
   — `_synthesis_label`, `_read_phrase` and `render._full_text_count` own that
-  wording, and Table 1's Read column must agree with Methods.
+  wording, and Table 1's Read column must agree with Methods. Methods' full-text
+  sentence names how many read sources were cited when those two differ, because
+  the Read column counts read-and-cited.
 - **`verify.check_statistics` searches exactly the abstracts plus the excerpts
   the writer was shown** — never the unseen tail of a paper. Both sides call
   `sources.full_text_excerpts`, so nothing has to be recorded per run. A cited
@@ -270,6 +273,14 @@ and sections intact.
   are expected rather than bugs: the Methods "screened" count roughly doubles,
   and `MAX_FULLTEXT_REQUESTS` (18) now binds before `FULLTEXT_TARGET` more
   often, so the stop-reason NOTE fires routinely.
+  The pool is what is **screened**; `writer.TARGET_CITED_SOURCES` (12) is what
+  is **cited**. Those are two numbers and Methods prints both — raising the pool
+  without a citing target just produced longer reference lists (20 of 20, 17 of
+  20 cited, #167). The working-set rule lives in one string,
+  `writer._WORKING_SET_RULE`, spliced into both `_BRIEFING_SYSTEM` and
+  `_WRITER_SYSTEM`, with the run's own screened/shown counts added by
+  `_writer_context`. Table 1 stays the list of **cited** records; the screened
+  count lives in Methods.
 - **Full text has two routes: the `papers` CLI (paperfetch) first, Europe PMC as fallback.**
   When the `papers` CLI is installed and the paper has a DOI, full text is
   retrieved via `papers get` from any open-access copy (Unpaywall, OpenAlex,
