@@ -21,6 +21,7 @@ import os
 import re
 
 from .sources import Paper
+from .style import SUBSTANCE_RULES
 from .writer import is_briefing
 
 _CITATION_RE = re.compile(r"\[(\d+(?:\s*,\s*\d+)*)\]")
@@ -993,7 +994,26 @@ def _assessment_paragraphs(
     surviving = _style_failure_sentence(style_report, esc)
     if surviving:
         limitations.append(surviving)
+    verdict = _working_draft_sentence(style_report, verification)
+    if verdict:
+        limitations.append(verdict)
     return {"opening": opening, "limitations": limitations}
+
+
+# Style errors that change whether this page can be sent, as against prose nits
+# a reader would never notice. Only these reach the article; every rule still
+# fires, still buys a revision pass, and still prints in the CLI log and in
+# `style_report` (#169).
+#
+# Derived from SUBSTANCE_RULES with the two exemptions named, so a *new*
+# substance rule brands the page by default — the safe direction — while the
+# two that were branding four of five shipped drafts are listed where the
+# reason for exempting them is readable. `under-length` is severity 'warning',
+# so it never reaches this code; it is named anyway so that a future promotion
+# to error does not silently start branding pages on a length count.
+SENDABLE_BLOCKING_RULES = frozenset({"clinical-directive"}) | (
+    SUBSTANCE_RULES - {"recycled-phrasing", "repeated-opener", "under-length"}
+)
 
 
 # What each rule means to a reader, who has not read style.py. Phrased as the
@@ -1019,17 +1039,16 @@ _STYLE_FAILURE_WORDING = {
 
 
 def _style_failure_sentence(style_report: dict | None, esc=lambda s: s) -> str:
-    """State, in the article, that the prose check still objected.
+    """State, in the article, that the prose check still objected — when it matters.
 
     A draft that failed the style gate used to be indistinguishable from one that
-    passed: the check ran, the revision was attempted, and if it did not clear the
-    errors the article shipped silently anyway (issue #53). The house style puts
-    warnings in the Limitations paragraph rather than in callout boxes, so this
-    goes where the unverified-figure warning already goes.
+    passed (issue #53). It then went too far the other way: four of five shipped
+    drafts carried this line over a repeated sentence opener or a recycled
+    six-word phrase (#169). Only SENDABLE_BLOCKING_RULES reach the reader now.
     """
     failures = [
         i for i in (style_report or {}).get("issues", [])
-        if i.get("severity") == "error"
+        if i.get("severity") == "error" and i.get("rule") in SENDABLE_BLOCKING_RULES
     ]
     if not failures:
         return ""
@@ -1051,8 +1070,30 @@ def _style_failure_sentence(style_report: dict | None, esc=lambda s: s) -> str:
     return (
         "An automated check of the writing against journal prose conventions was "
         f"not satisfied by this draft: it {esc(faults)}. A revision was attempted "
-        "and did not resolve this, so the text below should be read as a working "
-        "draft rather than a finished review."
+        "and did not resolve this."
+    )
+
+
+def _working_draft_sentence(style_report: dict | None, verification: dict | None) -> str:
+    """The one sentence that tells a reader not to send this page as it stands.
+
+    Printed for defects that change whether the page can be sent: a surviving
+    clinical directive, a substance failure a revision did not clear, or a
+    figure the statistics check could not place. Never for a prose nit (#169).
+    It always follows a sentence that has just named the defect, hence
+    "therefore".
+    """
+    blocking = any(
+        i.get("severity") == "error" and i.get("rule") in SENDABLE_BLOCKING_RULES
+        for i in (style_report or {}).get("issues", [])
+    )
+    figures = bool((verification or {}).get("unverified")
+                   or (verification or {}).get("misattributed"))
+    if not (blocking or figures):
+        return ""
+    return (
+        "The text below should therefore be read as a working draft rather than "
+        "a finished review."
     )
 
 

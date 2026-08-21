@@ -3396,11 +3396,12 @@ def test_a_second_style_pass_runs_only_after_progress() -> None:
     """A second revision pass is allowed, and only after the first one worked.
 
     Two of three measured runs ended with exactly one residual style error after
-    a productive revision (3 -> 1 and 2 -> 1), which is enough to print the
-    "working draft rather than a finished review" line in Limitations. So
-    `enforce_style` may go round twice — but the second pass is gated on the
-    first having been accepted, and acceptance means strictly fewer errors. An
-    error the model cannot fix costs one call, never a loop (#146).
+    a productive revision (3 -> 1 and 2 -> 1), which is what a second pass is
+    sized to clear. Whether an unfixed error reaches the page is
+    `SENDABLE_BLOCKING_RULES`' business (#169). So `enforce_style` may go round
+    twice — but the second pass is gated on the first having been accepted, and
+    acceptance means strictly fewer errors. An error the model cannot fix costs
+    one call, never a loop (#146).
     """
     from articlegen import pipeline
 
@@ -3904,6 +3905,171 @@ def test_failed_style_gate_is_visible_in_the_article() -> None:
                       ("web", inspect.getsource(web.ArticleGenHandler._handle_draft))):
         check(f"{name} passes the style report to the renderer",
               "draft.style_report" in src)
+
+
+def test_only_sendable_defects_brand_the_page() -> None:
+    """The working-draft Limitations line prints only for sendable-blocking defects.
+
+    Prose nits (recycled-phrasing, repeated-opener) and warnings (under-length)
+    stay in the CLI log and in style_report; they do not brand the page (#169).
+    Clinical directives, surviving substance rules, and residual unverified/misattributed
+    figures do brand the page.
+    """
+    from articlegen import render, style
+    from articlegen.sources import Paper
+
+    papers = [Paper(title="P1", abstract="a", year=2024, doi="10.1/a")]
+    counts = {"direct": 1, "related": 0, "tangential": 0}
+    clean_report = {"issues": [], "stats": {}}
+    clean_verification = {"unverified": [], "misattributed": []}
+
+    def limitations_for(style_report=None, verification=None):
+        return " ".join(
+            render._assessment_paragraphs(
+                papers, counts, verification or clean_verification, style_report or clean_report
+            )["limitations"]
+        )
+
+    # 1. Nits do not brand. A style_report whose only errors are recycled-phrasing
+    # and repeated-opener produces limitations containing neither "working draft"
+    # nor "journal prose conventions".
+    nits_report = {
+        "issues": [
+            {"rule": "recycled-phrasing", "severity": "error", "where": "whole article",
+             "detail": "recycled text", "excerpt": "sample text"},
+            {"rule": "repeated-opener", "severity": "error", "where": "whole article",
+             "detail": "repeated opener", "excerpt": "The study found"},
+        ],
+        "stats": {},
+    }
+    nits_limitations = limitations_for(style_report=nits_report)
+    check("nits do not brand the page with working draft",
+          "working draft" not in nits_limitations)
+    check("nits do not print the journal prose conventions sentence",
+          "journal prose conventions" not in nits_limitations)
+
+    # 2. A clinical directive brands. A report with a clinical-directive error produces
+    # both the prose-check sentence ("instructs the reader on treatment") and
+    # "working draft rather than a finished review".
+    directive_report = {
+        "issues": [
+            {"rule": "clinical-directive", "severity": "error", "where": "Introduction",
+             "detail": "clinical directive detail", "excerpt": "titrate upward"},
+        ],
+        "stats": {},
+    }
+    directive_limitations = limitations_for(style_report=directive_report)
+    check("clinical directive prints prose-check sentence",
+          "instructs the reader on treatment" in directive_limitations)
+    check("clinical directive brands as working draft",
+          "working draft rather than a finished review" in directive_limitations)
+
+    # 3. A surviving substance failure brands. Same with too-few-sections.
+    substance_report = {
+        "issues": [
+            {"rule": "too-few-sections", "severity": "error", "where": "whole article",
+             "detail": "too few sections", "excerpt": ""},
+        ],
+        "stats": {},
+    }
+    substance_limitations = limitations_for(style_report=substance_report)
+    check("surviving substance failure prints prose-check sentence",
+          "covers the topic in fewer sections" in substance_limitations)
+    check("surviving substance failure brands as working draft",
+          "working draft rather than a finished review" in substance_limitations)
+
+    # 4. A mixed report names only the blocking fault. clinical-directive +
+    # recycled-phrasing together -> the sentence names the directive and does not
+    # contain "reuses phrasing between sections".
+    mixed_report = {
+        "issues": [
+            {"rule": "clinical-directive", "severity": "error", "where": "Introduction",
+             "detail": "d", "excerpt": ""},
+            {"rule": "recycled-phrasing", "severity": "error", "where": "whole article",
+             "detail": "d", "excerpt": ""},
+        ],
+        "stats": {},
+    }
+    mixed_limitations = limitations_for(style_report=mixed_report)
+    check("mixed report names the blocking fault",
+          "instructs the reader on treatment" in mixed_limitations)
+    check("mixed report does not name the nit",
+          "reuses phrasing between sections" not in mixed_limitations)
+    check("mixed report brands as working draft",
+          "working draft rather than a finished review" in mixed_limitations)
+
+    # 5. Residual figures brand, with no style errors at all. style_report with no
+    # errors, verification={"unverified": ["42%"]} -> the unverified sentence is
+    # still there and the working-draft sentence prints. Same for {"misattributed": ["18%"]}.
+    unverified_limitations = limitations_for(
+        style_report=clean_report, verification={"unverified": ["42%"], "misattributed": []}
+    )
+    check("unverified figures produce the unverified sentence",
+          "could not be located" in unverified_limitations and "42%" in unverified_limitations)
+    check("unverified figures brand as working draft",
+          "working draft rather than a finished review" in unverified_limitations)
+
+    misattributed_limitations = limitations_for(
+        style_report=clean_report, verification={"unverified": [], "misattributed": ["18%"]}
+    )
+    check("misattributed figures produce the misattributed sentence",
+          "other than the one its sentence credits" in misattributed_limitations and "18%" in misattributed_limitations)
+    check("misattributed figures brand as working draft",
+          "working draft rather than a finished review" in misattributed_limitations)
+
+    # 6. A clean draft says nothing. No style errors, verification={"unverified": [], "misattributed": []}
+    # -> neither string appears anywhere in the limitations.
+    clean_limitations = limitations_for(style_report=clean_report, verification=clean_verification)
+    check("clean draft produces no working draft branding",
+          "working draft" not in clean_limitations)
+    check("clean draft produces no prose check sentence",
+          "journal prose conventions" not in clean_limitations)
+
+    # 7. under-length stays out. It is severity "warning", so a report carrying it
+    # as a warning brands nothing — assert that, and assert "under-length" in style.SUBSTANCE_RULES
+    # so the exemption in SENDABLE_BLOCKING_RULES is still subtracting a name that exists.
+    under_length_report = {
+        "issues": [
+            {"rule": "under-length", "severity": "warning", "where": "whole article",
+             "detail": "short", "excerpt": ""},
+        ],
+        "stats": {},
+    }
+    under_length_limitations = limitations_for(style_report=under_length_report)
+    check("under-length warning does not brand as working draft",
+          "working draft" not in under_length_limitations)
+    check("under-length warning does not print prose check sentence",
+          "journal prose conventions" not in under_length_limitations)
+    check("under-length is in style.SUBSTANCE_RULES",
+          "under-length" in style.SUBSTANCE_RULES)
+
+    # 8. The exemptions are still real names. {"recycled-phrasing", "repeated-opener",
+    # "under-length"} <= style.SUBSTANCE_RULES, and neither of the first two is in
+    # render.SENDABLE_BLOCKING_RULES.
+    exemptions = {"recycled-phrasing", "repeated-opener", "under-length"}
+    check("exemptions are all in style.SUBSTANCE_RULES",
+          exemptions <= style.SUBSTANCE_RULES)
+    check("recycled-phrasing is not in render.SENDABLE_BLOCKING_RULES",
+          "recycled-phrasing" not in render.SENDABLE_BLOCKING_RULES)
+    check("repeated-opener is not in render.SENDABLE_BLOCKING_RULES",
+          "repeated-opener" not in render.SENDABLE_BLOCKING_RULES)
+
+    # 9. The rules still fire and still buy a revision. Nothing in style.py changed:
+    # assert "recycled-phrasing" in style.SUBSTANCE_RULES and that style.revision_brief
+    # on a recycled-phrasing report still asks for the fix (the brief text contains the rule's detail).
+    check("recycled-phrasing remains in style.SUBSTANCE_RULES",
+          "recycled-phrasing" in style.SUBSTANCE_RULES)
+    brief = style.revision_brief({
+        "issues": [
+            {"rule": "recycled-phrasing", "severity": "error", "where": "whole article",
+             "detail": "reused sentence across sections", "excerpt": "verbatim text repeated here"},
+        ],
+        "stats": {},
+    })
+    check("style.revision_brief asks for recycled-phrasing fix",
+          "reused sentence across sections" in brief)
+    check("style.revision_brief inverts to request source material for substance rules",
+          "SOURCES below" in brief)
 
 
 def test_evidence_assessment_is_wholly_deterministic() -> None:
@@ -6151,6 +6317,7 @@ def main(argv: list[str] | None = None) -> int:
         test_disclosure_is_above_the_fold_and_derived,
         test_display_items_are_selected_once_for_both_formats,
         test_failed_style_gate_is_visible_in_the_article,
+        test_only_sendable_defects_brand_the_page,
         test_evidence_assessment_is_wholly_deterministic,
         test_unverified_figures_are_marked_inline,
         test_clinical_directives_are_an_error,

@@ -330,6 +330,56 @@ def fixtures():
            "treatment response in patients")
 
 
+def _check_sendable_branding() -> None:
+    """The 'working draft' Limitations line prints only for sendable-blocking defects."""
+    name = "sendable branding"
+    print(f"\n# {name}")
+    for _, article, papers, curation, _, provenance, topic in fixtures():
+        break
+
+    nits_report = {
+        "issues": [
+            {"rule": "recycled-phrasing", "severity": "error", "where": "whole article",
+             "detail": "d", "excerpt": ""},
+            {"rule": "repeated-opener", "severity": "error", "where": "whole article",
+             "detail": "d", "excerpt": ""},
+        ],
+        "stats": {},
+    }
+    directive_report = {
+        "issues": [
+            {"rule": "clinical-directive", "severity": "error", "where": "Introduction",
+             "detail": "d", "excerpt": ""},
+        ],
+        "stats": {},
+    }
+    clean_report = {"issues": [], "stats": {}}
+    clean_verification = {"unverified": [], "misattributed": []}
+    unverified_figures = {"unverified": ["4.91"], "misattributed": []}
+
+    cases = [
+        ("nits do not brand the rendered page",
+         nits_report, clean_verification,
+         lambda h: "working draft rather than a finished review" not in h),
+        ("clinical directive brands the rendered page",
+         directive_report, clean_verification,
+         lambda h: "working draft rather than a finished review" in h),
+        ("unverified figures brand the rendered page",
+         clean_report, unverified_figures,
+         lambda h: "working draft rather than a finished review" in h),
+    ]
+
+    for label, rep, ver, pred in cases:
+        try:
+            h = render_article(article, papers, topic, curation, ver, provenance, style_report=rep)
+            ok = bool(pred(h))
+        except Exception as exc:
+            ok, label = False, f"{label} (raised {exc!r})"
+        print(("OK   " if ok else "FAIL ") + label)
+        if not ok:
+            FAILURES.append(f"{name}: {label}")
+
+
 def main() -> int:
     for name, article, papers, curation, verification, provenance, topic in fixtures():
         print(f"\n# {name}")
@@ -343,6 +393,8 @@ def main() -> int:
             print(("OK   " if ok else "FAIL ") + convention)
             if not ok:
                 FAILURES.append(f"{name}: {convention}")
+
+    _check_sendable_branding()
 
     print(f"\n{'FAILED: ' + '; '.join(FAILURES) if FAILURES else 'ALL CONVENTIONS MET'}")
     return 1 if FAILURES else 0

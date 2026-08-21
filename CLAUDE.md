@@ -111,6 +111,7 @@ behaviour it describes.
 | Register rules fire on investigator voice, not synthesis voice | `test_register_rules_are_scoped_to_the_synthesis_voice` |
 | Sources travel with a revision only when usable | `test_revision_carries_sources_only_when_they_can_be_used` |
 | A second style pass runs only after the first reduced the errors | `test_a_second_style_pass_runs_only_after_progress` |
+| Only sendable-blocking defects brand the page a working draft | `test_only_sendable_defects_brand_the_page` |
 | Every article still matches the writer's schema | `test_real_articles_still_match_the_schema` |
 | Titles carry no publisher markup | `test_titles_arrive_without_markup` |
 | One paper is one candidate, however its DOI is spelled | `test_candidate_papers_dedupe_by_doi` |
@@ -196,11 +197,22 @@ and sections intact.
   `MAX_STYLE_PASSES` is 2, and the loop repeats only through the accept
   branch — which requires strictly fewer errors — so a stuck error costs one
   call rather than looping. Two runs on record ended at 3 → 1 and 2 → 1
-  errors, and a single residual is enough to print the "working draft rather
-  than a finished review" line in Limitations (#146). Each pass recomputes
-  `rewrite_whole` and `needs_sources` from the *current* report, so the
-  `SUBSTANCE_RULES` split applies on pass 2 exactly as on pass 1. →
+  errors, and a single residual blocking error is enough to print the "working
+  draft rather than a finished review" line in Limitations (#146, scoped in #169).
+  Each pass recomputes `rewrite_whole` and `needs_sources` from the *current*
+  report, so the `SUBSTANCE_RULES` split applies on pass 2 exactly as on pass 1. →
   `test_a_second_style_pass_runs_only_after_progress`
+- **A leftover nit is not a "working draft".** The Limitations sentence
+  saying the text "should be read as a working draft rather than a finished
+  review" prints only for `SENDABLE_BLOCKING_RULES` — `clinical-directive`
+  plus the substance rules except `recycled-phrasing`, `repeated-opener` and
+  `under-length` — or for residual unverified/misattributed figures. Four of
+  five shipped drafts wore that sentence over a recycled six-word phrase or a
+  repeated sentence opener, so a reader forwarding the briefing forwarded a
+  claim that the prose was unfinished (#169). The exempt rules still fire,
+  still buy a revision pass, and still print in the CLI log and
+  `style_report` — they just do not brand the page. →
+  `test_only_sendable_defects_brand_the_page`
 - **Warnings ride along on a revision; they never buy one.**
   `RIDE_ALONG_WARNINGS` (long-sentence, wordiness, passive-voice) are appended
   to `revision_brief()` only when errors already triggered the pass. The
