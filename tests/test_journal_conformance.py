@@ -113,6 +113,8 @@ CONVENTIONS = [
      lambda h, a: "<th>Cited by</th>" not in h),
     ("Table 1 reports study design",
      lambda h, a: "<th>Design</th>" in h),
+    ("Table 1 never leaves Design empty",
+     lambda h, a: "Table 1 |" not in h or "<td></td>" not in h),
     ("Fig. 1 names the axis it actually plotted",
      lambda h, a: "Fig. 1 |" not in h or ("Study design" in h) != ("Year of publication" in h)),
     # The prose conventions, delegated to the same checker the draft pipeline runs.
@@ -345,19 +347,21 @@ def fixtures():
         "Staff de-escalation training: a cluster-randomised trial",
         "Incidence of restraint events: a prospective cohort study",
         "Patient experiences of coercive measures: a qualitative interview study",
+        "Coercive practice in acute care: a scoping review",
+        "Trends in mental health service use",
     ]
-    design_papers = _papers(5, titles=design_titles)
+    design_papers = _papers(7, titles=design_titles)
     yield ("design-labelled sources",
            _article("Design-characterised evidence base", _SECTIONS,
-                    references=[1, 2, 3, 4, 5],
+                    references=[1, 2, 3, 4, 5, 6, 7],
                     key_points=[
                         "First point [1].",
                         "Second point [2].",
                     ]),
            design_papers,
-           {"relevance": {1: "direct", 2: "direct", 3: "related", 4: "related", 5: "tangential"},
+           {"relevance": {1: "direct", 2: "direct", 3: "related", 4: "related", 5: "tangential", 6: "related", 7: "direct"},
             "most_relevant_index": 1,
-            "counts": {"direct": 2, "related": 2, "tangential": 1}},
+            "counts": {"direct": 3, "related": 3, "tangential": 1}},
            None, provenance, "restraint and seclusion reduction")
 
 

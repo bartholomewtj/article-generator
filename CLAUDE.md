@@ -128,6 +128,7 @@ behaviour it describes.
 | A `queued_ckn` miss is no-open-access, not a failed OA fetch | `test_queued_ckn_counts_as_no_open_access` |
 | Fig. 1 counts study designs, and falls back to years when it cannot | `test_figure_one_counts_study_designs` |
 | Table 1 prints no citation count | `test_figure_one_counts_study_designs` |
+| Table 1 prints a design word, never a dash | `test_figure_one_counts_study_designs` |
 | Supplied search terms start the plan and are never replaced | `test_idea_search_terms_reach_the_draft` |
 | A generic "name" is never looked up | `test_generic_named_lookups_are_skipped` |
 | Paraphrased terms buy one distinct extra query | `test_paraphrase_terms_buy_a_distinct_query` |
@@ -178,7 +179,8 @@ carries it:
 - **Statistic and style checking are deterministic, not LLM passes.** A model
   asked "is this grounded / is this journal style?" agrees with itself.
 - **Three display items are built deterministically in `render.py`**: `Box 1`
-  (most relevant source), `Fig. 1` (inline SVG of sources by study design, or by
+  (most relevant source), `Fig. 1` (inline SVG of sources by study design, widening
+  viewBox to 860 when buckets exceed `FIGURE_WIDE_BUCKETS`, or by
   year when unlabelled share exceeds `1 - DESIGN_FIGURE_MIN_SHARE`), `Table 1`
   (characteristics of cited evidence, carrying inferred `Design` and omitting
   citation counts, which stay on the reference list). They are the part a model
@@ -357,8 +359,9 @@ and sections intact.
   recency → search rank. Relevance still outranks design: a direct primary study
   beats a related review. `classify_design` is the single classifier (title /
   venue / `publication_types`, never the abstract), `DESIGN_DISPLAY_ORDER` and
-  `DESIGN_LABELS` are the display view, and `paper_design` stays the three-value
-  fetch-ordering wrapper so #166's read order is unaffected. The eligible *set*
+  `DESIGN_LABELS` are the display view (9 categories, with unclassifiable papers
+  labelled `Other`), and `paper_design` stays the three-value fetch-ordering wrapper
+  so #166's read order is unaffected. The eligible *set*
   is unchanged; tangential and unlabelled sources are still never fetched. The read-subset skew log line may
   now show an *older* read subset than the abstract-only rest — when those older
   papers are the reviews and trials, that is the change working.
@@ -406,6 +409,12 @@ and sections intact.
   An empty pmcid means nobody asked — `sources.resolve_pmcid` looks the DOI up
   first. Full texts get bracketed citation numbers stripped at parse time — they
   collide with the SOURCE-index scheme.
+- **Europe PMC's document types live in `pubTypeList.pubType`, never in the flat
+  `pubType`** — measured live; the flat field is null on every record, so every
+  Europe PMC paper reached `classify_design` with no index metadata at all and a
+  JAMA meta-analysis printed as a dash (#192). Any label `classify_design`
+  returns must be a key of both `DESIGN_LABELS` and `DESIGN_DISPLAY_ORDER`, and
+  a bare `review` type is deliberately not treated as a narrative review.
 - **Titles are stripped of publisher markup in `Paper.__post_init__`** — the
   one choke point, so a fifth search source gets it for free. OpenAlex passes
   JATS through (`<scp>`, `<i>`, `<sub>`…), which printed raw in Table 1 and

@@ -557,6 +557,11 @@ def search_europe_pmc(query: str, limit: int = 15) -> list[Paper]:
             for a in (item.get("authorList") or {}).get("author") or []
             if (name := _europe_pmc_author(a))
         ]
+        # Europe PMC's document types live in pubTypeList.pubType (a list).
+        # The flat pubType field is documented but null in practice on search
+        # responses (measured live, 21 Aug 2026). Keep flat pubType as a fallback.
+        raw_types = (item.get("pubTypeList") or {}).get("pubType") or item.get("pubType")
+        cleaned_types = _clean_types(raw_types)
         src, ext_id = item.get("source") or "", item.get("id") or ""
         papers.append(
             Paper(
@@ -573,8 +578,8 @@ def search_europe_pmc(query: str, limit: int = 15) -> list[Paper]:
                 # Both flags are needed: isOpenAccess without inEPMC means the
                 # OA copy lives somewhere Europe PMC cannot serve from.
                 is_open_access=(item.get("isOpenAccess") == "Y" and item.get("inEPMC") == "Y"),
-                is_preprint=(src == "PPR" or "preprint" in (item.get("pubType") or "").lower()),
-                publication_types=_clean_types(item.get("pubType")),
+                is_preprint=(src == "PPR" or "preprint" in " ".join(cleaned_types)),
+                publication_types=cleaned_types,
             )
         )
     return papers
@@ -1028,22 +1033,46 @@ def full_text_excerpts(papers: list[Paper]) -> dict[int, str]:
 # sectional survey mostly restates its own abstract (#166).
 DESIGN_ORDER = ("synthesis", "trial", "other")
 
-DESIGN_DISPLAY_ORDER = ("synthesis", "trial", "observational", "qualitative", "other")
+DESIGN_DISPLAY_ORDER = (
+    "synthesis",
+    "trial",
+    "observational",
+    "qualitative",
+    "case",
+    "scoping",
+    "narrative",
+    "consensus",
+    "other",
+)
 DESIGN_LABELS = {
     "synthesis": "Reviews",
     "trial": "Trials",
     "observational": "Observational",
     "qualitative": "Qualitative",
+    "case": "Case reports",
+    "scoping": "Scoping",
+    "narrative": "Narrative",
+    "consensus": "Consensus",
     "other": "Other",
 }
 
 _DESIGN_EXCLUDE_RE = re.compile(
-    r"\b(?:study\s+protocol|trial\s+protocol|protocol\s+for\s+a|statistical\s+analysis\s+plan|rationale\s+and\s+design|narrative\s+reviews?)\b"
+    r"\b(?:study\s+protocol|trial\s+protocol|protocol\s+for\s+a|statistical\s+analysis\s+plan|rationale\s+and\s+design)\b"
     r"|:\s*a\s+protocol\b",
     re.IGNORECASE,
 )
 _SCOPING_RE = re.compile(r"\bscoping\s+reviews?\b", re.IGNORECASE)
-_SYSTEMATIC_RE = re.compile(r"\bsystematic\b", re.IGNORECASE)
+_NARRATIVE_RE = re.compile(
+    r"\b(?:narrative|literature|integrative|critical)\s+reviews?\b"
+    r"|\breview\s+of\s+the\s+literature\b",
+    re.IGNORECASE,
+)
+_CONSENSUS_RE = re.compile(
+    r"\b(?:consensus\s+(?:statement|document|guidance|recommendations?|"
+    r"development\s+conference)|expert\s+consensus|delphi)\b",
+    re.IGNORECASE,
+)
+_CASE_RE = re.compile(r"\bcase[\s-]reports?\b|\bcase[\s-]series\b", re.IGNORECASE)
 
 _SYNTHESIS_RE = re.compile(
     r"\b(?:systematic\s+(?:\w+\s+)?reviews?|meta-?analy\w+|umbrella\s+reviews?|evidence\s+synthesis|cochrane\s+reviews?)\b"
@@ -1066,7 +1095,7 @@ _QUALITATIVE_RE = re.compile(
 _OBSERVATIONAL_RE = re.compile(
     r"\b(?:cohort\s+stud\w+|prospective\s+cohort|retrospective\s+cohort"
     r"|case[-\s]control|cross[-\s]sectional|longitudinal\s+stud\w+"
-    r"|observational\s+stud\w+|registry\s+stud\w+|case\s+series|case\s+report"
+    r"|observational\s+stud\w+|registry\s+stud\w+"
     r"|population[-\s]based\s+stud\w+|national\s+survey)\b",
     re.IGNORECASE,
 )
@@ -1082,20 +1111,32 @@ def classify_design(paper: Paper) -> str:
     """
     text = f"{paper.title} {paper.venue}"
     types_text = " ".join(paper.publication_types)
-    combined = f"{text} {types_text}"
+    # Index vocabularies hyphenate ("systematic-review", "case-report"); match both
+    # spellings rather than loosening every regex.
+    combined = f"{text} {types_text} {types_text.replace('-', ' ')}"
 
     if _DESIGN_EXCLUDE_RE.search(combined):
         return "other"
-    if _SCOPING_RE.search(combined) and not _SYSTEMATIC_RE.search(combined):
-        return "other"
     if _SYNTHESIS_RE.search(combined):
         return "synthesis"
+    if _SCOPING_RE.search(combined):
+        return "scoping"
+    if _NARRATIVE_RE.search(combined):
+        return "narrative"
+    if _CONSENSUS_RE.search(combined):
+        return "consensus"
     if _TRIAL_RE.search(combined):
         return "trial"
+    if _CASE_RE.search(combined):
+        return "case"
     if _QUALITATIVE_RE.search(combined):
         return "qualitative"
     if _OBSERVATIONAL_RE.search(combined):
         return "observational"
+    # Bare 'review' publication types (OpenAlex 'type: review', Europe PMC 'Review')
+    # are deliberately NOT mapped to narrative: OpenAlex tags systematic reviews that
+    # way too, so mapping bare review to narrative would falsely label systematic
+    # syntheses whose titles omit the words.
     return "other"
 
 
