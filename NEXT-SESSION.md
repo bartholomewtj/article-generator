@@ -1,16 +1,14 @@
 # Next session
 
-_Last handoff: 21 August 2026 — `feat/briefing-first` merged as PR #174, closed #164_
+_Last handoff: 21 August 2026 — `main` has #165–#172_
 
 ## Where this stopped
 
-Default artefact is now an **evidence briefing** (question, answer, findings,
-unknowns, three papers to open). `articlegen draft --long` still writes the
-journal-style Review. Ideas propose briefing questions; the popular-science
-magazine register is gone. Existing files in `drafts/` are historical Reviews
-and were not regenerated. Both suites were green on the PR.
-
-The other first-principles recommendations are filed, not built.
+The first-principles batch is on `main`: named-source snowball, design-weighted
+deep reads, working-draft branding scoped, cite ~12, empty curation fails
+loud, `--long` titles, Fig. 1 by design, idea-card search terms. Builder and
+documenter now run `openrouter/google/gemini-3.7-flash` via pi (agy quota ran
+out). Existing `drafts/` files were not regenerated.
 
 ## Resume with
 
@@ -26,40 +24,41 @@ PATH; either run from PowerShell or set
 ## Next thing to do
 
 1. **Generate one real briefing** (`articlegen draft "<question>" --open`) and
-   read it. First look at the new artefact, not another Review.
-2. **Search batch, in this order:** #165 snowball named papers after curation,
-   then #166 full-text order by design not recency. Those two change what the
-   writer sees.
-3. **#169** — stop branding leftover style nits as a working draft. Hits the
-   page a reader copies.
+   read it. First look at the new artefact, and the first measurement of #165
+   (did a named landmark come in first-hand?) and #166 (are the five deep reads
+   reviews/trials?).
+2. **#173** — pick one: vendor a minimal `papers get` into the Docker image, or
+   say on the landing page that the hosted app is Europe PMC only. Do not do
+   both. Do not put GitHub credentials in the Render build.
+3. **#84** — measure full-text coverage on that new run (stop reason + read-subset
+   skew). Close it if the log already answers; otherwise file what is still
+   unknown.
 
 ## Open
 
-Search and evidence: #165 snowball, #166 full-text by design, #167 cite ~12,
-#168 fail loud when curation is empty.
-
-What the page says: #169 working-draft branding, #170 `--long` titles,
-#171 Fig. 1 / Cited by.
-
-Process: #172 idea-card search terms, #173 hosted full text (Europe PMC only).
-
-Older: #84 full-text coverage (measure on a new run), #135 drafts index
-(probably closable; look at the live Pages site).
+- #173 hosted full text (Europe PMC only on Render) — needs a pick
+- #84 full-text coverage — measure on a new run, not a code change yet
 
 ## Watch out for
 
 - **Do not put `--long` on the web UI.** Parked on purpose.
 - **Do not regenerate `drafts/`** unless asked. Those five Reviews are the
   public demo.
-- **`LENGTH_LABEL` is now "Evidence briefing".** `test_house_style_is_fixed_not_a_preference`
-  bans `Executive Briefing` as a register option; "Evidence briefing" is fine.
+- **agy Gemini quota is exhausted.** Builder and documenter are
+  `openrouter/google/gemini-3.7-flash` (pi, billed, ~$0.42 a builder run at
+  the 75% headline discount). Scout is still agy — it will fail. Reviewer is
+  still grok. Planner is still opus.
+- **Do not leave `sssf.config.yaml` dirty during a run.** The reviewer is
+  `writes: []`; a dirty roster file is blamed on the reviewer and rolled back,
+  which fails the phase. Commit roster edits before launching.
+- **Do not squash-merge the first PR of a stack.** #175 squash left #176–#183
+  unmergeable on GitHub; the rest landed as one merge commit of
+  `feat/172-idea-search-terms` into `main`.
 - **A `?` in the briefing `question` field is allowed.** Other `?` still fail
   `rhetorical-question`.
 - **agy CLI 1.1.15 dies after the agent finishes** (missing `toolSummary`;
   `.md` not a valid artifact path). Workaround: rerun build-first ADWs under
-  the same `--adw-id`, then commit by hand. Candidate factory fix not filed.
-- **`adw_simple_sdlc` has no skip-on-rejoin.** Resume with build-first chains.
+  the same `--adw-id`. Candidate factory fix not filed.
 - Factory lives in this repo (`adws/`, `justfile`). Requests go in `requests/`
-  in the four-line shape. Roster: opus planner, gemini-3.7-flash builder and
-  documenter (agy), grok-4.5 reviewer.
+  in the four-line shape.
 - Docs-current CI gate; write "Refs #NNN, stays open" never "does not close #NNN".
