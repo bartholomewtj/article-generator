@@ -120,9 +120,11 @@ behaviour it describes.
 | One paper is one candidate, however its DOI is spelled | `test_candidate_papers_dedupe_by_doi` |
 | A preprint is labelled wherever it is listed | `test_preprints_are_marked_as_preprints` |
 | A load-bearing figure is not quoted at second hand when a first-hand one exists | `test_second_hand_figures_are_a_last_resort` |
-| The candidate-pool default lives in one constant | `test_the_candidate_pool_is_big_enough_to_curate` |
+| A candidate-pool default lives in one constant | `test_the_candidate_pool_is_big_enough_to_curate` |
 | The writer cites a working set, not everything screened | `test_the_writer_cites_a_working_set` |
 | Full text via the papers CLI never breaks the Europe PMC path | `test_full_text_comes_from_the_papers_cli_when_it_is_there` |
+| Fig. 1 counts study designs, and falls back to years when it cannot | `test_figure_one_counts_study_designs` |
+| Table 1 prints no citation count | `test_figure_one_counts_study_designs` |
 
 **Not pinned by a test** — these need the reasoning, because nothing else
 carries it:
@@ -157,10 +159,12 @@ carries it:
 - **Statistic and style checking are deterministic, not LLM passes.** A model
   asked "is this grounded / is this journal style?" agrees with itself.
 - **Three display items are built deterministically in `render.py`**: `Box 1`
-  (most relevant source), `Fig. 1` (inline SVG of sources by year), `Table 1`
-  (cited records). They are the part a model can't fabricate. Keep them that
-  way, and keep Box 1's caption claiming relevance rather than quality —
-  nothing here appraises study quality (#102).
+  (most relevant source), `Fig. 1` (inline SVG of sources by study design, or by
+  year when unlabelled share exceeds `1 - DESIGN_FIGURE_MIN_SHARE`), `Table 1`
+  (characteristics of cited evidence, carrying inferred `Design` and omitting
+  citation counts, which stay on the reference list). They are the part a model
+  can't fabricate. Keep them that way, and keep Box 1's caption claiming relevance
+  rather than quality — nothing here appraises study quality (#102, #171).
 - **Citations use the SOURCE-index scheme.** The writer cites papers by their
   fed "SOURCE N" label; `render` renumbers inline markers *and* the Sources list
   to a matching 1..N. Don't assume inline numbers are already sequential.
@@ -308,8 +312,11 @@ and sections intact.
   was nine years old (#166). The sort key is now relevance tier → study design
   (`DESIGN_ORDER`, from `paper_design`: synthesis then trial then other) →
   recency → search rank. Relevance still outranks design: a direct primary study
-  beats a related review. The eligible *set* is unchanged; tangential and
-  unlabelled sources are still never fetched. The read-subset skew log line may
+  beats a related review. `classify_design` is the single classifier (title /
+  venue / `publication_types`, never the abstract), `DESIGN_DISPLAY_ORDER` and
+  `DESIGN_LABELS` are the display view, and `paper_design` stays the three-value
+  fetch-ordering wrapper so #166's read order is unaffected. The eligible *set*
+  is unchanged; tangential and unlabelled sources are still never fetched. The read-subset skew log line may
   now show an *older* read subset than the abstract-only rest — when those older
   papers are the reviews and trials, that is the change working.
 - **Every run says *why* full-text fetching stopped.** "4 of 19" is not an

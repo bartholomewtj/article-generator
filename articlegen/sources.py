@@ -1025,6 +1025,15 @@ def full_text_excerpts(papers: list[Paper]) -> dict[int, str]:
 # sectional survey mostly restates its own abstract (#166).
 DESIGN_ORDER = ("synthesis", "trial", "other")
 
+DESIGN_DISPLAY_ORDER = ("synthesis", "trial", "observational", "qualitative", "other")
+DESIGN_LABELS = {
+    "synthesis": "Reviews",
+    "trial": "Trials",
+    "observational": "Observational",
+    "qualitative": "Qualitative",
+    "other": "Other",
+}
+
 _DESIGN_EXCLUDE_RE = re.compile(
     r"\b(?:study\s+protocol|trial\s+protocol|protocol\s+for\s+a|statistical\s+analysis\s+plan|rationale\s+and\s+design|narrative\s+reviews?)\b"
     r"|:\s*a\s+protocol\b",
@@ -1042,15 +1051,26 @@ _TRIAL_RE = re.compile(
     r"\b(?:randomi[sz]\w*|rcts?|controlled\s+trials?|clinical\s+trials?|stepped[- ]wedge|cluster[- ]random\w*|pragmatic\s+trials?|feasibility\s+trials?)\b",
     re.IGNORECASE,
 )
+# Mixed-methods work is deliberately left unclassified — calling it qualitative
+# would be a claim the metadata does not support.
+_QUALITATIVE_RE = re.compile(
+    r"\b(?:qualitative(?:\s+\w+)?\s+(?:study|studies|analysis|research|interviews?|evaluation)"
+    r"|qualitative\s+study|focus\s+groups?|thematic\s+analysis|grounded\s+theory"
+    r"|semi-?structured\s+interviews?|phenomenolog\w+|ethnograph\w+"
+    r"|interpretative\s+phenomenological)\b",
+    re.IGNORECASE,
+)
+_OBSERVATIONAL_RE = re.compile(
+    r"\b(?:cohort\s+stud\w+|prospective\s+cohort|retrospective\s+cohort"
+    r"|case[-\s]control|cross[-\s]sectional|longitudinal\s+stud\w+"
+    r"|observational\s+stud\w+|registry\s+stud\w+|case\s+series|case\s+report"
+    r"|population[-\s]based\s+stud\w+|national\s+survey)\b",
+    re.IGNORECASE,
+)
 
 
-def paper_design(paper: Paper) -> str:
-    """Classify a paper's study design as 'synthesis', 'trial', or 'other'.
-
-    Ordering-only: used by `full_text_order` to prioritise papers that repay
-    a deep read (systematic reviews carry the appraised evidence base, trials
-    carry primary results, whereas surveys and narrative reviews mostly restate
-    their abstracts).
+def classify_design(paper: Paper) -> str:
+    """Classify a paper's study design into one of DESIGN_DISPLAY_ORDER.
 
     Reads title, venue, and `publication_types` metadata only — never the
     abstract (an abstract discussing what 'is needed' would misclassify).
@@ -1069,7 +1089,25 @@ def paper_design(paper: Paper) -> str:
         return "synthesis"
     if _TRIAL_RE.search(combined):
         return "trial"
+    if _QUALITATIVE_RE.search(combined):
+        return "qualitative"
+    if _OBSERVATIONAL_RE.search(combined):
+        return "observational"
     return "other"
+
+
+def paper_design(paper: Paper) -> str:
+    """Fetch-ordering view of classify_design: synthesis / trial / other.
+
+    Ordering-only: used by `full_text_order` to prioritise papers that repay
+    a deep read (systematic reviews carry the appraised evidence base, trials
+    carry primary results, whereas surveys and narrative reviews mostly restate
+    their abstracts).
+
+    The classification itself now lives in `classify_design`.
+    """
+    label = classify_design(paper)
+    return label if label in DESIGN_ORDER else "other"
 
 
 # Which eligible sources get a deep read, and in what order. The set is the

@@ -3920,7 +3920,7 @@ def test_display_items_are_selected_once_for_both_formats() -> None:
     table_html = render._table_html(cited, labels)
     table_md = render._table_markdown(cited, labels)
     for row in rows:
-        for value in (str(row["year"]), row["study"], row["cited_by"]):
+        for value in (str(row["year"]), row["study"], row["design"]):
             if value == "—":
                 continue
             check(f"both tables carry {value[:26]!r}",
@@ -3940,7 +3940,7 @@ def test_display_items_are_selected_once_for_both_formats() -> None:
         render._box_markdown(demo.SAMPLE_ARTICLE, demo.SAMPLE_PAPERS, cite_map),
     )
     check("both boxes name the same study",
-          box["paper"].title in box_md and html_escaped(box["paper"].title, box_html))
+        box["paper"].title in box_md and html_escaped(box["paper"].title, box_html))
     check("both boxes carry the method", box["method"][:40] in box_md)
 
     # A bad index must fail the same way in both, not render half a box.
@@ -3949,6 +3949,98 @@ def test_display_items_are_selected_once_for_both_formats() -> None:
           render._box_parts(broken, demo.SAMPLE_PAPERS, cite_map) is None
           and render._box_html(broken, demo.SAMPLE_PAPERS, cite_map) == ""
           and render._box_markdown(broken, demo.SAMPLE_PAPERS, cite_map) == "")
+
+
+def test_figure_one_counts_study_designs() -> None:
+    """Fig. 1 counts cited sources by study design with fallback to year histogram.
+
+    Table 1 drops 'Cited by' and adds 'Design'. Citation counts stay on the reference list.
+    """
+    from articlegen import demo, render, sources
+    from articlegen.sources import Paper, classify_design, paper_design
+
+    # 1. Design mode fires with distinct recognisable designs
+    papers = [
+        Paper(title="Efficacy of light therapy: a systematic review and meta-analysis", abstract="a", year=2020, citation_count=50),
+        Paper(title="Safety planning for self-harm: a randomized controlled trial", abstract="a", year=2021, citation_count=30),
+        Paper(title="Containment in psychiatric wards: a cluster-randomised trial", abstract="a", year=2022, citation_count=20),
+        Paper(title="Incidence of depression: a prospective cohort study", abstract="a", year=2023, citation_count=15),
+        Paper(title="Staff experiences of seclusion: a qualitative interview study", abstract="a", year=2024, citation_count=10),
+        Paper(title="General overview of clinical services", abstract="a", year=2025, citation_count=5),
+    ]
+    labels = {1: "direct", 2: "direct", 3: "related", 4: "related", 5: "related", 6: "tangential"}
+    series = render._figure_series(papers, labels)
+    check("design mode fires when metadata supports it", series is not None and series["mode"] == "design")
+    valid_labels = set(sources.DESIGN_LABELS.values())
+    bucket_labels = [label for label, _ in series["buckets"]]
+    check("bucket labels drawn from DESIGN_LABELS", all(b in valid_labels for b in bucket_labels))
+    total_in_buckets = sum(sum(t.values()) for t in series["counts"])
+    check("per-bucket totals sum to number of cited sources", total_in_buckets == len(papers))
+
+    # 2. HTML says which axis it is & caption disclaims quality appraisal
+    html_fig = render._figure_html(papers, labels)
+    check("HTML figure contains Study design", "Study design" in html_fig)
+    check("HTML figure does not contain Year of publication", "Year of publication" not in html_fig)
+    check("HTML figure caption disclaims quality appraisal",
+          "it is not a quality appraisal" in html_fig or "not a quality appraisal" in html_fig)
+
+    # 3. Markdown agrees with HTML
+    md_fig = render._figure_markdown(papers, labels)
+    check("Markdown figure contains study design", "study design" in md_fig)
+    for (label, _), tally in zip(series["buckets"], series["counts"]):
+        check(f"Markdown figure reports bucket {label}", f"- {label}: {sum(tally.values())}" in md_fig)
+
+    # 4. Fallback: mostly unlabelled (demo.SAMPLE_PAPERS shape)
+    sample_cited = [Paper(title=f"Study {i}", abstract="a", year=2020 + i) for i in range(1, 7)]
+    sample_labels = {i: "direct" for i in range(1, 7)}
+    fb_series = render._figure_series(sample_cited, sample_labels)
+    check("mostly unlabelled falls back to year mode", fb_series is not None and fb_series["mode"] == "year")
+    fb_html = render._figure_html(sample_cited, sample_labels)
+    check("fallback HTML contains Year of publication", "Year of publication" in fb_html)
+
+    # 5. Fallback: single category
+    all_trials = [
+        Paper(title=f"Treatment {i}: a randomised controlled trial", abstract="a", year=2020 + i)
+        for i in range(1, 7)
+    ]
+    single_series = render._figure_series(all_trials, sample_labels)
+    check("single category falls back to year mode", single_series is not None and single_series["mode"] == "year")
+
+    # 6. Table 1 demotes citation counts, adds Design, references keep Cited by
+    t_html = render._table_html(papers, labels)
+    t_md = render._table_markdown(papers, labels)
+    check("Table 1 HTML drops Cited by header", "<th>Cited by</th>" not in t_html)
+    check("Table 1 HTML has Design header", "<th>Design</th>" in t_html)
+    check("Table 1 Markdown drops Cited by header", "Cited by |" not in t_md)
+    check("Table 1 Markdown has Design header", "| Design |" in t_md)
+
+    article = {
+        "title": "A Review",
+        "abstract": "Abstract [1].",
+        "sections": [{"heading": "Introduction", "paragraphs": ["Text [1]."]}],
+        "key_points": ["Point [1]."],
+        "references": [1, 2, 3, 4, 5, 6],
+    }
+    rendered = render.render_article(article, papers, "A topic", curation={"relevance": labels})
+    rendered_md = render.render_markdown(article, papers, "A topic", curation={"relevance": labels})
+    check("render_article HTML reference list keeps Cited by", "ref-cites" in rendered and "Cited by" in rendered)
+    check("render_markdown reference list keeps Cited by", "Cited by" in rendered_md)
+
+    # 7. classify_design and paper_design negative controls
+    p_proto = Paper(title="Protocol for a prospective cohort study of outcomes", abstract="a")
+    check("study protocol classifies as other", classify_design(p_proto) == "other")
+    p_survey = Paper(title="Survey of national policy and practice", abstract="a")
+    check("plain survey without design keywords classifies as other", classify_design(p_survey) == "other")
+    p_rct = Paper(title="A randomised controlled trial of intervention", abstract="a")
+    check("randomised controlled trial classifies as trial", classify_design(p_rct) == "trial")
+    p_qual = Paper(title="A qualitative interview study", abstract="a")
+    check("qualitative study classifies as qualitative", classify_design(p_qual) == "qualitative")
+    p_obs = Paper(title="A prospective cohort study", abstract="a")
+    check("cohort study classifies as observational", classify_design(p_obs) == "observational")
+
+    for p in (p_proto, p_survey, p_rct, p_qual, p_obs, papers[0]):
+        check(f"paper_design maps {classify_design(p)} to DESIGN_ORDER",
+              paper_design(p) in ("synthesis", "trial", "other"))
 
 
 def html_escaped(value: str, haystack: str) -> bool:
@@ -6559,6 +6651,7 @@ def main(argv: list[str] | None = None) -> int:
         test_a_second_style_pass_runs_only_after_progress,
         test_disclosure_is_above_the_fold_and_derived,
         test_display_items_are_selected_once_for_both_formats,
+        test_figure_one_counts_study_designs,
         test_failed_style_gate_is_visible_in_the_article,
         test_only_sendable_defects_brand_the_page,
         test_evidence_assessment_is_wholly_deterministic,

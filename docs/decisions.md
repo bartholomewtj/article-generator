@@ -295,6 +295,21 @@ briefing's existing TITLE line to `_WRITER_SYSTEM`. A regex title-ban on
 are legitimate in a descriptive title, so a crude ban fails good titles; revisit
 only if a later `--long` draft shows the prompt being ignored.
 
+### `#171` — Fig. 1 counts study designs, Table 1 demotes citation counts
+
+Fig. 1 was a publication-year histogram stacked by relevance. A clinician reading a
+briefing or Review wants to know what kind of evidence exists — how many systematic
+reviews, randomised trials, observational cohorts, or qualitative studies support the
+conclusions. Fig. 1 now plots study designs inferred deterministically from title,
+venue, and index metadata via `sources.classify_design`, and falls back to publication
+years if more than half the sources cannot be labelled or only a single design category
+exists (`DESIGN_FIGURE_MIN_SHARE = 0.5`).
+
+Table 1 previously displayed a "Cited by" column, which readers mistook for a quality
+or reliability score. Table 1 now replaces "Cited by" with the inferred "Design" column
+and explicitly notes in its caption that no quality appraisal was performed. Citation
+counts remain where they belong: on the full reference list.
+
 ---
 
 ## Grounding and provenance

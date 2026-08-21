@@ -93,11 +93,13 @@ description. Tables have the title above. Boxes hold self-contained material.
 hold, so they cannot be hallucinated:
 
 - **`Fig. 1 | Composition of the evidence base.`** — an inline SVG bar chart of
-  cited sources by publication year, segmented by relevance (direct / related /
-  background).
+  cited sources by study design (Reviews / Trials / Observational / Qualitative / Other),
+  segmented by relevance (direct / related / background). Falls back to a year
+  histogram when design cannot be inferred for most sources or when only one category is present.
 - **`Table 1 | Characteristics of the cited evidence.`** — one row per cited
-  source: number, authors, year, venue, relevance to the topic, citation count
-  (and, in full-text mode, how deeply it was read). It is reference apparatus,
+  source: number, authors, year, venue, inferred study design, relevance to the topic,
+  and how deeply it was read (`Full text` vs `Abstract`). Citation counts are omitted
+  from Table 1 (they stay on the reference list). It is reference apparatus,
   so it sits in the **back matter after Methods** rather than interrupting the
   prose — a second deliberate departure from journal convention.
 - **`Box 1 | Most relevant source: <title>`** — that source's **Method,
@@ -108,9 +110,9 @@ hold, so they cannot be hallucinated:
   used to read "Key study", which claims an appraisal nothing in this pipeline
   does: `curate_sources` ranks on topic fit alone, so a scoping review was
   boxed as the "key study" while an adequately powered trial sat in the body.
-  Table 1's "Cited by" is the only quality-looking number on the page and a
-  busy reader takes it as authority, which is why the disclaimer is on the box
-  rather than left to the back matter.
+  Table 1's "Cited by" was the only quality-looking number on the page (removed in
+  #171) and a busy reader takes it as authority, which is why the disclaimer is
+  on the box rather than left to the back matter.
 
 In the body, Fig. 1 follows the Introduction and Box 1 follows the first
 thematic section.

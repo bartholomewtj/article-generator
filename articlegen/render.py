@@ -20,6 +20,7 @@ import html
 import os
 import re
 
+from . import sources
 from .sources import Paper
 from .style import SUBSTANCE_RULES
 from .writer import is_briefing
@@ -505,6 +506,8 @@ def _table_rows(cited: list[Paper], labels: dict[int, str]) -> list[dict]:
         venue = paper.venue or "—"
         if paper.is_preprint:
             venue = f"{paper.venue} (preprint)" if paper.venue else "Preprint"
+        d_label = sources.classify_design(paper)
+        design_str = sources.DESIGN_LABELS[d_label] if d_label != "other" else "—"
         rows.append({
             "n": n,
             "paper": paper,
@@ -512,51 +515,90 @@ def _table_rows(cited: list[Paper], labels: dict[int, str]) -> list[dict]:
             "year": paper.year or "n.d.",
             "venue": venue,
             "preprint": bool(paper.is_preprint),
+            "design": design_str,
             "label": label if label in RELEVANCE_LABELS else "",
             "relevance": RELEVANCE_LABELS.get(label, "—") if label else "—",
-            "cited_by": f"{paper.citation_count:,}" if paper.citation_count else "—",
             "read": "Full text" if paper.full_text else "Abstract",
         })
     return rows
 
 
+# Fig. 1 counts study designs only when the metadata actually supports it.
+# `classify_design` reads titles, venues and index metadata, never an abstract,
+# so a pool of terse or badly indexed titles collapses into "other" — and a bar
+# chart that is 80% "Other" says less than the year histogram it replaced.
+DESIGN_FIGURE_MIN_SHARE = 0.5
+
+
 def _figure_series(cited: list[Paper], labels: dict[int, str]) -> dict | None:
-    """Fig. 1's data: year buckets and the relevance tally within each.
+    """Fig. 1's data: study design (or year fallback) buckets and relevance tallies.
 
     Returns None when there is too little to plot. Segmenting is all-or-nothing:
     with any source unlabelled the stack would silently drop it, so the figure
     falls back to a single undifferentiated series.
     """
+    if len(cited) < 2:
+        return None
+
+    designs = {n: sources.classify_design(p) for n, p in enumerate(cited, start=1)}
+    labelled_share = sum(1 for d in designs.values() if d != "other") / len(cited)
+    distinct_categories = len({d for d in designs.values() if d})
+
+    if labelled_share > DESIGN_FIGURE_MIN_SHARE and distinct_categories >= 2:
+        mode = "design"
+        buckets = [
+            (sources.DESIGN_LABELS[cat], {n for n, d in designs.items() if d == cat})
+            for cat in sources.DESIGN_DISPLAY_ORDER
+            if any(d == cat for d in designs.values())
+        ]
+        segmented = all(labels.get(n) in RELEVANCE_LABELS for n in range(1, len(cited) + 1))
+        series = (
+            [lvl for lvl in ("direct", "related", "tangential")
+             if any(labels.get(n) == lvl for n in range(1, len(cited) + 1))]
+            if segmented else ["cited"]
+        )
+        counts = []
+        for _, members in buckets:
+            tally = {lvl: 0 for lvl in series}
+            for n in members:
+                tally[labels[n] if segmented else "cited"] += 1
+            counts.append(tally)
+        return {"buckets": buckets, "series": series, "counts": counts, "segmented": segmented, "mode": mode}
+
+    # Year mode fallback
     dated = [(n, p) for n, p in enumerate(cited, start=1) if p.year]
     if len(dated) < 2:
         return None
-    buckets = _year_buckets([p.year for _, p in dated])
-    if not buckets:
+    year_buckets = _year_buckets([p.year for _, p in dated])
+    if not year_buckets:
         return None
 
+    buckets = [
+        (label, {n for n, p in dated if p.year in y_set})
+        for label, y_set in year_buckets
+    ]
     segmented = all(labels.get(n) in RELEVANCE_LABELS for n, _ in dated)
     series = (
         [lvl for lvl in ("direct", "related", "tangential")
-         if any(labels.get(n) == lvl for n, _ in dated)]
+         if any(labels.get(n) == lvl for n in range(1, len(cited) + 1))]
         if segmented else ["cited"]
     )
     counts = []
     for _, members in buckets:
         tally = {lvl: 0 for lvl in series}
-        for n, paper in dated:
-            if paper.year in members:
-                tally[labels[n] if segmented else "cited"] += 1
+        for n in members:
+            tally[labels[n] if segmented else "cited"] += 1
         counts.append(tally)
-    return {"buckets": buckets, "series": series, "counts": counts, "segmented": segmented}
+    return {"buckets": buckets, "series": series, "counts": counts, "segmented": segmented, "mode": "year"}
 
 
 # The box used to be captioned "Key study", which claims an appraisal nobody in
 # this pipeline performs. `curate_sources` picks `most_relevant_index` on topic
 # fit alone — there is no quality assessment anywhere — so one draft boxed a
 # scoping review as the "Key study" while an adequately powered RCT sat in the
-# body. Table 1's "Cited by" column is the only quality-looking number on the
-# page and a busy reader reads it as authority. The caption now says what the
-# selection actually is, and the note says what it is not (#102).
+# body. Table 1's "Cited by" column was the only quality-looking number on the
+# page (removed in #171) and a busy reader reads it as authority. The caption now
+# says what the selection actually is, and the note says what it is not (#102).
 _BOX_SELECTION_NOTE = (
     "Selected for closeness to the review question, not for study quality; "
     "no quality appraisal was performed."
@@ -617,15 +659,16 @@ def _table_html(cited: list[Paper], labels: dict[int, str]) -> str:
             f"<td>{html.escape(row['study'])}</td>"
             f'<td class="t-num">{row["year"]}</td>'
             f'<td class="t-venue">{html.escape(row["venue"])}</td>'
+            f"<td>{html.escape(row['design'])}</td>"
             f"<td>{relevance}</td>"
-            f'<td>{row["read"]}</td>'
-            f'<td class="t-num">{row["cited_by"]}</td></tr>'
+            f'<td>{row["read"]}</td></tr>'
         )
     caption = (
-        "Characteristics of the cited evidence. Relevance is the curation label for how "
-        "directly each source addresses the review question; citation counts are as "
-        "reported by the indexing database. Read records whether the model saw the "
-        "source's open-access full text or its abstract only."
+        "Characteristics of the cited evidence. Design is inferred from each record's "
+        "title, journal and index metadata and is left blank where it could not be "
+        "inferred; no quality appraisal was performed. Relevance is the curation label "
+        "for how directly each source addresses the review question. Read records whether "
+        "the model saw the source's open-access full text or its abstract only."
     )
     return (
         '<div class="display table-wrap" aria-labelledby="table-1">\n'
@@ -633,7 +676,7 @@ def _table_html(cited: list[Paper], labels: dict[int, str]) -> str:
         f"{caption}</p>\n"
         '<div class="table-scroll"><table>\n'
         "<thead><tr><th>Ref.</th><th>Study</th><th>Year</th><th>Source</th>"
-        "<th>Relevance</th><th>Read</th><th>Cited by</th></tr></thead>\n"
+        "<th>Design</th><th>Relevance</th><th>Read</th></tr></thead>\n"
         "<tbody>" + "".join(rows) + "</tbody>\n</table></div>\n</div>"
     )
 
@@ -665,7 +708,7 @@ def _rounded_top_path(x: float, y: float, w: float, h: float, r: float = 4.0) ->
 
 
 def _figure_html(cited: list[Paper], labels: dict[int, str]) -> str:
-    """Fig. 1 — cited sources by publication year, segmented by relevance.
+    """Fig. 1 — cited sources by study design (or publication year), segmented by relevance.
 
     An ordinal one-hue ramp (direct darkest -> background lightest) driven by CSS
     variables, so the figure re-steps itself for the dark theme.
@@ -675,6 +718,7 @@ def _figure_html(cited: list[Paper], labels: dict[int, str]) -> str:
         return ""
     buckets, series, counts = data["buckets"], data["series"], data["counts"]
     segmented = data["segmented"]
+    mode = data.get("mode", "year")
 
     totals = [sum(t.values()) for t in counts]
     y_max = max(totals)
@@ -691,9 +735,22 @@ def _figure_html(cited: list[Paper], labels: dict[int, str]) -> str:
     def y_of(value: float) -> float:
         return pad_t + plot_h - (value / y_top) * plot_h
 
+    if mode == "design":
+        aria_label = (
+            "Cited sources by study design, segmented by relevance"
+            if segmented else "Cited sources by study design"
+        )
+        x_axis_title = "Study design"
+    else:
+        aria_label = (
+            "Cited sources by publication year, segmented by relevance"
+            if segmented else "Cited sources by publication year"
+        )
+        x_axis_title = "Year of publication"
+
     parts = [
         f'<svg class="fig-svg" viewBox="0 0 {width:.0f} {height:.0f}" role="img" '
-        'aria-label="Cited sources by publication year, segmented by relevance">'
+        f'aria-label="{aria_label}">'
     ]
     for tick in range(0, y_top + 1, step):
         y = y_of(tick)
@@ -745,7 +802,7 @@ def _figure_html(cited: list[Paper], labels: dict[int, str]) -> str:
     )
     parts.append(
         f'<text class="fig-axis-title" x="{width / 2:.1f}" y="{height - 8:.1f}" '
-        'text-anchor="middle">Year of publication</text>'
+        f'text-anchor="middle">{x_axis_title}</text>'
     )
     parts.append(
         f'<text class="fig-axis-title" x="{-(pad_t + plot_h / 2):.1f}" y="12" '
@@ -761,15 +818,27 @@ def _figure_html(cited: list[Paper], labels: dict[int, str]) -> str:
         )
         legend = f'<ul class="fig-legend">{chips}</ul>'
 
-    caption = "Composition of the evidence base. Cited sources by year of publication"
-    caption += (
-        ", segmented by how directly each addresses the review question. "
-        if segmented else ". "
-    )
-    caption += (
-        "Bar labels give the number of sources in each period; the underlying records "
-        "are listed in Table 1."
-    )
+    if mode == "design":
+        caption = "Composition of the evidence base. Cited sources by study design"
+        caption += (
+            ", segmented by how directly each addresses the review question. "
+            if segmented else ". "
+        )
+        caption += (
+            "Design is inferred from each record's title, journal and index metadata; "
+            "it is not a quality appraisal. Bar labels give the number of sources in "
+            "each category; the underlying records are listed in Table 1."
+        )
+    else:
+        caption = "Composition of the evidence base. Cited sources by year of publication"
+        caption += (
+            ", segmented by how directly each addresses the review question. "
+            if segmented else ". "
+        )
+        caption += (
+            "Bar labels give the number of sources in each period; the underlying records "
+            "are listed in Table 1."
+        )
     return (
         '<figure class="display figure">\n'
         + "".join(parts)
@@ -2028,14 +2097,13 @@ def _table_markdown(cited: list[Paper], labels: dict[int, str]) -> str:
     rows = [
         "**Table 1 | Characteristics of the cited evidence.**",
         "",
-        "| Ref. | Study | Year | Source | Relevance | Read | Cited by |",
+        "| Ref. | Study | Year | Source | Design | Relevance | Read |",
         "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     for row in _table_rows(cited, labels):
         rows.append(
             f"| {row['n']} | {row['study']} | {row['year']} | "
-            f"{row['venue']} | {row['relevance']} | {row['read']} | "
-            f"{row['cited_by']} |"
+            f"{row['venue']} | {row['design']} | {row['relevance']} | {row['read']} |"
         )
     return "\n".join(rows)
 
@@ -2044,9 +2112,12 @@ def _figure_markdown(cited: list[Paper], labels: dict[int, str]) -> str:
     data = _figure_series(cited, labels)
     if not data:
         return ""
+    mode = data.get("mode", "year")
+    segmented = data["segmented"]
+    axis = "study design" if mode == "design" else "year of publication"
     lines = [
-        "**Fig. 1 | Composition of the evidence base.** Cited sources by year of "
-        "publication, segmented by how directly each addresses the review question.",
+        f"**Fig. 1 | Composition of the evidence base.** Cited sources by {axis}"
+        + (", segmented by how directly each addresses the review question." if segmented else "."),
         "",
     ]
     for (label, _), tally in zip(data["buckets"], data["counts"]):
