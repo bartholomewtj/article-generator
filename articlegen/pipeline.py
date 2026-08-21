@@ -30,8 +30,8 @@ from .sources import (DATABASE_NAMES, DEFAULT_MAX_PAPERS, NAMED_SOURCE_LIMIT,
 from .style import (SUBSTANCE_RULES, check_style, errors as style_errors,
                     format_report as format_style, revision_brief)
 from .verify import check_statistics
-from .writer import (curate_sources, is_briefing, plan_queries, revise_prose,
-                     write_article, write_briefing)
+from .writer import (clean_search_terms, curate_sources, is_briefing,
+                     plan_queries, revise_prose, write_article, write_briefing)
 
 # A caller that wants progress reporting passes one of these; the default drops it.
 Logger = Callable[[str], None]
@@ -168,6 +168,16 @@ class NoPapersFound(RuntimeError):
         self.sources_failed = sources_failed
 
 
+class CurationFailed(NoPapersFound):
+    """Source labelling came back empty, so the run stops before the write.
+
+    A subclass of `NoPapersFound` on purpose: every caller already has an
+    `except NoPapersFound` branch that prints the message and stops, and this
+    failure wants exactly that handling. A sibling class would mean two more
+    edits in two more files and a third way for a caller to forget.
+    """
+
+
 @dataclass
 class Draft:
     """Everything the renderers need, plus the provenance of how it was made."""
@@ -198,7 +208,7 @@ class Draft:
         n_unverified = len(self.verification.get("unverified") or [])
         n_misattributed = len(self.verification.get("misattributed") or [])
 
-        parts = f"{len(cited)} sources cited"
+        parts = f"{len(cited)} of {len(self.papers)} screened sources cited"
         if direct is not None:
             parts += f"; {direct} directly on-topic"
         if n_unverified:
@@ -347,6 +357,8 @@ def _named_source_pass(
     if isinstance(mri, int) and 1 <= mri <= len(papers) and relevance.get(mri) in ("direct", "related"):
         candidates_to_scan.append(mri)
 
+    # Candidates to scan: MRI first (if direct/related), then full_text_order
+    # (which scans reviews and trials first — the abstracts that name landmark trials).
     for idx in full_text_order(papers, relevance):
         if idx not in candidates_to_scan:
             candidates_to_scan.append(idx)
@@ -423,6 +435,7 @@ def generate_draft(
     api_key: str | None = None,
     log: Logger = _silent,
     long: bool = False,
+    search_terms: list[str] | None = None,
 ) -> Draft:
     """Research and write one briefing (or a `--long` Review). Raises NoPapersFound
     if the search comes back empty.
@@ -436,8 +449,14 @@ def generate_draft(
     # told the run was doomed from the start (#96).
     _preflight_sources(topic, log)
 
+    supplied = clean_search_terms(search_terms)
+    if supplied:
+        log(f"Using {len(supplied)} search term(s) from the idea card: "
+            + "; ".join(supplied) + " (the planner may add one more)")
     log(f"Planning search queries for: {topic}")
-    queries, core_entity = plan_queries(topic, model=model, api_key=api_key)
+    queries, core_entity = plan_queries(
+        topic, model=model, api_key=api_key, search_terms=supplied
+    )
     log("Queries: " + "; ".join(queries) + (f"  (core: {core_entity})" if core_entity else ""))
 
     log("Fetching journal articles...")
@@ -478,12 +497,22 @@ def generate_draft(
     # That is the quietest way this pipeline can go wrong — the relevance gate
     # is what stops topic drift, and full-text fetching skips every unlabelled
     # source, so the draft downgrades to abstracts-only for a reason nothing
-    # reports. Say so.
+    # reports. Stop the run here: an unlabelled pool means the gate that prevents
+    # topic drift is off, and the failure is invisible on the finished page (#168).
     if papers and not curation.get("relevance"):
         log("  WARNING: curation returned no usable labels for any of the "
             f"{len(papers)} sources. The relevance gate is not protecting this "
             "draft from topic drift, and no full text will be fetched. "
             "Re-run, or draft on a different provider.")
+        reason = curation.get("error") or "no reason was reported"
+        raise CurationFailed(
+            f"Source relevance labelling failed ({reason}), so the run stopped "
+            f"before writing. {len(papers)} papers were found, but none could be "
+            "labelled, and without labels the relevance gate cannot keep "
+            "off-topic evidence out of the briefing and no full text is "
+            "fetched. Nothing was charged for the writing step. Try again, or "
+            "draft on a different model."
+        )
 
     # Named-source pass (issue #165): look up landmark papers/trials named in
     # the top abstracts, merge into the candidate pool, and re-curate only the
@@ -495,8 +524,8 @@ def generate_draft(
     )
 
     # Full-text grounding: after curation, fetch the open-access full text of
-    # the sources that earned it — direct before related, newest first inside a
-    # tier, search rank breaking ties (#143).
+    # the sources that earned it — direct before related, reviews/trials first,
+    # newest first inside a design tier, search rank breaking ties (#166, revising #143).
     #
     # This step used to be skipped whenever the provider was Groq, whose
     # per-minute token ceiling could not fit a single full text. Groq is gone,
@@ -515,8 +544,8 @@ def generate_draft(
     log("Fetching open-access full texts...")
     requests_spent = 0
     via_papers = paperfetch.available(log)
-    # Still direct and related only, relevance then recency. Tangential sources
-    # are deliberately excluded even when that leaves the target unmet: they
+    # Still direct and related only, relevance then design then recency. Tangential
+    # sources are deliberately excluded even when that leaves the target unmet: they
     # are background, and handing the writer 12,000 characters of an off-topic
     # paper is exactly the topic drift the relevance gate exists to prevent.
     # Why the loop stopped is a different question from how many it got, and

@@ -72,7 +72,8 @@ tests/test_journal_conformance.py conventions as assertions over 5 fixtures
 ```
 
 **`pipeline.generate_draft()`, and nowhere else**: source pre-flight →
-`plan_queries` → `gather_evidence` → `curate_sources` → named-source pass →
+`plan_queries` → `gather_evidence` → `curate_sources` (an empty labelling
+result stops the run) → named-source pass →
 full-text fetch → `write_briefing` (or `write_article` when `long=True`) →
 `enforce_style` (up to `MAX_STYLE_PASSES` `revise_prose` passes if `check_style`
 finds errors) → `check_statistics` → a `Draft` carrying article, papers,
@@ -102,22 +103,29 @@ behaviour it describes.
 | The stored API key is tab-only (`sessionStorage`) unless opted in | `test_api_key_is_session_only_by_default` |
 | Nothing needing a key costs a round trip to discover it | `test_first_visit_does_not_dead_end` |
 | The full-text dependencies fail loudly enough to diagnose | `test_full_text_dependencies_fail_loudly_enough_to_diagnose` |
-| Deep reads go to direct and recent sources first | `test_full_text_order_favours_direct_and_recent` |
+| Deep reads go to direct reviews and trials first | `test_full_text_order_favours_reviews_and_trials` |
 | Papers named in the top abstracts are looked up once, capped | `test_named_papers_in_abstracts_are_looked_up` |
 | A merged record never renumbers the pool | `test_named_sources_merge_without_renumbering` |
 | A doomed run is refused before the caller is billed | `test_dead_sources_fail_before_the_caller_is_billed` |
+| Unlabelled sources stop the run before the writer | `test_unlabelled_sources_stop_the_run` |
 | The article shape is not a preference (`TONE_LABEL`, `LENGTH_LABEL`, `DEPTH_LABEL` are constants) | `test_house_style_is_fixed_not_a_preference` |
 | Default artefact is a briefing; the Review is `--long` | `test_briefing_is_the_default_artefact` |
+| A title names the question, in both paths, from one string | `test_titles_describe_the_question` |
 | Register rules fire on investigator voice, not synthesis voice | `test_register_rules_are_scoped_to_the_synthesis_voice` |
 | Sources travel with a revision only when usable | `test_revision_carries_sources_only_when_they_can_be_used` |
 | A second style pass runs only after the first reduced the errors | `test_a_second_style_pass_runs_only_after_progress` |
+| Only sendable-blocking defects brand the page a working draft | `test_only_sendable_defects_brand_the_page` |
 | Every article still matches the writer's schema | `test_real_articles_still_match_the_schema` |
 | Titles carry no publisher markup | `test_titles_arrive_without_markup` |
 | One paper is one candidate, however its DOI is spelled | `test_candidate_papers_dedupe_by_doi` |
 | A preprint is labelled wherever it is listed | `test_preprints_are_marked_as_preprints` |
 | A load-bearing figure is not quoted at second hand when a first-hand one exists | `test_second_hand_figures_are_a_last_resort` |
-| The candidate-pool default lives in one constant | `test_the_candidate_pool_is_big_enough_to_curate` |
+| A candidate-pool default lives in one constant | `test_the_candidate_pool_is_big_enough_to_curate` |
+| The writer cites a working set, not everything screened | `test_the_writer_cites_a_working_set` |
 | Full text via the papers CLI never breaks the Europe PMC path | `test_full_text_comes_from_the_papers_cli_when_it_is_there` |
+| Fig. 1 counts study designs, and falls back to years when it cannot | `test_figure_one_counts_study_designs` |
+| Table 1 prints no citation count | `test_figure_one_counts_study_designs` |
+| Supplied search terms start the plan and are never replaced | `test_idea_search_terms_reach_the_draft` |
 
 **Not pinned by a test** — these need the reasoning, because nothing else
 carries it:
@@ -128,7 +136,9 @@ carries it:
   unrecorded search says so and names nothing. A fallback constant is how a
   false claim came back the first time (#75). Same rule for the full-text count
   — `_synthesis_label`, `_read_phrase` and `render._full_text_count` own that
-  wording, and Table 1's Read column must agree with Methods.
+  wording, and Table 1's Read column must agree with Methods. Methods' full-text
+  sentence names how many read sources were cited when those two differ, because
+  the Read column counts read-and-cited.
 - **`verify.check_statistics` searches exactly the abstracts plus the excerpts
   the writer was shown** — never the unseen tail of a paper. Both sides call
   `sources.full_text_excerpts`, so nothing has to be recorded per run. A cited
@@ -150,10 +160,12 @@ carries it:
 - **Statistic and style checking are deterministic, not LLM passes.** A model
   asked "is this grounded / is this journal style?" agrees with itself.
 - **Three display items are built deterministically in `render.py`**: `Box 1`
-  (most relevant source), `Fig. 1` (inline SVG of sources by year), `Table 1`
-  (cited records). They are the part a model can't fabricate. Keep them that
-  way, and keep Box 1's caption claiming relevance rather than quality —
-  nothing here appraises study quality (#102).
+  (most relevant source), `Fig. 1` (inline SVG of sources by study design, or by
+  year when unlabelled share exceeds `1 - DESIGN_FIGURE_MIN_SHARE`), `Table 1`
+  (characteristics of cited evidence, carrying inferred `Design` and omitting
+  citation counts, which stay on the reference list). They are the part a model
+  can't fabricate. Keep them that way, and keep Box 1's caption claiming relevance
+  rather than quality — nothing here appraises study quality (#102, #171).
 - **Citations use the SOURCE-index scheme.** The writer cites papers by their
   fed "SOURCE N" label; `render` renumbers inline markers *and* the Sources list
   to a matching 1..N. Don't assume inline numbers are already sequential.
@@ -196,11 +208,22 @@ and sections intact.
   `MAX_STYLE_PASSES` is 2, and the loop repeats only through the accept
   branch — which requires strictly fewer errors — so a stuck error costs one
   call rather than looping. Two runs on record ended at 3 → 1 and 2 → 1
-  errors, and a single residual is enough to print the "working draft rather
-  than a finished review" line in Limitations (#146). Each pass recomputes
-  `rewrite_whole` and `needs_sources` from the *current* report, so the
-  `SUBSTANCE_RULES` split applies on pass 2 exactly as on pass 1. →
+  errors, and a single residual blocking error is enough to print the "working
+  draft rather than a finished review" line in Limitations (#146, scoped in #169).
+  Each pass recomputes `rewrite_whole` and `needs_sources` from the *current*
+  report, so the `SUBSTANCE_RULES` split applies on pass 2 exactly as on pass 1. →
   `test_a_second_style_pass_runs_only_after_progress`
+- **A leftover nit is not a "working draft".** The Limitations sentence
+  saying the text "should be read as a working draft rather than a finished
+  review" prints only for `SENDABLE_BLOCKING_RULES` — `clinical-directive`
+  plus the substance rules except `recycled-phrasing`, `repeated-opener` and
+  `under-length` — or for residual unverified/misattributed figures. Four of
+  five shipped drafts wore that sentence over a recycled six-word phrase or a
+  repeated sentence opener, so a reader forwarding the briefing forwarded a
+  claim that the prose was unfinished (#169). The exempt rules still fire,
+  still buy a revision pass, and still print in the CLI log and
+  `style_report` — they just do not brand the page. →
+  `test_only_sendable_defects_brand_the_page`
 - **Warnings ride along on a revision; they never buy one.**
   `RIDE_ALONG_WARNINGS` (long-sentence, wordiness, passive-voice) are appended
   to `revision_brief()` only when errors already triggered the pass. The
@@ -248,6 +271,16 @@ and sections intact.
 
 ## Sources and grounding
 
+- **The idea card's `search_terms` start the search plan when they are
+  supplied.** `ideas.py` already returns them and the web card already shows
+  them; `plan_queries` used to throw them away and invent a new set from the
+  title, so the only search thinking done before the paid draft was discarded
+  (#172). Supplied terms are copied into the query list **in code** and the
+  model may append **at most one** more specific query — a planner that
+  returns four replacements cannot displace them. `MAX_PLANNED_QUERIES` (4)
+  and `MAX_SUPPLIED_QUERIES` (3) bound both ends. With no terms supplied the
+  old one-shot prompt runs unchanged: the ideas stage is not mandatory and
+  `draft "topic"` on its own must keep working.
 - **The candidate pool is `DEFAULT_MAX_PAPERS` (40), defined in `sources.py` and
   read by every entry point** — the CLI flag's default, `generate_draft`, and
   the web handler. At 20 the relevance gate barely discarded anything: three
@@ -258,6 +291,14 @@ and sections intact.
   are expected rather than bugs: the Methods "screened" count roughly doubles,
   and `MAX_FULLTEXT_REQUESTS` (18) now binds before `FULLTEXT_TARGET` more
   often, so the stop-reason NOTE fires routinely.
+  The pool is what is **screened**; `writer.TARGET_CITED_SOURCES` (12) is what
+  is **cited**. Those are two numbers and Methods prints both — raising the pool
+  without a citing target just produced longer reference lists (20 of 20, 17 of
+  20 cited, #167). The working-set rule lives in one string,
+  `writer._WORKING_SET_RULE`, spliced into both `_BRIEFING_SYSTEM` and
+  `_WRITER_SYSTEM`, with the run's own screened/shown counts added by
+  `_writer_context`. Table 1 stays the list of **cited** records; the screened
+  count lives in Methods.
 - **Full text has two routes: the `papers` CLI (paperfetch) first, Europe PMC as fallback.**
   When the `papers` CLI is installed and the paper has a DOI, full text is
   retrieved via `papers get` from any open-access copy (Unpaywall, OpenAlex,
@@ -271,14 +312,24 @@ and sections intact.
   `MAX_FULLTEXT_REQUESTS` (18) stops a topic with no open-access literature
   spending a request per paper. **Tangential sources are never fetched**, even
   when the target goes unmet.
-- **The fetch order is relevance then recency, not rank** (`full_text_order`).
+- **The fetch order is relevance tier, design weight, then recency, not rank** (`full_text_order`).
   Rank sorts on topic overlap then citation weight, so the five deep reads
   went to old, heavily-cited work — a measured run read median year 2019 /
   122 citations against an abstract-only rest at median 2023, and the article
   printed "abstract-only, could not be appraised" about the most current
-  directly-relevant syntheses (#143). Direct before related, newest first
-  inside a tier, search rank breaking ties. The eligible *set* is unchanged;
-  tangential and unlabelled sources are still never fetched.
+  directly-relevant syntheses (#143). Recency-first inside `direct` then created
+  the opposite skew: in the seclusion draft, Gaynes 2017 (the only systematic
+  appraisal of adult acute settings) was stranded as abstract-only because it
+  was nine years old (#166). The sort key is now relevance tier → study design
+  (`DESIGN_ORDER`, from `paper_design`: synthesis then trial then other) →
+  recency → search rank. Relevance still outranks design: a direct primary study
+  beats a related review. `classify_design` is the single classifier (title /
+  venue / `publication_types`, never the abstract), `DESIGN_DISPLAY_ORDER` and
+  `DESIGN_LABELS` are the display view, and `paper_design` stays the three-value
+  fetch-ordering wrapper so #166's read order is unaffected. The eligible *set*
+  is unchanged; tangential and unlabelled sources are still never fetched. The read-subset skew log line may
+  now show an *older* read subset than the abstract-only rest — when those older
+  papers are the reviews and trials, that is the change working.
 - **Every run says *why* full-text fetching stopped.** "4 of 19" is not an
   answer: a request cap that bit is a tuning problem, genuinely absent open
   access is a property of the literature and not fixable here, and the log used
@@ -296,6 +347,16 @@ and sections intact.
   seventh paper whether or not SOURCE 6 was dropped. The prompt says how many
   were withheld and that the numbering has gaps — a prompt that misdescribes its
   own inputs teaches the model to ignore it.
+- **An empty relevance result is fatal, not a warning.** `curate_sources`
+  returns empty on any failure, so a failed labelling call is
+  indistinguishable from a pool where everything was labelled tangential:
+  "0 direct / 0 related / 0 tangential", logged and passed over. The gate
+  is then off, no full text is fetched, and the model writes anyway — the
+  quietest way this pipeline can go wrong (#168). `generate_draft` now
+  raises `CurationFailed`, a subclass of `NoPapersFound`, so every existing
+  caller stops on it unchanged, and the empty result carries an `error` key
+  naming the reason. Do not retry curation in a loop and do not fall back
+  to labelling everything `direct`.
 - **The full-text path has four keyless dependencies and all of them fail
   soft**: Europe PMC search, Europe PMC fetch, DOI resolution, Unpaywall. Soft
   failure is right for the reader and useless for the operator, so both `except

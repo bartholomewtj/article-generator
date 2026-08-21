@@ -23,6 +23,13 @@ import json
 from .llm import generate_json
 from .sources import Paper, full_text_excerpts
 
+# The search plan is at most four queries, whoever wrote them. When the ideas
+# stage supplied terms they are the start of that set and the model may add one
+# more specific query — the card's search thinking is the thing being kept, so
+# it is never overwritten by the planner's own wording (#172).
+MAX_PLANNED_QUERIES = 4
+MAX_SUPPLIED_QUERIES = 3
+
 _QUERY_SCHEMA = {
     "type": "object",
     "properties": {
@@ -67,13 +74,23 @@ _CURATE_SCHEMA = {
     "additionalProperties": False,
 }
 
+# One rule, used verbatim by both schemas, so the briefing and the `--long`
+# Review cannot drift apart on what a title is for (#170). The Review path used
+# to ask for "the subject and the finding", which is an instruction to assert a
+# causal result in the one field nothing downstream checks.
+_TITLE_RULE = (
+    "A descriptive title: the population, the intervention or exposure, and "
+    "the outcome. Sentence case. No puns, no questions, no colon-clickbait, "
+    "and no result claimed — the title names the question, it does not answer "
+    "it. Wrong: 'X reduces Y in Z'. Right: 'X for Y in Z'."
+)
+
 _ARTICLE_SCHEMA = {
     "type": "object",
     "properties": {
         "title": {
             "type": "string",
-            "description": "A declarative journal-style title: the subject and the finding, "
-            "sentence case, no puns, no questions, no colon-clickbait.",
+            "description": _TITLE_RULE,
         },
         "abstract": {
             "type": "string",
@@ -167,10 +184,7 @@ _BRIEFING_SCHEMA = {
     "properties": {
         "title": {
             "type": "string",
-            "description": "A descriptive title: the population, the intervention or "
-            "exposure, and the outcome. Sentence case. No puns, no questions, no "
-            "colon-clickbait, and no result claimed — the title names the question, "
-            "it does not answer it. Wrong: 'X reduces Y in Z'. Right: 'X for Y in Z'.",
+            "description": _TITLE_RULE,
         },
         "question": {
             "type": "string",
@@ -254,6 +268,30 @@ right disorder but a different question. Useful for context, not direct evidence
 Be strict. A famous review that never studies the specific topic is "tangential" or \
 "related", not "direct". Then name the single most relevant study to feature."""
 
+# The writer screens the whole candidate pool and cites a working set of about
+# this many sources. The pool is deliberately larger — `sources.DEFAULT_MAX_PAPERS`
+# is 40 — so the relevance gate has something to discard (#141). What it then
+# discarded was almost nothing: the shipped drafts cited 20 of 20 and 17 of 20
+# (#167). Screening that keeps everything is inclusion, not curation, and a
+# one-page briefing cannot carry seventeen papers.
+#
+# Not a preference. The same argument as TONE_LABEL/LENGTH_LABEL: the shape of
+# the artefact is fixed, and the reader does not choose it.
+TARGET_CITED_SOURCES = 12
+
+# One string, used verbatim in both system prompts, so the briefing and the
+# `--long` Review cannot drift apart on the one rule they share.
+_WORKING_SET_RULE = f"""\
+- CITE A WORKING SET, NOT EVERYTHING YOU WERE SHOWN. The candidate list is \
+deliberately longer than this piece needs, so that screening has something to \
+discard, and sources labelled tangential have already been withheld from it. \
+Cite about {TARGET_CITED_SOURCES} sources: the direct ones first, and a related \
+source only when it earns a specific point no direct source makes — a mechanism, \
+an adjacent population, a contrast. Report what a related source found under its \
+own label, never as a direct finding, and label evidence carried over from \
+another population as extrapolation. A source you have nothing specific to say \
+about does not belong in the reference list."""
+
 _WRITER_SYSTEM = """\
 You write Review articles for a leading scientific journal — the register of a \
 Nature Reviews or Science Review piece: precise, hedged, impersonal, and readable \
@@ -298,10 +336,7 @@ extrapolated from Y"). Never imply an evidence base that the direct sources don'
 support. Do NOT state counts or tallies of the evidence — how many sources were \
 cited, how many are direct, related or background, and the year range are computed \
 and printed for you. Every count you write is one that can contradict them.
-- Lead with the strongest DIRECT evidence, and cite the related and tangential \
-sources too: they carry mechanism, context and adjacent-population findings, and \
-the house style asks for extrapolation to be labelled, not left out. Report what \
-each found under its own label — just don't let it masquerade as a direct finding.
+""" + _WORKING_SET_RULE + """
 - featured_study: summarize the single most relevant study's method and results \
 FROM ITS ABSTRACT ONLY. Prefer the most-relevant source you were given. It is \
 printed as a boxed display item, so it must stand alone.
@@ -360,6 +395,8 @@ variation") — never questions, puns, or magazine headings.
 with an anecdote, a scene, a rhetorical question, or "Imagine…".
 - Plain prose paragraphs only — no markdown, HTML, bullets or sub-headings inside a \
 paragraph. 2-4 paragraphs per section.
+
+TITLE: descriptive. Names the question. Does not claim the result.
 
 REGISTER — this is checked automatically after you write, so follow it exactly:
 
@@ -484,8 +521,7 @@ SUBSTANCE:
 FOUND. "The evidence suggests these strategies may be effective" is not a finding.
 - Attribute findings to their study, not to a vague body of evidence. Name the \
 design and the population in the prose.
-- Cite about a dozen sources, preferring direct ones. Related sources only when \
-they earn a specific point.
+""" + _WORKING_SET_RULE + """
 - Hedge to the evidence in front of you, and vary how: "in a single small trial", \
 "consistently across three cohorts", "no controlled study has tested".
 
@@ -726,26 +762,85 @@ _REVISE_BRIEFING_SYSTEM_FULLTEXT = _with_fulltext_framing(_REVISE_BRIEFING_SYSTE
 _REVISE_BRIEFING_PATCH_SYSTEM_FULLTEXT = _with_fulltext_framing(_REVISE_BRIEFING_PATCH_SYSTEM)
 
 
+def clean_search_terms(terms) -> list[str]:
+    """Strip, drop blanks, drop case-insensitive duplicates, keep order,
+    cap the count and each term's length."""
+    if not isinstance(terms, (list, tuple)):
+        return []
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for t in terms:
+        if not isinstance(t, str):
+            continue
+        s = t.strip()
+        if not s:
+            continue
+        low = s.lower()
+        if low in seen:
+            continue
+        seen.add(low)
+        cleaned.append(s[:120])
+        if len(cleaned) >= MAX_SUPPLIED_QUERIES:
+            break
+    return cleaned
+
+
 def plan_queries(
-    topic: str, model: str | None = None, api_key: str | None = None
+    topic: str,
+    model: str | None = None,
+    api_key: str | None = None,
+    *,
+    search_terms: list[str] | None = None,
 ) -> tuple[list[str], str]:
     """Turn the topic into scholarly queries and identify its core on-topic entity."""
+    supplied = clean_search_terms(search_terms)
+    if not supplied:
+        result = generate_json(
+            (
+                "I want journal articles to support an evidence briefing about: "
+                f"{topic!r}\n\n"
+                "Give 2-4 short keyword queries for scholarly search engines (Semantic "
+                "Scholar / OpenAlex). Use researcher terminology. IMPORTANT: make at least "
+                "one query specific enough to find work on the exact subject (include the "
+                "most specific entity/population by name), not just the general area. Also "
+                "return `core_entity`: the specific subject a source must be about to count "
+                "as directly on-topic."
+            ),
+            _QUERY_SCHEMA,
+            model=model,
+            api_key=api_key,
+        )
+        return (result.get("queries") or [])[:MAX_PLANNED_QUERIES], (result.get("core_entity") or "").strip()
+
+    terms_lines = "\n".join(f"  {i}. {t}" for i, t in enumerate(supplied, 1))
+    prompt = (
+        f"I want journal articles to support an evidence briefing about: {topic!r}\n\n"
+        "These scholarly search terms were already chosen for this question and will "
+        "be searched as they stand:\n"
+        f"{terms_lines}\n"
+        "Do not rewrite them, reorder them or propose alternatives to them.\n\n"
+        "Return `queries`: at most ONE additional short keyword query, and only if it "
+        "finds work the terms above would miss — make it specific enough to name the "
+        "exact subject (the most specific entity/population by name). Return an empty "
+        "list if the terms above already cover the question. Also return "
+        "`core_entity`: the specific subject a source must be about to count as "
+        "directly on-topic."
+    )
     result = generate_json(
-        (
-            "I want journal articles to support an evidence briefing about: "
-            f"{topic!r}\n\n"
-            "Give 2-4 short keyword queries for scholarly search engines (Semantic "
-            "Scholar / OpenAlex). Use researcher terminology. IMPORTANT: make at least "
-            "one query specific enough to find work on the exact subject (include the "
-            "most specific entity/population by name), not just the general area. Also "
-            "return `core_entity`: the specific subject a source must be about to count "
-            "as directly on-topic."
-        ),
+        prompt,
         _QUERY_SCHEMA,
         model=model,
         api_key=api_key,
     )
-    return result["queries"][:4], result.get("core_entity", "").strip()
+    queries = list(supplied)
+    seen_lower = {s.lower() for s in queries}
+    for q in result.get("queries") or []:
+        q = (q or "").strip()
+        if q and q.lower() not in seen_lower:
+            queries.append(q)
+            break
+    queries = queries[:MAX_PLANNED_QUERIES]
+    return queries, (result.get("core_entity") or "").strip()
 
 
 def _truncate_abstract(abstract: str, limit: int | None) -> str:
@@ -848,7 +943,9 @@ def curate_sources(
 ) -> dict:
     """Score each paper's relevance to the exact topic. Returns:
     {relevance: {index: label}, most_relevant_index: int,
-     counts: {direct, related, tangential}}. Degrades to empty on failure.
+     counts: {direct, related, tangential}}. An empty result carries an
+    `error` key naming the reason; the caller is expected to treat empty
+    as fatal.
 
     `abstract_chars` truncates each abstract in the prompt. Only the comparison
     harness passes it; the pipeline uses `CURATION_ABSTRACT_CHARS`, which is
@@ -870,8 +967,9 @@ def curate_sources(
             model=model,
             api_key=api_key,
         )
-    except Exception:
-        return {"relevance": {}, "most_relevant_index": None, "counts": {}}
+    except Exception as exc:
+        return {"relevance": {}, "most_relevant_index": None, "counts": {},
+                "error": f"{type(exc).__name__}: {exc}"[:200]}
 
     relevance: dict[int, str] = {}
     for a in result.get("assessments", []):
@@ -883,6 +981,9 @@ def curate_sources(
         level: sum(1 for v in relevance.values() if v == level)
         for level in ("direct", "related", "tangential")
     }
+    if not relevance:
+        return {"relevance": {}, "most_relevant_index": None, "counts": {},
+                "error": "the model returned no usable relevance labels"}
     mri = result.get("most_relevant_index")
     if not (isinstance(mri, int) and 1 <= mri <= len(papers)):
         # fall back to a direct source, else the first
@@ -946,6 +1047,22 @@ def _writer_context(
             "NOT reproduced below, because they are background only. The numbering "
             "below is unchanged and has gaps where they were. Cite only sources you "
             "can actually see.\n\n"
+        )
+    shown = len(papers) - len(omit)
+    if shown > TARGET_CITED_SOURCES:
+        context += (
+            f"WORKING SET. {len(papers)} records were screened and {shown} are "
+            f"reproduced below. Cite about {TARGET_CITED_SOURCES} of them — the "
+            f"ones that carry the {kind}. Leaving a screened source uncited is "
+            "the expected outcome of screening, not an omission; the counts the "
+            "reader sees are computed from what you cite.\n\n"
+        )
+    else:
+        context += (
+            f"WORKING SET. {len(papers)} records were screened and {shown} are "
+            f"reproduced below. Cite the ones that carry the {kind} and no more; "
+            "a source you have nothing specific to say about does not belong in "
+            "the reference list.\n\n"
         )
     context += _format_sources(papers, relevance, excerpts, omit=omit)
     return context, use_full_text

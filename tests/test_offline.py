@@ -666,6 +666,138 @@ def test_pipeline_is_shared() -> None:
     check("pipeline builds provenance", '"queries": queries' in inspect.getsource(pipeline.generate_draft))
 
 
+def test_idea_search_terms_reach_the_draft() -> None:
+    """When idea search terms are supplied they start the plan and are never replaced (#172)."""
+    import inspect
+    from articlegen import cli, pipeline, web, writer
+    from articlegen.sources import Paper
+
+    # 1. clean_search_terms normalisation
+    cleaned = writer.clean_search_terms(["  a ", "", "A", "b", "c", "d", None, 7])
+    check("clean_search_terms strips, drops blanks/dups/non-strings and caps count",
+          cleaned == ["a", "b", "c"])
+    check("clean_search_terms on None returns empty list", writer.clean_search_terms(None) == [])
+    check("clean_search_terms on non-list returns empty list", writer.clean_search_terms("not a list") == [])
+
+    # 2-6. plan_queries with fake generate_json
+    captured_prompts: list[str] = []
+    saved_generate_json = writer.generate_json
+    try:
+        def fake_generate(prompt, schema, **kw):
+            captured_prompts.append(prompt)
+            return {"queries": ["totally different one", "and another"], "core_entity": "x"}
+
+        writer.generate_json = fake_generate
+
+        # 2. Terms supplied -> supplied first in order, at most one addition, core_entity preserved
+        queries, core = writer.plan_queries("test topic", search_terms=["term one", "term two"])
+        check("supplied terms are preserved first in order with at most one addition",
+              queries == ["term one", "term two", "totally different one"])
+        check("core_entity is returned from the planner", core == "x")
+
+        # 3. Captured prompt contains supplied terms and instructions
+        check("planner prompt contains supplied terms",
+              "term one" in captured_prompts[0] and "term two" in captured_prompts[0])
+        check("planner prompt instructs against rewriting and asks for at most one addition",
+              "Do not rewrite them" in captured_prompts[0]
+              and ("at most ONE additional" in captured_prompts[0] or "at most one" in captured_prompts[0].lower()))
+
+        # 4. A duplicate of a supplied term adds nothing
+        writer.generate_json = lambda prompt, schema, **kw: {"queries": ["TERM ONE", "other"], "core_entity": "y"}
+        q_dup, _ = writer.plan_queries("test topic", search_terms=["term one", "term two"])
+        check("duplicate of supplied query adds nothing further",
+              q_dup == ["term one", "term two", "other"])
+
+        writer.generate_json = lambda prompt, schema, **kw: {"queries": ["TERM ONE"], "core_entity": "y"}
+        q_dup_only, _ = writer.plan_queries("test topic", search_terms=["term one", "term two"])
+        check("case-insensitive duplicate only keeps length at 2", len(q_dup_only) == 2)
+
+        # 5. Cap at MAX_PLANNED_QUERIES
+        writer.generate_json = lambda prompt, schema, **kw: {
+            "queries": ["q1", "q2", "q3", "q4"], "core_entity": "z"
+        }
+        q_max, _ = writer.plan_queries("test topic", search_terms=["s1", "s2", "s3"])
+        check("result is capped at MAX_PLANNED_QUERIES",
+              len(q_max) <= writer.MAX_PLANNED_QUERIES and q_max == ["s1", "s2", "s3", "q1"])
+
+        # 6. No terms supplied -> today's behaviour
+        captured_prompts.clear()
+        writer.generate_json = lambda prompt, schema, **kw: (
+            captured_prompts.append(prompt) or {
+                "queries": ["q1", "q2", "q3", "q4", "q5", "q6"],
+                "core_entity": "core_ent",
+            }
+        )
+        q_none, core_none = writer.plan_queries("test topic", search_terms=None)
+        check("no terms supplied returns first MAX_PLANNED_QUERIES",
+              q_none == ["q1", "q2", "q3", "q4"] and core_none == "core_ent")
+        check("no terms prompt does not contain supplied-terms preamble",
+              "were already chosen" not in captured_prompts[0])
+
+    finally:
+        writer.generate_json = saved_generate_json
+
+    # 7. pipeline.generate_draft passes search_terms through
+    captured_plan_kw: dict = {}
+    papers = [Paper(title=f"p{i}", abstract="a", pmcid=f"PMC{i}", is_open_access=True)
+              for i in range(1, 5)]
+    article = {"title": "t", "abstract": "x", "keywords": [], "sections": [],
+               "key_points": [], "glossary": [], "references": [1]}
+    curation = {"relevance": {1: "direct", 2: "tangential", 3: "related", 4: "direct"},
+                "most_relevant_index": 1,
+                "counts": {"direct": 2, "related": 1, "tangential": 1}}
+
+    saved_pipeline = (
+        pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
+        pipeline.write_article, pipeline.write_briefing, pipeline.fetch_full_text,
+        pipeline.enforce_style,
+    )
+    try:
+        pipeline.plan_queries = lambda topic, **kw: (captured_plan_kw.update(kw) or (["q"], "core"))
+        def fake_gather(queries, **kw):
+            kw.get("outcomes", []).append(
+                {"source": "europe_pmc", "query": "q", "count": 4, "error": "", "cached": False})
+            return papers
+        pipeline.gather_evidence = fake_gather
+        pipeline.curate_sources = lambda topic, p, **kw: curation
+        pipeline.write_article = lambda topic, p, **kw: dict(article)
+        pipeline.write_briefing = pipeline.write_article
+        pipeline.fetch_full_text = lambda p, use_cache=True: "body text"
+        pipeline.enforce_style = lambda a, **kw: (a, {"issues": [], "stats": {}})
+
+        pipeline.generate_draft("topic", search_terms=["a", "b"])
+        check("pipeline passes search_terms through to plan_queries",
+              captured_plan_kw.get("search_terms") == ["a", "b"])
+    finally:
+        (
+            pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
+            pipeline.write_article, pipeline.write_briefing, pipeline.fetch_full_text,
+            pipeline.enforce_style,
+        ) = saved_pipeline
+
+    # 8-9. CLI
+    parser = cli.build_parser()
+    check("cli parser accepts --queries",
+          parser.parse_args(["draft", "t", "--queries", "a, b"]).queries == "a, b")
+    check("cmd_draft passes search_terms",
+          "search_terms=" in inspect.getsource(cli.cmd_draft))
+
+    # 10. Web
+    web_src = inspect.getsource(web.ArticleGenHandler._handle_draft)
+    check("web handler reads search_terms from payload",
+          'payload.get("search_terms")' in web_src)
+    check("web handler forwards search_terms to generate_draft",
+          "search_terms=search_terms" in web_src)
+
+    # 11-12. Front end index.html
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    index_html = open(os.path.join(root, "index.html"), encoding="utf-8").read()
+    check("index.html sends search_terms in /api/draft body",
+          "search_terms: terms" in index_html or "search_terms:" in index_html)
+    check("index.html passes terms to selectDraft in renderDraftCards",
+          "selectDraft(idea.title, terms)" in index_html)
+
+
 def test_dead_sources_fail_before_the_caller_is_billed() -> None:
     """A doomed run must not spend an LLM call first.
 
@@ -762,7 +894,7 @@ def test_draft_summary() -> None:
         verification={"unverified": []},
         style_report={"issues": [], "stats": {}},
     )
-    check("counts cited sources", clean.summary().startswith("3 sources cited"))
+    check("counts cited sources", clean.summary().startswith("3 of 5 screened sources cited"))
     check("counts direct sources", "2 directly on-topic" in clean.summary())
     check("clean prose reported", "prose style clean" in clean.summary())
 
@@ -783,7 +915,7 @@ def test_draft_summary() -> None:
     check("style issues flagged", "prose-style issue(s)" in summary)
 
     out_of_range = Draft(topic="t", article={"references": [1, 99, "x"]}, papers=papers)
-    check("ignores out-of-range references", out_of_range.summary().startswith("1 sources cited"))
+    check("ignores out-of-range references", out_of_range.summary().startswith("1 of 5 screened sources cited"))
 
 
 def test_rate_limit() -> None:
@@ -1372,6 +1504,7 @@ def test_europe_pmc_parsing() -> None:
                 {"fullName": "Jang G", "lastName": "Jang", "initials": "G", "firstName": "Geunsoo"},
             ]},
             "journalInfo": {"journal": {"title": "J Affect Disord"}},
+            "pubType": "research-article; Randomized Controlled Trial",
         },
         {   # sparse: book chapter — no journal, no doi, bad year
             "id": "PPR000002", "source": "PPR",
@@ -1403,6 +1536,7 @@ def test_europe_pmc_parsing() -> None:
           "Depression affects 20% of adults." in full.abstract)
     check("markup stripped from the title", full.title == "A trial of something")
     check("string year becomes int", full.year == 2026)
+    check("publication_types parsed from pubType", "randomized controlled trial" in full.publication_types)
     # Europe PMC names arrive surname-first; the renderer takes the last token as
     # the surname, so they are normalised to given-name-first at parse time.
     # Passing `fullName` through printed "SH, K." for "Kim SH" in every reference.
@@ -3394,11 +3528,12 @@ def test_a_second_style_pass_runs_only_after_progress() -> None:
     """A second revision pass is allowed, and only after the first one worked.
 
     Two of three measured runs ended with exactly one residual style error after
-    a productive revision (3 -> 1 and 2 -> 1), which is enough to print the
-    "working draft rather than a finished review" line in Limitations. So
-    `enforce_style` may go round twice — but the second pass is gated on the
-    first having been accepted, and acceptance means strictly fewer errors. An
-    error the model cannot fix costs one call, never a loop (#146).
+    a productive revision (3 -> 1 and 2 -> 1), which is what a second pass is
+    sized to clear. Whether an unfixed error reaches the page is
+    `SENDABLE_BLOCKING_RULES`' business (#169). So `enforce_style` may go round
+    twice — but the second pass is gated on the first having been accepted, and
+    acceptance means strictly fewer errors. An error the model cannot fix costs
+    one call, never a loop (#146).
     """
     from articlegen import pipeline
 
@@ -3560,6 +3695,117 @@ def test_tangential_sources_stay_out_of_the_writer_prompt() -> None:
         writer.generate_json = real
     check("an unlabelled run keeps every source",
           all(f"abstract of paper {i}" in captured["prompt"] for i in range(1, 6)))
+
+
+def test_the_writer_cites_a_working_set() -> None:
+    """The candidate pool is 40 so the relevance gate has something to throw away
+    (#141). The shipped drafts still cited almost everything: safety-planning 20/20,
+    seclusion 17/20 (#167). The writer must cite a working set of about 12, while
+    the candidate pool stays 40.
+    """
+    from articlegen import render, sources, writer
+    from articlegen.sources import Paper
+
+    # 1. The pool did not shrink.
+    check("candidate pool default stays 40", sources.DEFAULT_MAX_PAPERS == 40)
+    check("curation abstracts are not truncated", writer.CURATION_ABSTRACT_CHARS is None)
+
+    # 2. The constant exists and is 12.
+    check("TARGET_CITED_SOURCES is 12", writer.TARGET_CITED_SOURCES == 12)
+
+    # 3. One rule string, in both prompts.
+    check("working-set rule in briefing system prompt",
+          writer._WORKING_SET_RULE in writer._BRIEFING_SYSTEM)
+    check("working-set rule in writer system prompt",
+          writer._WORKING_SET_RULE in writer._WRITER_SYSTEM)
+    check("working-set rule text contains target count",
+          str(writer.TARGET_CITED_SOURCES) in writer._WORKING_SET_RULE)
+
+    # 4. The inclusion instruction is gone.
+    check("inclusion instruction removed from writer prompt",
+          "cite the related and tangential sources too" not in writer._WRITER_SYSTEM)
+    check("writer prompt notes tangential sources were withheld",
+          "sources labelled tangential have already been withheld" in writer._WRITER_SYSTEM)
+
+    # 5. Full-text variants still carry the rule.
+    check("working-set rule survives in full-text writer prompt",
+          writer._WORKING_SET_RULE in writer._WRITER_SYSTEM_FULLTEXT)
+    check("working-set rule survives in full-text briefing prompt",
+          writer._WORKING_SET_RULE in writer._BRIEFING_SYSTEM_FULLTEXT)
+
+    # 6. The run's own numbers reach the model.
+    papers_40 = [Paper(title=f"P{i}", abstract=f"Abstract {i}", year=2024) for i in range(1, 41)]
+    relevance_40 = {i: ("tangential" if i <= 4 else ("direct" if i <= 20 else "related")) for i in range(1, 41)}
+    curation_40 = {
+        "relevance": relevance_40,
+        "counts": {"direct": 16, "related": 20, "tangential": 4},
+        "most_relevant_index": 5,
+    }
+    captured = {}
+
+    def fake_generate(prompt, schema, **kwargs):
+        captured["prompt"] = prompt
+        return {"title": "t", "sections": [], "question": "q", "answer": "a", "findings": [], "unknowns": [], "open_these": []}
+
+    real = writer.generate_json
+    try:
+        writer.generate_json = fake_generate
+        writer.write_briefing("topic", papers_40, curation=curation_40)
+        briefing_prompt = captured["prompt"]
+        writer.write_article("topic", papers_40, curation=curation_40)
+        article_prompt = captured["prompt"]
+    finally:
+        writer.generate_json = real
+
+    for name, prompt in (("briefing", briefing_prompt), ("article", article_prompt)):
+        check(f"{name} prompt includes WORKING SET", "WORKING SET" in prompt)
+        check(f"{name} prompt reports screened count", "40 records were screened" in prompt)
+        check(f"{name} prompt reports shown count", "36 are reproduced below" in prompt)
+        check(f"{name} prompt specifies target cited count",
+              f"about {writer.TARGET_CITED_SOURCES} of them" in prompt)
+
+    # 7. A thin pool is not asked for twelve.
+    papers_6 = [Paper(title=f"P{i}", abstract=f"Abstract {i}", year=2024) for i in range(1, 7)]
+    relevance_6 = {1: "tangential", 2: "direct", 3: "direct", 4: "related", 5: "related", 6: "related"}
+    curation_6 = {
+        "relevance": relevance_6,
+        "counts": {"direct": 2, "related": 3, "tangential": 1},
+        "most_relevant_index": 2,
+    }
+    try:
+        writer.generate_json = fake_generate
+        writer.write_briefing("topic", papers_6, curation=curation_6)
+    finally:
+        writer.generate_json = real
+    thin_prompt = captured["prompt"]
+    check("thin pool reports 5 reproduced below", "5 are reproduced below" in thin_prompt)
+    check("thin pool does not ask for about 12", "about 12" not in thin_prompt)
+
+    # 8. Methods prints screened and cited as two different numbers.
+    prov = {"queries": ["q"], "databases": ["Europe PMC"], "date": "21 August 2026"}
+    m_html = render._methods_html(prov, screened=40, n_cited=12, topic="x")
+    m_md = "\n".join(render._methods_markdown(prov, screened=40, n_cited=12, topic="x"))
+    check("methods HTML shows screened and cited as two different numbers",
+          "leaving 40" in m_html and "12 were cited here" in m_html)
+    check("methods markdown shows screened and cited as two different numbers",
+          "leaving 40" in m_md and "12 were cited here" in m_md)
+
+    # 9. Methods does not over-claim the Read column.
+    prov_ft = {
+        "queries": ["q"],
+        "databases": ["Europe PMC"],
+        "date": "21 August 2026",
+        "full_text_sources": [1, 2, 3, 4, 5],
+    }
+    m_ft_partial = render._methods_html(prov_ft, screened=40, n_cited=12, topic="x", n_full_cited=3)
+    check("methods HTML specifies cited count when full-text cited differs from fetched",
+          "3 of which are cited here and marked in Table 1" in m_ft_partial)
+    check("methods HTML omits bare marker when full-text cited differs",
+          "(marked in Table 1)" not in m_ft_partial)
+
+    m_ft_all = render._methods_html(prov_ft, screened=40, n_cited=12, topic="x", n_full_cited=5)
+    check("methods HTML uses bare marker when all fetched full texts are cited",
+          "(marked in Table 1)" in m_ft_all)
 
 
 def test_gemini_cli_provider() -> None:
@@ -3806,7 +4052,7 @@ def test_display_items_are_selected_once_for_both_formats() -> None:
     table_html = render._table_html(cited, labels)
     table_md = render._table_markdown(cited, labels)
     for row in rows:
-        for value in (str(row["year"]), row["study"], row["cited_by"]):
+        for value in (str(row["year"]), row["study"], row["design"]):
             if value == "—":
                 continue
             check(f"both tables carry {value[:26]!r}",
@@ -3826,7 +4072,7 @@ def test_display_items_are_selected_once_for_both_formats() -> None:
         render._box_markdown(demo.SAMPLE_ARTICLE, demo.SAMPLE_PAPERS, cite_map),
     )
     check("both boxes name the same study",
-          box["paper"].title in box_md and html_escaped(box["paper"].title, box_html))
+        box["paper"].title in box_md and html_escaped(box["paper"].title, box_html))
     check("both boxes carry the method", box["method"][:40] in box_md)
 
     # A bad index must fail the same way in both, not render half a box.
@@ -3835,6 +4081,98 @@ def test_display_items_are_selected_once_for_both_formats() -> None:
           render._box_parts(broken, demo.SAMPLE_PAPERS, cite_map) is None
           and render._box_html(broken, demo.SAMPLE_PAPERS, cite_map) == ""
           and render._box_markdown(broken, demo.SAMPLE_PAPERS, cite_map) == "")
+
+
+def test_figure_one_counts_study_designs() -> None:
+    """Fig. 1 counts cited sources by study design with fallback to year histogram.
+
+    Table 1 drops 'Cited by' and adds 'Design'. Citation counts stay on the reference list.
+    """
+    from articlegen import demo, render, sources
+    from articlegen.sources import Paper, classify_design, paper_design
+
+    # 1. Design mode fires with distinct recognisable designs
+    papers = [
+        Paper(title="Efficacy of light therapy: a systematic review and meta-analysis", abstract="a", year=2020, citation_count=50),
+        Paper(title="Safety planning for self-harm: a randomized controlled trial", abstract="a", year=2021, citation_count=30),
+        Paper(title="Containment in psychiatric wards: a cluster-randomised trial", abstract="a", year=2022, citation_count=20),
+        Paper(title="Incidence of depression: a prospective cohort study", abstract="a", year=2023, citation_count=15),
+        Paper(title="Staff experiences of seclusion: a qualitative interview study", abstract="a", year=2024, citation_count=10),
+        Paper(title="General overview of clinical services", abstract="a", year=2025, citation_count=5),
+    ]
+    labels = {1: "direct", 2: "direct", 3: "related", 4: "related", 5: "related", 6: "tangential"}
+    series = render._figure_series(papers, labels)
+    check("design mode fires when metadata supports it", series is not None and series["mode"] == "design")
+    valid_labels = set(sources.DESIGN_LABELS.values())
+    bucket_labels = [label for label, _ in series["buckets"]]
+    check("bucket labels drawn from DESIGN_LABELS", all(b in valid_labels for b in bucket_labels))
+    total_in_buckets = sum(sum(t.values()) for t in series["counts"])
+    check("per-bucket totals sum to number of cited sources", total_in_buckets == len(papers))
+
+    # 2. HTML says which axis it is & caption disclaims quality appraisal
+    html_fig = render._figure_html(papers, labels)
+    check("HTML figure contains Study design", "Study design" in html_fig)
+    check("HTML figure does not contain Year of publication", "Year of publication" not in html_fig)
+    check("HTML figure caption disclaims quality appraisal",
+          "it is not a quality appraisal" in html_fig or "not a quality appraisal" in html_fig)
+
+    # 3. Markdown agrees with HTML
+    md_fig = render._figure_markdown(papers, labels)
+    check("Markdown figure contains study design", "study design" in md_fig)
+    for (label, _), tally in zip(series["buckets"], series["counts"]):
+        check(f"Markdown figure reports bucket {label}", f"- {label}: {sum(tally.values())}" in md_fig)
+
+    # 4. Fallback: mostly unlabelled (demo.SAMPLE_PAPERS shape)
+    sample_cited = [Paper(title=f"Study {i}", abstract="a", year=2020 + i) for i in range(1, 7)]
+    sample_labels = {i: "direct" for i in range(1, 7)}
+    fb_series = render._figure_series(sample_cited, sample_labels)
+    check("mostly unlabelled falls back to year mode", fb_series is not None and fb_series["mode"] == "year")
+    fb_html = render._figure_html(sample_cited, sample_labels)
+    check("fallback HTML contains Year of publication", "Year of publication" in fb_html)
+
+    # 5. Fallback: single category
+    all_trials = [
+        Paper(title=f"Treatment {i}: a randomised controlled trial", abstract="a", year=2020 + i)
+        for i in range(1, 7)
+    ]
+    single_series = render._figure_series(all_trials, sample_labels)
+    check("single category falls back to year mode", single_series is not None and single_series["mode"] == "year")
+
+    # 6. Table 1 demotes citation counts, adds Design, references keep Cited by
+    t_html = render._table_html(papers, labels)
+    t_md = render._table_markdown(papers, labels)
+    check("Table 1 HTML drops Cited by header", "<th>Cited by</th>" not in t_html)
+    check("Table 1 HTML has Design header", "<th>Design</th>" in t_html)
+    check("Table 1 Markdown drops Cited by header", "Cited by |" not in t_md)
+    check("Table 1 Markdown has Design header", "| Design |" in t_md)
+
+    article = {
+        "title": "A Review",
+        "abstract": "Abstract [1].",
+        "sections": [{"heading": "Introduction", "paragraphs": ["Text [1]."]}],
+        "key_points": ["Point [1]."],
+        "references": [1, 2, 3, 4, 5, 6],
+    }
+    rendered = render.render_article(article, papers, "A topic", curation={"relevance": labels})
+    rendered_md = render.render_markdown(article, papers, "A topic", curation={"relevance": labels})
+    check("render_article HTML reference list keeps Cited by", "ref-cites" in rendered and "Cited by" in rendered)
+    check("render_markdown reference list keeps Cited by", "Cited by" in rendered_md)
+
+    # 7. classify_design and paper_design negative controls
+    p_proto = Paper(title="Protocol for a prospective cohort study of outcomes", abstract="a")
+    check("study protocol classifies as other", classify_design(p_proto) == "other")
+    p_survey = Paper(title="Survey of national policy and practice", abstract="a")
+    check("plain survey without design keywords classifies as other", classify_design(p_survey) == "other")
+    p_rct = Paper(title="A randomised controlled trial of intervention", abstract="a")
+    check("randomised controlled trial classifies as trial", classify_design(p_rct) == "trial")
+    p_qual = Paper(title="A qualitative interview study", abstract="a")
+    check("qualitative study classifies as qualitative", classify_design(p_qual) == "qualitative")
+    p_obs = Paper(title="A prospective cohort study", abstract="a")
+    check("cohort study classifies as observational", classify_design(p_obs) == "observational")
+
+    for p in (p_proto, p_survey, p_rct, p_qual, p_obs, papers[0]):
+        check(f"paper_design maps {classify_design(p)} to DESIGN_ORDER",
+              paper_design(p) in ("synthesis", "trial", "other"))
 
 
 def html_escaped(value: str, haystack: str) -> bool:
@@ -3902,6 +4240,171 @@ def test_failed_style_gate_is_visible_in_the_article() -> None:
                       ("web", inspect.getsource(web.ArticleGenHandler._handle_draft))):
         check(f"{name} passes the style report to the renderer",
               "draft.style_report" in src)
+
+
+def test_only_sendable_defects_brand_the_page() -> None:
+    """The working-draft Limitations line prints only for sendable-blocking defects.
+
+    Prose nits (recycled-phrasing, repeated-opener) and warnings (under-length)
+    stay in the CLI log and in style_report; they do not brand the page (#169).
+    Clinical directives, surviving substance rules, and residual unverified/misattributed
+    figures do brand the page.
+    """
+    from articlegen import render, style
+    from articlegen.sources import Paper
+
+    papers = [Paper(title="P1", abstract="a", year=2024, doi="10.1/a")]
+    counts = {"direct": 1, "related": 0, "tangential": 0}
+    clean_report = {"issues": [], "stats": {}}
+    clean_verification = {"unverified": [], "misattributed": []}
+
+    def limitations_for(style_report=None, verification=None):
+        return " ".join(
+            render._assessment_paragraphs(
+                papers, counts, verification or clean_verification, style_report or clean_report
+            )["limitations"]
+        )
+
+    # 1. Nits do not brand. A style_report whose only errors are recycled-phrasing
+    # and repeated-opener produces limitations containing neither "working draft"
+    # nor "journal prose conventions".
+    nits_report = {
+        "issues": [
+            {"rule": "recycled-phrasing", "severity": "error", "where": "whole article",
+             "detail": "recycled text", "excerpt": "sample text"},
+            {"rule": "repeated-opener", "severity": "error", "where": "whole article",
+             "detail": "repeated opener", "excerpt": "The study found"},
+        ],
+        "stats": {},
+    }
+    nits_limitations = limitations_for(style_report=nits_report)
+    check("nits do not brand the page with working draft",
+          "working draft" not in nits_limitations)
+    check("nits do not print the journal prose conventions sentence",
+          "journal prose conventions" not in nits_limitations)
+
+    # 2. A clinical directive brands. A report with a clinical-directive error produces
+    # both the prose-check sentence ("instructs the reader on treatment") and
+    # "working draft rather than a finished review".
+    directive_report = {
+        "issues": [
+            {"rule": "clinical-directive", "severity": "error", "where": "Introduction",
+             "detail": "clinical directive detail", "excerpt": "titrate upward"},
+        ],
+        "stats": {},
+    }
+    directive_limitations = limitations_for(style_report=directive_report)
+    check("clinical directive prints prose-check sentence",
+          "instructs the reader on treatment" in directive_limitations)
+    check("clinical directive brands as working draft",
+          "working draft rather than a finished review" in directive_limitations)
+
+    # 3. A surviving substance failure brands. Same with too-few-sections.
+    substance_report = {
+        "issues": [
+            {"rule": "too-few-sections", "severity": "error", "where": "whole article",
+             "detail": "too few sections", "excerpt": ""},
+        ],
+        "stats": {},
+    }
+    substance_limitations = limitations_for(style_report=substance_report)
+    check("surviving substance failure prints prose-check sentence",
+          "covers the topic in fewer sections" in substance_limitations)
+    check("surviving substance failure brands as working draft",
+          "working draft rather than a finished review" in substance_limitations)
+
+    # 4. A mixed report names only the blocking fault. clinical-directive +
+    # recycled-phrasing together -> the sentence names the directive and does not
+    # contain "reuses phrasing between sections".
+    mixed_report = {
+        "issues": [
+            {"rule": "clinical-directive", "severity": "error", "where": "Introduction",
+             "detail": "d", "excerpt": ""},
+            {"rule": "recycled-phrasing", "severity": "error", "where": "whole article",
+             "detail": "d", "excerpt": ""},
+        ],
+        "stats": {},
+    }
+    mixed_limitations = limitations_for(style_report=mixed_report)
+    check("mixed report names the blocking fault",
+          "instructs the reader on treatment" in mixed_limitations)
+    check("mixed report does not name the nit",
+          "reuses phrasing between sections" not in mixed_limitations)
+    check("mixed report brands as working draft",
+          "working draft rather than a finished review" in mixed_limitations)
+
+    # 5. Residual figures brand, with no style errors at all. style_report with no
+    # errors, verification={"unverified": ["42%"]} -> the unverified sentence is
+    # still there and the working-draft sentence prints. Same for {"misattributed": ["18%"]}.
+    unverified_limitations = limitations_for(
+        style_report=clean_report, verification={"unverified": ["42%"], "misattributed": []}
+    )
+    check("unverified figures produce the unverified sentence",
+          "could not be located" in unverified_limitations and "42%" in unverified_limitations)
+    check("unverified figures brand as working draft",
+          "working draft rather than a finished review" in unverified_limitations)
+
+    misattributed_limitations = limitations_for(
+        style_report=clean_report, verification={"unverified": [], "misattributed": ["18%"]}
+    )
+    check("misattributed figures produce the misattributed sentence",
+          "other than the one its sentence credits" in misattributed_limitations and "18%" in misattributed_limitations)
+    check("misattributed figures brand as working draft",
+          "working draft rather than a finished review" in misattributed_limitations)
+
+    # 6. A clean draft says nothing. No style errors, verification={"unverified": [], "misattributed": []}
+    # -> neither string appears anywhere in the limitations.
+    clean_limitations = limitations_for(style_report=clean_report, verification=clean_verification)
+    check("clean draft produces no working draft branding",
+          "working draft" not in clean_limitations)
+    check("clean draft produces no prose check sentence",
+          "journal prose conventions" not in clean_limitations)
+
+    # 7. under-length stays out. It is severity "warning", so a report carrying it
+    # as a warning brands nothing — assert that, and assert "under-length" in style.SUBSTANCE_RULES
+    # so the exemption in SENDABLE_BLOCKING_RULES is still subtracting a name that exists.
+    under_length_report = {
+        "issues": [
+            {"rule": "under-length", "severity": "warning", "where": "whole article",
+             "detail": "short", "excerpt": ""},
+        ],
+        "stats": {},
+    }
+    under_length_limitations = limitations_for(style_report=under_length_report)
+    check("under-length warning does not brand as working draft",
+          "working draft" not in under_length_limitations)
+    check("under-length warning does not print prose check sentence",
+          "journal prose conventions" not in under_length_limitations)
+    check("under-length is in style.SUBSTANCE_RULES",
+          "under-length" in style.SUBSTANCE_RULES)
+
+    # 8. The exemptions are still real names. {"recycled-phrasing", "repeated-opener",
+    # "under-length"} <= style.SUBSTANCE_RULES, and neither of the first two is in
+    # render.SENDABLE_BLOCKING_RULES.
+    exemptions = {"recycled-phrasing", "repeated-opener", "under-length"}
+    check("exemptions are all in style.SUBSTANCE_RULES",
+          exemptions <= style.SUBSTANCE_RULES)
+    check("recycled-phrasing is not in render.SENDABLE_BLOCKING_RULES",
+          "recycled-phrasing" not in render.SENDABLE_BLOCKING_RULES)
+    check("repeated-opener is not in render.SENDABLE_BLOCKING_RULES",
+          "repeated-opener" not in render.SENDABLE_BLOCKING_RULES)
+
+    # 9. The rules still fire and still buy a revision. Nothing in style.py changed:
+    # assert "recycled-phrasing" in style.SUBSTANCE_RULES and that style.revision_brief
+    # on a recycled-phrasing report still asks for the fix (the brief text contains the rule's detail).
+    check("recycled-phrasing remains in style.SUBSTANCE_RULES",
+          "recycled-phrasing" in style.SUBSTANCE_RULES)
+    brief = style.revision_brief({
+        "issues": [
+            {"rule": "recycled-phrasing", "severity": "error", "where": "whole article",
+             "detail": "reused sentence across sections", "excerpt": "verbatim text repeated here"},
+        ],
+        "stats": {},
+    })
+    check("style.revision_brief asks for recycled-phrasing fix",
+          "reused sentence across sections" in brief)
+    check("style.revision_brief inverts to request source material for substance rules",
+          "SOURCES below" in brief)
 
 
 def test_evidence_assessment_is_wholly_deterministic() -> None:
@@ -4795,20 +5298,106 @@ def test_pipeline_fetches_full_text() -> None:
         check("provenance records which sources were read in full",
               draft.provenance["full_text_sources"] == [1, 3, 4])
 
-        # Curation returning nothing usable is the other way the step comes back
-        # empty. It must fetch none rather than fall back to fetching everything:
-        # unlabelled sources have not passed the relevance gate.
-        for p in papers:
-            p.full_text = ""
-        fetched_pmcids.clear()
-        pipeline.curate_sources = lambda topic, p, **kw: {
-            "relevance": {}, "most_relevant_index": None, "counts": {}}
-        draft = pipeline.generate_draft("topic")
-        check("no relevance labels means no full text is fetched",
-              fetched_pmcids == [] and draft.provenance["full_text_sources"] == [])
+        # Unlabelled sources are never fetched. Reaching this through
+        # generate_draft is no longer possible — an empty curation is a hard
+        # stop (#168) — but the ordering function is where the rule lives, so
+        # it is asserted here directly.
+        from articlegen.sources import full_text_order
+        check("no relevance labels means nothing is eligible for full text",
+              full_text_order(papers, {}) == [])
     finally:
         (pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
          pipeline.write_article, pipeline.fetch_full_text, pipeline.enforce_style) = saved
+
+
+def test_unlabelled_sources_stop_the_run() -> None:
+    """Curation swallows every exception and returns empty labels; the pipeline
+    used to log a warning and write anyway, which turned a failed relevance
+    gate into a normal-looking briefing with no topic-drift protection and no
+    full text (#168). An unlabelled pool now raises CurationFailed before the
+    writer or the named-source pass run.
+    """
+    import inspect
+    from articlegen import pipeline, writer
+    from articlegen.sources import Paper
+
+    papers = [Paper(title=f"p{i}", abstract="abstract text", pmcid=f"PMC{i}", is_open_access=True)
+              for i in range(1, 4)]
+    logged: list[str] = []
+
+    def _boom(*a, **kw):
+        raise AssertionError("the writer must not run")
+
+    saved_pipeline = (
+        pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
+        pipeline.write_article, pipeline.write_briefing, pipeline.enforce_style,
+        pipeline._named_source_pass,
+    )
+    saved_writer = (writer.generate_json,)
+    try:
+        pipeline.plan_queries = lambda topic, **kw: (["q"], "core")
+        def fake_gather(queries, **kw):
+            kw.get("outcomes", []).append(
+                {"source": "europe_pmc", "query": "q", "count": 3, "error": "", "cached": False})
+            return papers
+        pipeline.gather_evidence = fake_gather
+        pipeline.curate_sources = lambda topic, p, **kw: {
+            "relevance": {}, "most_relevant_index": None, "counts": {},
+            "error": "RuntimeError: provider exploded",
+        }
+        pipeline.write_briefing = pipeline.write_article = _boom
+        pipeline.enforce_style = _boom
+        named_called = [0]
+        def fake_named(*a, **kw):
+            named_called[0] += 1
+            return {"queries": [], "added": 0}
+        pipeline._named_source_pass = fake_named
+
+        raised = None
+        try:
+            pipeline.generate_draft("topic", log=logged.append)
+        except pipeline.CurationFailed as exc:
+            raised = exc
+
+        check("empty labelling stops the run", raised is not None)
+        check("and is caught by every existing NoPapersFound handler",
+              isinstance(raised, pipeline.NoPapersFound))
+        check("and is not blamed on the scholarly APIs",
+              raised is not None and raised.sources_failed is False)
+        check("the message names the reason",
+              raised is not None and "provider exploded" in str(raised))
+        check("the message says the write was not charged",
+              raised is not None and "charged" in str(raised).lower())
+        check("the writer is never called", True)
+        check("the named-source pass is never reached", named_called[0] == 0)
+        check("the WARNING log line survives",
+              any("no usable labels" in line for line in logged))
+
+        # curate_sources still degrades soft and now says why
+        def _raise_nope(*a, **kw):
+            raise RuntimeError("nope")
+        writer.generate_json = _raise_nope
+        res_exc = writer.curate_sources("topic", papers)
+        check("curate_sources returns a dict on provider error", isinstance(res_exc, dict))
+        check("curate_sources relevance is empty on provider error", res_exc.get("relevance") == {})
+        check("curate_sources error names the exception", "nope" in res_exc.get("error", ""))
+
+        writer.generate_json = lambda *a, **kw: {"assessments": []}
+        res_empty = writer.curate_sources("topic", papers)
+        check("curate_sources returns a dict on empty assessments", isinstance(res_empty, dict))
+        check("curate_sources relevance is empty on empty assessments", res_empty.get("relevance") == {})
+        check("curate_sources error describes empty assessments",
+              bool(res_empty.get("error")) and isinstance(res_empty.get("error"), str))
+
+        check("the named-source pass still degrades soft",
+              "CurationFailed" not in inspect.getsource(pipeline._named_source_pass))
+    finally:
+        (
+            pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
+            pipeline.write_article, pipeline.write_briefing, pipeline.enforce_style,
+            pipeline._named_source_pass,
+        ) = saved_pipeline
+        (writer.generate_json,) = saved_writer
 
 
 def test_full_text_comes_from_the_papers_cli_when_it_is_there() -> None:
@@ -5026,43 +5615,92 @@ def test_full_text_comes_from_the_papers_cli_when_it_is_there() -> None:
         reset_paperfetch()
 
 
-def test_full_text_order_favours_direct_and_recent() -> None:
-    """Deep reads go to the directly relevant and the current, in that order.
+def test_full_text_order_favours_reviews_and_trials() -> None:
+    """Deep reads go to direct systematic reviews and trials first, not the newest papers.
 
-    Rank order sorts on topic overlap then citation weight, so the five full
-    texts landed on old, heavily-cited papers: one measured run read a subset
-    at median year 2019 / 122 citations against an abstract-only rest at median
-    2023, and the article then printed the "could not be appraised" limitation
-    about the newest directly-relevant syntheses (#143). Relevance tier first,
+    #143 fixed 'deep reads went to old, heavily-cited work' by sorting on recency
+    within relevance. That created the opposite skew: in the seclusion draft,
+    Gaynes 2017 (the only systematic appraisal of adult acute settings) was
+    abstract-only while newer primary pilots and child reviews were read in full
+    (#166). Relevance tier first, then study design (reviews -> trials -> other),
     then year, then search rank.
-    """
-    from articlegen.sources import Paper, full_text_order
 
+    The negative controls in paper_design are the specification.
+    """
+    from articlegen.sources import Paper, full_text_order, paper_design
+
+    # 1. Full ordering: direct review (2016) beats newer direct trial (2019)
+    # and newer direct primary (2024); related review follows all directs.
     papers = [
-        Paper(title="related new", abstract="a", year=2024),      # 1
-        Paper(title="direct old", abstract="a", year=2011),       # 2
-        Paper(title="tangential new", abstract="a", year=2025),   # 3
-        Paper(title="direct new", abstract="a", year=2023),       # 4
-        Paper(title="related old", abstract="a", year=2015),      # 5
-        Paper(title="unlabelled", abstract="a", year=2026),       # 6
-        Paper(title="direct undated", abstract="a"),              # 7
+        Paper(title="Study 1: a systematic review and meta-analysis", abstract="a", year=2016),  # 1: direct synthesis (2016)
+        Paper(title="Study 2: observational cohort study", abstract="a", year=2024),            # 2: direct other (2024)
+        Paper(title="Study 3: a randomised controlled trial", abstract="a", year=2019),         # 3: direct trial (2019)
+        Paper(title="Study 4: an umbrella review", abstract="a", year=2025),                     # 4: related synthesis (2025)
+        Paper(title="Study 5: systematic review of tangential topic", abstract="a", year=2025), # 5: tangential synthesis (2025)
+        Paper(title="Study 6: unlabelled paper", abstract="a", year=2026),                      # 6: unlabelled
+        Paper(title="Study 7: direct undated primary study", abstract="a"),                     # 7: direct undated other
     ]
-    relevance = {1: "related", 2: "direct", 3: "tangential",
-                 4: "direct", 5: "related", 7: "direct"}
+    relevance = {1: "direct", 2: "direct", 3: "direct", 4: "related", 5: "tangential", 7: "direct"}
 
     order = full_text_order(papers, relevance)
-    check("direct-newest, direct-older, then related-newest",
-          order == [4, 2, 7, 1, 5])
-    check("tangential sources are never offered for fetch", 3 not in order)
+    check("direct review, direct trial, direct primary, direct undated, then related review",
+          order == [1, 3, 2, 7, 4])
+    check("relevance outranks design: direct other precedes related review",
+          order.index(2) < order.index(4))
+    check("tangential sources are never offered for fetch", 5 not in order)
     check("an unlabelled source is never offered either", 6 not in order)
 
-    # Ties fall back to search rank, which is what the pipeline did before this
-    # change — so an all-one-tier, all-one-year pool is untouched by it.
+    # 2. Recency inside a design tier: newer trial beats older trial (#143 behaviour survives)
+    trials = [
+        Paper(title="Trial A: a randomised controlled trial", abstract="a", year=2019),
+        Paper(title="Trial B: a randomised controlled trial", abstract="a", year=2024),
+    ]
+    check("recency decides within a design tier (newer first)",
+          full_text_order(trials, {1: "direct", 2: "direct"}) == [2, 1])
+
+    # 3. Ties fall back to incoming search rank
     same = [Paper(title=f"p{i}", abstract="a", year=2020) for i in range(1, 5)]
-    check("equal tier and year keeps the incoming rank order",
+    check("equal tier, design, and year keeps the incoming rank order",
           full_text_order(same, {i: "direct" for i in range(1, 5)}) == [1, 2, 3, 4])
     check("no labels means nothing is fetched",
           full_text_order(same, {}) == [])
+
+    # 4. paper_design directly: positives and negative controls
+    # synthesis positives
+    check("paper_design identifies systematic review and meta-analysis in title",
+          paper_design(Paper(title="Efficacy of light therapy: a systematic review and meta-analysis", abstract="a")) == "synthesis")
+    check("paper_design identifies Cochrane Database of Systematic Reviews venue",
+          paper_design(Paper(title="Interventions for seclusion", venue="Cochrane Database of Systematic Reviews", abstract="a")) == "synthesis")
+    check("paper_design identifies systematic review in publication_types",
+          paper_design(Paper(title="Seclusion reduction", abstract="a", publication_types=("systematic review",))) == "synthesis")
+
+    # trial positives
+    check("paper_design identifies randomised controlled trial in title",
+          paper_design(Paper(title="Containment in acute wards: a randomised controlled trial", abstract="a")) == "trial")
+    check("paper_design identifies cluster-randomized trial in title",
+          paper_design(Paper(title="Safety planning: a cluster-randomized trial", abstract="a")) == "trial")
+    check("paper_design identifies Randomized Controlled Trial in publication_types",
+          paper_design(Paper(title="Crisis planning", abstract="a", publication_types=("randomized controlled trial",))) == "trial")
+    check("paper_design identifies RCT acronym in title",
+          paper_design(Paper(title="Safewards: an RCT in acute psychiatric wards", abstract="a")) == "trial")
+
+    # other (the negative controls that are the specification)
+    check("paper_design demotes study protocol of an RCT to other",
+          paper_design(Paper(title="Protocol for a randomised controlled trial of seclusion reduction", abstract="a")) == "other")
+    check("paper_design demotes narrative review to other",
+          paper_design(Paper(title="Seclusion in acute wards: a narrative review", abstract="a")) == "other")
+    check("paper_design ignores bare 'review' in publication_types",
+          paper_design(Paper(title="Care models in psychiatry", abstract="a", publication_types=("review",))) == "other")
+    check("paper_design ignores bare 'trials' in title",
+          paper_design(Paper(title="The trials of implementing a new model of care", abstract="a")) == "other")
+    check("paper_design treats plain cohort study as other",
+          paper_design(Paper(title="A cohort study of seclusion in mental health wards", abstract="a")) == "other")
+    check("paper_design treats scoping review without systematic as other",
+          paper_design(Paper(title="A scoping review of restraint reduction", abstract="a")) == "other")
+
+    # 5. Preprints are never down-ranked
+    check("a preprint of a trial still ranks as a trial",
+          paper_design(Paper(title="Intervention: a randomised trial", abstract="a", is_preprint=True)) == "trial")
 
 
 def test_pmcid_is_resolved_by_doi() -> None:
@@ -6001,6 +6639,50 @@ def test_briefing_is_the_default_artefact() -> None:
           callable(write_briefing) and callable(write_article))
 
 
+def test_titles_describe_the_question() -> None:
+    """A `--long` title names the question. It does not answer it.
+
+    The Review path asked for "the subject and the finding" and got
+    "Brief hospital admission by self-referral reduces involuntary care and
+    self-harm ... in borderline personality disorder" — a causal claim in the
+    one field nothing downstream checks. `verify.check_statistics` never reads
+    titles and `style.py` has no title rule, so the prompt is the only control
+    there is (issue #170).
+
+    The briefing schema already had the rule. This pins that both schemas now
+    read it from one string, that the old wording is gone, and that both system
+    prompts carry the prohibition. Deliberately no regex title-ban in style.py:
+    "reduces" is a legitimate word in a descriptive title and a crude ban would
+    fail good titles. Measure first, per the issue.
+    """
+    from articlegen.writer import (_ARTICLE_SCHEMA, _BRIEFING_SCHEMA, _TITLE_RULE,
+                                   _BRIEFING_SYSTEM, _REVISE_PATCH_SYSTEM,
+                                   _REVISE_SYSTEM, _WRITER_SYSTEM,
+                                   _WRITER_SYSTEM_FULLTEXT)
+
+    article_title = _ARTICLE_SCHEMA["properties"]["title"]["description"]
+    briefing_title = _BRIEFING_SCHEMA["properties"]["title"]["description"]
+
+    check("the Review and the briefing share one title rule",
+          article_title == briefing_title == _TITLE_RULE)
+    check("the rule forbids claiming the result", "no result claimed" in _TITLE_RULE)
+    check("and shows what that means",
+          "reduces" in _TITLE_RULE and "Right:" in _TITLE_RULE)
+    check("the rule asks for population, intervention/exposure and outcome",
+          all(word in _TITLE_RULE
+              for word in ("population", "intervention or exposure", "outcome")))
+    check("the old 'subject and the finding' wording is gone",
+          "the subject and the finding" not in article_title)
+
+    line = "TITLE: descriptive. Names the question. Does not claim the result."
+    check("the Review prompt carries the title rule", line in _WRITER_SYSTEM)
+    check("the briefing prompt still does", line in _BRIEFING_SYSTEM)
+    for name, prompt in (("revise", _REVISE_SYSTEM),
+                         ("revise-patch", _REVISE_PATCH_SYSTEM),
+                         ("full-text", _WRITER_SYSTEM_FULLTEXT)):
+        check(f"the {name} prompt inherits it", line in prompt)
+
+
 def test_real_articles_still_match_the_schema() -> None:
     """Every article the pipeline has to render must satisfy the writer's schema.
 
@@ -6061,7 +6743,9 @@ def main(argv: list[str] | None = None) -> int:
         test_openrouter_routing,
         test_openrouter_refusal_falls_back,
         test_refusal_fallbacks,
-        test_pipeline_is_shared, test_dead_sources_fail_before_the_caller_is_billed,
+        test_pipeline_is_shared,
+        test_idea_search_terms_reach_the_draft,
+        test_dead_sources_fail_before_the_caller_is_billed,
         test_draft_summary, test_rate_limit,
         test_keepalive_connection_reuse, test_substance_checks,
         test_source_failures_are_distinguishable,
@@ -6075,8 +6759,9 @@ def main(argv: list[str] | None = None) -> int:
         test_ungrounded_citations_leave_no_trace,
         test_second_hand_figures_are_a_last_resort,
         test_full_text_grounding, test_pipeline_fetches_full_text,
+        test_unlabelled_sources_stop_the_run,
         test_full_text_comes_from_the_papers_cli_when_it_is_there,
-        test_full_text_order_favours_direct_and_recent,
+        test_full_text_order_favours_reviews_and_trials,
         test_pmcid_is_resolved_by_doi,
         test_unpaywall_fallback_in_resolve_pmcid,
         test_named_papers_in_abstracts_are_looked_up,
@@ -6093,13 +6778,16 @@ def main(argv: list[str] | None = None) -> int:
         test_claude_cli_provider,
         test_gemini_cli_provider,
         test_tangential_sources_stay_out_of_the_writer_prompt,
+        test_the_writer_cites_a_working_set,
         test_revision_replaces_blocks_rather_than_the_article,
         test_revision_carries_sources_only_when_they_can_be_used,
         test_warnings_ride_along_on_a_revision,
         test_a_second_style_pass_runs_only_after_progress,
         test_disclosure_is_above_the_fold_and_derived,
         test_display_items_are_selected_once_for_both_formats,
+        test_figure_one_counts_study_designs,
         test_failed_style_gate_is_visible_in_the_article,
+        test_only_sendable_defects_brand_the_page,
         test_evidence_assessment_is_wholly_deterministic,
         test_unverified_figures_are_marked_inline,
         test_clinical_directives_are_an_error,
@@ -6109,6 +6797,7 @@ def main(argv: list[str] | None = None) -> int:
         test_api_key_is_session_only_by_default,
         test_house_style_is_fixed_not_a_preference,
         test_briefing_is_the_default_artefact,
+        test_titles_describe_the_question,
         test_register_rules_are_scoped_to_the_synthesis_voice,
         test_hedging_floor_is_calibrated_against_body_prose,
         test_density_thresholds_are_documented_against_the_corpus,

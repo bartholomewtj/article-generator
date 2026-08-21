@@ -107,7 +107,7 @@ _cache_lock = threading.Lock()
 # the entry records a refusal rather than a result.
 _search_cache: dict[tuple[str, str, int], tuple[float, list["Paper"], str]] = {}
 
-_SS_FIELDS = "title,abstract,year,authors,venue,citationCount,externalIds,url"
+_SS_FIELDS = "title,abstract,year,authors,venue,citationCount,externalIds,url,publicationTypes"
 _OA_FIELDS = (
     "id,title,publication_year,authorships,primary_location,"
     "cited_by_count,abstract_inverted_index,doi,type"
@@ -177,6 +177,27 @@ def _looks_like_preprint(doi: str, url: str) -> bool:
     return bool(url and _PREPRINT_URL_RE.search(url))
 
 
+def _clean_types(raw) -> tuple[str, ...]:
+    """API document-type metadata as a tuple of lowercase strings.
+
+    The three sources disagree on shape: Semantic Scholar sends a list, OpenAlex
+    a single string, Europe PMC one string holding a delimited list. Normalising
+    here keeps `paper_design` from knowing which API a paper came from.
+    """
+    if not raw:
+        return ()
+    items = [raw] if isinstance(raw, str) else list(raw)
+    out = []
+    for elem in items:
+        if not elem or not isinstance(elem, str):
+            continue
+        for piece in re.split(r"[;,]", elem):
+            cleaned = piece.strip().lower()
+            if cleaned and cleaned not in out:
+                out.append(cleaned)
+    return tuple(out)
+
+
 @dataclass
 class Paper:
     title: str
@@ -199,6 +220,11 @@ class Paper:
     # fetch_full_text; not populated by search or dedupe.
     full_text_via: str = ""
     is_preprint: bool = False
+    # Document type as the API reported it, lowercased, e.g. ("journal article",
+    # "randomized controlled trial"). Fed to `paper_design` for the full-text
+    # order and nothing else — it is never printed, so a source that reports
+    # nothing costs nothing. Empty for arXiv, which has no such field.
+    publication_types: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         # The one place a title is cleaned. Four search functions build Papers
@@ -344,6 +370,7 @@ def search_semantic_scholar(query: str, limit: int = 15) -> list[Paper]:
                 url=item.get("url") or "",
                 doi=external_ids.get("DOI") or "",
                 source="Semantic Scholar",
+                publication_types=_clean_types(item.get("publicationTypes")),
             )
         )
     return papers
@@ -413,6 +440,7 @@ def _openalex_page(query: str, limit: int, from_year: int | None = None) -> list
                 doi=item.get("doi") or "",
                 source="OpenAlex",
                 is_preprint=(item.get("type") == "preprint"),
+                publication_types=_clean_types(item.get("type")),
             )
         )
     return papers
@@ -543,6 +571,7 @@ def search_europe_pmc(query: str, limit: int = 15) -> list[Paper]:
                 # OA copy lives somewhere Europe PMC cannot serve from.
                 is_open_access=(item.get("isOpenAccess") == "Y" and item.get("inEPMC") == "Y"),
                 is_preprint=(src == "PPR" or "preprint" in (item.get("pubType") or "").lower()),
+                publication_types=_clean_types(item.get("pubType")),
             )
         )
     return papers
@@ -989,32 +1018,126 @@ def full_text_excerpts(papers: list[Paper]) -> dict[int, str]:
     return out
 
 
+# Which study designs earn one of the five deep reads, best first. Not a quality
+# score — nothing here appraises a study. It answers a narrower question: which
+# paper repays 12,000 characters of reading? A systematic review carries the
+# appraised evidence base, a trial carries the primary result, and a cross-
+# sectional survey mostly restates its own abstract (#166).
+DESIGN_ORDER = ("synthesis", "trial", "other")
+
+DESIGN_DISPLAY_ORDER = ("synthesis", "trial", "observational", "qualitative", "other")
+DESIGN_LABELS = {
+    "synthesis": "Reviews",
+    "trial": "Trials",
+    "observational": "Observational",
+    "qualitative": "Qualitative",
+    "other": "Other",
+}
+
+_DESIGN_EXCLUDE_RE = re.compile(
+    r"\b(?:study\s+protocol|trial\s+protocol|protocol\s+for\s+a|statistical\s+analysis\s+plan|rationale\s+and\s+design|narrative\s+reviews?)\b"
+    r"|:\s*a\s+protocol\b",
+    re.IGNORECASE,
+)
+_SCOPING_RE = re.compile(r"\bscoping\s+reviews?\b", re.IGNORECASE)
+_SYSTEMATIC_RE = re.compile(r"\bsystematic\b", re.IGNORECASE)
+
+_SYNTHESIS_RE = re.compile(
+    r"\b(?:systematic\s+(?:\w+\s+)?reviews?|meta-?analy\w+|umbrella\s+reviews?|evidence\s+synthesis|cochrane\s+reviews?)\b"
+    r"|cochrane\s+database\s+of\s+systematic\s+reviews",
+    re.IGNORECASE,
+)
+_TRIAL_RE = re.compile(
+    r"\b(?:randomi[sz]\w*|rcts?|controlled\s+trials?|clinical\s+trials?|stepped[- ]wedge|cluster[- ]random\w*|pragmatic\s+trials?|feasibility\s+trials?)\b",
+    re.IGNORECASE,
+)
+# Mixed-methods work is deliberately left unclassified — calling it qualitative
+# would be a claim the metadata does not support.
+_QUALITATIVE_RE = re.compile(
+    r"\b(?:qualitative(?:\s+\w+)?\s+(?:study|studies|analysis|research|interviews?|evaluation)"
+    r"|qualitative\s+study|focus\s+groups?|thematic\s+analysis|grounded\s+theory"
+    r"|semi-?structured\s+interviews?|phenomenolog\w+|ethnograph\w+"
+    r"|interpretative\s+phenomenological)\b",
+    re.IGNORECASE,
+)
+_OBSERVATIONAL_RE = re.compile(
+    r"\b(?:cohort\s+stud\w+|prospective\s+cohort|retrospective\s+cohort"
+    r"|case[-\s]control|cross[-\s]sectional|longitudinal\s+stud\w+"
+    r"|observational\s+stud\w+|registry\s+stud\w+|case\s+series|case\s+report"
+    r"|population[-\s]based\s+stud\w+|national\s+survey)\b",
+    re.IGNORECASE,
+)
+
+
+def classify_design(paper: Paper) -> str:
+    """Classify a paper's study design into one of DESIGN_DISPLAY_ORDER.
+
+    Reads title, venue, and `publication_types` metadata only — never the
+    abstract (an abstract discussing what 'is needed' would misclassify).
+    Preprints are untouched by design detection: a preprint of a trial still
+    ranks as a trial.
+    """
+    text = f"{paper.title} {paper.venue}"
+    types_text = " ".join(paper.publication_types)
+    combined = f"{text} {types_text}"
+
+    if _DESIGN_EXCLUDE_RE.search(combined):
+        return "other"
+    if _SCOPING_RE.search(combined) and not _SYSTEMATIC_RE.search(combined):
+        return "other"
+    if _SYNTHESIS_RE.search(combined):
+        return "synthesis"
+    if _TRIAL_RE.search(combined):
+        return "trial"
+    if _QUALITATIVE_RE.search(combined):
+        return "qualitative"
+    if _OBSERVATIONAL_RE.search(combined):
+        return "observational"
+    return "other"
+
+
+def paper_design(paper: Paper) -> str:
+    """Fetch-ordering view of classify_design: synthesis / trial / other.
+
+    Ordering-only: used by `full_text_order` to prioritise papers that repay
+    a deep read (systematic reviews carry the appraised evidence base, trials
+    carry primary results, whereas surveys and narrative reviews mostly restate
+    their abstracts).
+
+    The classification itself now lives in `classify_design`.
+    """
+    label = classify_design(paper)
+    return label if label in DESIGN_ORDER else "other"
+
+
 # Which eligible sources get a deep read, and in what order. The set is the
 # same as it always was (direct and related, never tangential); only the order
-# changed. Rank order put citation weight ahead of everything, so the five deep
-# reads went to old, heavily-cited papers: one measured run read a subset with
-# median year 2019 and 122 citations while the abstract-only rest ran at median
-# 2023 (#143). The article then prints "abstract-only, could not be appraised"
-# about the most current directly-relevant work — the papers doing the most.
+# changed. Rank order put citation weight ahead of everything (#143), while
+# recency-first inside direct stranded landmark older reviews and trials (#166).
+# The sort key is now relevance tier -> design weight -> recency -> search rank.
 FULLTEXT_RELEVANCE_ORDER = ("direct", "related")
 
 
 def full_text_order(papers: list[Paper], relevance: dict[int, str]) -> list[int]:
     """1-based indices to attempt full text for, best candidate first.
 
-    Direct before related; newest first inside a tier; search rank breaks the
-    remaining ties, which is the order the whole pipeline used before. A paper
-    with no year sorts as if year 0 — an undated record is not evidence of
-    being current. Tangential and unlabelled sources are absent from the
-    result: they are never fetched, whether or not the target is met.
+    Direct before related; systematic reviews / meta-analyses first, then
+    trials, then other designs (DESIGN_ORDER via paper_design); newest first
+    inside a design tier; search rank breaks the remaining ties (#166,
+    revising #143). A paper with no year sorts as if year 0 — an undated record
+    is not evidence of being current. Tangential and unlabelled sources are
+    absent from the result: they are never fetched, whether or not the target
+    is met.
     """
     tier = {label: n for n, label in enumerate(FULLTEXT_RELEVANCE_ORDER)}
+    design = {label: n for n, label in enumerate(DESIGN_ORDER)}
     ranked = []
     for index, paper in enumerate(papers, start=1):
         label = relevance.get(index)
         if label in tier:
-            ranked.append((tier[label], -(paper.year or 0), index))
-    return [index for _, _, index in sorted(ranked)]
+            ranked.append((tier[label], design[paper_design(paper)],
+                           -(paper.year or 0), index))
+    return [index for _, _, _, index in sorted(ranked)]
 
 
 def fetch_full_text(paper: Paper, use_cache: bool = True, log=lambda msg: None) -> str:
@@ -1163,6 +1286,193 @@ def _merge_duplicate(kept: Paper, dup: Paper) -> None:
     if dup.url and not kept.url:
         kept.url = dup.url
         kept.is_preprint = kept.is_preprint or _looks_like_preprint("", kept.url)
+    if dup.publication_types and not kept.publication_types:
+        kept.publication_types = dup.publication_types
+
+
+# Constants for the named-source pass (issue #165). Read by pipeline.py.
+NAMED_SOURCE_SCAN = 3        # abstracts read for names
+NAMED_SOURCE_LIMIT = 8       # lookups requested, and new records kept
+NAMED_SOURCE_PER_QUERY = 5   # page size for a lookup; we want one exact record
+
+
+# Stoplist of capitalised non-names and apparatus acronyms. The negative
+# controls in test_named_references_reads_names_not_noise are the specification.
+_NAMED_STOPLIST = frozenset(
+    "this the our a an recent previous current prior one two we "
+    "rct prisma consort grade prospero who nice nhs nih usa uk covid pico medline embase cinahl".split()
+)
+
+_DOI_EXTRACT_RE = re.compile(r"10\.\d{4,9}/[^\s\"'<>,;)\]]+")
+
+_STUDY_ADJS_RE = (
+    r"(?:(?:cluster|randomi[sz]ed|controlled|stepped-wedge|multicentre|multicenter|"
+    r"pragmatic|pilot|feasibility|open-label|double-blind|blinded|cross-?over|"
+    r"longitudinal|prospective|retrospective|observational|community|phase\s+[IVX\d]+)\s+)*"
+)
+_STUDY_NOUNS_PATTERN = r"(?:trials?|stud(?:y|ies)|programmes?|programs?|cohorts?|rcts?|interventions?)"
+
+_NAME_THEN_NOUN_RE = re.compile(
+    rf"\b(?P<name>[A-Z][A-Za-z0-9*'-]*(?:\s+[A-Z][A-Za-z0-9*'-]*){{0,2}})\s+"
+    rf"(?P<adjs>(?i:{_STUDY_ADJS_RE}))"
+    rf"(?P<noun>(?i:{_STUDY_NOUNS_PATTERN}))\b"
+)
+
+_NOUN_THEN_ACRONYM_RE = re.compile(
+    rf"\b(?i:{_STUDY_ADJS_RE})"
+    rf"(?P<noun>(?i:{_STUDY_NOUNS_PATTERN}))\s*\(\s*(?P<acronym>[A-Za-z0-9*'-]+)\s*\)"
+)
+
+_STUDY_NOUN_CANONICAL = {
+    "trial": "trial", "trials": "trial",
+    "study": "study", "studies": "study",
+    "programme": "programme", "programmes": "programme",
+    "program": "program", "programs": "program",
+    "cohort": "cohort", "cohorts": "cohort",
+    "rct": "RCT", "rcts": "RCT",
+    "intervention": "intervention", "interventions": "intervention",
+}
+
+
+def _is_sentence_initial(text: str, pos: int) -> bool:
+    prefix = text[:pos].rstrip()
+    if not prefix:
+        return True
+    return bool(re.search(r'(?:[\.\!\?]\s*[\"\')\]]*|[\:\n]\s*)$', prefix))
+
+
+def _is_valid_name_token(token: str, is_sentence_initial: bool) -> bool:
+    t = token.strip(".,;:\"'()")
+    if not t:
+        return False
+    if t.lower() in _NAMED_STOPLIST:
+        return False
+    # ALL-CAPS (>= 3 chars, at least one letter, all alpha characters are uppercase)
+    if len(t) >= 3 and any(c.isalpha() for c in t) and all(c.isupper() for c in t if c.isalpha()):
+        return True
+    # Capitalised word (not sentence-initial, starts with capital letter)
+    if t[0].isupper() and not is_sentence_initial:
+        return True
+    return False
+
+
+def named_references(text: str) -> list[str]:
+    """Extract DOIs and study names mentioned in an abstract.
+
+    Deterministic, ordered, deduped, and capped at NAMED_SOURCE_LIMIT.
+    DOIs come first because they are exact; named studies follow.
+    """
+    dois: list[str] = []
+    for m in _DOI_EXTRACT_RE.finditer(text):
+        raw = m.group(0).rstrip(".,;:)\"'")
+        doi = _normalize_doi(raw)
+        if doi and doi not in dois:
+            dois.append(doi)
+
+    names: list[str] = []
+    # Pattern 1: name-then-noun (e.g. "Safewards trial", "RAISE-ETP study")
+    for m in _NAME_THEN_NOUN_RE.finditer(text):
+        raw_name = m.group("name").strip()
+        tokens = raw_name.split()
+        match_start = m.start("name")
+        while tokens:
+            token_offset = text[match_start:].find(tokens[0])
+            token_pos = match_start + (token_offset if token_offset >= 0 else 0)
+            si = _is_sentence_initial(text, token_pos)
+            if _is_valid_name_token(tokens[0], si):
+                break
+            match_start = token_pos + len(tokens[0])
+            tokens.pop(0)
+
+        if not tokens:
+            continue
+        if any(not _is_valid_name_token(tok, False) for tok in tokens[1:]):
+            continue
+        clean_name = " ".join(tokens)
+        noun_key = m.group("noun").lower()
+        canon_noun = _STUDY_NOUN_CANONICAL.get(noun_key, noun_key)
+        q = f"{clean_name} {canon_noun}"
+        if q not in names and q not in dois:
+            names.append(q)
+
+    # Pattern 2: noun-then-parenthesised acronym (e.g. "... trial (SAFEWARDS)")
+    for m in _NOUN_THEN_ACRONYM_RE.finditer(text):
+        acronym = m.group("acronym").strip()
+        if not _is_valid_name_token(acronym, False):
+            continue
+        noun_key = m.group("noun").lower()
+        canon_noun = _STUDY_NOUN_CANONICAL.get(noun_key, noun_key)
+        q = f"{acronym} {canon_noun}"
+        if q not in names and q not in dois:
+            names.append(q)
+
+    return (dois + names)[:NAMED_SOURCE_LIMIT]
+
+
+_STUDY_NOUNS_RE = re.compile(
+    r"\s+(?:trials?|stud(?:y|ies)|programmes?|programs?|cohorts?|rcts?|interventions?)$",
+    re.IGNORECASE,
+)
+
+
+def named_matches(paper: Paper, request: str) -> bool:
+    """Acceptance rule: True when paper matches what the request asked for.
+
+    A DOI request must match the paper's normalised DOI. A study name request
+    must have its name portion appear in the paper's normalised title.
+    """
+    req_doi = _normalize_doi(request)
+    if req_doi:
+        return bool(paper.doi and _normalize_doi(paper.doi) == req_doi)
+
+    name_part = _STUDY_NOUNS_RE.sub("", request).strip() or request
+    norm_name = _normalize_title(name_part)
+    if not norm_name:
+        return False
+    norm_title = _normalize_title(paper.title)
+    return norm_name in norm_title
+
+
+def merge_candidates(pool: list[Paper], extra: list[Paper], limit: int = NAMED_SOURCE_LIMIT) -> list[Paper]:
+    """Merge extra papers into pool using DOI/title dedupe, appending up to `limit` new records.
+
+    Existing records in `pool` are preserved in order (never re-sorted) and enriched via
+    `_merge_duplicate` if an extra paper matches an existing DOI or title.
+    Returns the list of newly appended Paper objects.
+    """
+    by_title: dict[str, Paper] = {}
+    by_doi: dict[str, Paper] = {}
+    for p in pool:
+        t_key = _normalize_title(p.title)
+        d_key = _normalize_doi(p.doi)
+        if t_key and t_key not in by_title:
+            by_title[t_key] = p
+        if d_key and d_key not in by_doi:
+            by_doi[d_key] = p
+
+    new_papers: list[Paper] = []
+    for paper in extra:
+        title_key = _normalize_title(paper.title)
+        doi_key = _normalize_doi(paper.doi)
+        if not title_key:
+            continue
+        kept = by_doi.get(doi_key) if doi_key else None
+        if kept is None:
+            kept = by_title.get(title_key)
+        if kept is not None:
+            _merge_duplicate(kept, paper)
+            by_title.setdefault(title_key, kept)
+            if doi_key:
+                by_doi.setdefault(doi_key, kept)
+            continue
+        if len(new_papers) < limit:
+            by_title[title_key] = paper
+            if doi_key:
+                by_doi[doi_key] = paper
+            pool.append(paper)
+            new_papers.append(paper)
+
+    return new_papers
 
 
 # Constants for the named-source pass (issue #165). Read by pipeline.py.

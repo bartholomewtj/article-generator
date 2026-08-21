@@ -20,7 +20,9 @@ import html
 import os
 import re
 
+from . import sources
 from .sources import Paper
+from .style import SUBSTANCE_RULES
 from .writer import is_briefing
 
 _CITATION_RE = re.compile(r"\[(\d+(?:\s*,\s*\d+)*)\]")
@@ -504,6 +506,8 @@ def _table_rows(cited: list[Paper], labels: dict[int, str]) -> list[dict]:
         venue = paper.venue or "—"
         if paper.is_preprint:
             venue = f"{paper.venue} (preprint)" if paper.venue else "Preprint"
+        d_label = sources.classify_design(paper)
+        design_str = sources.DESIGN_LABELS[d_label] if d_label != "other" else "—"
         rows.append({
             "n": n,
             "paper": paper,
@@ -511,51 +515,90 @@ def _table_rows(cited: list[Paper], labels: dict[int, str]) -> list[dict]:
             "year": paper.year or "n.d.",
             "venue": venue,
             "preprint": bool(paper.is_preprint),
+            "design": design_str,
             "label": label if label in RELEVANCE_LABELS else "",
             "relevance": RELEVANCE_LABELS.get(label, "—") if label else "—",
-            "cited_by": f"{paper.citation_count:,}" if paper.citation_count else "—",
             "read": "Full text" if paper.full_text else "Abstract",
         })
     return rows
 
 
+# Fig. 1 counts study designs only when the metadata actually supports it.
+# `classify_design` reads titles, venues and index metadata, never an abstract,
+# so a pool of terse or badly indexed titles collapses into "other" — and a bar
+# chart that is 80% "Other" says less than the year histogram it replaced.
+DESIGN_FIGURE_MIN_SHARE = 0.5
+
+
 def _figure_series(cited: list[Paper], labels: dict[int, str]) -> dict | None:
-    """Fig. 1's data: year buckets and the relevance tally within each.
+    """Fig. 1's data: study design (or year fallback) buckets and relevance tallies.
 
     Returns None when there is too little to plot. Segmenting is all-or-nothing:
     with any source unlabelled the stack would silently drop it, so the figure
     falls back to a single undifferentiated series.
     """
+    if len(cited) < 2:
+        return None
+
+    designs = {n: sources.classify_design(p) for n, p in enumerate(cited, start=1)}
+    labelled_share = sum(1 for d in designs.values() if d != "other") / len(cited)
+    distinct_categories = len({d for d in designs.values() if d})
+
+    if labelled_share > DESIGN_FIGURE_MIN_SHARE and distinct_categories >= 2:
+        mode = "design"
+        buckets = [
+            (sources.DESIGN_LABELS[cat], {n for n, d in designs.items() if d == cat})
+            for cat in sources.DESIGN_DISPLAY_ORDER
+            if any(d == cat for d in designs.values())
+        ]
+        segmented = all(labels.get(n) in RELEVANCE_LABELS for n in range(1, len(cited) + 1))
+        series = (
+            [lvl for lvl in ("direct", "related", "tangential")
+             if any(labels.get(n) == lvl for n in range(1, len(cited) + 1))]
+            if segmented else ["cited"]
+        )
+        counts = []
+        for _, members in buckets:
+            tally = {lvl: 0 for lvl in series}
+            for n in members:
+                tally[labels[n] if segmented else "cited"] += 1
+            counts.append(tally)
+        return {"buckets": buckets, "series": series, "counts": counts, "segmented": segmented, "mode": mode}
+
+    # Year mode fallback
     dated = [(n, p) for n, p in enumerate(cited, start=1) if p.year]
     if len(dated) < 2:
         return None
-    buckets = _year_buckets([p.year for _, p in dated])
-    if not buckets:
+    year_buckets = _year_buckets([p.year for _, p in dated])
+    if not year_buckets:
         return None
 
+    buckets = [
+        (label, {n for n, p in dated if p.year in y_set})
+        for label, y_set in year_buckets
+    ]
     segmented = all(labels.get(n) in RELEVANCE_LABELS for n, _ in dated)
     series = (
         [lvl for lvl in ("direct", "related", "tangential")
-         if any(labels.get(n) == lvl for n, _ in dated)]
+         if any(labels.get(n) == lvl for n in range(1, len(cited) + 1))]
         if segmented else ["cited"]
     )
     counts = []
     for _, members in buckets:
         tally = {lvl: 0 for lvl in series}
-        for n, paper in dated:
-            if paper.year in members:
-                tally[labels[n] if segmented else "cited"] += 1
+        for n in members:
+            tally[labels[n] if segmented else "cited"] += 1
         counts.append(tally)
-    return {"buckets": buckets, "series": series, "counts": counts, "segmented": segmented}
+    return {"buckets": buckets, "series": series, "counts": counts, "segmented": segmented, "mode": "year"}
 
 
 # The box used to be captioned "Key study", which claims an appraisal nobody in
 # this pipeline performs. `curate_sources` picks `most_relevant_index` on topic
 # fit alone — there is no quality assessment anywhere — so one draft boxed a
 # scoping review as the "Key study" while an adequately powered RCT sat in the
-# body. Table 1's "Cited by" column is the only quality-looking number on the
-# page and a busy reader reads it as authority. The caption now says what the
-# selection actually is, and the note says what it is not (#102).
+# body. Table 1's "Cited by" column was the only quality-looking number on the
+# page (removed in #171) and a busy reader reads it as authority. The caption now
+# says what the selection actually is, and the note says what it is not (#102).
 _BOX_SELECTION_NOTE = (
     "Selected for closeness to the review question, not for study quality; "
     "no quality appraisal was performed."
@@ -616,15 +659,16 @@ def _table_html(cited: list[Paper], labels: dict[int, str]) -> str:
             f"<td>{html.escape(row['study'])}</td>"
             f'<td class="t-num">{row["year"]}</td>'
             f'<td class="t-venue">{html.escape(row["venue"])}</td>'
+            f"<td>{html.escape(row['design'])}</td>"
             f"<td>{relevance}</td>"
-            f'<td>{row["read"]}</td>'
-            f'<td class="t-num">{row["cited_by"]}</td></tr>'
+            f'<td>{row["read"]}</td></tr>'
         )
     caption = (
-        "Characteristics of the cited evidence. Relevance is the curation label for how "
-        "directly each source addresses the review question; citation counts are as "
-        "reported by the indexing database. Read records whether the model saw the "
-        "source's open-access full text or its abstract only."
+        "Characteristics of the cited evidence. Design is inferred from each record's "
+        "title, journal and index metadata and is left blank where it could not be "
+        "inferred; no quality appraisal was performed. Relevance is the curation label "
+        "for how directly each source addresses the review question. Read records whether "
+        "the model saw the source's open-access full text or its abstract only."
     )
     return (
         '<div class="display table-wrap" aria-labelledby="table-1">\n'
@@ -632,7 +676,7 @@ def _table_html(cited: list[Paper], labels: dict[int, str]) -> str:
         f"{caption}</p>\n"
         '<div class="table-scroll"><table>\n'
         "<thead><tr><th>Ref.</th><th>Study</th><th>Year</th><th>Source</th>"
-        "<th>Relevance</th><th>Read</th><th>Cited by</th></tr></thead>\n"
+        "<th>Design</th><th>Relevance</th><th>Read</th></tr></thead>\n"
         "<tbody>" + "".join(rows) + "</tbody>\n</table></div>\n</div>"
     )
 
@@ -664,7 +708,7 @@ def _rounded_top_path(x: float, y: float, w: float, h: float, r: float = 4.0) ->
 
 
 def _figure_html(cited: list[Paper], labels: dict[int, str]) -> str:
-    """Fig. 1 — cited sources by publication year, segmented by relevance.
+    """Fig. 1 — cited sources by study design (or publication year), segmented by relevance.
 
     An ordinal one-hue ramp (direct darkest -> background lightest) driven by CSS
     variables, so the figure re-steps itself for the dark theme.
@@ -674,6 +718,7 @@ def _figure_html(cited: list[Paper], labels: dict[int, str]) -> str:
         return ""
     buckets, series, counts = data["buckets"], data["series"], data["counts"]
     segmented = data["segmented"]
+    mode = data.get("mode", "year")
 
     totals = [sum(t.values()) for t in counts]
     y_max = max(totals)
@@ -690,9 +735,22 @@ def _figure_html(cited: list[Paper], labels: dict[int, str]) -> str:
     def y_of(value: float) -> float:
         return pad_t + plot_h - (value / y_top) * plot_h
 
+    if mode == "design":
+        aria_label = (
+            "Cited sources by study design, segmented by relevance"
+            if segmented else "Cited sources by study design"
+        )
+        x_axis_title = "Study design"
+    else:
+        aria_label = (
+            "Cited sources by publication year, segmented by relevance"
+            if segmented else "Cited sources by publication year"
+        )
+        x_axis_title = "Year of publication"
+
     parts = [
         f'<svg class="fig-svg" viewBox="0 0 {width:.0f} {height:.0f}" role="img" '
-        'aria-label="Cited sources by publication year, segmented by relevance">'
+        f'aria-label="{aria_label}">'
     ]
     for tick in range(0, y_top + 1, step):
         y = y_of(tick)
@@ -744,7 +802,7 @@ def _figure_html(cited: list[Paper], labels: dict[int, str]) -> str:
     )
     parts.append(
         f'<text class="fig-axis-title" x="{width / 2:.1f}" y="{height - 8:.1f}" '
-        'text-anchor="middle">Year of publication</text>'
+        f'text-anchor="middle">{x_axis_title}</text>'
     )
     parts.append(
         f'<text class="fig-axis-title" x="{-(pad_t + plot_h / 2):.1f}" y="12" '
@@ -760,15 +818,27 @@ def _figure_html(cited: list[Paper], labels: dict[int, str]) -> str:
         )
         legend = f'<ul class="fig-legend">{chips}</ul>'
 
-    caption = "Composition of the evidence base. Cited sources by year of publication"
-    caption += (
-        ", segmented by how directly each addresses the review question. "
-        if segmented else ". "
-    )
-    caption += (
-        "Bar labels give the number of sources in each period; the underlying records "
-        "are listed in Table 1."
-    )
+    if mode == "design":
+        caption = "Composition of the evidence base. Cited sources by study design"
+        caption += (
+            ", segmented by how directly each addresses the review question. "
+            if segmented else ". "
+        )
+        caption += (
+            "Design is inferred from each record's title, journal and index metadata; "
+            "it is not a quality appraisal. Bar labels give the number of sources in "
+            "each category; the underlying records are listed in Table 1."
+        )
+    else:
+        caption = "Composition of the evidence base. Cited sources by year of publication"
+        caption += (
+            ", segmented by how directly each addresses the review question. "
+            if segmented else ". "
+        )
+        caption += (
+            "Bar labels give the number of sources in each period; the underlying records "
+            "are listed in Table 1."
+        )
     return (
         '<figure class="display figure">\n'
         + "".join(parts)
@@ -794,7 +864,8 @@ def _join_list(items: list[str]) -> str:
 
 
 def _methods_paragraphs(
-    provenance: dict | None, screened: int, n_cited: int, topic: str, esc=lambda s: s
+    provenance: dict | None, screened: int, n_cited: int, topic: str, esc=lambda s: s,
+    n_full_cited: int | None = None,
 ) -> dict[str, str]:
     """The three Methods paragraphs as sentences, before any markup.
 
@@ -853,11 +924,16 @@ def _methods_paragraphs(
         via = (provenance.get("full_text_via") or {}) if provenance else {}
         retrieved_from = ("retrieved from Europe PMC" if not via.get("papers")
                           else "retrieved from their open-access copies")
+        marked = (
+            "(marked in Table 1)"
+            if n_full_cited is None or n_full_cited == n_full
+            else f"({n_full_cited} of which are cited here and marked in Table 1)"
+        )
         handling = (
             f"Titles and abstracts were read for every record, and the open-access "
             f"full text{'s' if n_full != 1 else ''} of {n_full} "
             f"source{'s were' if n_full != 1 else ' was'} {retrieved_from} "
-            "and read alongside them (marked in Table 1); claims resting on the "
+            f"and read alongside them {marked}; claims resting on the "
             "remaining sources draw on no data beyond an abstract. Decimals, "
             "percentages, effect estimates and quantities carrying a clinical unit "
             "were then checked automatically, each against the sources its own "
@@ -885,8 +961,13 @@ def _methods_paragraphs(
     return {"search": search, "handling": handling, "generation": generation}
 
 
-def _methods_html(provenance: dict | None, screened: int, n_cited: int, topic: str) -> str:
-    parts = _methods_paragraphs(provenance, screened, n_cited, topic, html.escape)
+def _methods_html(
+    provenance: dict | None, screened: int, n_cited: int, topic: str,
+    n_full_cited: int | None = None,
+) -> str:
+    parts = _methods_paragraphs(
+        provenance, screened, n_cited, topic, html.escape, n_full_cited=n_full_cited
+    )
     return (
         '<section class="back-section">\n<h2>Methods</h2>\n'
         f'<p><span class="run-in">Search strategy.</span> {parts["search"]}</p>\n'
@@ -993,7 +1074,26 @@ def _assessment_paragraphs(
     surviving = _style_failure_sentence(style_report, esc)
     if surviving:
         limitations.append(surviving)
+    verdict = _working_draft_sentence(style_report, verification)
+    if verdict:
+        limitations.append(verdict)
     return {"opening": opening, "limitations": limitations}
+
+
+# Style errors that change whether this page can be sent, as against prose nits
+# a reader would never notice. Only these reach the article; every rule still
+# fires, still buys a revision pass, and still prints in the CLI log and in
+# `style_report` (#169).
+#
+# Derived from SUBSTANCE_RULES with the two exemptions named, so a *new*
+# substance rule brands the page by default — the safe direction — while the
+# two that were branding four of five shipped drafts are listed where the
+# reason for exempting them is readable. `under-length` is severity 'warning',
+# so it never reaches this code; it is named anyway so that a future promotion
+# to error does not silently start branding pages on a length count.
+SENDABLE_BLOCKING_RULES = frozenset({"clinical-directive"}) | (
+    SUBSTANCE_RULES - {"recycled-phrasing", "repeated-opener", "under-length"}
+)
 
 
 # What each rule means to a reader, who has not read style.py. Phrased as the
@@ -1019,17 +1119,16 @@ _STYLE_FAILURE_WORDING = {
 
 
 def _style_failure_sentence(style_report: dict | None, esc=lambda s: s) -> str:
-    """State, in the article, that the prose check still objected.
+    """State, in the article, that the prose check still objected — when it matters.
 
     A draft that failed the style gate used to be indistinguishable from one that
-    passed: the check ran, the revision was attempted, and if it did not clear the
-    errors the article shipped silently anyway (issue #53). The house style puts
-    warnings in the Limitations paragraph rather than in callout boxes, so this
-    goes where the unverified-figure warning already goes.
+    passed (issue #53). It then went too far the other way: four of five shipped
+    drafts carried this line over a repeated sentence opener or a recycled
+    six-word phrase (#169). Only SENDABLE_BLOCKING_RULES reach the reader now.
     """
     failures = [
         i for i in (style_report or {}).get("issues", [])
-        if i.get("severity") == "error"
+        if i.get("severity") == "error" and i.get("rule") in SENDABLE_BLOCKING_RULES
     ]
     if not failures:
         return ""
@@ -1051,8 +1150,30 @@ def _style_failure_sentence(style_report: dict | None, esc=lambda s: s) -> str:
     return (
         "An automated check of the writing against journal prose conventions was "
         f"not satisfied by this draft: it {esc(faults)}. A revision was attempted "
-        "and did not resolve this, so the text below should be read as a working "
-        "draft rather than a finished review."
+        "and did not resolve this."
+    )
+
+
+def _working_draft_sentence(style_report: dict | None, verification: dict | None) -> str:
+    """The one sentence that tells a reader not to send this page as it stands.
+
+    Printed for defects that change whether the page can be sent: a surviving
+    clinical directive, a substance failure a revision did not clear, or a
+    figure the statistics check could not place. Never for a prose nit (#169).
+    It always follows a sentence that has just named the defect, hence
+    "therefore".
+    """
+    blocking = any(
+        i.get("severity") == "error" and i.get("rule") in SENDABLE_BLOCKING_RULES
+        for i in (style_report or {}).get("issues", [])
+    )
+    figures = bool((verification or {}).get("unverified")
+                   or (verification or {}).get("misattributed"))
+    if not (blocking or figures):
+        return ""
+    return (
+        "The text below should therefore be read as a working draft rather than "
+        "a finished review."
     )
 
 
@@ -1410,7 +1531,8 @@ def render_article(
             abstract=_prose(_summary_text(article), cite_map, valid_numbers, flags),
             keywords=keywords_html,
             body=body_html,
-            methods=_methods_html(provenance, len(papers), len(cited), topic),
+            methods=_methods_html(provenance, len(papers), len(cited), topic,
+                                  n_full_cited=_full_text_count(cited)),
             assessment=_assessment_html(cited, counts, verification, style_report),
             table=table,
             glossary=_glossary_html(article),
@@ -1903,7 +2025,8 @@ def render_markdown(
         if key_points_md and len(sections) <= 1:
             lines += [key_points_md, ""]
 
-    lines += _methods_markdown(provenance, len(papers), len(cited), topic)
+    lines += _methods_markdown(provenance, len(papers), len(cited), topic,
+                               n_full_cited=_full_text_count(cited))
     lines += _assessment_markdown(cited, counts, verification, style_report)
     if table_md:
         lines += [table_md, ""]
@@ -1974,14 +2097,13 @@ def _table_markdown(cited: list[Paper], labels: dict[int, str]) -> str:
     rows = [
         "**Table 1 | Characteristics of the cited evidence.**",
         "",
-        "| Ref. | Study | Year | Source | Relevance | Read | Cited by |",
+        "| Ref. | Study | Year | Source | Design | Relevance | Read |",
         "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     for row in _table_rows(cited, labels):
         rows.append(
             f"| {row['n']} | {row['study']} | {row['year']} | "
-            f"{row['venue']} | {row['relevance']} | {row['read']} | "
-            f"{row['cited_by']} |"
+            f"{row['venue']} | {row['design']} | {row['relevance']} | {row['read']} |"
         )
     return "\n".join(rows)
 
@@ -1990,9 +2112,12 @@ def _figure_markdown(cited: list[Paper], labels: dict[int, str]) -> str:
     data = _figure_series(cited, labels)
     if not data:
         return ""
+    mode = data.get("mode", "year")
+    segmented = data["segmented"]
+    axis = "study design" if mode == "design" else "year of publication"
     lines = [
-        "**Fig. 1 | Composition of the evidence base.** Cited sources by year of "
-        "publication, segmented by how directly each addresses the review question.",
+        f"**Fig. 1 | Composition of the evidence base.** Cited sources by {axis}"
+        + (", segmented by how directly each addresses the review question." if segmented else "."),
         "",
     ]
     for (label, _), tally in zip(data["buckets"], data["counts"]):
@@ -2004,8 +2129,13 @@ def _figure_markdown(cited: list[Paper], labels: dict[int, str]) -> str:
     return "\n".join(lines)
 
 
-def _methods_markdown(provenance: dict | None, screened: int, n_cited: int, topic: str) -> list[str]:
-    parts = _methods_paragraphs(provenance, screened, n_cited, topic)
+def _methods_markdown(
+    provenance: dict | None, screened: int, n_cited: int, topic: str,
+    n_full_cited: int | None = None,
+) -> list[str]:
+    parts = _methods_paragraphs(
+        provenance, screened, n_cited, topic, n_full_cited=n_full_cited
+    )
     return [
         "## Methods",
         "",

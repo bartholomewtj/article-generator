@@ -108,6 +108,13 @@ CONVENTIONS = [
      lambda h, a: not re.search(r"\b(Volume|Issue|Received|Accepted|ORCID)\b", h)),
     ("page is self-contained",
      lambda h, a: "http-equiv" not in h and not re.search(r'src="https?://', h)),
+    # Table 1 carries no citation counts (issue #171) and reports inferred study design.
+    ("Table 1 carries no citation count",
+     lambda h, a: "<th>Cited by</th>" not in h),
+    ("Table 1 reports study design",
+     lambda h, a: "<th>Design</th>" in h),
+    ("Fig. 1 names the axis it actually plotted",
+     lambda h, a: "Fig. 1 |" not in h or ("Study design" in h) != ("Year of publication" in h)),
     # The prose conventions, delegated to the same checker the draft pipeline runs.
     ("prose passes the journal style check",
      lambda h, a: not style_errors(check_style(a))),
@@ -226,9 +233,11 @@ _ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 
 def _papers(n, **kw):
+    titles = kw.get("titles")
     return [
         Paper(
-            title=f"Study {i}", abstract=f"abstract {i}",
+            title=titles[i - 1] if titles else f"Study {i}",
+            abstract=f"abstract {i}",
             year=kw.get("years", [2000 + i] * n)[i - 1],
             authors=[f"Given Sur{_ALPHA[i - 1]}"],
             venue=kw.get("venue", f"Journal {i}"),
@@ -329,6 +338,78 @@ def fixtures():
            {"unverified": ["-0.90", "4.91", "12.5"], "total": 8}, provenance,
            "treatment response in patients")
 
+    # 7. Design-labelled sources — Fig. 1 plots study designs.
+    design_titles = [
+        "Interventions for seclusion: a systematic review and meta-analysis",
+        "Crisis planning in acute wards: a randomized controlled trial",
+        "Staff de-escalation training: a cluster-randomised trial",
+        "Incidence of restraint events: a prospective cohort study",
+        "Patient experiences of coercive measures: a qualitative interview study",
+    ]
+    design_papers = _papers(5, titles=design_titles)
+    yield ("design-labelled sources",
+           _article("Design-characterised evidence base", _SECTIONS,
+                    references=[1, 2, 3, 4, 5],
+                    key_points=[
+                        "First point [1].",
+                        "Second point [2].",
+                    ]),
+           design_papers,
+           {"relevance": {1: "direct", 2: "direct", 3: "related", 4: "related", 5: "tangential"},
+            "most_relevant_index": 1,
+            "counts": {"direct": 2, "related": 2, "tangential": 1}},
+           None, provenance, "restraint and seclusion reduction")
+
+
+def _check_sendable_branding() -> None:
+    """The 'working draft' Limitations line prints only for sendable-blocking defects."""
+    name = "sendable branding"
+    print(f"\n# {name}")
+    for _, article, papers, curation, _, provenance, topic in fixtures():
+        break
+
+    nits_report = {
+        "issues": [
+            {"rule": "recycled-phrasing", "severity": "error", "where": "whole article",
+             "detail": "d", "excerpt": ""},
+            {"rule": "repeated-opener", "severity": "error", "where": "whole article",
+             "detail": "d", "excerpt": ""},
+        ],
+        "stats": {},
+    }
+    directive_report = {
+        "issues": [
+            {"rule": "clinical-directive", "severity": "error", "where": "Introduction",
+             "detail": "d", "excerpt": ""},
+        ],
+        "stats": {},
+    }
+    clean_report = {"issues": [], "stats": {}}
+    clean_verification = {"unverified": [], "misattributed": []}
+    unverified_figures = {"unverified": ["4.91"], "misattributed": []}
+
+    cases = [
+        ("nits do not brand the rendered page",
+         nits_report, clean_verification,
+         lambda h: "working draft rather than a finished review" not in h),
+        ("clinical directive brands the rendered page",
+         directive_report, clean_verification,
+         lambda h: "working draft rather than a finished review" in h),
+        ("unverified figures brand the rendered page",
+         clean_report, unverified_figures,
+         lambda h: "working draft rather than a finished review" in h),
+    ]
+
+    for label, rep, ver, pred in cases:
+        try:
+            h = render_article(article, papers, topic, curation, ver, provenance, style_report=rep)
+            ok = bool(pred(h))
+        except Exception as exc:
+            ok, label = False, f"{label} (raised {exc!r})"
+        print(("OK   " if ok else "FAIL ") + label)
+        if not ok:
+            FAILURES.append(f"{name}: {label}")
+
 
 def main() -> int:
     for name, article, papers, curation, verification, provenance, topic in fixtures():
@@ -343,6 +424,8 @@ def main() -> int:
             print(("OK   " if ok else "FAIL ") + convention)
             if not ok:
                 FAILURES.append(f"{name}: {convention}")
+
+    _check_sendable_branding()
 
     print(f"\n{'FAILED: ' + '; '.join(FAILURES) if FAILURES else 'ALL CONVENTIONS MET'}")
     return 1 if FAILURES else 0

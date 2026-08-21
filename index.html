@@ -1494,26 +1494,29 @@
     ideas.forEach((idea, idx) => {
       const card = document.createElement('div');
       card.className = 'draft-card';
-      const termsHtml = (idea.search_terms || []).map(t => `<span class="draft-term">${t}</span>`).join(' ');
+      const terms = (idea.search_terms || []).filter(t => typeof t === 'string');
+      const termsHtml = terms.map(t => `<span class="draft-term">${escapeHtml(t)}</span>`).join(' ');
 
       card.innerHTML = `
         <span class="draft-num">Idea #${idx + 1}</span>
         <h3 class="draft-title">${escapeHtml(idea.title)}</h3>
         <p class="draft-angle">${escapeHtml(idea.angle)}</p>
         <div class="draft-terms">${termsHtml}</div>
-        <button class="btn-select" onclick="selectDraft(${JSON.stringify(idea.title).replace(/"/g, '&quot;')})">
-          Generate Full Article →
-        </button>
+        <button class="btn-select">Generate Full Article →</button>
       `;
+      card.querySelector('.btn-select').onclick = function () {
+        selectDraft(idea.title, terms);
+      };
       container.appendChild(card);
     });
   }
 
-  async function selectDraft(title) {
+  async function selectDraft(title, searchTerms) {
     if (!requireKey()) return;
 
+    const terms = Array.isArray(searchTerms) ? searchTerms : [];
     currentTitle = title;
-    lastAction = function () { selectDraft(title); };
+    lastAction = function () { selectDraft(title, terms); };
     hideProgressError();
     document.getElementById('progressTitle').innerText = title;
     showView('progressView');
@@ -1566,7 +1569,13 @@
         resp = await fetch(apiUrl('/api/draft'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ topic: title, style: styleGuidance(style), key, model: activeModel() })
+          body: JSON.stringify({
+            topic: title,
+            style: styleGuidance(style),
+            key,
+            model: activeModel(),
+            search_terms: terms
+          })
         });
       } catch (netErr) {
         throw new Error(await apiError(null, netErr));
