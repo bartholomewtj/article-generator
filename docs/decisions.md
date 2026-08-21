@@ -667,6 +667,31 @@ run's actual screened and shown counts (with a thin-pool branch if shown <= 12).
 acceptance measurement on the next few real runs: cited-of-screened should fall
 well below the old 16–19 of 20.
 
+### The cite ceiling scales with the direct count (#188)
+
+Four Grok 4.6 briefings (21 Aug 2026) showed three distinct failures:
+1. **Thin-direct runs padded to 12.** The writer was told "cite about 12" whenever
+   more than 12 sources were shown. With 7 direct sources, it filled the reference
+   list with related and weak-design primary studies.
+2. **All four runs moved the question.** Both `question` and `title` widened or
+   narrowed away from the user's topic (added clauses, narrowed populations).
+3. **A deep read was wasted.** The organic run fetched 5 full texts, cited 4, and
+   padded the reference list with abstract-only case reports.
+
+The fix is prompt text plus one clamp:
+- `cite_target(n_direct, shown)` scales the ask to `min(12, n_direct + 2)` floored
+  at `MIN_CITED_SOURCES` (5) and capped at `shown`. Direct first; at most two related,
+  and only for a specific point no direct source makes.
+- `_TOPIC_FIDELITY_RULE` is spliced into both system prompts, and `_TITLE_RULE`,
+  `_BRIEFING_SCHEMA["question"]`, and `_writer_context` pin question and title to the
+  user's topic (polishing wording only, no added clauses or narrowed populations).
+- `_writer_context` emits a `DEEP READS` instruction naming the fetched SOURCE numbers,
+  explicitly discouraging leaving a read paper uncited while citing an abstract-only
+  case report.
+
+Because these are prompt instructions, the evidence that they worked has to come from
+the next batch of drafts, not from a test.
+
 ### `#168` — empty curation produced an ungrounded draft in silence
 
 `curate_sources` swallowed every exception and returned empty labels.

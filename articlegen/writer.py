@@ -82,7 +82,10 @@ _TITLE_RULE = (
     "A descriptive title: the population, the intervention or exposure, and "
     "the outcome. Sentence case. No puns, no questions, no colon-clickbait, "
     "and no result claimed — the title names the question, it does not answer "
-    "it. Wrong: 'X reduces Y in Z'. Right: 'X for Y in Z'."
+    "it. Wrong: 'X reduces Y in Z'. Right: 'X for Y in Z'. "
+    "The title names the topic the reader gave, in the same population and scope: "
+    "polish clumsy wording, but never add a clause, narrow the population, or "
+    "broaden to the area the sources happen to cover."
 )
 
 _ARTICLE_SCHEMA = {
@@ -189,7 +192,9 @@ _BRIEFING_SCHEMA = {
         "question": {
             "type": "string",
             "description": "The review question in one or two sentences. What is being "
-            "asked, in whom. No citation markers.",
+            "asked, in whom. No citation markers. It restates the reader's topic as asked, "
+            "in the same population and scope. Polished wording only: no added clause, "
+            "no narrowed population.",
         },
         "answer": {
             "type": "string",
@@ -279,18 +284,69 @@ Be strict. A famous review that never studies the specific topic is "tangential"
 # the artefact is fixed, and the reader does not choose it.
 TARGET_CITED_SOURCES = 12
 
+# A cite ceiling of 12 is the ceiling, not the target. It was being read as a
+# target: four measured briefings (#188) with a thin direct pool cited 12
+# anyway, filling the gap with related sources and weak-design primary studies.
+# The ask now scales with the evidence that is actually on-topic — at most two
+# sources beyond the direct count, and only for a contrast no direct source
+# makes.
+#
+# The floor exists because the schema asks for 5-8 findings, each tied to a
+# named study: a run with one direct source cannot be asked for a two-source
+# briefing. Where the pool itself is smaller than the floor, the pool wins.
+MIN_CITED_SOURCES = 5
+
+
+def cite_target(n_direct: int | None, shown: int) -> int:
+    """How many sources this run should be asked to cite.
+
+    `min(TARGET_CITED_SOURCES, n_direct + 2)`, floored at MIN_CITED_SOURCES and
+    never above the number of sources actually reproduced in the prompt. An
+    unlabelled run (`n_direct is None`) gets the flat ceiling, because there is
+    no direct count to scale by.
+    """
+    if n_direct is None:
+        target = TARGET_CITED_SOURCES
+    else:
+        target = min(TARGET_CITED_SOURCES, int(n_direct) + 2)
+    target = max(target, MIN_CITED_SOURCES)
+    return min(target, shown) if shown else target
+
+
 # One string, used verbatim in both system prompts, so the briefing and the
 # `--long` Review cannot drift apart on the one rule they share.
 _WORKING_SET_RULE = f"""\
 - CITE A WORKING SET, NOT EVERYTHING YOU WERE SHOWN. The candidate list is \
 deliberately longer than this piece needs, so that screening has something to \
 discard, and sources labelled tangential have already been withheld from it. \
-Cite about {TARGET_CITED_SOURCES} sources: the direct ones first, and a related \
-source only when it earns a specific point no direct source makes — a mechanism, \
-an adjacent population, a contrast. Report what a related source found under its \
-own label, never as a direct finding, and label evidence carried over from \
-another population as extrapolation. A source you have nothing specific to say \
-about does not belong in the reference list."""
+Cite AT MOST {TARGET_CITED_SOURCES} sources, and never more than two beyond the \
+number labelled direct. The WORKING SET note below gives this run's exact \
+ceiling: it is a ceiling, not a quota. Citing fewer is the correct outcome of a \
+thin evidence base — do NOT pad the reference list to reach the number. \
+- Direct sources first. A related source earns a place only when it makes a \
+specific point no direct source makes — a mechanism, an adjacent population, a \
+contrast — and at most two do. Report what a related source found under its own \
+label, never as a direct finding, and label evidence carried over from another \
+population as extrapolation. A source you have nothing specific to say about \
+does not belong in the reference list, and a case report cited to fill a slot \
+is worse than a shorter list."""
+
+# The question the reader typed is the product. All four measured briefings
+# (#188) returned a `question` that had moved — a narrowed population, an added
+# clause, or a widening to whatever the retrieved sources covered. Nothing
+# downstream checks this: `verify.check_statistics` never reads the question or
+# the title, and `style.py` has no rule for either, so the prompt is the only
+# control (same reasoning as #170).
+_TOPIC_FIDELITY_RULE = """\
+- THE QUESTION IS THE READER'S, NOT YOURS. The topic at the top of the prompt is \
+what was asked. `title` — and `question`, where the shape has one — must stay on \
+it: same subject, same population, same scope. You may polish clumsy wording into \
+a clean question. You may NOT add a qualifying clause, narrow the population to a \
+subgroup, restrict the setting or the timeframe, or widen the topic to the area \
+the sources happen to cover. When the evidence does not answer the topic as \
+asked, that is what `answer` and `unknowns` — or, in a Review, the Introduction \
+and Conclusions — are for. Never rewrite the question into one the sources \
+answer better."""
 
 _WRITER_SYSTEM = """\
 You write Review articles for a leading scientific journal — the register of a \
@@ -337,6 +393,7 @@ support. Do NOT state counts or tallies of the evidence — how many sources wer
 cited, how many are direct, related or background, and the year range are computed \
 and printed for you. Every count you write is one that can contradict them.
 """ + _WORKING_SET_RULE + """
+""" + _TOPIC_FIDELITY_RULE + """
 - featured_study: summarize the single most relevant study's method and results \
 FROM ITS ABSTRACT ONLY. Prefer the most-relevant source you were given. It is \
 printed as a boxed display item, so it must stand alone.
@@ -522,6 +579,7 @@ FOUND. "The evidence suggests these strategies may be effective" is not a findin
 - Attribute findings to their study, not to a vague body of evidence. Name the \
 design and the population in the prose.
 """ + _WORKING_SET_RULE + """
+""" + _TOPIC_FIDELITY_RULE + """
 - Hedge to the evidence in front of you, and vary how: "in a single small trial", \
 "consistently across three cohorts", "no controlled study has tested".
 
@@ -1050,6 +1108,20 @@ def _writer_context(
     mri = curation.get("most_relevant_index")
 
     context = f"Topic: {topic}\n\n"
+    if kind == "briefing":
+        context += (
+            "That line is the reader's question, as typed. `question` and `title` "
+            "must stay on it — polish the wording if it is clumsy, but do not add a "
+            "clause, narrow the population, or drift to whatever the sources below "
+            "happen to cover.\n\n"
+        )
+    else:
+        context += (
+            "That line is the reader's question, as typed. The `title` and the "
+            "Introduction's statement of scope must stay on it — polish the wording "
+            "if it is clumsy, but do not add a clause, narrow the population, or "
+            "drift to whatever the sources below happen to cover.\n\n"
+        )
     if style_note:
         context += f"Extra guidance from the reader: {style_note}\n\n"
     if counts:
@@ -1087,13 +1159,21 @@ def _writer_context(
             "can actually see.\n\n"
         )
     shown = len(papers) - len(omit)
-    if shown > TARGET_CITED_SOURCES:
+    target = cite_target(counts.get("direct") if counts else None, shown)
+    if shown > target:
+        direct_clause = (
+            f", of which {counts.get('direct', 0)} are directly on-topic"
+            if counts else ""
+        )
         context += (
             f"WORKING SET. {len(papers)} records were screened and {shown} are "
-            f"reproduced below. Cite about {TARGET_CITED_SOURCES} of them — the "
-            f"ones that carry the {kind}. Leaving a screened source uncited is "
-            "the expected outcome of screening, not an omission; the counts the "
-            "reader sees are computed from what you cite.\n\n"
+            f"reproduced below{direct_clause}. Cite AT MOST {target} of them — the "
+            f"ones that carry the {kind}, direct sources first. That is a ceiling "
+            "and not a quota: citing fewer is the correct outcome of a thin "
+            "evidence base, and a source added to reach the number makes the "
+            "piece worse. Leaving a screened source uncited is the expected "
+            "outcome of screening, not an omission; the counts the reader sees "
+            "are computed from what you cite.\n\n"
         )
     else:
         context += (
@@ -1101,6 +1181,16 @@ def _writer_context(
             f"reproduced below. Cite the ones that carry the {kind} and no more; "
             "a source you have nothing specific to say about does not belong in "
             "the reference list.\n\n"
+        )
+    read = sorted(i for i in excerpts if i not in omit)
+    if read:
+        context += (
+            "DEEP READS. The open-access full text below was fetched for "
+            f"SOURCE {', '.join(str(i) for i in read)} — the pipeline spent a "
+            "retrieval on each because they were the most relevant reviews and "
+            "trials it could read. Prefer them: a full-text source you leave "
+            "uncited while citing an abstract-only case report is the wrong trade. "
+            f"Cite one only if the {kind} genuinely has no use for it.\n\n"
         )
     context += _format_sources(papers, relevance, excerpts, omit=omit)
     return context, use_full_text

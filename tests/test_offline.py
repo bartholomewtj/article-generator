@@ -3762,7 +3762,7 @@ def test_the_writer_cites_a_working_set() -> None:
         check(f"{name} prompt reports screened count", "40 records were screened" in prompt)
         check(f"{name} prompt reports shown count", "36 are reproduced below" in prompt)
         check(f"{name} prompt specifies target cited count",
-              f"about {writer.TARGET_CITED_SOURCES} of them" in prompt)
+              f"AT MOST {writer.TARGET_CITED_SOURCES} of them" in prompt)
 
     # 7. A thin pool is not asked for twelve.
     papers_6 = [Paper(title=f"P{i}", abstract=f"Abstract {i}", year=2024) for i in range(1, 7)]
@@ -3780,6 +3780,7 @@ def test_the_writer_cites_a_working_set() -> None:
     thin_prompt = captured["prompt"]
     check("thin pool reports 5 reproduced below", "5 are reproduced below" in thin_prompt)
     check("thin pool does not ask for about 12", "about 12" not in thin_prompt)
+    check("thin pool does not ask for at most 12", "at most 12" not in thin_prompt)
 
     # 8. Methods prints screened and cited as two different numbers.
     prov = {"queries": ["q"], "databases": ["Europe PMC"], "date": "21 August 2026"}
@@ -3806,6 +3807,124 @@ def test_the_writer_cites_a_working_set() -> None:
     m_ft_all = render._methods_html(prov_ft, screened=40, n_cited=12, topic="x", n_full_cited=5)
     check("methods HTML uses bare marker when all fetched full texts are cited",
           "(marked in Table 1)" in m_ft_all)
+
+
+def test_the_cite_ceiling_scales_with_the_direct_count() -> None:
+    """The cite ceiling scales with the evidence that is actually on-topic (#188).
+
+    Four Grok 4.6 briefings (21 Aug 2026) showed that a flat cite target of 12
+    padded thin-direct pools with related sources and weak primary studies.
+    The ask now scales to min(12, n_direct + 2) floored at MIN_CITED_SOURCES (5),
+    pins question and title to the user's topic, and prefers read full texts over
+    abstract-only case reports.
+    """
+    from articlegen import writer
+    from articlegen.sources import Paper
+
+    # 1. cite_target calculations
+    check("n_direct=7, shown=30 scales to 9", writer.cite_target(7, 30) == 9)
+    check("n_direct=21, shown=30 caps at 12", writer.cite_target(21, 30) == 12)
+    check("n_direct=0, shown=30 floors at 5", writer.cite_target(0, 30) == 5)
+    check("n_direct=None (unlabelled), shown=30 returns 12", writer.cite_target(None, 30) == 12)
+    check("n_direct=3, shown=4 caps at shown 4", writer.cite_target(3, 4) == 4)
+
+    # 2. Constants
+    check("MIN_CITED_SOURCES is 5", writer.MIN_CITED_SOURCES == 5)
+    check("TARGET_CITED_SOURCES is 12", writer.TARGET_CITED_SOURCES == 12)
+
+    # 3. Prompt level cite targets
+    papers_30 = [Paper(title=f"P{i}", abstract=f"Abstract {i}", year=2024) for i in range(1, 31)]
+    relevance_thin = {i: ("direct" if i <= 7 else ("related" if i <= 27 else "tangential")) for i in range(1, 31)}
+    curation_thin = {
+        "relevance": relevance_thin,
+        "counts": {"direct": 7, "related": 20, "tangential": 3},
+        "most_relevant_index": 1,
+    }
+    captured = {}
+
+    def fake_generate(prompt, schema, **kwargs):
+        captured["prompt"] = prompt
+        return {"title": "t", "sections": [], "question": "q", "answer": "a", "findings": [], "unknowns": [], "open_these": []}
+
+    real = writer.generate_json
+    try:
+        writer.generate_json = fake_generate
+        writer.write_briefing("user topic", papers_30, curation=curation_thin)
+        thin_prompt = captured["prompt"]
+    finally:
+        writer.generate_json = real
+
+    check("thin-direct briefing asks for at most 9", "at most 9 of them" in thin_prompt.lower())
+    check("thin-direct briefing does not ask for at most 12", "at most 12" not in thin_prompt.lower())
+    check("thin-direct briefing does not ask for about 12", "about 12" not in thin_prompt.lower())
+
+    # 4. Rich-direct pool asks for at most 12
+    relevance_rich = {i: ("direct" if i <= 21 else ("related" if i <= 27 else "tangential")) for i in range(1, 31)}
+    curation_rich = {
+        "relevance": relevance_rich,
+        "counts": {"direct": 21, "related": 6, "tangential": 3},
+        "most_relevant_index": 1,
+    }
+    try:
+        writer.generate_json = fake_generate
+        writer.write_briefing("user topic", papers_30, curation=curation_rich)
+        rich_prompt = captured["prompt"]
+    finally:
+        writer.generate_json = real
+
+    check("rich-direct briefing asks for at most 12", "at most 12 of them" in rich_prompt.lower())
+
+    # 5. Rule text in _WORKING_SET_RULE
+    check("_WORKING_SET_RULE contains AT MOST", "AT MOST" in writer._WORKING_SET_RULE)
+    check("_WORKING_SET_RULE contains two-related cap", "at most two" in writer._WORKING_SET_RULE.lower())
+    check("_WORKING_SET_RULE no longer contains Cite about", "Cite about" not in writer._WORKING_SET_RULE)
+
+    # 6. Full-text preference in prompt
+    papers_with_ft = [
+        Paper(title=f"P{i}", abstract=f"Abstract {i}", year=2024,
+              full_text=f"Full text content for paper {i}" if i in (2, 5) else "")
+        for i in range(1, 7)
+    ]
+    curation_ft = {
+        "relevance": {i: "direct" for i in range(1, 7)},
+        "counts": {"direct": 6, "related": 0, "tangential": 0},
+    }
+    try:
+        writer.generate_json = fake_generate
+        writer.write_briefing("user topic", papers_with_ft, curation=curation_ft)
+        ft_prompt = captured["prompt"]
+        writer.write_briefing("user topic", papers_30, curation=curation_thin)
+        no_ft_prompt = captured["prompt"]
+    finally:
+        writer.generate_json = real
+
+    check("full text present: DEEP READS in prompt", "DEEP READS" in ft_prompt)
+    check("full text present: names SOURCE 2, 5", "SOURCE 2, 5" in ft_prompt)
+    check("full text present: contains preference sentence", "Prefer them:" in ft_prompt)
+    check("no full text: DEEP READS not in prompt", "DEEP READS" not in no_ft_prompt)
+    check("no full text: preference sentence not in prompt", "Prefer them:" not in no_ft_prompt)
+
+    # 7. Topic fidelity
+    check("topic fidelity rule in _BRIEFING_SYSTEM",
+          writer._TOPIC_FIDELITY_RULE in writer._BRIEFING_SYSTEM)
+    check("topic fidelity rule in _WRITER_SYSTEM",
+          writer._TOPIC_FIDELITY_RULE in writer._WRITER_SYSTEM)
+    check("topic fidelity rule in _BRIEFING_SYSTEM_FULLTEXT",
+          writer._TOPIC_FIDELITY_RULE in writer._BRIEFING_SYSTEM_FULLTEXT)
+    check("topic fidelity rule in _WRITER_SYSTEM_FULLTEXT",
+          writer._TOPIC_FIDELITY_RULE in writer._WRITER_SYSTEM_FULLTEXT)
+    check("narrow the population in _TITLE_RULE",
+          "narrow the population" in writer._TITLE_RULE)
+    check("narrow the population in briefing schema question description",
+          "narrowed population" in writer._BRIEFING_SCHEMA["properties"]["question"]["description"])
+    check("briefing prompt contains topic line guidance",
+          "reader's question, as typed" in thin_prompt)
+
+    # 8. Schema title rule sharing
+    check("both schemas share _TITLE_RULE",
+          writer._ARTICLE_SCHEMA["properties"]["title"]["description"] ==
+          writer._BRIEFING_SCHEMA["properties"]["title"]["description"] ==
+          writer._TITLE_RULE)
 
 
 def test_gemini_cli_provider() -> None:
@@ -7119,6 +7238,7 @@ def main(argv: list[str] | None = None) -> int:
         test_gemini_cli_provider,
         test_tangential_sources_stay_out_of_the_writer_prompt,
         test_the_writer_cites_a_working_set,
+        test_the_cite_ceiling_scales_with_the_direct_count,
         test_revision_replaces_blocks_rather_than_the_article,
         test_revision_carries_sources_only_when_they_can_be_used,
         test_warnings_ride_along_on_a_revision,
