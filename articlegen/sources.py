@@ -219,6 +219,9 @@ class Paper:
     # Which fetcher produced `full_text` ("papers" or "europe_pmc"). Set by
     # fetch_full_text; not populated by search or dedupe.
     full_text_via: str = ""
+    # True when `papers` reported a not-OA status (`queued_ckn`). The pipeline
+    # tallies that as no-open-access, not as "OA but returned no text" (#191).
+    full_text_not_oa: bool = False
     is_preprint: bool = False
     # Document type as the API reported it, lowercased, e.g. ("journal article",
     # "randomized controlled trial"). Fed to `paper_design` for the full-text
@@ -1156,16 +1159,24 @@ def fetch_full_text(paper: Paper, use_cache: bool = True, log=lambda msg: None) 
             with _cache_lock:
                 entry = _fulltext_cache.get(key)
                 if entry and entry[0] > now:
-                    if entry[1]:
+                    cached_text = entry[1]
+                    cached_status = entry[2] if len(entry) > 2 else ""
+                    if cached_text:
                         paper.full_text_via = "papers"
-                    return entry[1]
-        text = _strip_citation_brackets(paperfetch.fetch_via_papers(doi, log=log))
+                    elif cached_status in paperfetch.NOT_OA_STATUSES:
+                        paper.full_text_not_oa = True
+                    return cached_text
+        text, status = paperfetch.fetch_via_papers_with_status(doi, log=log)
+        text = _strip_citation_brackets(text)
+        if status in paperfetch.NOT_OA_STATUSES:
+            paper.full_text_not_oa = True
         if _CACHE_TTL > 0:
             ttl = _CACHE_TTL if text else _CACHE_FAILURE_TTL
             with _cache_lock:
-                _fulltext_cache[key] = (now + ttl, text)
+                _fulltext_cache[key] = (now + ttl, text, status)
         if text:
             paper.full_text_via = "papers"
+            paper.full_text_not_oa = False
             return text
 
     if not (paper.pmcid and paper.is_open_access):
@@ -1176,6 +1187,7 @@ def fetch_full_text(paper: Paper, use_cache: bool = True, log=lambda msg: None) 
             if entry and entry[0] > now:
                 if entry[1]:
                     paper.full_text_via = "europe_pmc"
+                    paper.full_text_not_oa = False
                 return entry[1]
     try:
         resp = _get_with_retry(
@@ -1189,6 +1201,7 @@ def fetch_full_text(paper: Paper, use_cache: bool = True, log=lambda msg: None) 
             _fulltext_cache[paper.pmcid] = (now + ttl, text)
     if text:
         paper.full_text_via = "europe_pmc"
+        paper.full_text_not_oa = False
     return text
 
 

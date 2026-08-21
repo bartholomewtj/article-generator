@@ -22,6 +22,13 @@ _WARNED = False
 
 DEFAULT_TIMEOUT = 120.0
 
+# papers statuses that mean "no open-access copy", not "OA but empty".
+# `queued_ckn` is Unpaywall (and the rest of the ladder) saying the paper is
+# paywalled; logging that as a failed OA fetch called landmarks fetch failures
+# (#191). Other non-ok statuses (`unreadable_pdf`, `retry`, `no_doi`) stay
+# fetch failures: those are not a confirmed absence of OA.
+NOT_OA_STATUSES = frozenset({"queued_ckn"})
+
 # Tests reset process state by setting paperfetch._AVAILABLE = None,
 # paperfetch._ARGV = [], paperfetch._WARNED = False.
 
@@ -63,13 +70,27 @@ def fetch_via_papers(
     Never raises into the pipeline; on any error, timeout, non-ok status or missing
     file, returns "" so callers can fall back gracefully.
     """
+    return fetch_via_papers_with_status(doi, timeout=timeout, log=log)[0]
+
+
+def fetch_via_papers_with_status(
+    doi: str,
+    timeout: float = DEFAULT_TIMEOUT,
+    log: Callable[[str], None] | None = None,
+) -> tuple[str, str]:
+    """Like fetch_via_papers, plus the papers JSON status.
+
+    Returns `(text, status)`. `status` is the CLI's `status` field when JSON
+    parsed (`ok`, `queued_ckn`, `no_doi`, …), or `""` on transport/parse
+    failure. `queued_ckn` means no open-access copy, not a failed OA fetch.
+    """
     if not doi or not available(log):
-        return ""
+        return "", ""
 
     try:
         cmd = _command()
         if not cmd:
-            return ""
+            return "", ""
         argv = cmd + ["get", doi]
 
         env = dict(os.environ)
@@ -96,7 +117,7 @@ def fetch_via_papers(
         except (subprocess.TimeoutExpired, OSError, ValueError) as exc:
             if callable(log):
                 log(f"  papers fetch failed for {doi}: {exc}")
-            return ""
+            return "", ""
 
         try:
             record = json.loads(proc.stdout)
@@ -104,31 +125,31 @@ def fetch_via_papers(
             if callable(log):
                 sample = (proc.stdout or proc.stderr or "")[:200]
                 log(f"  papers returned invalid JSON for {doi} ({exc}): {sample!r}")
-            return ""
+            return "", ""
 
         if not isinstance(record, dict):
             if callable(log):
                 log(f"  papers returned non-dict JSON for {doi}")
-            return ""
+            return "", ""
 
-        if record.get("status") != "ok":
-            status = record.get("status")
+        status = record.get("status") or ""
+        if status != "ok":
             if callable(log):
                 log(f"  papers: {status} for {doi}")
-            return ""
+            return "", str(status)
 
         path = record.get("read")
         if not path:
-            return ""
+            return "", status
 
         try:
             with open(path, "r", encoding="utf-8", errors="ignore") as f:
-                return f.read()
+                return f.read(), status
         except OSError as exc:
             if callable(log):
                 log(f"  papers could not read file {path}: {exc}")
-            return ""
+            return "", status
     except Exception as exc:
         if callable(log):
             log(f"  papers fetch unexpected error for {doi}: {exc}")
-        return ""
+        return "", ""

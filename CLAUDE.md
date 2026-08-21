@@ -123,6 +123,7 @@ behaviour it describes.
 | A candidate-pool default lives in one constant | `test_the_candidate_pool_is_big_enough_to_curate` |
 | The writer cites a working set, not everything screened | `test_the_writer_cites_a_working_set` |
 | Full text via the papers CLI never breaks the Europe PMC path | `test_full_text_comes_from_the_papers_cli_when_it_is_there` |
+| A `queued_ckn` miss is no-open-access, not a failed OA fetch | `test_queued_ckn_counts_as_no_open_access` |
 | Fig. 1 counts study designs, and falls back to years when it cannot | `test_figure_one_counts_study_designs` |
 | Table 1 prints no citation count | `test_figure_one_counts_study_designs` |
 | Supplied search terms start the plan and are never replaced | `test_idea_search_terms_reach_the_draft` |
@@ -336,11 +337,16 @@ and sections intact.
   to report the count and then *assert* availability (#84). It now names the
   exit — target reached / request cap reached / ran out of eligible sources —
   with the eligible, no-open-access and fetched-but-empty tallies, and warns
-  explicitly when the cap bound before the target. It also prints the
+  explicitly when the cap bound before the target. A `queued_ckn` from
+  `papers` (see `NOT_OA_STATUSES`) increments no-open-access, not
+  fetched-but-empty: Unpaywall already said there is no OA copy, and logging
+  that as "open access but returned no text" called paywalled landmarks fetch
+  failures (#191). It also prints the
   **read-subset skew** (median year and citations, read vs abstract-only),
   because Limitations tells the reader that subset skews and nobody had
   measured how. **Never fetch paywalled full text** — the Methods section's
-  honesty depends on the open-access constraint.
+  honesty depends on the open-access constraint. →
+  `test_queued_ckn_counts_as_no_open_access`
 - **Tangential sources never reach the writer either**
   (`_format_sources(..., omit=...)`). **They are dropped by number, never
   re-packed**: the SOURCE index *is* the citation scheme, so SOURCE 7 stays the

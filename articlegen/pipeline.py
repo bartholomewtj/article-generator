@@ -584,6 +584,10 @@ def generate_draft(
         if text:
             paper.full_text = text
             fetched.append(index)
+        elif getattr(paper, "full_text_not_oa", False):
+            # papers said queued_ckn (or equivalent): paywalled, not "OA but
+            # empty". Tesnières 2026 was logged as an OA failure (#191).
+            no_open_access += 1
         else:
             fetch_failed += 1
 
