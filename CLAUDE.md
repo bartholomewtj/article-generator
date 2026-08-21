@@ -110,6 +110,7 @@ behaviour it describes.
 | Unlabelled sources stop the run before the writer | `test_unlabelled_sources_stop_the_run` |
 | The article shape is not a preference (`TONE_LABEL`, `LENGTH_LABEL`, `DEPTH_LABEL` are constants) | `test_house_style_is_fixed_not_a_preference` |
 | Default artefact is a briefing; the Review is `--long` | `test_briefing_is_the_default_artefact` |
+| A title names the question, in both paths, from one string | `test_titles_describe_the_question` |
 | Register rules fire on investigator voice, not synthesis voice | `test_register_rules_are_scoped_to_the_synthesis_voice` |
 | Sources travel with a revision only when usable | `test_revision_carries_sources_only_when_they_can_be_used` |
 | A second style pass runs only after the first reduced the errors | `test_a_second_style_pass_runs_only_after_progress` |

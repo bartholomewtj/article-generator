@@ -67,13 +67,23 @@ _CURATE_SCHEMA = {
     "additionalProperties": False,
 }
 
+# One rule, used verbatim by both schemas, so the briefing and the `--long`
+# Review cannot drift apart on what a title is for (#170). The Review path used
+# to ask for "the subject and the finding", which is an instruction to assert a
+# causal result in the one field nothing downstream checks.
+_TITLE_RULE = (
+    "A descriptive title: the population, the intervention or exposure, and "
+    "the outcome. Sentence case. No puns, no questions, no colon-clickbait, "
+    "and no result claimed — the title names the question, it does not answer "
+    "it. Wrong: 'X reduces Y in Z'. Right: 'X for Y in Z'."
+)
+
 _ARTICLE_SCHEMA = {
     "type": "object",
     "properties": {
         "title": {
             "type": "string",
-            "description": "A declarative journal-style title: the subject and the finding, "
-            "sentence case, no puns, no questions, no colon-clickbait.",
+            "description": _TITLE_RULE,
         },
         "abstract": {
             "type": "string",
@@ -167,10 +177,7 @@ _BRIEFING_SCHEMA = {
     "properties": {
         "title": {
             "type": "string",
-            "description": "A descriptive title: the population, the intervention or "
-            "exposure, and the outcome. Sentence case. No puns, no questions, no "
-            "colon-clickbait, and no result claimed — the title names the question, "
-            "it does not answer it. Wrong: 'X reduces Y in Z'. Right: 'X for Y in Z'.",
+            "description": _TITLE_RULE,
         },
         "question": {
             "type": "string",
@@ -381,6 +388,8 @@ variation") — never questions, puns, or magazine headings.
 with an anecdote, a scene, a rhetorical question, or "Imagine…".
 - Plain prose paragraphs only — no markdown, HTML, bullets or sub-headings inside a \
 paragraph. 2-4 paragraphs per section.
+
+TITLE: descriptive. Names the question. Does not claim the result.
 
 REGISTER — this is checked automatically after you write, so follow it exactly:
 

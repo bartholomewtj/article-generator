@@ -6415,6 +6415,50 @@ def test_briefing_is_the_default_artefact() -> None:
           callable(write_briefing) and callable(write_article))
 
 
+def test_titles_describe_the_question() -> None:
+    """A `--long` title names the question. It does not answer it.
+
+    The Review path asked for "the subject and the finding" and got
+    "Brief hospital admission by self-referral reduces involuntary care and
+    self-harm ... in borderline personality disorder" — a causal claim in the
+    one field nothing downstream checks. `verify.check_statistics` never reads
+    titles and `style.py` has no title rule, so the prompt is the only control
+    there is (issue #170).
+
+    The briefing schema already had the rule. This pins that both schemas now
+    read it from one string, that the old wording is gone, and that both system
+    prompts carry the prohibition. Deliberately no regex title-ban in style.py:
+    "reduces" is a legitimate word in a descriptive title and a crude ban would
+    fail good titles. Measure first, per the issue.
+    """
+    from articlegen.writer import (_ARTICLE_SCHEMA, _BRIEFING_SCHEMA, _TITLE_RULE,
+                                   _BRIEFING_SYSTEM, _REVISE_PATCH_SYSTEM,
+                                   _REVISE_SYSTEM, _WRITER_SYSTEM,
+                                   _WRITER_SYSTEM_FULLTEXT)
+
+    article_title = _ARTICLE_SCHEMA["properties"]["title"]["description"]
+    briefing_title = _BRIEFING_SCHEMA["properties"]["title"]["description"]
+
+    check("the Review and the briefing share one title rule",
+          article_title == briefing_title == _TITLE_RULE)
+    check("the rule forbids claiming the result", "no result claimed" in _TITLE_RULE)
+    check("and shows what that means",
+          "reduces" in _TITLE_RULE and "Right:" in _TITLE_RULE)
+    check("the rule asks for population, intervention/exposure and outcome",
+          all(word in _TITLE_RULE
+              for word in ("population", "intervention or exposure", "outcome")))
+    check("the old 'subject and the finding' wording is gone",
+          "the subject and the finding" not in article_title)
+
+    line = "TITLE: descriptive. Names the question. Does not claim the result."
+    check("the Review prompt carries the title rule", line in _WRITER_SYSTEM)
+    check("the briefing prompt still does", line in _BRIEFING_SYSTEM)
+    for name, prompt in (("revise", _REVISE_SYSTEM),
+                         ("revise-patch", _REVISE_PATCH_SYSTEM),
+                         ("full-text", _WRITER_SYSTEM_FULLTEXT)):
+        check(f"the {name} prompt inherits it", line in prompt)
+
+
 def test_real_articles_still_match_the_schema() -> None:
     """Every article the pipeline has to render must satisfy the writer's schema.
 
@@ -6526,6 +6570,7 @@ def main(argv: list[str] | None = None) -> int:
         test_api_key_is_session_only_by_default,
         test_house_style_is_fixed_not_a_preference,
         test_briefing_is_the_default_artefact,
+        test_titles_describe_the_question,
         test_register_rules_are_scoped_to_the_synthesis_voice,
         test_hedging_floor_is_calibrated_against_body_prose,
         test_density_thresholds_are_documented_against_the_corpus,

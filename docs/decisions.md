@@ -281,6 +281,20 @@ error the model cannot fix still costs exactly one call. `MAX_STYLE_PASSES` is
 2 rather than 3 because the residual being paid for is one error; nothing on
 record suggests a third pass has anything to do.
 
+### `#170` — `--long` titles describe the question, not the result
+
+The `--long` Review path asked the model for "the subject and the finding", so
+it produced a title that asserts causation: *"Brief hospital admission by
+self-referral reduces involuntary care and self-harm without increasing total
+inpatient utilization in borderline personality disorder"*. Nothing downstream
+checks titles — `verify.check_statistics` reads sentences, not the title, and
+`style.py` has no title rule. The fix defines `_TITLE_RULE` once in `writer.py`
+and shares it across `_ARTICLE_SCHEMA` and `_BRIEFING_SCHEMA`, and adds the
+briefing's existing TITLE line to `_WRITER_SYSTEM`. A regex title-ban on
+`reduces|increases|improves` in `style.py` was deliberately avoided: those words
+are legitimate in a descriptive title, so a crude ban fails good titles; revisit
+only if a later `--long` draft shows the prompt being ignored.
+
 ---
 
 ## Grounding and provenance
