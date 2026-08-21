@@ -1,10 +1,16 @@
 # House style: the conventions of a scientific journal article
 
-This is the reference for how `articlegen` output is shaped. It was written by
-reading the author instructions of the highest-profile journals (Nature, Science,
-the Nature Reviews titles, JAMA) and extracting the conventions a reader
-recognises on sight. Every convention below is mapped to the concrete thing the
-code does, so the mapping can be checked rather than argued about.
+The **default artefact is an evidence briefing** (question, answer, findings,
+unknowns, three papers to open). The conventions below still govern the prose —
+synthesis voice, hedging, no clinical advice, no magazine register — and they
+govern the parked `--long` Review in full. Layout sections that name Box 1,
+Fig. 1, Key points and Introduction → Conclusions apply to `--long` only.
+
+This file was written by reading the author instructions of the highest-profile
+journals (Nature, Science, the Nature Reviews titles, JAMA) and extracting the
+conventions a reader recognises on sight. Every convention below is mapped to
+the concrete thing the code does, so the mapping can be checked rather than
+argued about.
 
 ## Where the conventions came from
 

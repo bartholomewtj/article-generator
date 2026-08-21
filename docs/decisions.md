@@ -646,6 +646,20 @@ from the workflow's trigger list. A rename has to consider both.
 
 ---
 
+## Product
+
+### The default artefact is a briefing (#164)
+
+The site already said "a sourced evidence briefing you can send". The page you
+sent was still a ~3,000-word journal Review. Those are different jobs. Default
+`generate_draft` now calls `write_briefing`; `write_article` remains behind
+`articlegen draft --long` and is not on the web UI. `ideas.py` proposes
+briefing questions, not popular-science pitches.
+
+Existing files in `drafts/` are historical Reviews and were not regenerated.
+
+---
+
 ## Process
 
 ### `#114` — CLAUDE.md drifted and nothing noticed

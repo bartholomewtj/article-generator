@@ -1,8 +1,8 @@
 """A built-in sample so `articlegen demo` can render the design without any API calls.
 
 The prose here is illustrative and the citations map to the sample sources below;
-it exists to exercise the renderer — the journal furniture, the display items and
-the citation machinery — not as a real piece of journalism.
+it exists to exercise the renderer, not as a real piece of journalism.
+`SAMPLE_BRIEFING` is the default artefact; `SAMPLE_ARTICLE` is the `--long` Review.
 """
 
 from .sources import Paper
@@ -108,6 +108,80 @@ SAMPLE_PROVENANCE = {
     # out would make the sample demonstrate the unrecorded-search wording.
     "databases": ["Semantic Scholar Graph API", "OpenAlex", "Europe PMC"],
     "model": "demo build — no model call",
+}
+
+SAMPLE_BRIEFING = {
+    "form": "briefing",
+    "title": "Sleep, memory consolidation and metabolite clearance in the brain",
+    "question": (
+        "What does published evidence indicate the sleeping brain does for newly "
+        "encoded memory and for clearance of interstitial metabolites, and how far "
+        "do the human data support the rodent findings?"
+    ),
+    "answer": (
+        "Sleep appears to support two processes that waking handles poorly: "
+        "stabilisation of newly encoded memory through hippocampal-cortical replay, "
+        "and clearance of interstitial metabolites including amyloid-beta. The "
+        "memory claim is the stronger of the two. Behavioural studies in people "
+        "are consistent with a consolidation role, and targeted reactivation "
+        "during slow-wave sleep can bias later recall. Clearance evidence remains "
+        "dominated by rodent imaging; circadian phase may contribute independently "
+        "of sleep state, which complicates attributing the effect to sleep as such. "
+        "Vulnerability to sleep loss varies substantially and heritably between "
+        "individuals, so population averages understate the range of outcomes."
+    ),
+    "keywords": [
+        "sleep", "memory consolidation", "glymphatic system", "amyloid-beta",
+        "slow-wave sleep", "sleep deprivation",
+    ],
+    "findings": [
+        "A review of hippocampal replay reported that during slow-wave sleep the "
+        "hippocampus replays patterns recorded during preceding wakefulness, "
+        "coordinated with cortical slow oscillations [1].",
+        "Participants who sleep after learning show better retention than those "
+        "kept awake for an equivalent interval, which is consistent with a "
+        "causal consolidation role rather than a mere correlation with time [2].",
+        "Cueing specific learned material during slow-wave sleep with an odour "
+        "or sound paired at encoding selectively improves later recall of the "
+        "cued material, indicating that consolidation can be biased "
+        "experimentally [5].",
+        "Two-photon imaging in mice showed that the interstitial space expands "
+        "during sleep and that clearance of amyloid-beta increases accordingly; "
+        "whether that scales in naturally sleeping humans was not tested [3].",
+        "Subsequent rodent work found that glymphatic function varies with "
+        "circadian phase independently of sleep state, which appears to weaken "
+        "the attribution of clearance to sleep alone [8].",
+        "Differences between individuals in vulnerability to sleep loss are "
+        "large, stable within a person, and partly heritable, so group means "
+        "may obscure a substantial minority who are severely affected [4].",
+    ],
+    "unknowns": [
+        "A human measurement of metabolite clearance that separates sleep state "
+        "from circadian phase has not been identified in this set.",
+        "Whether synaptic homeostasis and replay-based consolidation are "
+        "complementary or competing accounts remains unresolved [7].",
+        "How far rodent clearance findings carry across to people is still a "
+        "hypothesis rather than an established finding [3, 8].",
+    ],
+    "open_these": [3, 1, 5],
+    "glossary": [
+        {
+            "term": "Glymphatic system",
+            "definition": "A proposed brain-wide route by which cerebrospinal fluid "
+            "exchanges with interstitial fluid and carries away metabolic waste.",
+        },
+        {
+            "term": "Slow-wave sleep",
+            "definition": "The deepest stage of non-REM sleep, characterised by "
+            "high-amplitude, low-frequency cortical oscillations.",
+        },
+        {
+            "term": "Targeted memory reactivation",
+            "definition": "Replaying a cue that was paired with material at learning "
+            "while a participant sleeps, in order to bias which memories are consolidated.",
+        },
+    ],
+    "references": [1, 2, 5, 3, 8, 4, 7],
 }
 
 SAMPLE_ARTICLE = {

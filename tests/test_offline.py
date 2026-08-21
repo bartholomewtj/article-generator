@@ -84,7 +84,8 @@ def test_per_request_api_key() -> None:
 
     for fn in (
         llm.generate_json, ideas.generate_ideas, writer.plan_queries,
-        writer.curate_sources, writer.write_article, writer.revise_prose,
+        writer.curate_sources, writer.write_briefing, writer.write_article,
+        writer.revise_prose,
     ):
         check(f"{fn.__name__} accepts api_key", "api_key" in inspect.signature(fn).parameters)
 
@@ -655,10 +656,13 @@ def test_pipeline_is_shared() -> None:
 
     for name, src in (("cli.cmd_draft", cmd_draft_src), ("web._handle_draft", handler_src)):
         check(f"{name} calls generate_draft", "generate_draft(" in src)
-        for stage in ("plan_queries(", "curate_sources(", "write_article("):
+        for stage in ("plan_queries(", "curate_sources(", "write_article(", "write_briefing("):
             check(f"{name} does not re-run {stage[:-1]}", stage not in src)
 
-    check("pipeline enforces style", "enforce_style(" in inspect.getsource(pipeline.generate_draft))
+    src = inspect.getsource(pipeline.generate_draft)
+    check("pipeline writes a briefing by default", "write_briefing" in src)
+    check("pipeline keeps the Review writer for --long", "write_article" in src)
+    check("pipeline enforces style", "enforce_style(" in src)
     check("pipeline builds provenance", '"queries": queries' in inspect.getsource(pipeline.generate_draft))
 
 
@@ -2394,6 +2398,9 @@ def test_clinical_directives_are_an_error() -> None:
     check("the writer prompt carries the prohibition",
           "NEVER GIVE CLINICAL ADVICE" in writer._WRITER_SYSTEM
           and "not even a hedged one" in writer._WRITER_SYSTEM)
+    check("and the briefing prompt carries it too",
+          "NEVER GIVE CLINICAL ADVICE" in writer._BRIEFING_SYSTEM
+          and "not even a hedged one" in writer._BRIEFING_SYSTEM)
     check("and the reader is told when it survived",
           "clinical-directive" in render._STYLE_FAILURE_WORDING)
 
@@ -3961,9 +3968,10 @@ def test_house_style_is_fixed_not_a_preference() -> None:
     The selector is gone and the label is a constant.
 
     Article length and evidence depth were removed for the same reason: every
-    option except in-depth longform + strict empirical asked for prose the
+    option except the house artefact + strict empirical asked for prose the
     substance rules then failed. All three are constants now; only the output
-    language is still selectable.
+    language is still selectable. The length constant is the briefing, not a
+    journal Review — `--long` is CLI-only and is not a front-end preference.
     """
     path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         "index.html")
@@ -3987,7 +3995,7 @@ def test_house_style_is_fixed_not_a_preference() -> None:
     # is a constant rather than a selector.
     for gone in ("prefLength", "prefDepth"):
         check(f"the {gone} selector is gone", f'id="{gone}"' not in html)
-    for label, value in (("LENGTH_LABEL", "In-Depth Longform"),
+    for label, value in (("LENGTH_LABEL", "Evidence briefing"),
                          ("DEPTH_LABEL", "Strict Empirical Focus")):
         check(f"{label} is a single constant", html.count(f"const {label}") == 1)
         check(f"and it names {value}", value in html)
@@ -4419,14 +4427,21 @@ def test_demo_and_index() -> None:
     from articlegen import demo
     from articlegen.render import render_article, render_markdown, build_index
 
-    h = render_article(demo.SAMPLE_ARTICLE, demo.SAMPLE_PAPERS, "Sample topic",
+    h = render_article(demo.SAMPLE_BRIEFING, demo.SAMPLE_PAPERS, "Sample topic",
                        demo.SAMPLE_CURATION, None, demo.SAMPLE_PROVENANCE)
-    md = render_markdown(demo.SAMPLE_ARTICLE, demo.SAMPLE_PAPERS, "Sample topic",
+    md = render_markdown(demo.SAMPLE_BRIEFING, demo.SAMPLE_PAPERS, "Sample topic",
                          demo.SAMPLE_CURATION, None, demo.SAMPLE_PROVENANCE)
-    check("demo html renders the display items",
-          all(k in h for k in ("Box 1 |", "Fig. 1 |", "Table 1 |")))
-    check("demo markdown renders", md.startswith("**EVIDENCE REVIEW**"))
-    check("demo sections run Introduction -> Conclusions",
+    check("demo briefing html names the artefact", "Evidence briefing" in h)
+    check("demo briefing has findings and unknowns",
+          "What the evidence shows" in h and "What remains open" in h)
+    check("demo briefing has three papers to open", "Three papers to open" in h)
+    check("demo briefing has no journal Box 1", "Box 1 |" not in h)
+    check("demo markdown renders as a briefing", md.startswith("**EVIDENCE BRIEFING**"))
+    review = render_article(demo.SAMPLE_ARTICLE, demo.SAMPLE_PAPERS, "Sample topic",
+                            demo.SAMPLE_CURATION, None, demo.SAMPLE_PROVENANCE)
+    check("the parked Review sample still renders display items",
+          all(k in review for k in ("Box 1 |", "Fig. 1 |", "Table 1 |", "Evidence Review")))
+    check("demo Review sections run Introduction -> Conclusions",
           demo.SAMPLE_ARTICLE["sections"][0]["heading"] == "Introduction"
           and demo.SAMPLE_ARTICLE["sections"][-1]["heading"].startswith("Conclusions"))
     with tempfile.TemporaryDirectory() as d:
@@ -4513,6 +4528,12 @@ def test_second_hand_figures_are_a_last_resort() -> None:
         ("_REVISE_SYSTEM_FULLTEXT", writer._REVISE_SYSTEM_FULLTEXT),
         ("_REVISE_PATCH_SYSTEM", writer._REVISE_PATCH_SYSTEM),
         ("_REVISE_PATCH_SYSTEM_FULLTEXT", writer._REVISE_PATCH_SYSTEM_FULLTEXT),
+        ("_BRIEFING_SYSTEM", writer._BRIEFING_SYSTEM),
+        ("_BRIEFING_SYSTEM_FULLTEXT", writer._BRIEFING_SYSTEM_FULLTEXT),
+        ("_REVISE_BRIEFING_SYSTEM", writer._REVISE_BRIEFING_SYSTEM),
+        ("_REVISE_BRIEFING_SYSTEM_FULLTEXT", writer._REVISE_BRIEFING_SYSTEM_FULLTEXT),
+        ("_REVISE_BRIEFING_PATCH_SYSTEM", writer._REVISE_BRIEFING_PATCH_SYSTEM),
+        ("_REVISE_BRIEFING_PATCH_SYSTEM_FULLTEXT", writer._REVISE_BRIEFING_PATCH_SYSTEM_FULLTEXT),
     )
     for name, prompt in derivations:
         check(f"second-hand figure rule survives into {name}",
@@ -4639,6 +4660,10 @@ def test_full_text_grounding() -> None:
         check(f"and replaced in the full-text variant: {new[:40]}…",
               new in writer._WRITER_SYSTEM_FULLTEXT
               and old not in writer._WRITER_SYSTEM_FULLTEXT)
+        check(f"briefing prompt still has the target: {old[:40]}…", old in writer._BRIEFING_SYSTEM)
+        check(f"and the briefing full-text variant is substituted: {new[:40]}…",
+              new in writer._BRIEFING_SYSTEM_FULLTEXT
+              and old not in writer._BRIEFING_SYSTEM_FULLTEXT)
 
     # -- verification checks the shown excerpt, not the unseen tail ---------
     tail_figure = "the unseen tail says 77.7%"
@@ -4758,6 +4783,7 @@ def test_pipeline_fetches_full_text() -> None:
         pipeline.gather_evidence = fake_gather
         pipeline.curate_sources = lambda topic, p, **kw: curation
         pipeline.write_article = lambda topic, p, **kw: dict(article)
+        pipeline.write_briefing = pipeline.write_article
         pipeline.fetch_full_text = (
             lambda p, use_cache=True: (fetched_pmcids.append(p.pmcid), "body text")[1])
         pipeline.enforce_style = lambda a, **kw: (a, {"issues": [], "stats": {}})
@@ -4940,6 +4966,7 @@ def test_full_text_comes_from_the_papers_cli_when_it_is_there() -> None:
             )[1]
             pipeline.curate_sources = lambda topic, p, **kw: curation
             pipeline.write_article = lambda topic, p, **kw: dict(article)
+            pipeline.write_briefing = pipeline.write_article
             pipeline.enforce_style = lambda a, **kw: (a, {"issues": [], "stats": {}})
 
             # With papers available:
@@ -5121,6 +5148,7 @@ def test_pmcid_is_resolved_by_doi() -> None:
         pipeline.gather_evidence = fake_gather
         pipeline.curate_sources = lambda topic, p, **kw: curation
         pipeline.write_article = lambda topic, p, **kw: dict(article)
+        pipeline.write_briefing = pipeline.write_article
         pipeline.enforce_style = lambda a, **kw: (a, {"issues": [], "stats": {}})
 
         def fake_resolve(paper, use_cache=True, log=None):
@@ -5340,6 +5368,7 @@ def test_full_text_run_says_why_it_stopped() -> None:
             pipeline.write_article = lambda t, p, **kw: {
                 "title": "t", "abstract": "x", "keywords": [], "sections": [],
                 "key_points": [], "glossary": [], "references": [1]}
+            pipeline.write_briefing = pipeline.write_article
             pipeline.fetch_full_text = lambda p, use_cache=True: "body"
             pipeline.enforce_style = lambda a, **kw: (a, {"issues": [], "stats": {}})
             pipeline.generate_draft("topic", log=lines.append)
@@ -5607,6 +5636,40 @@ def test_claude_md_still_describes_this_code() -> None:
           "groq was removed" in doc.lower())
 
 
+def test_briefing_is_the_default_artefact() -> None:
+    """The sendable page is a briefing. The Review is `--long`, not the default.
+
+    The site already framed the job as a sourced evidence briefing. The artefact
+    was still a ~3,000-word journal Review. This pins the cut: default render
+    is the briefing, ideas are questions not magazine pitches, and the parked
+    Review writer still exists.
+    """
+    from articlegen import demo, ideas
+    from articlegen.cli import build_parser
+    from articlegen.style import check_style, errors as style_errors
+    from articlegen.writer import _BRIEFING_SYSTEM, write_article, write_briefing
+
+    check("ideas are not an editor for a popular-science publication",
+          "ideas editor for a popular-science publication" not in ideas._IDEAS_SYSTEM)
+    check("ideas prompt asks for briefing questions",
+          "evidence-briefing" in ideas._IDEAS_SYSTEM)
+    check("demo briefing passes the style check",
+          not style_errors(check_style(demo.SAMPLE_BRIEFING)))
+    check("demo Review still passes the style check",
+          not style_errors(check_style(demo.SAMPLE_ARTICLE)))
+    check("the briefing prompt is not a magazine feature",
+          "popular-science" in _BRIEFING_SYSTEM
+          and "NOT writing a magazine feature" in _BRIEFING_SYSTEM)
+
+    parser = build_parser()
+    check("draft defaults to a briefing",
+          not parser.parse_args(["draft", "a topic"]).long)
+    check("draft --long is the Review path",
+          parser.parse_args(["draft", "a topic", "--long"]).long)
+    check("write_briefing and write_article are both still callable",
+          callable(write_briefing) and callable(write_article))
+
+
 def test_real_articles_still_match_the_schema() -> None:
     """Every article the pipeline has to render must satisfy the writer's schema.
 
@@ -5617,7 +5680,7 @@ def test_real_articles_still_match_the_schema() -> None:
     which is how a legacy field ends up load-bearing without anyone noticing.
     """
     from articlegen import demo
-    from articlegen.writer import _ARTICLE_SCHEMA
+    from articlegen.writer import _ARTICLE_SCHEMA, _BRIEFING_SCHEMA
 
     articles = [("demo.SAMPLE_ARTICLE", demo.SAMPLE_ARTICLE)]
     try:
@@ -5641,6 +5704,13 @@ def test_real_articles_still_match_the_schema() -> None:
     required = set(_ARTICLE_SCHEMA.get("required", []))
     for legacy in ("standfirst", "key_takeaways", "pull_quote"):
         check(f"{legacy} is not required by the schema", legacy not in required)
+
+    briefing = {k: v for k, v in demo.SAMPLE_BRIEFING.items() if k != "form"}
+    briefing_errors = _validate(briefing, _BRIEFING_SCHEMA)
+    check("demo.SAMPLE_BRIEFING matches the briefing schema", not briefing_errors)
+    if briefing_errors:
+        for e in briefing_errors[:5]:
+            print("     " + e)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -5703,6 +5773,7 @@ def main(argv: list[str] | None = None) -> int:
         test_the_landing_page_leads_with_finished_reviews,
         test_api_key_is_session_only_by_default,
         test_house_style_is_fixed_not_a_preference,
+        test_briefing_is_the_default_artefact,
         test_register_rules_are_scoped_to_the_synthesis_voice,
         test_hedging_floor_is_calibrated_against_body_prose,
         test_density_thresholds_are_documented_against_the_corpus,

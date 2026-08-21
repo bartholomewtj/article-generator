@@ -123,11 +123,14 @@ def _paper_haystack(paper: Paper, full_texts: dict[int, str], idx: int) -> str:
 
 def _article_text(article: dict) -> str:
     parts = [
-        article.get("abstract", "") or article.get("standfirst", ""),
+        article.get("question", ""),
+        article.get("answer", "") or article.get("abstract", "") or article.get("standfirst", ""),
         article.get("evidence_note", ""),
     ]
     fs = article.get("featured_study") or {}
     parts += [fs.get("method", ""), fs.get("results", "")]
+    parts.extend(article.get("findings") or [])
+    parts.extend(article.get("unknowns") or [])
     for section in article.get("sections", []):
         parts.extend(section.get("paragraphs", []))
         if section.get("pull_quote"):

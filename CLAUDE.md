@@ -23,19 +23,20 @@ on sight (#114).
 
 ## What this is
 
-`articlegen` turns a topic into a **single-page HTML evidence review, formatted
-like a scientific-journal Review article** (plus a Markdown copy), grounded in
-journal-article abstracts and open-access full texts. Two front ends:
+`articlegen` turns a topic into a **sourced evidence briefing** — one HTML page
+(plus Markdown) a reader can send: the question, what the evidence shows, what
+remains open, and three papers to open. Grounded in journal-article abstracts
+and open-access full texts. Two front ends:
 
 1. **Web app** — GitHub Pages front end calling a Render backend, or
    `articlegen web` locally.
 2. **CLI** — `articlegen ideas` / `draft` / `queue` / `demo`.
 
-The public site frames this as a **sourced evidence briefing you can send**; the
-artefact is unchanged — a journal-style Review. The GitHub Pages landing page
-links three finished reviews in `drafts/` directly, above the key prompt (#152,
-extending #111), and the generated drafts index is titled "Evidence reviews"
-rather than "Draft review queue".
+`articlegen draft --long` still writes the journal-style Review; that path is
+parked, not deleted. The GitHub Pages landing page links three finished pieces
+in `drafts/` directly, above the key prompt (#152, extending #111), and the
+generated drafts index is titled "Evidence briefings". →
+`test_briefing_is_the_default_artefact`
 
 Repo: **`bartholomewtj/article-generator`**, default branch `main`.
 `drafts/` is intentionally git-tracked — it's the review surface.
@@ -49,8 +50,9 @@ articlegen/
   web.py       HTTP server + REST API for the web app UI
   llm.py       provider layer: ONE generate_json(); OpenRouter, Anthropic,
                claude-cli, gemini-cli
-  ideas.py     LLM: theme -> shortlist of article ideas
-  writer.py    LLM: plan_queries -> curate_sources -> write_article
+  ideas.py     LLM: theme -> shortlist of briefing questions
+  writer.py    LLM: plan_queries -> curate_sources -> write_briefing
+               (write_article is the `--long` Review)
   sources.py   Semantic Scholar + OpenAlex + Europe PMC + arXiv fetch, 24h
                cache, dedupe, rank; open-access full-text fetch + excerpt budget
   paperfetch.py optional: full text via the separate papers CLI (paperfetch)
@@ -71,10 +73,11 @@ tests/test_journal_conformance.py conventions as assertions over 5 fixtures
 
 **`pipeline.generate_draft()`, and nowhere else**: source pre-flight →
 `plan_queries` → `gather_evidence` → `curate_sources` → full-text fetch →
-`write_article` → `enforce_style` (up to `MAX_STYLE_PASSES` `revise_prose`
-passes if `check_style` finds errors) → `check_statistics` → a `Draft` carrying
-article, papers, curation, verification, style report and `provenance` (queries,
-model, date, databases, full_text_sources).
+`write_briefing` (or `write_article` when `long=True`) → `enforce_style` (up
+to `MAX_STYLE_PASSES` `revise_prose` passes if `check_style` finds errors) →
+`check_statistics` → a `Draft` carrying article, papers, curation,
+verification, style report and `provenance` (queries, model, date, databases,
+full_text_sources).
 
 Callers differ **only** in what they do with the `Draft`. Never re-implement a
 stage in a caller — the web handler once had its own copy that silently skipped
@@ -102,6 +105,7 @@ behaviour it describes.
 | Deep reads go to direct and recent sources first | `test_full_text_order_favours_direct_and_recent` |
 | A doomed run is refused before the caller is billed | `test_dead_sources_fail_before_the_caller_is_billed` |
 | The article shape is not a preference (`TONE_LABEL`, `LENGTH_LABEL`, `DEPTH_LABEL` are constants) | `test_house_style_is_fixed_not_a_preference` |
+| Default artefact is a briefing; the Review is `--long` | `test_briefing_is_the_default_artefact` |
 | Register rules fire on investigator voice, not synthesis voice | `test_register_rules_are_scoped_to_the_synthesis_voice` |
 | Sources travel with a revision only when usable | `test_revision_carries_sources_only_when_they_can_be_used` |
 | A second style pass runs only after the first reduced the errors | `test_a_second_style_pass_runs_only_after_progress` |
