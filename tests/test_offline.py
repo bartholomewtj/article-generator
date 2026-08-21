@@ -5615,6 +5615,136 @@ def test_full_text_comes_from_the_papers_cli_when_it_is_there() -> None:
         reset_paperfetch()
 
 
+def test_queued_ckn_counts_as_no_open_access() -> None:
+    """`queued_ckn` is paywalled, not "open access but returned no text".
+
+    Four Grok 4.6 runs (21 Aug 2026) stopped on target of 5, and paywalled
+    landmarks (Tesnières 2026) were logged as OA failures because `papers`
+    returning `queued_ckn` produced empty text, which the loop counted as
+    `fetch_failed` (#191). A timeout or unreadable PDF still is a failed OA
+    fetch. The stop-reason and read-subset-skew lines still print.
+    """
+    import json
+    from dataclasses import dataclass
+    from articlegen import paperfetch, pipeline, sources
+    from articlegen.sources import Paper
+
+    @dataclass
+    class FakeProc:
+        stdout: str = ""
+        stderr: str = ""
+        returncode: int = 0
+
+    real_run = paperfetch.subprocess.run
+    real_which = paperfetch.shutil.which
+
+    def reset_paperfetch():
+        paperfetch._AVAILABLE = None
+        paperfetch._ARGV = []
+        paperfetch._WARNED = False
+        sources.clear_search_cache()
+
+    def draft_logs(papers, runner):
+        article = {"title": "t", "abstract": "x", "keywords": [], "sections": [],
+                   "key_points": [], "glossary": [], "references": [1]}
+        curation = {
+            "relevance": {i: "direct" for i in range(1, len(papers) + 1)},
+            "most_relevant_index": 1,
+            "counts": {"direct": len(papers)},
+        }
+        lines = []
+        saved = (
+            pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
+            pipeline.write_article, pipeline.write_briefing, pipeline.enforce_style,
+            pipeline._named_source_pass,
+        )
+        try:
+            pipeline.plan_queries = lambda topic, **kw: (["q"], "core")
+
+            def gather(queries, **kw):
+                kw.get("outcomes", []).append(
+                    {"source": "openalex", "query": "q", "count": len(papers),
+                     "error": "", "cached": False})
+                return papers
+
+            pipeline.gather_evidence = gather
+            pipeline.curate_sources = lambda t, p, **kw: curation
+            pipeline.write_article = lambda t, p, **kw: dict(article)
+            pipeline.write_briefing = pipeline.write_article
+            pipeline.enforce_style = lambda a, **kw: (a, {"issues": [], "stats": {}})
+            pipeline._named_source_pass = lambda *a, **kw: {"queries": [], "added": 0}
+            paperfetch.shutil.which = lambda cmd: "papers" if cmd == "papers" else None
+            paperfetch.subprocess.run = runner
+            reset_paperfetch()
+            pipeline.generate_draft("topic", log=lines.append)
+        finally:
+            (pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
+             pipeline.write_article, pipeline.write_briefing, pipeline.enforce_style,
+             pipeline._named_source_pass) = saved
+            reset_paperfetch()
+        return "\n".join(lines)
+
+    try:
+        # Status travels back; the string helper stays a string.
+        reset_paperfetch()
+        paperfetch.shutil.which = lambda cmd: "papers"
+        paperfetch.subprocess.run = lambda argv, **kw: FakeProc(
+            stdout=json.dumps({"status": "queued_ckn"}), returncode=2)
+        text, status = paperfetch.fetch_via_papers_with_status("10.9999/paywalled")
+        check("queued_ckn returns empty text", text == "")
+        check("queued_ckn status is queued_ckn", status == "queued_ckn")
+        check("fetch_via_papers still returns a string",
+              isinstance(paperfetch.fetch_via_papers("10.9999/paywalled"), str))
+        check("queued_ckn is in NOT_OA_STATUSES",
+              "queued_ckn" in paperfetch.NOT_OA_STATUSES)
+
+        # DOI-only paper: no Europe PMC fallthrough, flag set, empty text.
+        reset_paperfetch()
+        paperfetch.shutil.which = lambda cmd: "papers"
+        paperfetch.subprocess.run = lambda argv, **kw: FakeProc(
+            stdout=json.dumps({"status": "queued_ckn"}), returncode=2)
+        paywalled = Paper(title="paywalled landmark", abstract="a",
+                          doi="10.9999/paywalled")
+        body = sources.fetch_full_text(paywalled)
+        check("queued_ckn DOI-only fetch is empty", body == "")
+        check("queued_ckn sets full_text_not_oa", paywalled.full_text_not_oa is True)
+        check("queued_ckn does not set full_text_via", paywalled.full_text_via == "")
+
+        # Pipeline log: paywalled landmark is no-open-access, not an OA miss.
+        paywalled_for_draft = Paper(title="paywalled landmark", abstract="a",
+                                    doi="10.9999/paywalled")
+        queued = draft_logs(
+            [paywalled_for_draft],
+            lambda argv, **kw: FakeProc(
+                stdout=json.dumps({"status": "queued_ckn"}), returncode=2),
+        )
+        check("queued_ckn run still prints the stop-reason line",
+              "stopped because:" in queued)
+        check("queued_ckn run still prints the read-subset-skew line",
+              "read-subset skew:" in queued)
+        check("queued_ckn increments no-open-access",
+              "1 had no open-access copy" in queued)
+        check("queued_ckn does not count as OA-but-empty",
+              "0 were open access but returned no text" in queued)
+
+        # Contrast: a timeout on a DOI-only paper is still a failed OA fetch.
+        timed_out = Paper(title="timeout paper", abstract="a",
+                          doi="10.9999/timeout")
+
+        def raise_timeout(argv, **kw):
+            raise paperfetch.subprocess.TimeoutExpired(argv, 120)
+
+        timed = draft_logs([timed_out], raise_timeout)
+        check("timeout increments fetch_failed",
+              "1 were open access but returned no text" in timed)
+        check("timeout does not increment no-open-access",
+              "0 had no open-access copy" in timed)
+    finally:
+        paperfetch.subprocess.run = real_run
+        paperfetch.shutil.which = real_which
+        reset_paperfetch()
+
+
 def test_full_text_order_favours_reviews_and_trials() -> None:
     """Deep reads go to direct systematic reviews and trials first, not the newest papers.
 
@@ -6761,6 +6891,7 @@ def main(argv: list[str] | None = None) -> int:
         test_full_text_grounding, test_pipeline_fetches_full_text,
         test_unlabelled_sources_stop_the_run,
         test_full_text_comes_from_the_papers_cli_when_it_is_there,
+        test_queued_ckn_counts_as_no_open_access,
         test_full_text_order_favours_reviews_and_trials,
         test_pmcid_is_resolved_by_doi,
         test_unpaywall_fallback_in_resolve_pmcid,
