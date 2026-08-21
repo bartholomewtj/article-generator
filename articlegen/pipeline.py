@@ -347,6 +347,8 @@ def _named_source_pass(
     if isinstance(mri, int) and 1 <= mri <= len(papers) and relevance.get(mri) in ("direct", "related"):
         candidates_to_scan.append(mri)
 
+    # Candidates to scan: MRI first (if direct/related), then full_text_order
+    # (which scans reviews and trials first — the abstracts that name landmark trials).
     for idx in full_text_order(papers, relevance):
         if idx not in candidates_to_scan:
             candidates_to_scan.append(idx)
@@ -495,8 +497,8 @@ def generate_draft(
     )
 
     # Full-text grounding: after curation, fetch the open-access full text of
-    # the sources that earned it — direct before related, newest first inside a
-    # tier, search rank breaking ties (#143).
+    # the sources that earned it — direct before related, reviews/trials first,
+    # newest first inside a design tier, search rank breaking ties (#166, revising #143).
     #
     # This step used to be skipped whenever the provider was Groq, whose
     # per-minute token ceiling could not fit a single full text. Groq is gone,
@@ -515,8 +517,8 @@ def generate_draft(
     log("Fetching open-access full texts...")
     requests_spent = 0
     via_papers = paperfetch.available(log)
-    # Still direct and related only, relevance then recency. Tangential sources
-    # are deliberately excluded even when that leaves the target unmet: they
+    # Still direct and related only, relevance then design then recency. Tangential
+    # sources are deliberately excluded even when that leaves the target unmet: they
     # are background, and handing the writer 12,000 characters of an off-topic
     # paper is exactly the topic drift the relevance gate exists to prevent.
     # Why the loop stopped is a different question from how many it got, and

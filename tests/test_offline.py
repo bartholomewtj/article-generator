@@ -1372,6 +1372,7 @@ def test_europe_pmc_parsing() -> None:
                 {"fullName": "Jang G", "lastName": "Jang", "initials": "G", "firstName": "Geunsoo"},
             ]},
             "journalInfo": {"journal": {"title": "J Affect Disord"}},
+            "pubType": "research-article; Randomized Controlled Trial",
         },
         {   # sparse: book chapter — no journal, no doi, bad year
             "id": "PPR000002", "source": "PPR",
@@ -1403,6 +1404,7 @@ def test_europe_pmc_parsing() -> None:
           "Depression affects 20% of adults." in full.abstract)
     check("markup stripped from the title", full.title == "A trial of something")
     check("string year becomes int", full.year == 2026)
+    check("publication_types parsed from pubType", "randomized controlled trial" in full.publication_types)
     # Europe PMC names arrive surname-first; the renderer takes the last token as
     # the surname, so they are normalised to given-name-first at parse time.
     # Passing `fullName` through printed "SH, K." for "Kim SH" in every reference.
@@ -5026,43 +5028,92 @@ def test_full_text_comes_from_the_papers_cli_when_it_is_there() -> None:
         reset_paperfetch()
 
 
-def test_full_text_order_favours_direct_and_recent() -> None:
-    """Deep reads go to the directly relevant and the current, in that order.
+def test_full_text_order_favours_reviews_and_trials() -> None:
+    """Deep reads go to direct systematic reviews and trials first, not the newest papers.
 
-    Rank order sorts on topic overlap then citation weight, so the five full
-    texts landed on old, heavily-cited papers: one measured run read a subset
-    at median year 2019 / 122 citations against an abstract-only rest at median
-    2023, and the article then printed the "could not be appraised" limitation
-    about the newest directly-relevant syntheses (#143). Relevance tier first,
+    #143 fixed 'deep reads went to old, heavily-cited work' by sorting on recency
+    within relevance. That created the opposite skew: in the seclusion draft,
+    Gaynes 2017 (the only systematic appraisal of adult acute settings) was
+    abstract-only while newer primary pilots and child reviews were read in full
+    (#166). Relevance tier first, then study design (reviews -> trials -> other),
     then year, then search rank.
-    """
-    from articlegen.sources import Paper, full_text_order
 
+    The negative controls in paper_design are the specification.
+    """
+    from articlegen.sources import Paper, full_text_order, paper_design
+
+    # 1. Full ordering: direct review (2016) beats newer direct trial (2019)
+    # and newer direct primary (2024); related review follows all directs.
     papers = [
-        Paper(title="related new", abstract="a", year=2024),      # 1
-        Paper(title="direct old", abstract="a", year=2011),       # 2
-        Paper(title="tangential new", abstract="a", year=2025),   # 3
-        Paper(title="direct new", abstract="a", year=2023),       # 4
-        Paper(title="related old", abstract="a", year=2015),      # 5
-        Paper(title="unlabelled", abstract="a", year=2026),       # 6
-        Paper(title="direct undated", abstract="a"),              # 7
+        Paper(title="Study 1: a systematic review and meta-analysis", abstract="a", year=2016),  # 1: direct synthesis (2016)
+        Paper(title="Study 2: observational cohort study", abstract="a", year=2024),            # 2: direct other (2024)
+        Paper(title="Study 3: a randomised controlled trial", abstract="a", year=2019),         # 3: direct trial (2019)
+        Paper(title="Study 4: an umbrella review", abstract="a", year=2025),                     # 4: related synthesis (2025)
+        Paper(title="Study 5: systematic review of tangential topic", abstract="a", year=2025), # 5: tangential synthesis (2025)
+        Paper(title="Study 6: unlabelled paper", abstract="a", year=2026),                      # 6: unlabelled
+        Paper(title="Study 7: direct undated primary study", abstract="a"),                     # 7: direct undated other
     ]
-    relevance = {1: "related", 2: "direct", 3: "tangential",
-                 4: "direct", 5: "related", 7: "direct"}
+    relevance = {1: "direct", 2: "direct", 3: "direct", 4: "related", 5: "tangential", 7: "direct"}
 
     order = full_text_order(papers, relevance)
-    check("direct-newest, direct-older, then related-newest",
-          order == [4, 2, 7, 1, 5])
-    check("tangential sources are never offered for fetch", 3 not in order)
+    check("direct review, direct trial, direct primary, direct undated, then related review",
+          order == [1, 3, 2, 7, 4])
+    check("relevance outranks design: direct other precedes related review",
+          order.index(2) < order.index(4))
+    check("tangential sources are never offered for fetch", 5 not in order)
     check("an unlabelled source is never offered either", 6 not in order)
 
-    # Ties fall back to search rank, which is what the pipeline did before this
-    # change — so an all-one-tier, all-one-year pool is untouched by it.
+    # 2. Recency inside a design tier: newer trial beats older trial (#143 behaviour survives)
+    trials = [
+        Paper(title="Trial A: a randomised controlled trial", abstract="a", year=2019),
+        Paper(title="Trial B: a randomised controlled trial", abstract="a", year=2024),
+    ]
+    check("recency decides within a design tier (newer first)",
+          full_text_order(trials, {1: "direct", 2: "direct"}) == [2, 1])
+
+    # 3. Ties fall back to incoming search rank
     same = [Paper(title=f"p{i}", abstract="a", year=2020) for i in range(1, 5)]
-    check("equal tier and year keeps the incoming rank order",
+    check("equal tier, design, and year keeps the incoming rank order",
           full_text_order(same, {i: "direct" for i in range(1, 5)}) == [1, 2, 3, 4])
     check("no labels means nothing is fetched",
           full_text_order(same, {}) == [])
+
+    # 4. paper_design directly: positives and negative controls
+    # synthesis positives
+    check("paper_design identifies systematic review and meta-analysis in title",
+          paper_design(Paper(title="Efficacy of light therapy: a systematic review and meta-analysis", abstract="a")) == "synthesis")
+    check("paper_design identifies Cochrane Database of Systematic Reviews venue",
+          paper_design(Paper(title="Interventions for seclusion", venue="Cochrane Database of Systematic Reviews", abstract="a")) == "synthesis")
+    check("paper_design identifies systematic review in publication_types",
+          paper_design(Paper(title="Seclusion reduction", abstract="a", publication_types=("systematic review",))) == "synthesis")
+
+    # trial positives
+    check("paper_design identifies randomised controlled trial in title",
+          paper_design(Paper(title="Containment in acute wards: a randomised controlled trial", abstract="a")) == "trial")
+    check("paper_design identifies cluster-randomized trial in title",
+          paper_design(Paper(title="Safety planning: a cluster-randomized trial", abstract="a")) == "trial")
+    check("paper_design identifies Randomized Controlled Trial in publication_types",
+          paper_design(Paper(title="Crisis planning", abstract="a", publication_types=("randomized controlled trial",))) == "trial")
+    check("paper_design identifies RCT acronym in title",
+          paper_design(Paper(title="Safewards: an RCT in acute psychiatric wards", abstract="a")) == "trial")
+
+    # other (the negative controls that are the specification)
+    check("paper_design demotes study protocol of an RCT to other",
+          paper_design(Paper(title="Protocol for a randomised controlled trial of seclusion reduction", abstract="a")) == "other")
+    check("paper_design demotes narrative review to other",
+          paper_design(Paper(title="Seclusion in acute wards: a narrative review", abstract="a")) == "other")
+    check("paper_design ignores bare 'review' in publication_types",
+          paper_design(Paper(title="Care models in psychiatry", abstract="a", publication_types=("review",))) == "other")
+    check("paper_design ignores bare 'trials' in title",
+          paper_design(Paper(title="The trials of implementing a new model of care", abstract="a")) == "other")
+    check("paper_design treats plain cohort study as other",
+          paper_design(Paper(title="A cohort study of seclusion in mental health wards", abstract="a")) == "other")
+    check("paper_design treats scoping review without systematic as other",
+          paper_design(Paper(title="A scoping review of restraint reduction", abstract="a")) == "other")
+
+    # 5. Preprints are never down-ranked
+    check("a preprint of a trial still ranks as a trial",
+          paper_design(Paper(title="Intervention: a randomised trial", abstract="a", is_preprint=True)) == "trial")
 
 
 def test_pmcid_is_resolved_by_doi() -> None:
@@ -6076,7 +6127,7 @@ def main(argv: list[str] | None = None) -> int:
         test_second_hand_figures_are_a_last_resort,
         test_full_text_grounding, test_pipeline_fetches_full_text,
         test_full_text_comes_from_the_papers_cli_when_it_is_there,
-        test_full_text_order_favours_direct_and_recent,
+        test_full_text_order_favours_reviews_and_trials,
         test_pmcid_is_resolved_by_doi,
         test_unpaywall_fallback_in_resolve_pmcid,
         test_named_papers_in_abstracts_are_looked_up,

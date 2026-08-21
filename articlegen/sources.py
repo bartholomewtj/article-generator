@@ -107,7 +107,7 @@ _cache_lock = threading.Lock()
 # the entry records a refusal rather than a result.
 _search_cache: dict[tuple[str, str, int], tuple[float, list["Paper"], str]] = {}
 
-_SS_FIELDS = "title,abstract,year,authors,venue,citationCount,externalIds,url"
+_SS_FIELDS = "title,abstract,year,authors,venue,citationCount,externalIds,url,publicationTypes"
 _OA_FIELDS = (
     "id,title,publication_year,authorships,primary_location,"
     "cited_by_count,abstract_inverted_index,doi,type"
@@ -177,6 +177,27 @@ def _looks_like_preprint(doi: str, url: str) -> bool:
     return bool(url and _PREPRINT_URL_RE.search(url))
 
 
+def _clean_types(raw) -> tuple[str, ...]:
+    """API document-type metadata as a tuple of lowercase strings.
+
+    The three sources disagree on shape: Semantic Scholar sends a list, OpenAlex
+    a single string, Europe PMC one string holding a delimited list. Normalising
+    here keeps `paper_design` from knowing which API a paper came from.
+    """
+    if not raw:
+        return ()
+    items = [raw] if isinstance(raw, str) else list(raw)
+    out = []
+    for elem in items:
+        if not elem or not isinstance(elem, str):
+            continue
+        for piece in re.split(r"[;,]", elem):
+            cleaned = piece.strip().lower()
+            if cleaned and cleaned not in out:
+                out.append(cleaned)
+    return tuple(out)
+
+
 @dataclass
 class Paper:
     title: str
@@ -199,6 +220,11 @@ class Paper:
     # fetch_full_text; not populated by search or dedupe.
     full_text_via: str = ""
     is_preprint: bool = False
+    # Document type as the API reported it, lowercased, e.g. ("journal article",
+    # "randomized controlled trial"). Fed to `paper_design` for the full-text
+    # order and nothing else — it is never printed, so a source that reports
+    # nothing costs nothing. Empty for arXiv, which has no such field.
+    publication_types: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         # The one place a title is cleaned. Four search functions build Papers
@@ -344,6 +370,7 @@ def search_semantic_scholar(query: str, limit: int = 15) -> list[Paper]:
                 url=item.get("url") or "",
                 doi=external_ids.get("DOI") or "",
                 source="Semantic Scholar",
+                publication_types=_clean_types(item.get("publicationTypes")),
             )
         )
     return papers
@@ -413,6 +440,7 @@ def _openalex_page(query: str, limit: int, from_year: int | None = None) -> list
                 doi=item.get("doi") or "",
                 source="OpenAlex",
                 is_preprint=(item.get("type") == "preprint"),
+                publication_types=_clean_types(item.get("type")),
             )
         )
     return papers
@@ -543,6 +571,7 @@ def search_europe_pmc(query: str, limit: int = 15) -> list[Paper]:
                 # OA copy lives somewhere Europe PMC cannot serve from.
                 is_open_access=(item.get("isOpenAccess") == "Y" and item.get("inEPMC") == "Y"),
                 is_preprint=(src == "PPR" or "preprint" in (item.get("pubType") or "").lower()),
+                publication_types=_clean_types(item.get("pubType")),
             )
         )
     return papers
@@ -989,32 +1018,88 @@ def full_text_excerpts(papers: list[Paper]) -> dict[int, str]:
     return out
 
 
+# Which study designs earn one of the five deep reads, best first. Not a quality
+# score — nothing here appraises a study. It answers a narrower question: which
+# paper repays 12,000 characters of reading? A systematic review carries the
+# appraised evidence base, a trial carries the primary result, and a cross-
+# sectional survey mostly restates its own abstract (#166).
+DESIGN_ORDER = ("synthesis", "trial", "other")
+
+_DESIGN_EXCLUDE_RE = re.compile(
+    r"\b(?:study\s+protocol|trial\s+protocol|protocol\s+for\s+a|statistical\s+analysis\s+plan|rationale\s+and\s+design|narrative\s+reviews?)\b"
+    r"|:\s*a\s+protocol\b",
+    re.IGNORECASE,
+)
+_SCOPING_RE = re.compile(r"\bscoping\s+reviews?\b", re.IGNORECASE)
+_SYSTEMATIC_RE = re.compile(r"\bsystematic\b", re.IGNORECASE)
+
+_SYNTHESIS_RE = re.compile(
+    r"\b(?:systematic\s+(?:\w+\s+)?reviews?|meta-?analy\w+|umbrella\s+reviews?|evidence\s+synthesis|cochrane\s+reviews?)\b"
+    r"|cochrane\s+database\s+of\s+systematic\s+reviews",
+    re.IGNORECASE,
+)
+_TRIAL_RE = re.compile(
+    r"\b(?:randomi[sz]\w*|rcts?|controlled\s+trials?|clinical\s+trials?|stepped[- ]wedge|cluster[- ]random\w*|pragmatic\s+trials?|feasibility\s+trials?)\b",
+    re.IGNORECASE,
+)
+
+
+def paper_design(paper: Paper) -> str:
+    """Classify a paper's study design as 'synthesis', 'trial', or 'other'.
+
+    Ordering-only: used by `full_text_order` to prioritise papers that repay
+    a deep read (systematic reviews carry the appraised evidence base, trials
+    carry primary results, whereas surveys and narrative reviews mostly restate
+    their abstracts).
+
+    Reads title, venue, and `publication_types` metadata only — never the
+    abstract (an abstract discussing what 'is needed' would misclassify).
+    Preprints are untouched by design detection: a preprint of a trial still
+    ranks as a trial.
+    """
+    text = f"{paper.title} {paper.venue}"
+    types_text = " ".join(paper.publication_types)
+    combined = f"{text} {types_text}"
+
+    if _DESIGN_EXCLUDE_RE.search(combined):
+        return "other"
+    if _SCOPING_RE.search(combined) and not _SYSTEMATIC_RE.search(combined):
+        return "other"
+    if _SYNTHESIS_RE.search(combined):
+        return "synthesis"
+    if _TRIAL_RE.search(combined):
+        return "trial"
+    return "other"
+
+
 # Which eligible sources get a deep read, and in what order. The set is the
 # same as it always was (direct and related, never tangential); only the order
-# changed. Rank order put citation weight ahead of everything, so the five deep
-# reads went to old, heavily-cited papers: one measured run read a subset with
-# median year 2019 and 122 citations while the abstract-only rest ran at median
-# 2023 (#143). The article then prints "abstract-only, could not be appraised"
-# about the most current directly-relevant work — the papers doing the most.
+# changed. Rank order put citation weight ahead of everything (#143), while
+# recency-first inside direct stranded landmark older reviews and trials (#166).
+# The sort key is now relevance tier -> design weight -> recency -> search rank.
 FULLTEXT_RELEVANCE_ORDER = ("direct", "related")
 
 
 def full_text_order(papers: list[Paper], relevance: dict[int, str]) -> list[int]:
     """1-based indices to attempt full text for, best candidate first.
 
-    Direct before related; newest first inside a tier; search rank breaks the
-    remaining ties, which is the order the whole pipeline used before. A paper
-    with no year sorts as if year 0 — an undated record is not evidence of
-    being current. Tangential and unlabelled sources are absent from the
-    result: they are never fetched, whether or not the target is met.
+    Direct before related; systematic reviews / meta-analyses first, then
+    trials, then other designs (DESIGN_ORDER via paper_design); newest first
+    inside a design tier; search rank breaks the remaining ties (#166,
+    revising #143). A paper with no year sorts as if year 0 — an undated record
+    is not evidence of being current. Tangential and unlabelled sources are
+    absent from the result: they are never fetched, whether or not the target
+    is met.
     """
     tier = {label: n for n, label in enumerate(FULLTEXT_RELEVANCE_ORDER)}
+    design = {label: n for n, label in enumerate(DESIGN_ORDER)}
     ranked = []
     for index, paper in enumerate(papers, start=1):
         label = relevance.get(index)
         if label in tier:
-            ranked.append((tier[label], -(paper.year or 0), index))
-    return [index for _, _, index in sorted(ranked)]
+            ranked.append((tier[label], design[paper_design(paper)],
+                           -(paper.year or 0), index))
+    return [index for _, _, _, index in sorted(ranked)]
 
 
 def fetch_full_text(paper: Paper, use_cache: bool = True, log=lambda msg: None) -> str:
@@ -1163,6 +1248,8 @@ def _merge_duplicate(kept: Paper, dup: Paper) -> None:
     if dup.url and not kept.url:
         kept.url = dup.url
         kept.is_preprint = kept.is_preprint or _looks_like_preprint("", kept.url)
+    if dup.publication_types and not kept.publication_types:
+        kept.publication_types = dup.publication_types
 
 
 # Constants for the named-source pass (issue #165). Read by pipeline.py.

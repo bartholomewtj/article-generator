@@ -102,7 +102,7 @@ behaviour it describes.
 | The stored API key is tab-only (`sessionStorage`) unless opted in | `test_api_key_is_session_only_by_default` |
 | Nothing needing a key costs a round trip to discover it | `test_first_visit_does_not_dead_end` |
 | The full-text dependencies fail loudly enough to diagnose | `test_full_text_dependencies_fail_loudly_enough_to_diagnose` |
-| Deep reads go to direct and recent sources first | `test_full_text_order_favours_direct_and_recent` |
+| Deep reads go to direct reviews and trials first | `test_full_text_order_favours_reviews_and_trials` |
 | Papers named in the top abstracts are looked up once, capped | `test_named_papers_in_abstracts_are_looked_up` |
 | A merged record never renumbers the pool | `test_named_sources_merge_without_renumbering` |
 | A doomed run is refused before the caller is billed | `test_dead_sources_fail_before_the_caller_is_billed` |
@@ -271,14 +271,21 @@ and sections intact.
   `MAX_FULLTEXT_REQUESTS` (18) stops a topic with no open-access literature
   spending a request per paper. **Tangential sources are never fetched**, even
   when the target goes unmet.
-- **The fetch order is relevance then recency, not rank** (`full_text_order`).
+- **The fetch order is relevance tier, design weight, then recency, not rank** (`full_text_order`).
   Rank sorts on topic overlap then citation weight, so the five deep reads
   went to old, heavily-cited work — a measured run read median year 2019 /
   122 citations against an abstract-only rest at median 2023, and the article
   printed "abstract-only, could not be appraised" about the most current
-  directly-relevant syntheses (#143). Direct before related, newest first
-  inside a tier, search rank breaking ties. The eligible *set* is unchanged;
-  tangential and unlabelled sources are still never fetched.
+  directly-relevant syntheses (#143). Recency-first inside `direct` then created
+  the opposite skew: in the seclusion draft, Gaynes 2017 (the only systematic
+  appraisal of adult acute settings) was stranded as abstract-only because it
+  was nine years old (#166). The sort key is now relevance tier → study design
+  (`DESIGN_ORDER`, from `paper_design`: synthesis then trial then other) →
+  recency → search rank. Relevance still outranks design: a direct primary study
+  beats a related review. The eligible *set* is unchanged; tangential and
+  unlabelled sources are still never fetched. The read-subset skew log line may
+  now show an *older* read subset than the abstract-only rest — when those older
+  papers are the reviews and trials, that is the change working.
 - **Every run says *why* full-text fetching stopped.** "4 of 19" is not an
   answer: a request cap that bit is a tuning problem, genuinely absent open
   access is a property of the literature and not fixable here, and the log used

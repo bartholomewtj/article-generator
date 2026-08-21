@@ -449,6 +449,54 @@ What to watch next: the skew line on the next few real runs. If the read subset
 now runs *newer* than the abstract-only rest, that is the change working, not a
 new problem.
 
+Superseded in part by `#166`: recency-first inside direct stranded older
+landmark reviews and trials, so study design is now checked between relevance
+and recency.
+
+### `#166` — recency-first sent the deep reads to the wrong papers
+
+`#143` stopped sending full text to old, highly-cited work by sorting on recency
+within a relevance tier. That created the opposite skew: in the seclusion draft,
+Gaynes 2017 (the only systematic appraisal of adult acute settings) was
+abstract-only, while a 2024 pilot study and a child/adolescent review were read in
+full. The load-bearing paper lost simply because it was nine years old.
+
+`#143` was right that citation weight has no place in the read order, but wrong
+about what replaced it. The sort key is now:
+
+1. Relevance tier (`FULLTEXT_RELEVANCE_ORDER`: direct before related; tangential
+   is still never fetched).
+2. Study design ladder (`DESIGN_ORDER`: synthesis, then trial, then other).
+3. Recency (`-year`).
+4. Search rank as final tie-breaker.
+
+Relevance still outranks design: a direct primary study is read ahead of a related
+review.
+
+Design is detected deterministically by `paper_design` from `title`, `venue` and
+`publication_types` (from API type metadata: Semantic Scholar `publicationTypes`,
+OpenAlex `type`, Europe PMC `pubType`), and **never from the abstract** (to avoid
+promoting a paper whose abstract merely notes that "a systematic review is needed").
+
+Negative controls are the specification:
+- Bare `review` in title, venue or OpenAlex `type` is **not** enough to qualify as
+  a synthesis — narrative reviews and OpenAlex `type: review` demote to "other".
+- Bare `trial` in a title is **not** enough — it appears in ordinary prose titles
+  ("The trials of implementing...").
+- Protocols (`study protocol`, `trial protocol`, `protocol for a`, `: a protocol`,
+  `statistical analysis plan`, `rationale and design`) demote to "other" because a
+  protocol has not reported findings yet.
+- Scoping reviews demote to "other" unless they are explicitly systematic.
+- Preprints of trials still rank as trials (preprints are marked, never down-ranked).
+
+`FULLTEXT_TARGET` (5) was deliberately not raised: the excerpt budget is full at
+5 × 12,000 characters.
+
+The read-subset skew line in the log may now report an older read subset than the
+abstract-only rest. That is the change working, when those older papers are the
+reviews and trials.
+
+
 ### `#141` — a pool of 20 was inclusion, not curation
 
 Three mental-health runs on 2026-08-15 each collected **exactly 20** candidates
