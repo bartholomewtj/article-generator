@@ -1,12 +1,12 @@
 # Next session
 
-_Last handoff: 21 August 2026 — four Grok 4.6 briefings measured; implementation is #188–#192_
+_Last handoff: 21 August 2026 — #193 on `main`; implement #188–#192_
 
 ## Where this stopped
 
-Four real Grok 4.6 briefings are in `drafts/`, labelled date + `grok-4.6`. The
-measurement issues (#185–#187, #84) met their “two or more runs” bar. Work is
-filed as five slices, ready to implement, not parked:
+#193 is on `main`. Four Grok 4.6 briefings are in `drafts/`, labelled date +
+`grok-4.6`. The measurement issues (#185–#187, #84) met their “two or more
+runs” bar. Work is filed as five slices, ready to implement, not parked:
 
 | Slice | Issue | Request |
 |---|---|---|
