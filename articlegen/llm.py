@@ -48,9 +48,9 @@ import time
 
 # Claude Fable 5 is the top of the Claude 5 family, above Opus in capability.
 # `claude-opus-5` and `claude-opus-4-8` still work if you pass them with
-# --model. Keep this in step with the Settings dropdown in index.html: the web
-# app sends a model name, and web.ALLOWED_MODELS is built from the constants
-# here, so a stale name there is quietly dropped rather than honoured.
+# --model. Keep OPENROUTER_PUBLIC_MODEL in step with the Settings dropdown in
+# index.html: the web app sends that name, and web.ALLOWED_MODELS is built from
+# the constants here, so a stale name there is quietly dropped rather than honoured.
 ANTHROPIC_DEFAULT_MODEL = "claude-fable-5"
 # Claude Opus 5, resold by OpenRouter at $5/$25 per million tokens. Fable 5 was
 # the default briefly and cost twice as much for a model whose extra capability
@@ -62,6 +62,13 @@ ANTHROPIC_DEFAULT_MODEL = "claude-fable-5"
 # `anthropic/claude-sonnet-5` for a cheaper Claude that carries no elevated
 # classifiers, `anthropic/claude-fable-5` for the hardest topics.
 OPENROUTER_DEFAULT_MODEL = "anthropic/claude-opus-5"
+# What the hosted web app writes with when the visitor brings no key.
+# Measured against Gemini 3.7 Flash on three psychiatry ED topics (lithium
+# toxicity, NMS, catatonia): Luna keeps the question on the topic and names
+# the shape of the evidence; Flash writes a textbook summary. CLI default
+# stays Opus. The public path must not silently inherit that default — a
+# crafted POST could otherwise bill the hosted key at $5/$25.
+OPENROUTER_PUBLIC_MODEL = "openai/gpt-5.6-luna"
 
 # Where to retry when a safety classifier declines. OpenRouter cannot pass
 # Anthropic's server-side `fallbacks` parameter (Claude API only), so this

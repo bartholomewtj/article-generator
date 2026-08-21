@@ -13,6 +13,20 @@ that is what `CLAUDE.md` is for.
 
 ## Providers
 
+### Public web writes with Luna, CLI stays Opus (August 2026)
+
+The hosted app used to demand a visitor OpenRouter key and default to Opus
+(~50c–$1). Three live pairs of GPT-5.6 Luna vs Gemini 3.7 Flash on psychiatry
+ED topics (lithium toxicity, NMS, catatonia) showed Luna keeps the question on
+the topic and names the shape of the evidence; Flash writes a textbook
+summary. Luna costs ~2c/article.
+
+The public path is therefore Luna on a host-held key
+(`ARTICLEGEN_PUBLIC_OPENROUTER_KEY`). A keyless request is forced to
+`OPENROUTER_PUBLIC_MODEL` so a crafted POST cannot select Opus on that bill.
+The CLI default (`OPENROUTER_DEFAULT_MODEL`, Opus) is unchanged. Rate limits
+are the spend cap. The key is a Render secret, never in git.
+
 ### Groq was removed (August 2026)
 
 Groq was the free default. Its free tier metered **12,000 tokens per minute**

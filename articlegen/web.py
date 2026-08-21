@@ -21,6 +21,11 @@ The caller's API key arrives in the request body and is passed down the call
 chain as an argument. It is never written to `os.environ`, never logged, and
 never persisted — the environment is process-global and this server is threaded,
 so an env-var handoff would let concurrent requests pick up each other's keys.
+
+A shared host may also hold `ARTICLEGEN_PUBLIC_OPENROUTER_KEY` (or
+`OPENROUTER_API_KEY`) so visitors can draft without pasting a key. That path
+always writes with `OPENROUTER_PUBLIC_MODEL`. The rate limits are then a
+spend cap, not just a scholarly-API cap.
 """
 
 from __future__ import annotations
@@ -46,10 +51,13 @@ from .writer import clean_search_terms
 DRAFTS_DIR = "drafts"
 
 # Models a caller may ask for by name. Anything else is ignored and the provider
-# layer picks from the key it was given.
+# layer picks from the key it was given. The public hosted path always writes
+# with OPENROUTER_PUBLIC_MODEL even if the payload names something else —
+# otherwise a crafted POST on the hosted key would bill Opus.
 ALLOWED_MODELS = frozenset({
     llm.ANTHROPIC_DEFAULT_MODEL,
     llm.OPENROUTER_DEFAULT_MODEL,
+    llm.OPENROUTER_PUBLIC_MODEL,
 })
 
 # Shared hosts set this. Local runs leave it unset and keep writing to drafts/.
@@ -172,6 +180,44 @@ def _requested_model(payload: dict) -> str | None:
     return requested if requested in ALLOWED_MODELS else None
 
 
+def _hosted_openrouter_key() -> str | None:
+    """The key the shared host pays with, if it has one.
+
+    `ARTICLEGEN_PUBLIC_OPENROUTER_KEY` is the dedicated public-billing secret.
+    `OPENROUTER_API_KEY` is the fallback so a local `articlegen web` with the
+    usual env var already set also serves keyless requests. Neither is ever
+    returned from an API or written to a log line.
+    """
+    for var in ("ARTICLEGEN_PUBLIC_OPENROUTER_KEY", "OPENROUTER_API_KEY"):
+        raw = os.environ.get(var, "").strip()
+        if raw:
+            return raw
+    return None
+
+
+def public_generation_enabled() -> bool:
+    """True when a visitor can draft without pasting a key."""
+    return _hosted_openrouter_key() is not None
+
+
+def _credentials(payload: dict) -> tuple[str | None, str | None]:
+    """(api_key, model) for this request.
+
+    A visitor key pays for the model they asked for (if allowed). No visitor
+    key and a hosted key: the host pays, and the model is forced to Luna so
+    a crafted POST cannot select Opus on the public bill. No key anywhere:
+    both are None and `_missing_key` refuses.
+    """
+    visitor = (payload.get("key") or "").strip() or None
+    requested = _requested_model(payload)
+    if visitor:
+        return visitor, requested
+    hosted = _hosted_openrouter_key()
+    if hosted:
+        return hosted, llm.OPENROUTER_PUBLIC_MODEL
+    return None, requested
+
+
 def _slugify(text: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
     return slug[:60] or "article"
@@ -207,10 +253,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         key configured needs no key in the request, so only fail when both are
         absent.
         """
-        if api_key or any(
-            os.environ.get(var)
-            for var in ("OPENROUTER_API_KEY", "ANTHROPIC_API_KEY")
-        ):
+        if api_key or public_generation_enabled() or os.environ.get("ANTHROPIC_API_KEY"):
             return False
         self._send_json(
             {"error": "No API key set. Open Settings (⚙️) and paste an OpenRouter "
@@ -290,7 +333,12 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
             self._handle_get_drafts()
             return
         if self.path in ("/api/health", "/api/health/"):
-            self._send_json({"ok": True, "stateless": STATELESS, **_build_info()})
+            public = public_generation_enabled()
+            body = {"ok": True, "stateless": STATELESS, "public": public,
+                    **_build_info()}
+            if public:
+                body["public_model"] = llm.OPENROUTER_PUBLIC_MODEL
+            self._send_json(body)
             return
         if self.path in ("/api/diag", "/api/diag/"):
             self._handle_diag()
@@ -356,7 +404,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
     def _handle_ideas(self, payload: dict) -> None:
         theme = (payload.get("theme") or "").strip()
         guidance = (payload.get("guidance") or "").strip()
-        api_key = (payload.get("key") or "").strip() or None
+        api_key, model = _credentials(payload)
         try:
             n = max(1, min(int(payload.get("n") or 6), 12))
         except (TypeError, ValueError):
@@ -374,7 +422,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
 
         try:
             ideas = generate_ideas(prompt_theme, n=n, api_key=api_key,
-                                   model=_requested_model(payload))
+                                   model=model)
             self._send_json({"theme": theme, "ideas": ideas})
         except Exception as exc:
             self._send_json({"error": self._unexpected("generating ideas", exc)}, status=500)
@@ -382,7 +430,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
     def _handle_draft(self, payload: dict) -> None:
         topic = (payload.get("topic") or "").strip()
         style = (payload.get("style") or "").strip()
-        api_key = (payload.get("key") or "").strip() or None
+        api_key, model = _credentials(payload)
 
         if not topic:
             self._send_json({"error": "Please provide a briefing question."}, status=400)
@@ -404,7 +452,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         try:
             draft = generate_draft(
                 topic, style_note=style[:500], max_papers=DEFAULT_MAX_PAPERS, api_key=api_key,
-                model=_requested_model(payload), log=self._log_stage,
+                model=model, log=self._log_stage,
                 search_terms=search_terms,
             )
         except NoPapersFound as exc:
