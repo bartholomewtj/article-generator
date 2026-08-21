@@ -64,8 +64,8 @@ agents:
       - Task                       # Claude Code's built-in subagents, in place of pi's subagents.ts
 
   - name: builder
-    coding_agent: agy              # Gemini CLI on free Gemini quota — $0 per run
-    model: gemini-3.7-flash-high   # effort rides the id suffix; `thinking` is not sent
+    coding_agent: pi               # OpenRouter cash — agy Gemini quota was exhausted
+    model: openrouter/google/gemini-3.7-flash
     thinking: medium
     color: "#22d3ee"
     purpose: Implement the plan exactly; report every changed file in the envelope.
@@ -74,8 +74,13 @@ agents:
       user: adws/adw_data/prompt_engineering/builder/user.md
     # No `writes` key: unrestricted, and the only agent that is. It still cannot
     # touch defaults.protected_files — the builder does not get to edit its own grader.
-    # No `tools` key either: agy has no tools flag, so a list would be ignored
-    # (references/config.md in the skill). `writes:` is the boundary that holds.
+    tools:
+      - Read
+      - Bash
+      - Edit
+      - Write
+      - Grep
+      - Glob
 
   - name: scout
     coding_agent: agy              # mechanical recon on free Gemini quota
@@ -112,8 +117,8 @@ agents:
       - write
 
   - name: documenter
-    coding_agent: agy              # writing up a diff is mechanical — free quota
-    model: gemini-3.7-flash-medium
+    coding_agent: pi               # OpenRouter cash — same Gemini as the builder
+    model: openrouter/google/gemini-3.7-flash
     thinking: low
     color: "#e879f9"
     purpose: Write up the change that was just made, from the diff; document only.
