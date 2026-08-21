@@ -23,6 +23,13 @@ import json
 from .llm import generate_json
 from .sources import Paper, full_text_excerpts
 
+# The search plan is at most four queries, whoever wrote them. When the ideas
+# stage supplied terms they are the start of that set and the model may add one
+# more specific query — the card's search thinking is the thing being kept, so
+# it is never overwritten by the planner's own wording (#172).
+MAX_PLANNED_QUERIES = 4
+MAX_SUPPLIED_QUERIES = 3
+
 _QUERY_SCHEMA = {
     "type": "object",
     "properties": {
@@ -755,26 +762,85 @@ _REVISE_BRIEFING_SYSTEM_FULLTEXT = _with_fulltext_framing(_REVISE_BRIEFING_SYSTE
 _REVISE_BRIEFING_PATCH_SYSTEM_FULLTEXT = _with_fulltext_framing(_REVISE_BRIEFING_PATCH_SYSTEM)
 
 
+def clean_search_terms(terms) -> list[str]:
+    """Strip, drop blanks, drop case-insensitive duplicates, keep order,
+    cap the count and each term's length."""
+    if not isinstance(terms, (list, tuple)):
+        return []
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for t in terms:
+        if not isinstance(t, str):
+            continue
+        s = t.strip()
+        if not s:
+            continue
+        low = s.lower()
+        if low in seen:
+            continue
+        seen.add(low)
+        cleaned.append(s[:120])
+        if len(cleaned) >= MAX_SUPPLIED_QUERIES:
+            break
+    return cleaned
+
+
 def plan_queries(
-    topic: str, model: str | None = None, api_key: str | None = None
+    topic: str,
+    model: str | None = None,
+    api_key: str | None = None,
+    *,
+    search_terms: list[str] | None = None,
 ) -> tuple[list[str], str]:
     """Turn the topic into scholarly queries and identify its core on-topic entity."""
+    supplied = clean_search_terms(search_terms)
+    if not supplied:
+        result = generate_json(
+            (
+                "I want journal articles to support an evidence briefing about: "
+                f"{topic!r}\n\n"
+                "Give 2-4 short keyword queries for scholarly search engines (Semantic "
+                "Scholar / OpenAlex). Use researcher terminology. IMPORTANT: make at least "
+                "one query specific enough to find work on the exact subject (include the "
+                "most specific entity/population by name), not just the general area. Also "
+                "return `core_entity`: the specific subject a source must be about to count "
+                "as directly on-topic."
+            ),
+            _QUERY_SCHEMA,
+            model=model,
+            api_key=api_key,
+        )
+        return (result.get("queries") or [])[:MAX_PLANNED_QUERIES], (result.get("core_entity") or "").strip()
+
+    terms_lines = "\n".join(f"  {i}. {t}" for i, t in enumerate(supplied, 1))
+    prompt = (
+        f"I want journal articles to support an evidence briefing about: {topic!r}\n\n"
+        "These scholarly search terms were already chosen for this question and will "
+        "be searched as they stand:\n"
+        f"{terms_lines}\n"
+        "Do not rewrite them, reorder them or propose alternatives to them.\n\n"
+        "Return `queries`: at most ONE additional short keyword query, and only if it "
+        "finds work the terms above would miss — make it specific enough to name the "
+        "exact subject (the most specific entity/population by name). Return an empty "
+        "list if the terms above already cover the question. Also return "
+        "`core_entity`: the specific subject a source must be about to count as "
+        "directly on-topic."
+    )
     result = generate_json(
-        (
-            "I want journal articles to support an evidence briefing about: "
-            f"{topic!r}\n\n"
-            "Give 2-4 short keyword queries for scholarly search engines (Semantic "
-            "Scholar / OpenAlex). Use researcher terminology. IMPORTANT: make at least "
-            "one query specific enough to find work on the exact subject (include the "
-            "most specific entity/population by name), not just the general area. Also "
-            "return `core_entity`: the specific subject a source must be about to count "
-            "as directly on-topic."
-        ),
+        prompt,
         _QUERY_SCHEMA,
         model=model,
         api_key=api_key,
     )
-    return result["queries"][:4], result.get("core_entity", "").strip()
+    queries = list(supplied)
+    seen_lower = {s.lower() for s in queries}
+    for q in result.get("queries") or []:
+        q = (q or "").strip()
+        if q and q.lower() not in seen_lower:
+            queries.append(q)
+            break
+    queries = queries[:MAX_PLANNED_QUERIES]
+    return queries, (result.get("core_entity") or "").strip()
 
 
 def _truncate_abstract(abstract: str, limit: int | None) -> str:

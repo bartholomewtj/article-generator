@@ -666,6 +666,138 @@ def test_pipeline_is_shared() -> None:
     check("pipeline builds provenance", '"queries": queries' in inspect.getsource(pipeline.generate_draft))
 
 
+def test_idea_search_terms_reach_the_draft() -> None:
+    """When idea search terms are supplied they start the plan and are never replaced (#172)."""
+    import inspect
+    from articlegen import cli, pipeline, web, writer
+    from articlegen.sources import Paper
+
+    # 1. clean_search_terms normalisation
+    cleaned = writer.clean_search_terms(["  a ", "", "A", "b", "c", "d", None, 7])
+    check("clean_search_terms strips, drops blanks/dups/non-strings and caps count",
+          cleaned == ["a", "b", "c"])
+    check("clean_search_terms on None returns empty list", writer.clean_search_terms(None) == [])
+    check("clean_search_terms on non-list returns empty list", writer.clean_search_terms("not a list") == [])
+
+    # 2-6. plan_queries with fake generate_json
+    captured_prompts: list[str] = []
+    saved_generate_json = writer.generate_json
+    try:
+        def fake_generate(prompt, schema, **kw):
+            captured_prompts.append(prompt)
+            return {"queries": ["totally different one", "and another"], "core_entity": "x"}
+
+        writer.generate_json = fake_generate
+
+        # 2. Terms supplied -> supplied first in order, at most one addition, core_entity preserved
+        queries, core = writer.plan_queries("test topic", search_terms=["term one", "term two"])
+        check("supplied terms are preserved first in order with at most one addition",
+              queries == ["term one", "term two", "totally different one"])
+        check("core_entity is returned from the planner", core == "x")
+
+        # 3. Captured prompt contains supplied terms and instructions
+        check("planner prompt contains supplied terms",
+              "term one" in captured_prompts[0] and "term two" in captured_prompts[0])
+        check("planner prompt instructs against rewriting and asks for at most one addition",
+              "Do not rewrite them" in captured_prompts[0]
+              and ("at most ONE additional" in captured_prompts[0] or "at most one" in captured_prompts[0].lower()))
+
+        # 4. A duplicate of a supplied term adds nothing
+        writer.generate_json = lambda prompt, schema, **kw: {"queries": ["TERM ONE", "other"], "core_entity": "y"}
+        q_dup, _ = writer.plan_queries("test topic", search_terms=["term one", "term two"])
+        check("duplicate of supplied query adds nothing further",
+              q_dup == ["term one", "term two", "other"])
+
+        writer.generate_json = lambda prompt, schema, **kw: {"queries": ["TERM ONE"], "core_entity": "y"}
+        q_dup_only, _ = writer.plan_queries("test topic", search_terms=["term one", "term two"])
+        check("case-insensitive duplicate only keeps length at 2", len(q_dup_only) == 2)
+
+        # 5. Cap at MAX_PLANNED_QUERIES
+        writer.generate_json = lambda prompt, schema, **kw: {
+            "queries": ["q1", "q2", "q3", "q4"], "core_entity": "z"
+        }
+        q_max, _ = writer.plan_queries("test topic", search_terms=["s1", "s2", "s3"])
+        check("result is capped at MAX_PLANNED_QUERIES",
+              len(q_max) <= writer.MAX_PLANNED_QUERIES and q_max == ["s1", "s2", "s3", "q1"])
+
+        # 6. No terms supplied -> today's behaviour
+        captured_prompts.clear()
+        writer.generate_json = lambda prompt, schema, **kw: (
+            captured_prompts.append(prompt) or {
+                "queries": ["q1", "q2", "q3", "q4", "q5", "q6"],
+                "core_entity": "core_ent",
+            }
+        )
+        q_none, core_none = writer.plan_queries("test topic", search_terms=None)
+        check("no terms supplied returns first MAX_PLANNED_QUERIES",
+              q_none == ["q1", "q2", "q3", "q4"] and core_none == "core_ent")
+        check("no terms prompt does not contain supplied-terms preamble",
+              "were already chosen" not in captured_prompts[0])
+
+    finally:
+        writer.generate_json = saved_generate_json
+
+    # 7. pipeline.generate_draft passes search_terms through
+    captured_plan_kw: dict = {}
+    papers = [Paper(title=f"p{i}", abstract="a", pmcid=f"PMC{i}", is_open_access=True)
+              for i in range(1, 5)]
+    article = {"title": "t", "abstract": "x", "keywords": [], "sections": [],
+               "key_points": [], "glossary": [], "references": [1]}
+    curation = {"relevance": {1: "direct", 2: "tangential", 3: "related", 4: "direct"},
+                "most_relevant_index": 1,
+                "counts": {"direct": 2, "related": 1, "tangential": 1}}
+
+    saved_pipeline = (
+        pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
+        pipeline.write_article, pipeline.write_briefing, pipeline.fetch_full_text,
+        pipeline.enforce_style,
+    )
+    try:
+        pipeline.plan_queries = lambda topic, **kw: (captured_plan_kw.update(kw) or (["q"], "core"))
+        def fake_gather(queries, **kw):
+            kw.get("outcomes", []).append(
+                {"source": "europe_pmc", "query": "q", "count": 4, "error": "", "cached": False})
+            return papers
+        pipeline.gather_evidence = fake_gather
+        pipeline.curate_sources = lambda topic, p, **kw: curation
+        pipeline.write_article = lambda topic, p, **kw: dict(article)
+        pipeline.write_briefing = pipeline.write_article
+        pipeline.fetch_full_text = lambda p, use_cache=True: "body text"
+        pipeline.enforce_style = lambda a, **kw: (a, {"issues": [], "stats": {}})
+
+        pipeline.generate_draft("topic", search_terms=["a", "b"])
+        check("pipeline passes search_terms through to plan_queries",
+              captured_plan_kw.get("search_terms") == ["a", "b"])
+    finally:
+        (
+            pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
+            pipeline.write_article, pipeline.write_briefing, pipeline.fetch_full_text,
+            pipeline.enforce_style,
+        ) = saved_pipeline
+
+    # 8-9. CLI
+    parser = cli.build_parser()
+    check("cli parser accepts --queries",
+          parser.parse_args(["draft", "t", "--queries", "a, b"]).queries == "a, b")
+    check("cmd_draft passes search_terms",
+          "search_terms=" in inspect.getsource(cli.cmd_draft))
+
+    # 10. Web
+    web_src = inspect.getsource(web.ArticleGenHandler._handle_draft)
+    check("web handler reads search_terms from payload",
+          'payload.get("search_terms")' in web_src)
+    check("web handler forwards search_terms to generate_draft",
+          "search_terms=search_terms" in web_src)
+
+    # 11-12. Front end index.html
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    index_html = open(os.path.join(root, "index.html"), encoding="utf-8").read()
+    check("index.html sends search_terms in /api/draft body",
+          "search_terms: terms" in index_html or "search_terms:" in index_html)
+    check("index.html passes terms to selectDraft in renderDraftCards",
+          "selectDraft(idea.title, terms)" in index_html)
+
+
 def test_dead_sources_fail_before_the_caller_is_billed() -> None:
     """A doomed run must not spend an LLM call first.
 
@@ -6611,7 +6743,9 @@ def main(argv: list[str] | None = None) -> int:
         test_openrouter_routing,
         test_openrouter_refusal_falls_back,
         test_refusal_fallbacks,
-        test_pipeline_is_shared, test_dead_sources_fail_before_the_caller_is_billed,
+        test_pipeline_is_shared,
+        test_idea_search_terms_reach_the_draft,
+        test_dead_sources_fail_before_the_caller_is_billed,
         test_draft_summary, test_rate_limit,
         test_keepalive_connection_reuse, test_substance_checks,
         test_source_failures_are_distinguishable,

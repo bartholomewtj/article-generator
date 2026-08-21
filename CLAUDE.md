@@ -125,6 +125,7 @@ behaviour it describes.
 | Full text via the papers CLI never breaks the Europe PMC path | `test_full_text_comes_from_the_papers_cli_when_it_is_there` |
 | Fig. 1 counts study designs, and falls back to years when it cannot | `test_figure_one_counts_study_designs` |
 | Table 1 prints no citation count | `test_figure_one_counts_study_designs` |
+| Supplied search terms start the plan and are never replaced | `test_idea_search_terms_reach_the_draft` |
 
 **Not pinned by a test** — these need the reasoning, because nothing else
 carries it:
@@ -270,6 +271,16 @@ and sections intact.
 
 ## Sources and grounding
 
+- **The idea card's `search_terms` start the search plan when they are
+  supplied.** `ideas.py` already returns them and the web card already shows
+  them; `plan_queries` used to throw them away and invent a new set from the
+  title, so the only search thinking done before the paid draft was discarded
+  (#172). Supplied terms are copied into the query list **in code** and the
+  model may append **at most one** more specific query — a planner that
+  returns four replacements cannot displace them. `MAX_PLANNED_QUERIES` (4)
+  and `MAX_SUPPLIED_QUERIES` (3) bound both ends. With no terms supplied the
+  old one-shot prompt runs unchanged: the ideas stage is not mandatory and
+  `draft "topic"` on its own must keep working.
 - **The candidate pool is `DEFAULT_MAX_PAPERS` (40), defined in `sources.py` and
   read by every entry point** — the CLI flag's default, `generate_draft`, and
   the web handler. At 20 the relevance gate barely discarded anything: three

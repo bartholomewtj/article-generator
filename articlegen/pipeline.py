@@ -30,8 +30,8 @@ from .sources import (DATABASE_NAMES, DEFAULT_MAX_PAPERS, NAMED_SOURCE_LIMIT,
 from .style import (SUBSTANCE_RULES, check_style, errors as style_errors,
                     format_report as format_style, revision_brief)
 from .verify import check_statistics
-from .writer import (curate_sources, is_briefing, plan_queries, revise_prose,
-                     write_article, write_briefing)
+from .writer import (clean_search_terms, curate_sources, is_briefing,
+                     plan_queries, revise_prose, write_article, write_briefing)
 
 # A caller that wants progress reporting passes one of these; the default drops it.
 Logger = Callable[[str], None]
@@ -435,6 +435,7 @@ def generate_draft(
     api_key: str | None = None,
     log: Logger = _silent,
     long: bool = False,
+    search_terms: list[str] | None = None,
 ) -> Draft:
     """Research and write one briefing (or a `--long` Review). Raises NoPapersFound
     if the search comes back empty.
@@ -448,8 +449,14 @@ def generate_draft(
     # told the run was doomed from the start (#96).
     _preflight_sources(topic, log)
 
+    supplied = clean_search_terms(search_terms)
+    if supplied:
+        log(f"Using {len(supplied)} search term(s) from the idea card: "
+            + "; ".join(supplied) + " (the planner may add one more)")
     log(f"Planning search queries for: {topic}")
-    queries, core_entity = plan_queries(topic, model=model, api_key=api_key)
+    queries, core_entity = plan_queries(
+        topic, model=model, api_key=api_key, search_terms=supplied
+    )
     log("Queries: " + "; ".join(queries) + (f"  (core: {core_entity})" if core_entity else ""))
 
     log("Fetching journal articles...")

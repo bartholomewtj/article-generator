@@ -94,6 +94,7 @@ def cmd_draft(args) -> int:
             model=args.model,
             log=_log,
             long=getattr(args, "long", False),
+            search_terms=[t.strip() for t in (getattr(args, "queries", "") or "").split(",") if t.strip()],
         )
     except NoPapersFound as exc:
         _log(str(exc))
@@ -200,6 +201,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_draft.add_argument("topic", help="The briefing question to write")
     p_draft.add_argument("--name", help="Draft filename stem (default: <date>-<slug>)")
     p_draft.add_argument("--style", default="", help='Optional extra constraint, e.g. "Australian spelling"')
+    p_draft.add_argument(
+        "--queries", default="",
+        help="Comma-separated search terms from the idea card. They are searched as "
+             "given; the planner may add one more specific query.",
+    )
     p_draft.add_argument("--max-papers", type=int, default=DEFAULT_MAX_PAPERS,
                          help=f"Max candidate papers (default: {DEFAULT_MAX_PAPERS})")
     p_draft.add_argument(

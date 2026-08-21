@@ -41,6 +41,7 @@ from .ideas import generate_ideas
 from .pipeline import NoPapersFound, generate_draft
 from .render import _draft_title, build_index, render_article, render_markdown
 from .sources import DEFAULT_MAX_PAPERS, gather_evidence, probe_unpaywall
+from .writer import clean_search_terms
 
 DRAFTS_DIR = "drafts"
 
@@ -390,13 +391,21 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         if len(topic) > 300:
             self._send_json({"error": "Topic is too long (300 characters max)."}, status=400)
             return
+
+        raw_terms = payload.get("search_terms")
+        if raw_terms is not None and not isinstance(raw_terms, (list, tuple)):
+            self._send_json({"error": "search_terms must be a list of strings."}, status=400)
+            return
+        search_terms = clean_search_terms(raw_terms)
+
         if self._missing_key(api_key) or self._over_rate_limit():
             return
 
         try:
             draft = generate_draft(
                 topic, style_note=style[:500], max_papers=DEFAULT_MAX_PAPERS, api_key=api_key,
-                model=_requested_model(payload), log=self._log_stage
+                model=_requested_model(payload), log=self._log_stage,
+                search_terms=search_terms,
             )
         except NoPapersFound as exc:
             # 503 when the upstream APIs are the problem: it's not the caller's
