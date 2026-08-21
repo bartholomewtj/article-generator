@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Psychiatric presentations after novel psychoactive substances including synthetic cannabinoids and cathinones</title>
+<script>
+  (function() {
+    var saved = localStorage.getItem('articlegen_theme') || 'system';
+    if (saved === 'dark' || saved === 'light') {
+      document.documentElement.setAttribute('data-theme', saved);
+    }
+  })();
+</script>
+<style>
+  :root, html[data-theme="light"] {
+    --bg: #ffffff;
+    --surface: #f7f7f5;
+    --ink: #14171a;
+    --ink-2: #3c4249;
+    --muted: #6a7178;
+    --accent: #17457f;
+    --link: #1b5aa8;
+    --rule: #dfdfda;
+    --rule-strong: #b9bab5;
+    --seg-direct: #184f95;
+    --seg-related: #2a78d6;
+    --seg-tangential: #86b6ef;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14150f;
+      --surface: #1e1f1c;
+      --ink: #f2f1ea;
+      --ink-2: #cfcec5;
+      --muted: #9d9d94;
+      --accent: #9dc4f5;
+      --link: #86b6ef;
+      --rule: #33342f;
+      --rule-strong: #4c4d47;
+      --seg-direct: #86b6ef;
+      --seg-related: #3987e5;
+      --seg-tangential: #184f95;
+      color-scheme: dark;
+    }
+  }
+  html[data-theme="dark"] {
+    --bg: #14150f;
+    --surface: #1e1f1c;
+    --ink: #f2f1ea;
+    --ink-2: #cfcec5;
+    --muted: #9d9d94;
+    --accent: #9dc4f5;
+    --link: #86b6ef;
+    --rule: #33342f;
+    --rule-strong: #4c4d47;
+    --seg-direct: #86b6ef;
+    --seg-related: #3987e5;
+    --seg-tangential: #184f95;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Iowan Old Style", "Charter", Georgia, "Times New Roman", serif;
+    font-size: 1.02rem;
+    line-height: 1.62;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Fluid column: phones keep the viewport width exactly as before (the 40rem
+     floor only binds once the screen exceeds it); desktops scale with the
+     window up to 52rem. The wide-screen font bump below grows the rem, so the
+     ceiling is ~985px of column while the measure stays near 75 characters —
+     wider than this stops being readable prose, which is why journals cap it. */
+  main { max-width: clamp(40rem, 72vw, 52rem); margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+  @media (min-width: 1200px) {
+    html { font-size: 112.5%; }
+  }
+  .sans, .meta-line, .subject-line, .keywords, .di-caption, .fig-legend, .key-points,
+  .refs ol, .toolbar, .colophon, table, .meta-label {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+
+  /* ---- masthead ---------------------------------------------------- */
+  header.masthead { border-top: 3px solid var(--ink); padding-top: 0.9rem; margin-bottom: 2rem; }
+  .article-type {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 0.9rem;
+  }
+  h1 {
+    font-size: clamp(1.7rem, 4.2vw, 2.3rem);
+    line-height: 1.22; font-weight: 700; letter-spacing: -0.005em;
+    margin: 0 0 0.9rem;
+  }
+  /* Full contrast, body-text size, above the fold. The point of issue #91 is
+     that a disclosure in muted 0.78rem type is not a disclosure. */
+  .ai-disclosure {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.92rem; font-weight: 600; line-height: 1.45; color: var(--ink);
+    margin: 0 0 0.9rem; padding: 0.6rem 0.8rem;
+    background: var(--surface); border-left: 3px solid var(--ink);
+  }
+  .meta-line {
+    font-size: 0.78rem; color: var(--muted); margin: 0 0 0.35rem;
+    padding-bottom: 0.9rem; border-bottom: 1px solid var(--rule);
+  }
+  .subject-line { font-size: 0.78rem; color: var(--muted); margin: 0 0 0.9rem; }
+  .meta-label {
+    font-size: 0.68rem; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted); margin-right: 0.4rem;
+  }
+
+  /* ---- abstract & key points --------------------------------------- */
+  .abstract { margin: 0 0 1.2rem; }
+  .abstract p { margin: 0; font-size: 1.06rem; line-height: 1.6; color: var(--ink-2); }
+  .abstract .run-in-head, .question .run-in-head {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink); margin-right: 0.5rem;
+  }
+  .question { margin: 0 0 1rem; font-size: 1.06rem; line-height: 1.6; color: var(--ink-2); }
+  .keywords { font-size: 0.8rem; color: var(--muted); margin: 0 0 2rem; }
+  aside.key-points {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    padding: 1.1rem 1.3rem 1.2rem; margin: 0 0 2.2rem; border-radius: 3px;
+  }
+  aside.key-points h2 {
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 0.7rem;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  aside.key-points ul { margin: 0; padding-left: 1.1rem; }
+  .key-points-note { color: var(--muted); font-size: 0.78rem !important;
+                     font-style: italic; margin: 0 0 0.7rem 0 !important; }
+  sup.flag { font-size: 0.72em; line-height: 0; vertical-align: super; }
+  sup.flag a { color: var(--muted); text-decoration: none; font-weight: 700; }
+  aside.key-points li { margin-bottom: 0.5rem; font-size: 0.95rem; line-height: 1.55; }
+  aside.key-points li:last-child { margin-bottom: 0; }
+
+  /* ---- body -------------------------------------------------------- */
+  h2 {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 1.02rem; font-weight: 700; letter-spacing: 0.01em;
+    margin: 2.2rem 0 0.7rem; color: var(--ink);
+  }
+  p { margin: 0 0 1rem; }
+  .body-section p + p { text-indent: 1.2em; }
+  .run-in { font-weight: 700; font-style: italic; }
+  a { color: var(--link); }
+  sup.cite { font-size: 0.68em; line-height: 0; font-weight: 600; letter-spacing: 0.02em; }
+  sup.cite a { color: var(--link); text-decoration: none; padding: 0 0.02em; }
+  sup.cite a:hover { text-decoration: underline; }
+
+  /* ---- display items ----------------------------------------------- */
+  .display { margin: 1.8rem 0 2rem; }
+  .di-caption {
+    font-size: 0.8rem; line-height: 1.5; color: var(--muted); margin: 0.7rem 0 0;
+  }
+  .di-label { font-weight: 700; color: var(--ink); }
+  aside.box {
+    background: var(--surface); border: 1px solid var(--rule-strong);
+    padding: 1.1rem 1.3rem 1.2rem; border-radius: 3px;
+  }
+  aside.box .di-caption { margin: 0 0 0.7rem; font-size: 0.92rem; color: var(--ink); }
+  aside.box p { font-size: 0.95rem; line-height: 1.55; margin: 0 0 0.6rem; }
+  aside.box p:last-child { margin-bottom: 0; }
+  .box-cite { color: var(--muted); font-size: 0.85rem !important; }
+  .box-note { color: var(--muted); font-size: 0.78rem !important; font-style: italic;
+              margin-top: 0.75rem !important; }
+  figure.figure { margin: 1.8rem 0 2rem; padding: 1rem 0 0; border-top: 1px solid var(--rule); }
+  .fig-svg { width: 100%; height: auto; display: block; }
+  .fig-grid { stroke: var(--rule); stroke-width: 1; }
+  .fig-axis { stroke: var(--rule-strong); stroke-width: 1; }
+  .fig-tick { fill: var(--muted); font-size: 11px;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .fig-value { fill: var(--ink-2); font-size: 11px; font-weight: 600;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .fig-axis-title { fill: var(--muted); font-size: 11px; letter-spacing: 0.04em;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .seg-direct { fill: var(--seg-direct); }
+  .seg-related { fill: var(--seg-related); }
+  .seg-tangential { fill: var(--seg-tangential); }
+  .seg-cited { fill: var(--seg-related); }
+  .fig-legend {
+    display: flex; flex-wrap: wrap; gap: 0.3rem 1.1rem; list-style: none;
+    margin: 0.6rem 0 0; padding: 0; font-size: 0.78rem; color: var(--muted);
+  }
+  .fig-legend li { display: flex; align-items: center; gap: 0.4rem; }
+  .swatch {
+    display: inline-block; width: 0.68rem; height: 0.68rem; border-radius: 2px;
+    margin-right: 0.35rem; vertical-align: -0.05rem;
+  }
+  .swatch-direct { background: var(--seg-direct); }
+  .swatch-related { background: var(--seg-related); }
+  .swatch-tangential { background: var(--seg-tangential); }
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; min-width: 32rem; border-collapse: collapse; font-size: 0.82rem; }
+  tbody td:nth-child(5) { white-space: nowrap; }
+  thead th {
+    text-align: left; font-weight: 700; color: var(--ink);
+    border-top: 1px solid var(--rule-strong); border-bottom: 1px solid var(--rule-strong);
+    padding: 0.45rem 0.5rem; white-space: nowrap;
+  }
+  tbody td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--rule); color: var(--ink-2); }
+  tbody tr:last-child td { border-bottom: 1px solid var(--rule-strong); }
+  .t-num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .t-venue { color: var(--muted); }
+
+  /* ---- back matter -------------------------------------------------- */
+  .back-section { margin-top: 2.2rem; }
+  .back-section > h2:first-child, .refs h2 { margin-top: 0; }
+  .back-section p { font-size: 0.92rem; line-height: 1.58; color: var(--ink-2); }
+  .glossary dl { margin: 0; }
+  .gloss-row { display: flex; gap: 0.75rem; padding: 0.4rem 0; border-bottom: 1px solid var(--rule); }
+  .gloss-row dt { flex: 0 0 9.5rem; font-weight: 700; font-size: 0.92rem; }
+  .gloss-row dd { margin: 0; font-size: 0.92rem; color: var(--ink-2); }
+  .gloss-row:last-child { border-bottom: none; }
+  .refs { margin-top: 2.4rem; border-top: 2px solid var(--ink); padding-top: 1.1rem; }
+  .refs ol { margin: 0; padding-left: 1.5rem; font-size: 0.82rem; line-height: 1.5; }
+  .refs li { margin-bottom: 0.55rem; color: var(--ink-2); }
+  .refs li:target { background: var(--surface); border-radius: 2px; }
+  .refs a { color: var(--link); text-decoration: none; }
+  .refs a:hover { text-decoration: underline; }
+  .ref-authors { color: var(--ink); }
+  .ref-cites { color: var(--muted); }
+  footer.colophon {
+    margin-top: 2.4rem; padding-top: 1rem; border-top: 1px solid var(--rule);
+    font-size: 0.78rem; line-height: 1.55; color: var(--muted);
+  }
+
+  /* ---- toolbar ------------------------------------------------------ */
+  .toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0 2rem; }
+  .tool-btn {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    background: transparent; color: var(--ink-2);
+    border: 1px solid var(--rule-strong); border-radius: 2px;
+    padding: 0.35rem 0.7rem; font-size: 0.78rem; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+  }
+  .tool-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .share-toast { font-size: 0.78rem; color: var(--accent); align-self: center; display: none; }
+
+  @media (max-width: 34rem) {
+    .gloss-row { display: block; }
+    .gloss-row dt { margin-bottom: 0.15rem; }
+    .body-section p + p { text-indent: 0; }
+  }
+  @media print {
+    body { font-size: 10.5pt; background: #fff; color: #000; }
+    .toolbar { display: none; }
+    a, sup.cite a { color: #000; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <article>
+  <header class="masthead">
+    <p class="article-type">Evidence briefing</p>
+    <h1>Psychiatric presentations after novel psychoactive substances including synthetic cannabinoids and cathinones</h1>
+    <p class="ai-disclosure">Written by a language model from the cited research, from 5 full texts and the abstracts of the other 7. No human author wrote or checked this text. Not peer reviewed.</p>
+    <p class="meta-line">Generated 21 August 2026 &middot; 12 sources cited, 2015–2026 &middot; Full text read for 5 of 12 sources &middot; Not peer reviewed</p>
+    <p class="subject-line"><span class="meta-label">Subject</span>synthetic substances in psychiatry</p>
+
+    <div class="toolbar">
+      <button class="tool-btn" onclick="shareArticle()">Share</button>
+      <button class="tool-btn" onclick="copyArticleLink()">Copy link</button>
+      <button class="tool-btn" onclick="toggleArticleTheme()"><span id="themeIcon">&#9789;</span> Theme</button>
+      <span id="shareToast" class="share-toast">Link copied</span>
+    </div>
+
+    <p class="question"><span class="run-in-head">Question</span>What psychiatric and psychopathological consequences have been described in people using novel psychoactive substances, and how do presentations after synthetic cannabinoids or cathinones compare with those after classical cannabis or amphetamines?</p>
+    <div class="abstract">
+      <p><span class="run-in-head">Answer</span>Reviews of case material and small observational studies have associated novel psychoactive substances with psychosis, agitation, self-harm and medical complications that may be more severe or phenotypically unusual than those of cannabis or methamphetamine. Synthetic cannabinoids have been linked in systematic syntheses to visual hallucinations, agitation and, in some reports, a more lasting psychotic course. Synthetic cathinones have shown psychiatric severity comparable to methamphetamine in one Taiwanese emergency comparison, with higher odds of physical complications there. Many compounds are thought to act on cannabinoid, monoamine and serotonergic systems, yet pharmacokinetics and pharmacodynamics remain incompletely characterised. The evidence base is largely case series, toxicovigilance and systematic reviews of uncontrolled reports, often with polysubstance confounding and incomplete laboratory confirmation. No randomised trials of psychiatric management were identified, so inferences stay modest and class-specific extrapolation is uncertain.</p>
+    </div>
+    <p class="keywords"><span class="meta-label">Keywords</span> novel psychoactive substances; synthetic cannabinoids; synthetic cathinones; drug-induced psychosis; psychiatric emergency; suicidality</p>
+  </header>
+
+  <aside class="key-points">
+<h2>What the evidence shows</h2>
+<p class="key-points-note">Every figure in this review was checked against the material read for the cited sources — their abstracts, and the open-access full text where one was retrieved. ‡ marks one found only in a source other than the one cited. See Limitations.</p>
+<ul>
+<li>A 2015 narrative review for psychiatrists listed classes of novel psychoactive substances and suggested that they act on dopamine, cannabinoid CB1, GABA-A/B, 5-HT2A, glutamate and kappa-opioid receptors. Users were described as typically attracted by intense psychoactive effects and likely lack of detection in routine screens.<sup class="cite"><a href="#ref-1">1</a></sup></li>
+<li>Using dedicated web-crawling software called NPS.Finder, a 2019 review preliminarily identified a few thousand novel psychoactive substances, about four-fold higher than agency tallies. That work linked synthetic cannabinoids, new synthetic opioids, ketamine-like dissociatives, novel stimulants and novel psychedelics to psychopathological consequences.<sup class="cite"><a href="#ref-2">2</a></sup></li>
+<li>Focusing on synthetic cannabinoids and cathinones, a mini-review concluded that NPS-induced psychoses appear extremely different from classical presentations and tabulated desired versus adverse effects by pharmacological class.<sup class="cite"><a href="#ref-3">3</a></sup></li>
+<li>Paranoid ideation, brief psychotic episodes and a persistent picture designated Spiceophrenia were listed among reported untoward effects of synthetic cannabinoids, while synthetic cathinones were placed on a spectrum from mild agitation to severe psychosis.<sup class="cite"><a href="#ref-3">3</a></sup></li>
+<li>Raised central dopamine for psychedelic phenethylamines, synthetic cathinones and stimulants, 5-HT receptor subtype activation, and NMDA antagonism among phencyclidine-like dissociatives were linked in a 2023 narrative update on stimulant and hallucinogenic novel psychoactive substances.<sup class="cite"><a href="#ref-4">4</a></sup></li>
+<li>Designer-drug mechanisms were surveyed in a 2020 toxicology review, which concluded that stimulants such as amphetamines and cathinones primarily interact with monoamine transporters. Synthetic cannabinoids acting at the CB1 receptor were judged to have a less desirable effect profile and more severe adverse effects compared with cannabis.<sup class="cite"><a href="#ref-5">5</a></sup></li>
+<li>Relative serotonergic versus dopaminergic activity, indexed by the dopamine/serotonin transporter inhibition ratio in vitro, may help predict psychotropic effects, toxicity and addiction potential, according to a 2015 overview of novel psychoactive substances as modulators of monoamine signalling.<sup class="cite"><a href="#ref-6">6</a></sup></li>
+<li>Epidemiological work among 85 studies from 2005 through 2022 consistently suggested higher psychosis risk with novel psychoactive substances than with traditional substances (odds ratios 4.4<sup class="flag" title="This figure was found only in a source other than the one cited."><a href="#limitations">‡</a></sup>-5.2 for synthetic cannabinoids versus cannabis, as summarised therein). Distinctive synthetic-cannabinoid pictures in that synthesis included visual hallucinations (73-84%), agitation (79-91%) and anxiety (62-76%).<sup class="cite"><a href="#ref-7">7</a></sup></li>
+<li>From 4477 identified studies, 95 papers were retained and found synthetic cannabinoids to be the class most frequently implicated in acute psychosis and, in some reports, in persistent or relapsing psychotic disorders. Schneiderian first-rank symptoms in some cases were taken to indicate phenomenological overlap with schizophrenia and a possible risk of transition.<sup class="cite"><a href="#ref-8">8</a></sup></li>
+<li>Follow-up lasting at least six months was present in 28 of 58 studies, 22 of which were rated high quality, in a synthesis focused primarily on synthetic cannabinoids, synthetic cathinones and NBOMe hallucinogens. The authors suggested enhanced psychiatric risk with prolonged sequelae, but the synthesis was narrative and drew heavily on uncontrolled follow-up.<sup class="cite"><a href="#ref-9">9</a></sup></li>
+<li>In one comparative cohort summarised therein, hospitalisations for synthetic cannabinoid-related psychosis lasted 43.45 days versus 22.91 days for cannabis-related psychosis. A case series summarised there found prolonged psychotic episodes beyond five months in approximately 30% of patients.<sup class="cite"><a href="#ref-9">9</a></sup></li>
+<li>Synthetic cathinone-related rhabdomyolysis rates reached 63% in an outbreak series summarised therein, and NBOMe exposures were associated with fatality rates of approximately 15% and Intensive Care admission rates of approximately 40%.<sup class="cite"><a href="#ref-9">9</a></sup></li>
+<li>In a matched case-control study from a Taiwanese psychiatric emergency department, 24 patients<sup class="flag" title="This figure was found only in a source other than the one cited."><a href="#limitations">‡</a></sup> with synthetic cathinone intoxication were compared with 48 patients with methamphetamine intoxication after immunoassay and liquid chromatography–quadrupole time-of-flight mass spectrometry of urine. The two groups had similar psychotic-symptom severity and rates of violence and self-harm, but higher odds of physical complications in the cathinone group (odds ratio 8.55, 95% confidence interval 2.15-34.03). Family histories of substance use and criminal records were less prevalent among those with cathinone intoxication.<sup class="cite"><a href="#ref-10">10</a></sup></li>
+<li>Physical complications, defined there as rhabdomyolysis, acute kidney failure, dystonia or muscle weakness, occurred in 11 of 24 cathinone cases versus 4 of 48 methamphetamine cases. Mean Brief Psychiatric Rating Scale totals were 71.7 versus 67.3.<sup class="cite"><a href="#ref-10">10</a></sup></li>
+<li>Sixteen articles assembled up to March 2021 reported that suicidality and self-injurious behaviour appeared frequently associated with cathinones, synthetic cannabinoids and new synthetic opioids. Eligible material included single-patient intoxications and retrospective series rather than controlled cohorts.<sup class="cite"><a href="#ref-11">11</a></sup></li>
+<li>Four acute psychiatric inpatients with psychosis and confirmed synthetic cannabinoid receptor agonist use were described with Positive and Negative Syndrome Scale ratings, vital-sign monitoring with the National Early Warning Score, and individualised plans using benzodiazepines and antipsychotics. Urine and oral-fluid assays were used alongside routine screens, and observation levels and leave status were recorded.<sup class="cite"><a href="#ref-12">12</a></sup></li>
+</ul>
+</aside>
+
+<aside class="key-points">
+<h2>What remains open</h2>
+<ul>
+<li>Temporality and causality between novel psychoactive substance exposure and persistent psychotic disorder have not been established in longitudinal controlled designs.</li>
+<li>It remains unclear whether use raises psychosis risk or whether people already prone to psychosis are more likely to use these substances.</li>
+<li>Rapid turnover of chemical structures means that published clinical series lag behind substances actually in circulation.</li>
+<li>Most studies cannot exclude confounding by concurrent classical drugs or pre-existing psychiatric vulnerability.</li>
+<li>Whether presentations after synthetic cannabinoids differ in kind from cannabis-induced psychosis, or only in typical severity, is still disputed across reviews.</li>
+<li>Randomised evaluations of pharmacological or psychosocial management for novel psychoactive substance-related psychosis have not been reported.</li>
+</ul>
+</aside>
+
+<aside class="key-points open-these">
+<h2>Three papers to open</h2>
+<ul>
+<li><sup class="cite"><a href="#ref-1">1</a></sup> Schifano et al. (2015). <a href="https://doi.org/10.1002/wps.20174">Novel psychoactive substances of interest for psychiatry.</a></li> <li><sup class="cite"><a href="#ref-7">7</a></sup> Ricci et al. (2025). <a href="https://doi.org/10.1016/j.neubiorev.2025.106384">Novel psychoactive substances and psychosis: A comprehensive systematic review of epidemiology, clinical features, neurobiology, and treatment.</a></li> <li><sup class="cite"><a href="#ref-10">10</a></sup> Lin et al. (2023). <a href="https://doi.org/10.1097/jcp.0000000000001649">Comparison of Psychiatric and Clinical Profiles Between People Who Use Synthetic Cathinones and Methamphetamine.</a></li>
+</ul>
+</aside>
+
+  <section class="back-section">
+<h2>Methods</h2>
+<p><span class="run-in">Search strategy.</span> Candidate records were retrieved on 21 August 2026 from OpenAlex and Europe PMC, using the search strings ‘novel psychoactive substances psychiatry’; ‘synthetic cannabinoids psychiatric effects’; ‘synthetic cathinones psychosis’; ‘NPS-induced psychiatric disorders’. Records without a retrievable abstract were discarded, leaving 40 for screening. Each remaining record was assessed for how directly it addresses synthetic substances in psychiatry and labelled direct, related or background; 12 were cited here and are listed in Table 1.</p>
+<p><span class="run-in">Evidence handling.</span> Titles and abstracts were read for every record, and the open-access full texts of 5 sources were retrieved from their open-access copies and read alongside them (marked in Table 1); claims resting on the remaining sources draw on no data beyond an abstract. Decimals, percentages, effect estimates and quantities carrying a clinical unit were then checked automatically, each against the sources its own sentence cites, within exactly the material shown to the model — the abstracts plus those full-text excerpts. A figure that could not be located, or that appears only in a source other than the one cited, is flagged under Limitations.</p>
+<p><span class="run-in">Generation.</span> Search planning, source curation and drafting were performed by a large language model (x-ai/grok-4.6). Source retrieval, relevance tabulation, citation numbering, Table 1, Fig. 1 and the statistical check are deterministic and were not model-generated.</p>
+</section>
+
+  <section class="back-section">
+<h2>Evidence assessment</h2>
+<p>Of the 12 sources cited, 10 address the review question directly, 2 are related and 0 provide background only; they were published in 2015–2026. The composition of the evidence base is shown in Fig. 1.</p>
+<p id="limitations"><span class="run-in">Limitations.</span> This synthesis was prepared from the open-access full texts of 5 cited sources and the abstracts of the remaining 7. Where only an abstract was available, effect estimates, methodological detail, and the limitations that authors report only in a full text were unavailable, so the strength of those studies could not be appraised here. 3 numerical values reported above (4.4, -5.2, 24 patients), each marked ‡ where it appears, are found in cited sources other than the ones their sentences credit. The figures are present in the evidence base, but the attributions do not hold and should be checked before they are quoted. The text below should therefore be read as a working draft rather than a finished review.</p>
+</section>
+
+  <div class="display table-wrap" aria-labelledby="table-1">
+<p class="di-caption" id="table-1"><span class="di-label">Table 1 |</span> Characteristics of the cited evidence. Design is inferred from each record's title, journal and index metadata and is left blank where it could not be inferred; no quality appraisal was performed. Relevance is the curation label for how directly each source addresses the review question. Read records whether the model saw the source's open-access full text or its abstract only.</p>
+<div class="table-scroll"><table>
+<thead><tr><th>Ref.</th><th>Study</th><th>Year</th><th>Source</th><th>Design</th><th>Relevance</th><th>Read</th></tr></thead>
+<tbody><tr><td class="t-num"><a href="#ref-1">1</a></td><td>Schifano et al.</td><td class="t-num">2015</td><td class="t-venue">World Psychiatry</td><td>—</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td></tr><tr><td class="t-num"><a href="#ref-2">2</a></td><td>Schifano et al.</td><td class="t-num">2019</td><td class="t-venue">Psychological Medicine</td><td>—</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td></tr><tr><td class="t-num"><a href="#ref-3">3</a></td><td>Orsolini et al.</td><td class="t-num">2019</td><td class="t-venue">Frontiers in Psychiatry</td><td>—</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Full text</td></tr><tr><td class="t-num"><a href="#ref-4">4</a></td><td>Schifano et al.</td><td class="t-num">2023</td><td class="t-venue">Expert Review of Clinical Pharmacology</td><td>—</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Full text</td></tr><tr><td class="t-num"><a href="#ref-5">5</a></td><td>Luethi &amp; Liechti</td><td class="t-num">2020</td><td class="t-venue">Archives of Toxicology</td><td>—</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td></tr><tr><td class="t-num"><a href="#ref-6">6</a></td><td>Liechti</td><td class="t-num">2015</td><td class="t-venue">Swiss Medical Weekly</td><td>—</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td></tr><tr><td class="t-num"><a href="#ref-7">7</a></td><td>Ricci et al.</td><td class="t-num">2025</td><td class="t-venue">Neuroscience and biobehavioral reviews</td><td>Reviews</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td></tr><tr><td class="t-num"><a href="#ref-8">8</a></td><td>Mosca et al.</td><td class="t-num">2025</td><td class="t-venue">Neuroscience and biobehavioral reviews</td><td>Reviews</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td></tr><tr><td class="t-num"><a href="#ref-9">9</a></td><td>Ricci et al.</td><td class="t-num">2026</td><td class="t-venue">Psychiatry research</td><td>Reviews</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td></tr><tr><td class="t-num"><a href="#ref-10">10</a></td><td>Lin et al.</td><td class="t-num">2023</td><td class="t-venue">Journal of Clinical Psychopharmacology</td><td>—</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Full text</td></tr><tr><td class="t-num"><a href="#ref-11">11</a></td><td>Chiappini et al.</td><td class="t-num">2021</td><td class="t-venue">Medicina</td><td>Reviews</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Full text</td></tr><tr><td class="t-num"><a href="#ref-12">12</a></td><td>Bonaccorso et al.</td><td class="t-num">2018</td><td class="t-venue">Brain Sciences</td><td>Observational</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Full text</td></tr></tbody>
+</table></div>
+</div>
+
+  <section class="back-section glossary">
+<h2>Glossary</h2>
+<dl><div class="gloss-row"><dt>novel psychoactive substances</dt><dd>Psychoactive compounds newly available on the recreational market, often not yet under international control.</dd></div><div class="gloss-row"><dt>synthetic cannabinoids</dt><dd>Laboratory-made compounds that agonise cannabinoid receptors and are often sold as herbal smoking mixtures.</dd></div><div class="gloss-row"><dt>synthetic cathinones</dt><dd>Synthetic analogues of the khat alkaloid cathinone that act as stimulants via monoamine transporters.</dd></div></dl>
+</section>
+
+  <section class="refs">
+    <h2>References</h2>
+    <ol>
+      <li id="ref-1"><span class="ref-authors">Schifano, F. et al.</span> <a href="https://doi.org/10.1002/wps.20174">Novel psychoactive substances of interest for psychiatry.</a> <em>World Psychiatry</em> (2015). <span class="ref-cites">Cited by 324</span></li>
+<li id="ref-2"><span class="ref-authors">Schifano, F. et al.</span> <a href="https://doi.org/10.1017/s0033291719001727">New/emerging psychoactive substances and associated psychopathological consequences.</a> <em>Psychological Medicine</em> (2019). <span class="ref-cites">Cited by 120</span></li>
+<li id="ref-3"><span class="ref-authors">Orsolini, L. et al.</span> <a href="https://doi.org/10.3389/fpsyt.2019.00851">The Bridge Between Classical and “Synthetic”/Chemical Psychoses: Towards a Clinical, Psychopathological, and Therapeutic Perspective.</a> <em>Frontiers in Psychiatry</em> (2019). <span class="ref-cites">Cited by 42</span></li>
+<li id="ref-4"><span class="ref-authors">Schifano, F. et al.</span> <a href="https://doi.org/10.1080/17512433.2023.2279192">Stimulant and hallucinogenic novel psychoactive substances; an update.</a> <em>Expert Review of Clinical Pharmacology</em> (2023). <span class="ref-cites">Cited by 35</span></li>
+<li id="ref-5"><span class="ref-authors">Luethi, D. &amp; Liechti, M. E.</span> <a href="https://doi.org/10.1007/s00204-020-02693-7">Designer drugs: mechanism of action and adverse effects.</a> <em>Archives of Toxicology</em> (2020). <span class="ref-cites">Cited by 263</span></li>
+<li id="ref-6"><span class="ref-authors">Liechti, M. E.</span> <a href="https://doi.org/10.4414/smw.2015.14043">Novel psychoactive substances (designer drugs): overview and pharmacology of modulators of monoamine signalling.</a> <em>Swiss Medical Weekly</em> (2015). <span class="ref-cites">Cited by 189</span></li>
+<li id="ref-7"><span class="ref-authors">Ricci, V. et al.</span> <a href="https://doi.org/10.1016/j.neubiorev.2025.106384">Novel psychoactive substances and psychosis: A comprehensive systematic review of epidemiology, clinical features, neurobiology, and treatment.</a> <em>Neuroscience and biobehavioral reviews</em> (2025). <span class="ref-cites">Cited by 1</span></li>
+<li id="ref-8"><span class="ref-authors">Mosca, A. et al.</span> <a href="https://doi.org/10.1016/j.neubiorev.2025.106431">Novel psychoactive substances (NPS) as a risk factor for psychosis: A systematic review of the literature.</a> <em>Neuroscience and biobehavioral reviews</em> (2025). <span class="ref-cites">Cited by 1</span></li>
+<li id="ref-9"><span class="ref-authors">Ricci, V. et al.</span> <a href="https://doi.org/10.1016/j.psychres.2026.117056">Acute and long-term psychiatric consequences of synthetic cannabinoids and related novel psychoactive substances: A systematic review.</a> <em>Psychiatry research</em> (2026).</li>
+<li id="ref-10"><span class="ref-authors">Lin, C., Chen, J. &amp; Chan, C.</span> <a href="https://doi.org/10.1097/jcp.0000000000001649">Comparison of Psychiatric and Clinical Profiles Between People Who Use Synthetic Cathinones and Methamphetamine.</a> <em>Journal of Clinical Psychopharmacology</em> (2023). <span class="ref-cites">Cited by 8</span></li>
+<li id="ref-11"><span class="ref-authors">Chiappini, S. et al.</span> <a href="https://doi.org/10.3390/medicina57060580">New Psychoactive Substances and Suicidality: A Systematic Review of the Current Literature.</a> <em>Medicina</em> (2021). <span class="ref-cites">Cited by 68</span></li>
+<li id="ref-12"><span class="ref-authors">Bonaccorso, S. et al.</span> <a href="https://doi.org/10.3390/brainsci8070133">Synthetic Cannabinoid use in a Case Series of Patients with Psychosis Presenting to Acute Psychiatric Settings: Clinical Presentation and Management Issues.</a> <em>Brain Sciences</em> (2018). <span class="ref-cites">Cited by 47</span></li>
+    </ol>
+  </section>
+
+  <section class="back-section">
+<h2>Additional information</h2>
+<p><span class="run-in">Data availability.</span> No new data were generated. All evidence cited is published and openly indexed; 12 of the 12 cited records resolve through the links in the reference list.</p>
+<p><span class="run-in">Author contributions.</span> Search planning, source curation and drafting were carried out by an automated pipeline (articlegen, x-ai/grok-4.6). No human author wrote or verified the text before publication of this draft.</p>
+<p><span class="run-in">Competing interests.</span> None declared.</p>
+<p><span class="run-in">Peer review.</span> This article has not been peer reviewed and is not a publication of record.</p>
+</section>
+
+  <footer class="colophon">
+    <strong>Not medical or clinical advice.</strong> This is a machine-generated summary of the cited journal articles, 5 of 12 read in full, the rest from their abstracts, for background only. It is not a substitute for professional judgement, primary sources, or clinical guidelines. Verify every claim, figure, and dose against the cited papers before acting on it.
+  </footer>
+  </article>
+</main>
+<script>
+function shareArticle() {
+  if (navigator.share) {
+    navigator.share({ title: document.title, url: window.location.href }).catch(function() {});
+  } else {
+    copyArticleLink();
+  }
+}
+function copyArticleLink() {
+  navigator.clipboard.writeText(window.location.href).then(function() {
+    var t = document.getElementById('shareToast');
+    if (t) {
+      t.style.display = 'inline';
+      setTimeout(function() { t.style.display = 'none'; }, 2500);
+    }
+  }).catch(function() {});
+}
+function toggleArticleTheme() {
+  var cur = document.documentElement.getAttribute('data-theme');
+  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var effective = cur || (isSysDark ? 'dark' : 'light');
+  var next = effective === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('articlegen_theme', next);
+  updateArticleThemeIcon();
+}
+function updateArticleThemeIcon() {
+  var icon = document.getElementById('themeIcon');
+  if (!icon) return;
+  var cur = document.documentElement.getAttribute('data-theme');
+  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var effective = cur || (isSysDark ? 'dark' : 'light');
+  icon.innerHTML = effective === 'dark' ? '&#9789;' : '&#9788;';
+}
+document.addEventListener('DOMContentLoaded', updateArticleThemeIcon);
+</script>
+</body>
+</html>

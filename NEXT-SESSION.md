@@ -1,14 +1,24 @@
 # Next session
 
-_Last handoff: 21 August 2026 — `main` has #165–#172_
+_Last handoff: 21 August 2026 — four Grok 4.6 briefings measured; implementation is #188–#192_
 
 ## Where this stopped
 
-The first-principles batch is on `main`: named-source snowball, design-weighted
-deep reads, working-draft branding scoped, cite ~12, empty curation fails
-loud, `--long` titles, Fig. 1 by design, idea-card search terms. Builder and
-documenter now run `openrouter/google/gemini-3.7-flash` via pi (agy quota ran
-out). Existing `drafts/` files were not regenerated.
+Four real Grok 4.6 briefings are in `drafts/`, labelled date + `grok-4.6`. The
+measurement issues (#185–#187, #84) met their “two or more runs” bar. Work is
+filed as five slices, ready to implement, not parked:
+
+| Slice | Issue | Request |
+|---|---|---|
+| Cite cap + pin question | #188 | `requests/issue-188-cite-cap-pin-question.md` |
+| Statistic check + revision | #189 | `requests/issue-189-statistic-revision.md` |
+| Generic names + paraphrase queries | #190 | `requests/issue-190-generic-names-distinct-query.md` |
+| `queued_ckn` tally | #191 | `requests/issue-191-queued-ckn-tally.md` |
+| Table 1 design labels | #192 | `requests/issue-192-table1-design-labels.md` |
+
+#173 is still a pick, not a slice. Do not implement it as part of #188–#192.
+
+The public demo Reviews were not regenerated.
 
 ## Resume with
 
@@ -23,27 +33,39 @@ PATH; either run from PowerShell or set
 
 ## Next thing to do
 
-1. **Generate one real briefing** (`articlegen draft "<question>" --open`) and
-   read it. First look at the new artefact, and the first measurement of #165
-   (did a named landmark come in first-hand?) and #166 (are the five deep reads
-   reviews/trials?).
+1. **Implement #188–#192**, one slice per PR, factory requests already in
+   `requests/`. Suggested order: #191 (small, unblocks closing #84), then
+   #189, #188, #190, #192.
 2. **#173** — pick one: vendor a minimal `papers get` into the Docker image, or
    say on the landing page that the hosted app is Europe PMC only. Do not do
    both. Do not put GitHub credentials in the Render build.
-3. **#84** — measure full-text coverage on that new run (stop reason + read-subset
-   skew). Close it if the log already answers; otherwise file what is still
-   unknown.
+
+## Measured drafts (keep)
+
+All `x-ai/grok-4.6`, 21 August 2026, local `papers` CLI on:
+
+- `drafts/2026-08-21-psychosis-ed-grok-4.6` — 7 direct, cited 12, 1† / 20‡
+- `drafts/2026-08-21-synthetic-substances-psychiatry-grok-4.6` — 13 direct, cited 12, 0† / 3‡ (`4.4-5.2` split)
+- `drafts/2026-08-21-psych-ed-management-grok-4.6` — 7 direct, cited 12, 0† / 8‡; named-source `'Twelve study'`
+- `drafts/2026-08-21-organic-causes-psychosis-grok-4.6` — 21 direct, cited 12, 0† / 0‡; question narrowed to first-episode
+
+Do not delete or regenerate these. They are the evidence for #188–#192.
 
 ## Open
 
+- #188 cite cap + pin question — ready
+- #189 statistic check + revision — ready
+- #190 generic names + distinct extra query — ready
+- #191 `queued_ckn` tally — ready; closes #84 when it lands
+- #192 Table 1 design labels — ready
 - #173 hosted full text (Europe PMC only on Render) — needs a pick
-- #84 full-text coverage — measure on a new run, not a code change yet
+- #185, #186, #187, #84 — stay open until the slices above land
 
 ## Watch out for
 
 - **Do not put `--long` on the web UI.** Parked on purpose.
-- **Do not regenerate `drafts/`** unless asked. Those five Reviews are the
-  public demo.
+- **Do not regenerate the public demo Reviews** in `drafts/` (the `*-cli` and
+  `*-opus-5` files). The four `*-grok-4.6` briefings stay as measurement.
 - **agy Gemini quota is exhausted.** Builder and documenter are
   `openrouter/google/gemini-3.7-flash` (pi, billed, ~$0.42 a builder run at
   the 75% headline discount). Scout is still agy — it will fail. Reviewer is
@@ -62,3 +84,5 @@ PATH; either run from PowerShell or set
 - Factory lives in this repo (`adws/`, `justfile`). Requests go in `requests/`
   in the four-line shape.
 - Docs-current CI gate; write "Refs #NNN, stays open" never "does not close #NNN".
+- **Unrelated dirty files may be on `main`** (`CLAUDE.md`, `articlegen/llm.py`,
+  `tests/test_offline.py`). Do not fold them into a #188–#192 PR.

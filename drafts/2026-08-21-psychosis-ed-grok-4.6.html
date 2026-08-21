@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Assessment and management of psychosis in emergency departments</title>
+<script>
+  (function() {
+    var saved = localStorage.getItem('articlegen_theme') || 'system';
+    if (saved === 'dark' || saved === 'light') {
+      document.documentElement.setAttribute('data-theme', saved);
+    }
+  })();
+</script>
+<style>
+  :root, html[data-theme="light"] {
+    --bg: #ffffff;
+    --surface: #f7f7f5;
+    --ink: #14171a;
+    --ink-2: #3c4249;
+    --muted: #6a7178;
+    --accent: #17457f;
+    --link: #1b5aa8;
+    --rule: #dfdfda;
+    --rule-strong: #b9bab5;
+    --seg-direct: #184f95;
+    --seg-related: #2a78d6;
+    --seg-tangential: #86b6ef;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14150f;
+      --surface: #1e1f1c;
+      --ink: #f2f1ea;
+      --ink-2: #cfcec5;
+      --muted: #9d9d94;
+      --accent: #9dc4f5;
+      --link: #86b6ef;
+      --rule: #33342f;
+      --rule-strong: #4c4d47;
+      --seg-direct: #86b6ef;
+      --seg-related: #3987e5;
+      --seg-tangential: #184f95;
+      color-scheme: dark;
+    }
+  }
+  html[data-theme="dark"] {
+    --bg: #14150f;
+    --surface: #1e1f1c;
+    --ink: #f2f1ea;
+    --ink-2: #cfcec5;
+    --muted: #9d9d94;
+    --accent: #9dc4f5;
+    --link: #86b6ef;
+    --rule: #33342f;
+    --rule-strong: #4c4d47;
+    --seg-direct: #86b6ef;
+    --seg-related: #3987e5;
+    --seg-tangential: #184f95;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Iowan Old Style", "Charter", Georgia, "Times New Roman", serif;
+    font-size: 1.02rem;
+    line-height: 1.62;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Fluid column: phones keep the viewport width exactly as before (the 40rem
+     floor only binds once the screen exceeds it); desktops scale with the
+     window up to 52rem. The wide-screen font bump below grows the rem, so the
+     ceiling is ~985px of column while the measure stays near 75 characters —
+     wider than this stops being readable prose, which is why journals cap it. */
+  main { max-width: clamp(40rem, 72vw, 52rem); margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+  @media (min-width: 1200px) {
+    html { font-size: 112.5%; }
+  }
+  .sans, .meta-line, .subject-line, .keywords, .di-caption, .fig-legend, .key-points,
+  .refs ol, .toolbar, .colophon, table, .meta-label {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+
+  /* ---- masthead ---------------------------------------------------- */
+  header.masthead { border-top: 3px solid var(--ink); padding-top: 0.9rem; margin-bottom: 2rem; }
+  .article-type {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 0.9rem;
+  }
+  h1 {
+    font-size: clamp(1.7rem, 4.2vw, 2.3rem);
+    line-height: 1.22; font-weight: 700; letter-spacing: -0.005em;
+    margin: 0 0 0.9rem;
+  }
+  /* Full contrast, body-text size, above the fold. The point of issue #91 is
+     that a disclosure in muted 0.78rem type is not a disclosure. */
+  .ai-disclosure {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.92rem; font-weight: 600; line-height: 1.45; color: var(--ink);
+    margin: 0 0 0.9rem; padding: 0.6rem 0.8rem;
+    background: var(--surface); border-left: 3px solid var(--ink);
+  }
+  .meta-line {
+    font-size: 0.78rem; color: var(--muted); margin: 0 0 0.35rem;
+    padding-bottom: 0.9rem; border-bottom: 1px solid var(--rule);
+  }
+  .subject-line { font-size: 0.78rem; color: var(--muted); margin: 0 0 0.9rem; }
+  .meta-label {
+    font-size: 0.68rem; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted); margin-right: 0.4rem;
+  }
+
+  /* ---- abstract & key points --------------------------------------- */
+  .abstract { margin: 0 0 1.2rem; }
+  .abstract p { margin: 0; font-size: 1.06rem; line-height: 1.6; color: var(--ink-2); }
+  .abstract .run-in-head, .question .run-in-head {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink); margin-right: 0.5rem;
+  }
+  .question { margin: 0 0 1rem; font-size: 1.06rem; line-height: 1.6; color: var(--ink-2); }
+  .keywords { font-size: 0.8rem; color: var(--muted); margin: 0 0 2rem; }
+  aside.key-points {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    padding: 1.1rem 1.3rem 1.2rem; margin: 0 0 2.2rem; border-radius: 3px;
+  }
+  aside.key-points h2 {
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 0.7rem;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  aside.key-points ul { margin: 0; padding-left: 1.1rem; }
+  .key-points-note { color: var(--muted); font-size: 0.78rem !important;
+                     font-style: italic; margin: 0 0 0.7rem 0 !important; }
+  sup.flag { font-size: 0.72em; line-height: 0; vertical-align: super; }
+  sup.flag a { color: var(--muted); text-decoration: none; font-weight: 700; }
+  aside.key-points li { margin-bottom: 0.5rem; font-size: 0.95rem; line-height: 1.55; }
+  aside.key-points li:last-child { margin-bottom: 0; }
+
+  /* ---- body -------------------------------------------------------- */
+  h2 {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 1.02rem; font-weight: 700; letter-spacing: 0.01em;
+    margin: 2.2rem 0 0.7rem; color: var(--ink);
+  }
+  p { margin: 0 0 1rem; }
+  .body-section p + p { text-indent: 1.2em; }
+  .run-in { font-weight: 700; font-style: italic; }
+  a { color: var(--link); }
+  sup.cite { font-size: 0.68em; line-height: 0; font-weight: 600; letter-spacing: 0.02em; }
+  sup.cite a { color: var(--link); text-decoration: none; padding: 0 0.02em; }
+  sup.cite a:hover { text-decoration: underline; }
+
+  /* ---- display items ----------------------------------------------- */
+  .display { margin: 1.8rem 0 2rem; }
+  .di-caption {
+    font-size: 0.8rem; line-height: 1.5; color: var(--muted); margin: 0.7rem 0 0;
+  }
+  .di-label { font-weight: 700; color: var(--ink); }
+  aside.box {
+    background: var(--surface); border: 1px solid var(--rule-strong);
+    padding: 1.1rem 1.3rem 1.2rem; border-radius: 3px;
+  }
+  aside.box .di-caption { margin: 0 0 0.7rem; font-size: 0.92rem; color: var(--ink); }
+  aside.box p { font-size: 0.95rem; line-height: 1.55; margin: 0 0 0.6rem; }
+  aside.box p:last-child { margin-bottom: 0; }
+  .box-cite { color: var(--muted); font-size: 0.85rem !important; }
+  .box-note { color: var(--muted); font-size: 0.78rem !important; font-style: italic;
+              margin-top: 0.75rem !important; }
+  figure.figure { margin: 1.8rem 0 2rem; padding: 1rem 0 0; border-top: 1px solid var(--rule); }
+  .fig-svg { width: 100%; height: auto; display: block; }
+  .fig-grid { stroke: var(--rule); stroke-width: 1; }
+  .fig-axis { stroke: var(--rule-strong); stroke-width: 1; }
+  .fig-tick { fill: var(--muted); font-size: 11px;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .fig-value { fill: var(--ink-2); font-size: 11px; font-weight: 600;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .fig-axis-title { fill: var(--muted); font-size: 11px; letter-spacing: 0.04em;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .seg-direct { fill: var(--seg-direct); }
+  .seg-related { fill: var(--seg-related); }
+  .seg-tangential { fill: var(--seg-tangential); }
+  .seg-cited { fill: var(--seg-related); }
+  .fig-legend {
+    display: flex; flex-wrap: wrap; gap: 0.3rem 1.1rem; list-style: none;
+    margin: 0.6rem 0 0; padding: 0; font-size: 0.78rem; color: var(--muted);
+  }
+  .fig-legend li { display: flex; align-items: center; gap: 0.4rem; }
+  .swatch {
+    display: inline-block; width: 0.68rem; height: 0.68rem; border-radius: 2px;
+    margin-right: 0.35rem; vertical-align: -0.05rem;
+  }
+  .swatch-direct { background: var(--seg-direct); }
+  .swatch-related { background: var(--seg-related); }
+  .swatch-tangential { background: var(--seg-tangential); }
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; min-width: 32rem; border-collapse: collapse; font-size: 0.82rem; }
+  tbody td:nth-child(5) { white-space: nowrap; }
+  thead th {
+    text-align: left; font-weight: 700; color: var(--ink);
+    border-top: 1px solid var(--rule-strong); border-bottom: 1px solid var(--rule-strong);
+    padding: 0.45rem 0.5rem; white-space: nowrap;
+  }
+  tbody td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--rule); color: var(--ink-2); }
+  tbody tr:last-child td { border-bottom: 1px solid var(--rule-strong); }
+  .t-num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .t-venue { color: var(--muted); }
+
+  /* ---- back matter -------------------------------------------------- */
+  .back-section { margin-top: 2.2rem; }
+  .back-section > h2:first-child, .refs h2 { margin-top: 0; }
+  .back-section p { font-size: 0.92rem; line-height: 1.58; color: var(--ink-2); }
+  .glossary dl { margin: 0; }
+  .gloss-row { display: flex; gap: 0.75rem; padding: 0.4rem 0; border-bottom: 1px solid var(--rule); }
+  .gloss-row dt { flex: 0 0 9.5rem; font-weight: 700; font-size: 0.92rem; }
+  .gloss-row dd { margin: 0; font-size: 0.92rem; color: var(--ink-2); }
+  .gloss-row:last-child { border-bottom: none; }
+  .refs { margin-top: 2.4rem; border-top: 2px solid var(--ink); padding-top: 1.1rem; }
+  .refs ol { margin: 0; padding-left: 1.5rem; font-size: 0.82rem; line-height: 1.5; }
+  .refs li { margin-bottom: 0.55rem; color: var(--ink-2); }
+  .refs li:target { background: var(--surface); border-radius: 2px; }
+  .refs a { color: var(--link); text-decoration: none; }
+  .refs a:hover { text-decoration: underline; }
+  .ref-authors { color: var(--ink); }
+  .ref-cites { color: var(--muted); }
+  footer.colophon {
+    margin-top: 2.4rem; padding-top: 1rem; border-top: 1px solid var(--rule);
+    font-size: 0.78rem; line-height: 1.55; color: var(--muted);
+  }
+
+  /* ---- toolbar ------------------------------------------------------ */
+  .toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0 2rem; }
+  .tool-btn {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    background: transparent; color: var(--ink-2);
+    border: 1px solid var(--rule-strong); border-radius: 2px;
+    padding: 0.35rem 0.7rem; font-size: 0.78rem; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+  }
+  .tool-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .share-toast { font-size: 0.78rem; color: var(--accent); align-self: center; display: none; }
+
+  @media (max-width: 34rem) {
+    .gloss-row { display: block; }
+    .gloss-row dt { margin-bottom: 0.15rem; }
+    .body-section p + p { text-indent: 0; }
+  }
+  @media print {
+    body { font-size: 10.5pt; background: #fff; color: #000; }
+    .toolbar { display: none; }
+    a, sup.cite a { color: #000; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <article>
+  <header class="masthead">
+    <p class="article-type">Evidence briefing</p>
+    <h1>Assessment and management of psychosis in emergency departments</h1>
+    <p class="ai-disclosure">Written by a language model from the cited research, from 5 full texts and the abstracts of the other 7. No human author wrote or checked this text. Not peer reviewed.</p>
+    <p class="meta-line">Generated 21 August 2026 &middot; 12 sources cited, 2011–2026 &middot; Full text read for 5 of 12 sources &middot; Not peer reviewed</p>
+    <p class="subject-line"><span class="meta-label">Subject</span>What does the evidence show about psychosis in emergency departments?</p>
+
+    <div class="toolbar">
+      <button class="tool-btn" onclick="shareArticle()">Share</button>
+      <button class="tool-btn" onclick="copyArticleLink()">Copy link</button>
+      <button class="tool-btn" onclick="toggleArticleTheme()"><span id="themeIcon">&#9789;</span> Theme</button>
+      <span id="shareToast" class="share-toast">Link copied</span>
+    </div>
+
+    <p class="question"><span class="run-in-head">Question</span>What is known about the volume, assessment and management of psychosis among people who present to emergency departments, including substance-related and pandemic-period patterns?</p>
+    <div class="abstract">
+      <p><span class="run-in-head">Answer</span>Direct evidence on psychosis care in emergency departments appears thin. One scoping review identified no eligible studies of brief behavioural or care-process interventions for adults with acute psychosis. A 2016 consensus conference listed screening and management protocols as high-priority gaps. Remaining work is largely observational. Cannabis legalization in Ontario and Alberta was not associated with a detected step increase in cannabis-induced psychosis or schizophrenia emergency visits. Two uncontrolled COVID-period series reported higher psychosis or new-onset psychosis and mania activity early in the pandemic, without establishing a causal mechanism. A single naturalistic sample reported that a five-item agitation subscale tracked clinician-rated severity in a psychiatric emergency room. Related first-episode, substance-use and methamphetamine studies describe how patients reach emergency care but are not tests of emergency-department interventions. No controlled evaluation of de-escalation or follow-up protocols for primary psychosis in this setting was identified.</p>
+    </div>
+    <p class="keywords"><span class="meta-label">Keywords</span> psychosis; emergency department; agitation; cannabis-induced psychosis; covid-19; first-episode psychosis; methamphetamine; de-escalation</p>
+  </header>
+
+  <aside class="key-points">
+<h2>What the evidence shows</h2>
+<p class="key-points-note">Every figure in this review was checked against the material read for the cited sources — their abstracts, and the open-access full text where one was retrieved. † marks a figure that could not be found there; ‡ marks one found only in a source other than the one cited. See Limitations.</p>
+<ul>
+<li>A scoping review searching multiple databases through March 2023 mapped brief emergency-department behavioural and care-process studies for suicide, overdose or psychosis and reported that none enrolled adults with acute psychosis from a primary mental health condition.<sup class="cite"><a href="#ref-1">1</a></sup> Of 40 included reports, most (n=34) examined suicide attempt or ideation and eight examined opioid overdose; the reviewers did not assess study quality or rate strength of effectiveness.<sup class="cite"><a href="#ref-1">1</a></sup></li>
+<li>Using a nominal group technique, a Coalition on Psychiatric Emergencies working group of emergency and psychiatric specialists reduced 28 candidate questions to six ranked research needs on screening and identification and on intervention and management of psychotic spectrum disorders in the emergency department.<sup class="cite"><a href="#ref-2">2</a></sup> The group judged that standardised screening, intervention and outcome measurement in emergency settings had not moved beyond attention to agitation.<sup class="cite"><a href="#ref-2">2</a></sup></li>
+<li>In the observational NATURA sample of 278 patients<sup class="flag" title="This figure could not be located in the sources cited for it."><a href="#limitations">†</a></sup> with acute psychosis and agitation in a psychiatric emergency room, the Excited Component of the Positive and Negative Syndrome Scale was unifactorial, Cronbach alpha was 0.86, and scores rose 3.4<sup class="flag" title="This figure was found only in a source other than the one cited."><a href="#limitations">‡</a></sup> points per Clinical Global Impression–Severity point.<sup class="cite"><a href="#ref-3">3</a></sup> In the same sample, scores fell an average of 5.5 points per Agitation and Calmness Evaluation Scale point, and the effect size for detected change was 1.44.<sup class="cite"><a href="#ref-3">3</a></sup></li>
+<li>Seasonal autoregressive models of weekly Ontario and Alberta emergency counts from April 2015 to December 2019 detected no legalization step change for cannabis-induced psychosis (5832 presentations; 0.34<sup class="flag" title="This figure was found only in a source other than the one cited."><a href="#limitations">‡</a></sup> visits per week, 95%<sup class="flag" title="This figure was found only in a source other than the one cited."><a href="#limitations">‡</a></sup> CI −4.1<sup class="flag" title="This figure was found only in a source other than the one cited."><a href="#limitations">‡</a></sup> to 4.8<sup class="flag" title="This figure was found only in a source other than the one cited."><a href="#limitations">‡</a></sup>) or schizophrenia-spectrum conditions (211661 presentations). Cannabis-induced psychosis presentations doubled across the whole interval.<sup class="cite"><a href="#ref-4">4</a></sup> Parallel models likewise showed no significant step for amphetamine-induced psychosis (1.93 visits per week) or alcohol-induced psychosis (0.61 visits per week); the authors cautioned that Canada’s rollout may be idiosyncratic.<sup class="cite"><a href="#ref-4">4</a></sup></li>
+<li>A South Florida series of 508 psychiatric admissions, including 367 psychosis cases, found higher mean psychosis admissions in March–July 2020 than in the preceding five months (p = 0.04<sup class="flag" title="This figure was found only in a source other than the one cited."><a href="#limitations">‡</a></sup>), a 22.9%<sup class="flag" title="This figure was found only in a source other than the one cited."><a href="#limitations">‡</a></sup> rise.<sup class="cite"><a href="#ref-5">5</a></sup> Correlation with COVID-19 admissions in that series was positive (r = 0.5) but not statistically significant (p = 0.06), and substance-induced psychosis was excluded.<sup class="cite"><a href="#ref-5">5</a></sup> Manual review of 5161 visits at two Israeli psychiatric emergency departments found new-onset psychosis or mania in 326 records, with the proportion increasing from 137 of 2479 visits (5.5%<sup class="flag" title="This figure was found only in a source other than the one cited."><a href="#limitations">‡</a></sup>) in 2019 to 189 of 2367 (8.0%<sup class="flag" title="This figure was found only in a source other than the one cited."><a href="#limitations">‡</a></sup>) in 2020 (p = 0.001<sup class="flag" title="This figure was found only in a source other than the one cited."><a href="#limitations">‡</a></sup>).<sup class="cite"><a href="#ref-6">6</a></sup> The Israeli April 2020 peak (9.4% versus 4.7%, p = 0.015) did not track national COVID-19 incidence, and polymerase chain reaction tests were negative except in a single case.<sup class="cite"><a href="#ref-6">6</a></sup></li>
+<li>In linked Western Australian data on 7568 adults<sup class="flag" title="This figure was found only in a source other than the one cited."><a href="#limitations">‡</a></sup> whose substance use disorder diagnosis preceded a primary psychotic disorder, the median diagnostic interval was 1.9 years and psychosis was most often recorded in emergency departments (46%<sup class="flag" title="This figure was found only in a source other than the one cited."><a href="#limitations">‡</a></sup>).<sup class="cite"><a href="#ref-7">7</a></sup> Initial substance-use diagnoses in that cohort occurred most often as inpatients (62%), and women had a 7-month longer diagnostic interval than men.<sup class="cite"><a href="#ref-7">7</a></sup> Among 279 first-episode patients in the Parma early-psychosis programme, 28.7%<sup class="flag" title="This figure was found only in a source other than the one cited."><a href="#limitations">‡</a></sup> were referred from the emergency room or general hospital.<sup class="cite"><a href="#ref-8">8</a></sup> Emergency-referred Parma participants showed a higher percentage of current suicidal ideation than those entering by other routes, and 31 (11.1%) dropped out during the first treatment year.<sup class="cite"><a href="#ref-8">8</a></sup></li>
+<li>In a propensity-matched Ontario cohort of incident nonaffective first-episode psychosis, early-psychosis-intervention users had lower emergency-department presentation rates over two years than non-users (hazard ratio 0.71, 95%<sup class="flag" title="This figure was found only in a source other than the one cited."><a href="#limitations">‡</a></sup> CI 0.60<sup class="flag" title="This figure was found only in a source other than the one cited."><a href="#limitations">‡</a></sup>–0.83<sup class="flag" title="This figure was found only in a source other than the one cited."><a href="#limitations">‡</a></sup>); this finding is an extrapolation from specialised programmes rather than an emergency-department trial.<sup class="cite"><a href="#ref-9">9</a></sup> Programme users also had lower all-cause mortality over two years (hazard ratio 0.24, 95%<sup class="flag" title="This figure was found only in a source other than the one cited."><a href="#limitations">‡</a></sup> CI 0.11–0.53), without a significant difference in self-harm or suicide, and those service-use differences were not observed after two years.<sup class="cite"><a href="#ref-9">9</a></sup></li>
+<li>An integrative review of ten studies reported that methamphetamine accounted for 2.3%<sup class="flag" title="This figure was found only in a source other than the one cited."><a href="#limitations">‡</a></sup> or less of emergency-department presentations and that these visits were more likely to involve psychosis, 24-hour<sup class="flag" title="This figure was found only in a source other than the one cited."><a href="#limitations">‡</a></sup> psychiatric hold, agitation and police accompaniment.<sup class="cite"><a href="#ref-10">10</a></sup> Presenters in that literature were predominantly male, with a mean age of 31–37 years, and were more often seen out of hours than other substance-related visits.<sup class="cite"><a href="#ref-10">10</a></sup></li>
+</ul>
+</aside>
+
+<aside class="key-points">
+<h2>What remains open</h2>
+<ul>
+<li>Controlled trials of brief emergency-department psychological, safety-planning or follow-up interventions for primary acute psychosis have not been reported in the scoped literature. That review identified one underway psychosis study, so the empty map may not persist, but results are not yet available.<sup class="cite"><a href="#ref-1">1</a></sup></li>
+<li>Whether early-pandemic increases in psychosis visits reflect new incidence, delayed community care or case-shifting among settings remains unresolved, because neither COVID-period series established a causal mechanism. The Israeli investigators judged direct infection unlikely, given negative testing and a timeline that did not follow the second-wave caseload, whereas the Florida analysis could not attribute the rise to COVID-19 diagnosis.<sup class="cite"><a href="#ref-5">5</a>,<a href="#ref-6">6</a></sup></li>
+<li>Non-verbal de-escalation and Safewards adaptations have been described for emergency nursing and for police-accompanied mental health attendances, but no psychosis-specific controlled evaluation of restrictive-intervention outcomes was identified.<sup class="cite"><a href="#ref-11">11</a>,<a href="#ref-12">12</a></sup> The Safewards emergency subgroup comparison was observational, mixed mental-health presentations, and has not been replicated as a psychosis trial.<sup class="cite"><a href="#ref-12">12</a></sup></li>
+<li>Emergency diagnostic coding often does not separate substance-induced from primary psychosis, which limits interpretation of legalization and stimulant-related series. How synthetic-cannabinoid or methamphetamine presentations should be counted alongside primary psychosis in emergency datasets is therefore uncertain.</li>
+</ul>
+</aside>
+
+<aside class="key-points open-these">
+<h2>Three papers to open</h2>
+<ul>
+<li><sup class="cite"><a href="#ref-2">2</a></sup> Peltzer-Jones et al. (2019). <a href="https://doi.org/10.5811/westjem.2019.1.39263">A Research Agenda for Assessment and Management of Psychosis in Emergency Department Patients.</a></li> <li><sup class="cite"><a href="#ref-1">1</a></sup> Nugent et al. (2024). <a href="https://doi.org/10.1136/bmjopen-2023-080023">Behavioural mental health interventions delivered in the emergency department for suicide, overdose and psychosis: a scoping review.</a></li> <li><sup class="cite"><a href="#ref-6">6</a></sup> Segev et al. (2021). <a href="https://doi.org/10.1038/s41598-021-00310-w">Trends of new-onset psychosis or mania in psychiatric emergency departments during the COVID19 pandemic: a longitudinal comparative study.</a></li>
+</ul>
+</aside>
+
+  <section class="back-section">
+<h2>Methods</h2>
+<p><span class="run-in">Search strategy.</span> Candidate records were retrieved on 21 August 2026 from OpenAlex, Europe PMC and arXiv, using the search strings ‘psychosis emergency department’; ‘acute psychosis emergency department’; ‘first-episode psychosis ED’. Records without a retrievable abstract were discarded, leaving 48 for screening. Each remaining record was assessed for how directly it addresses What does the evidence show about psychosis in emergency departments? and labelled direct, related or background; 12 were cited here and are listed in Table 1. A second, targeted search then looked up 3 works named in the most relevant abstracts (‘Safewards intervention’; ‘English-language trial’; ‘ED intervention’), which added 8 further records to the pool.</p>
+<p><span class="run-in">Evidence handling.</span> Titles and abstracts were read for every record, and the open-access full texts of 5 sources were retrieved from their open-access copies and read alongside them (marked in Table 1); claims resting on the remaining sources draw on no data beyond an abstract. Decimals, percentages, effect estimates and quantities carrying a clinical unit were then checked automatically, each against the sources its own sentence cites, within exactly the material shown to the model — the abstracts plus those full-text excerpts. A figure that could not be located, or that appears only in a source other than the one cited, is flagged under Limitations.</p>
+<p><span class="run-in">Generation.</span> Search planning, source curation and drafting were performed by a large language model (x-ai/grok-4.6). Source retrieval, relevance tabulation, citation numbering, Table 1, Fig. 1 and the statistical check are deterministic and were not model-generated.</p>
+</section>
+
+  <section class="back-section">
+<h2>Evidence assessment</h2>
+<p>Of the 12 sources cited, 7 address the review question directly, 5 are related and 0 provide background only; they were published in 2011–2026. The composition of the evidence base is shown in Fig. 1.</p>
+<p id="limitations"><span class="run-in">Limitations.</span> This synthesis was prepared from the open-access full texts of 5 cited sources and the abstracts of the remaining 7. Where only an abstract was available, effect estimates, methodological detail, and the limitations that authors report only in a full text were unavailable, so the strength of those studies could not be appraised here. One numerical value reported above (278 patients), marked † where it appears, could not be located in the material read for the cited sources — their abstracts, and the open-access full text where one was retrieved. It may originate in a part of a source that was not read, or may be unreliable, and should be verified before being quoted. 20 numerical values reported above (0.86, 3.4, 0.34, 95%, 4.1, 4.8 and 14 other(s)), each marked ‡ where it appears, are found in cited sources other than the ones their sentences credit. The figures are present in the evidence base, but the attributions do not hold and should be checked before they are quoted. The text below should therefore be read as a working draft rather than a finished review.</p>
+</section>
+
+  <div class="display table-wrap" aria-labelledby="table-1">
+<p class="di-caption" id="table-1"><span class="di-label">Table 1 |</span> Characteristics of the cited evidence. Design is inferred from each record's title, journal and index metadata and is left blank where it could not be inferred; no quality appraisal was performed. Relevance is the curation label for how directly each source addresses the review question. Read records whether the model saw the source's open-access full text or its abstract only.</p>
+<div class="table-scroll"><table>
+<thead><tr><th>Ref.</th><th>Study</th><th>Year</th><th>Source</th><th>Design</th><th>Relevance</th><th>Read</th></tr></thead>
+<tbody><tr><td class="t-num"><a href="#ref-1">1</a></td><td>Nugent et al.</td><td class="t-num">2024</td><td class="t-venue">BMJ Open</td><td>—</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Full text</td></tr><tr><td class="t-num"><a href="#ref-2">2</a></td><td>Peltzer-Jones et al.</td><td class="t-num">2019</td><td class="t-venue">Western Journal of Emergency Medicine</td><td>—</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td></tr><tr><td class="t-num"><a href="#ref-3">3</a></td><td>Montoya et al.</td><td class="t-num">2011</td><td class="t-venue">Health and Quality of Life Outcomes</td><td>—</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td></tr><tr><td class="t-num"><a href="#ref-4">4</a></td><td>Callaghan et al.</td><td class="t-num">2022</td><td class="t-venue">The Canadian Journal of Psychiatry</td><td>—</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Full text</td></tr><tr><td class="t-num"><a href="#ref-5">5</a></td><td>Ross et al.</td><td class="t-num">2023</td><td class="t-venue">Cureus</td><td>—</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Full text</td></tr><tr><td class="t-num"><a href="#ref-6">6</a></td><td>Segev et al.</td><td class="t-num">2021</td><td class="t-venue">Scientific Reports</td><td>—</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Full text</td></tr><tr><td class="t-num"><a href="#ref-7">7</a></td><td>Chai et al.</td><td class="t-num">2026</td><td class="t-venue">Early intervention in psychiatry</td><td>—</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td></tr><tr><td class="t-num"><a href="#ref-8">8</a></td><td>Landi et al.</td><td class="t-num">2020</td><td class="t-venue">Early Intervention in Psychiatry</td><td>—</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td></tr><tr><td class="t-num"><a href="#ref-9">9</a></td><td>Anderson et al.</td><td class="t-num">2018</td><td class="t-venue">American Journal of Psychiatry</td><td>—</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td></tr><tr><td class="t-num"><a href="#ref-10">10</a></td><td>Jones et al.</td><td class="t-num">2018</td><td class="t-venue">Journal of Clinical Nursing</td><td>—</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td></tr><tr><td class="t-num"><a href="#ref-11">11</a></td><td>Kruczynski et al.</td><td class="t-num">2026</td><td class="t-venue">Emergency nurse : the journal of the RCN Accident and Emergency Nursing Association</td><td>—</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Full text</td></tr><tr><td class="t-num"><a href="#ref-12">12</a></td><td>Daniel et al.</td><td class="t-num">2025</td><td class="t-venue">International emergency nursing</td><td>—</td><td><span class="swatch swatch-related"></span>Related</td><td>Abstract</td></tr></tbody>
+</table></div>
+</div>
+
+  <section class="back-section glossary">
+<h2>Glossary</h2>
+<dl><div class="gloss-row"><dt>PANSS-EC</dt><dd>The Excited Component of the Positive and Negative Syndrome Scale, a five-item rating of agitation used in acute psychosis.</dd></div><div class="gloss-row"><dt>First-episode psychosis</dt><dd>The first treated episode of a psychotic disorder, often the point at which specialised early-intervention services are offered.</dd></div><div class="gloss-row"><dt>Safewards</dt><dd>A model of staff interventions intended to reduce conflict and restrictive practices, originally developed for inpatient mental health wards.</dd></div></dl>
+</section>
+
+  <section class="refs">
+    <h2>References</h2>
+    <ol>
+      <li id="ref-1"><span class="ref-authors">Nugent, S. M., Anderson, J. &amp; Young, S.</span> <a href="https://doi.org/10.1136/bmjopen-2023-080023">Behavioural mental health interventions delivered in the emergency department for suicide, overdose and psychosis: a scoping review.</a> <em>BMJ Open</em> (2024). <span class="ref-cites">Cited by 10</span></li>
+<li id="ref-2"><span class="ref-authors">Peltzer-Jones, J. et al.</span> <a href="https://doi.org/10.5811/westjem.2019.1.39263">A Research Agenda for Assessment and Management of Psychosis in Emergency Department Patients.</a> <em>Western Journal of Emergency Medicine</em> (2019). <span class="ref-cites">Cited by 24</span></li>
+<li id="ref-3"><span class="ref-authors">Montoya, A. et al.</span> <a href="https://doi.org/10.1186/1477-7525-9-18">Validation of the Excited Component of the Positive and Negative Syndrome Scale (PANSS-EC) in a naturalistic sample of 278 patients with acute psychosis and agitation in a psychiatric emergency room.</a> <em>Health and Quality of Life Outcomes</em> (2011). <span class="ref-cites">Cited by 141</span></li>
+<li id="ref-4"><span class="ref-authors">Callaghan, R. C. et al.</span> <a href="https://doi.org/10.1177/07067437211070650">Associations Between Canada&#x27;s Cannabis Legalization and Emergency Department Presentations for Transient Cannabis-Induced Psychosis and Schizophrenia Conditions: Ontario and Alberta, 2015–2019.</a> <em>The Canadian Journal of Psychiatry</em> (2022). <span class="ref-cites">Cited by 42</span></li>
+<li id="ref-5"><span class="ref-authors">Ross, C. A., Kara, S. &amp; Ferrer, G. F.</span> <a href="https://doi.org/10.7759/cureus.40989">COVID-19 and Psychiatric Admissions: A Comparative Study of Pre-pandemic and Post-pandemic Psychosis Admissions in a South Florida Emergency Department.</a> <em>Cureus</em> (2023). <span class="ref-cites">Cited by 7</span></li>
+<li id="ref-6"><span class="ref-authors">Segev, A. et al.</span> <a href="https://doi.org/10.1038/s41598-021-00310-w">Trends of new-onset psychosis or mania in psychiatric emergency departments during the COVID19 pandemic: a longitudinal comparative study.</a> <em>Scientific Reports</em> (2021). <span class="ref-cites">Cited by 19</span></li>
+<li id="ref-7"><span class="ref-authors">Chai, K. E. K. et al.</span> <a href="https://doi.org/10.1111/eip.70211">Public Health Service Clinical Journeys of Patients With Primary Substance Use Disorders Who Are Subsequently Diagnosed With Non-Affective Psychotic Disorders.</a> <em>Early intervention in psychiatry</em> (2026).</li>
+<li id="ref-8"><span class="ref-authors">Landi, G. et al.</span> <a href="https://doi.org/10.1111/eip.12968">The ‘Parma‐Early Psychosis’ programme: Characterization of help‐seekers with first episode psychosis.</a> <em>Early Intervention in Psychiatry</em> (2020). <span class="ref-cites">Cited by 31</span></li>
+<li id="ref-9"><span class="ref-authors">Anderson, K. K. et al.</span> <a href="https://doi.org/10.1176/appi.ajp.2017.17050480">Effectiveness of Early Psychosis Intervention: Comparison of Service Users and Nonusers in Population-Based Health Administrative Data.</a> <em>American Journal of Psychiatry</em> (2018). <span class="ref-cites">Cited by 109</span></li>
+<li id="ref-10"><span class="ref-authors">Jones, R., Woods, C. &amp; Usher, K.</span> <a href="https://doi.org/10.1111/jocn.14493">Rates and features of methamphetamine‐related presentations to emergency departments: An integrative literature review.</a> <em>Journal of Clinical Nursing</em> (2018). <span class="ref-cites">Cited by 54</span></li>
+<li id="ref-11"><span class="ref-authors">Kruczynski, J., Simpson, A. &amp; Andoh, P.</span> <a href="https://doi.org/10.7748/en.2026.e2271">Using non-verbal communication to support de-escalation in patients experiencing acute psychosis in the emergency department.</a> <em>Emergency nurse : the journal of the RCN Accident and Emergency Nursing Association</em> (2026).</li>
+<li id="ref-12"><span class="ref-authors">Daniel, C. et al.</span> <a href="https://doi.org/10.1016/j.ienj.2024.101570">The potential for Safewards to reduce restrictive interventions for people arriving to the emergency Department with police for a mental health assessment.</a> <em>International emergency nursing</em> (2025). <span class="ref-cites">Cited by 2</span></li>
+    </ol>
+  </section>
+
+  <section class="back-section">
+<h2>Additional information</h2>
+<p><span class="run-in">Data availability.</span> No new data were generated. All evidence cited is published and openly indexed; 12 of the 12 cited records resolve through the links in the reference list.</p>
+<p><span class="run-in">Author contributions.</span> Search planning, source curation and drafting were carried out by an automated pipeline (articlegen, x-ai/grok-4.6). No human author wrote or verified the text before publication of this draft.</p>
+<p><span class="run-in">Competing interests.</span> None declared.</p>
+<p><span class="run-in">Peer review.</span> This article has not been peer reviewed and is not a publication of record.</p>
+</section>
+
+  <footer class="colophon">
+    <strong>Not medical or clinical advice.</strong> This is a machine-generated summary of the cited journal articles, 5 of 12 read in full, the rest from their abstracts, for background only. It is not a substitute for professional judgement, primary sources, or clinical guidelines. Verify every claim, figure, and dose against the cited papers before acting on it.
+  </footer>
+  </article>
+</main>
+<script>
+function shareArticle() {
+  if (navigator.share) {
+    navigator.share({ title: document.title, url: window.location.href }).catch(function() {});
+  } else {
+    copyArticleLink();
+  }
+}
+function copyArticleLink() {
+  navigator.clipboard.writeText(window.location.href).then(function() {
+    var t = document.getElementById('shareToast');
+    if (t) {
+      t.style.display = 'inline';
+      setTimeout(function() { t.style.display = 'none'; }, 2500);
+    }
+  }).catch(function() {});
+}
+function toggleArticleTheme() {
+  var cur = document.documentElement.getAttribute('data-theme');
+  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var effective = cur || (isSysDark ? 'dark' : 'light');
+  var next = effective === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('articlegen_theme', next);
+  updateArticleThemeIcon();
+}
+function updateArticleThemeIcon() {
+  var icon = document.getElementById('themeIcon');
+  if (!icon) return;
+  var cur = document.documentElement.getAttribute('data-theme');
+  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var effective = cur || (isSysDark ? 'dark' : 'light');
+  icon.innerHTML = effective === 'dark' ? '&#9789;' : '&#9788;';
+}
+document.addEventListener('DOMContentLoaded', updateArticleThemeIcon);
+</script>
+</body>
+</html>
