@@ -49,20 +49,33 @@ class BudgetExceeded(SystemExit):
 
 # --- Detection ---------------------------------------------------------
 #
-# WHAT WE ACTUALLY KNOW: nothing. No real rate-limit event from `claude -p
-# --output-format stream-json` has ever been captured for this project. That
-# capture was a Phase 1 deliverable that never happened, and it is recorded
-# here as a known gap rather than papered over.
+# Captured 15-17 Aug 2026 from Claude Code's terminal `result` event at a
+# weekly session limit (collie session 02af813c; issues #9 / #59). The shape:
 #
-# So detection is written by SHAPE, structured fields first, in the order
-# below. When a real event is finally seen, correct the table -- that is the
-# only edit needed, and `fleet/tests/test_rate_limit.py` will tell you if the
-# correction broke anything.
+#   {"is_error": true, "subtype": "success", "stop_reason": "stop_sequence",
+#    "terminal_reason": "api_error", "api_error_status": 429, "num_turns": 1,
+#    "total_cost_usd": 0,
+#    "result": "You've hit your session limit · resets 10:50am (Australia/Brisbane)"}
+#
+# The preceding assistant message carries `"error": "rate_limit"` as a STRING,
+# not a dict. Check 1 used to drop that (`isinstance(..., dict)` fell through
+# to {}). Check 4 used to read event["status"] / event["error"]["status"],
+# neither of which exists -- the 429 is at event["api_error_status"].
+# subtype is "success", so check 2 never fires.
+#
+# Before those two holes were closed, detection rode entirely on check 5
+# matching the English phrase "session limit". One wording change upstream
+# and it would miss silently again (and did, before 1854a7e, for eight runs).
+#
+# Structured fields first, in this order. Check 5 stays the backstop.
+# terminal_reason == "api_error" is corroborating, not a trigger on its own
+# (other API errors use it too).
 #
 # 1. event["error"]["type"]  in RATE_LIMIT_TYPES     (Anthropic API error shape)
+#    or event["error"] itself is a string in RATE_LIMIT_TYPES
 # 2. event["subtype"]        contains a RATE_LIMIT_MARKER
 # 3. event["error_type"]     in RATE_LIMIT_TYPES
-# 4. a 429 in event["status"] / event["error"]["status"]
+# 4. a 429 in event["status"] / event["error"]["status"] / event["api_error_status"]
 # 5. FALLBACK ONLY: RATE_LIMIT_MARKERS in the result text, lowercased.
 #
 # Anything else with is_error=true is an UpstreamError. Never a retry.
@@ -101,16 +114,19 @@ def classify_result_event(event: dict) -> tuple[str, str]:
     says WHY it decided that.
     """
     event = event or {}
-    error = event.get("error") if isinstance(event.get("error"), dict) else {}
+    raw_error = event.get("error")
+    error = raw_error if isinstance(raw_error, dict) else {}
     is_error = bool(event.get("is_error"))
 
     if not is_error and not error:
         return "ok", ""
 
-    # 1. event["error"]["type"]
+    # 1. event["error"]["type"], or event["error"] as a string in the type set
     err_type = error.get("type")
     if err_type in RATE_LIMIT_TYPES:
         return "rate_limit", f"matched error.type={err_type!r}"
+    if isinstance(raw_error, str) and raw_error in RATE_LIMIT_TYPES:
+        return "rate_limit", f"matched error={raw_error!r}"
 
     # 2. event["subtype"] contains a marker
     subtype = str(event.get("subtype") or "")
@@ -123,10 +139,18 @@ def classify_result_event(event: dict) -> tuple[str, str]:
     if top_error_type in RATE_LIMIT_TYPES:
         return "rate_limit", f"matched error_type={top_error_type!r}"
 
-    # 4. a 429 in event["status"] / event["error"]["status"]
-    for status in (event.get("status"), error.get("status")):
+    # 4. a 429 in event["status"] / event["error"]["status"] / event["api_error_status"]
+    # terminal_reason == "api_error" corroborates, but never triggers on its own.
+    for status, origin in (
+        (event.get("status"), "status"),
+        (error.get("status"), "error.status"),
+        (event.get("api_error_status"), "api_error_status"),
+    ):
         if status is not None and str(status) == "429":
-            return "rate_limit", f"matched status=429"
+            detail = f"matched {origin}=429"
+            if event.get("terminal_reason") == "api_error":
+                detail += " (terminal_reason=api_error)"
+            return "rate_limit", detail
 
     # 5. FALLBACK ONLY: string match over result + subtype, lowercased.
     haystack = (str(event.get("result", "")) + " " + subtype).lower()
@@ -145,11 +169,10 @@ def classify_result_event(event: dict) -> tuple[str, str]:
 
 # --- Capture ------------------------------------------------------------
 #
-# The detection table above is guessed, and issue #9 has been waiting on one
-# thing only: a REAL limit event to check it against. That capture kept not
-# happening because it depended on a person noticing at the time and saving
-# the tail of a raw_output.jsonl that lives under sessions/, which is
-# gitignored and overwritten by the next run.
+# The session-limit shape above is now locked in. Capture stays: a new
+# wording or a new field still needs the whole event, and that used to
+# depend on a person noticing at the time and saving the tail of a
+# raw_output.jsonl under sessions/, which is gitignored and overwritten.
 #
 # So the run captures it itself. Both verdicts are written, and the second one
 # matters more: if the guessed table is WRONG, a real rate limit does not
@@ -221,7 +244,7 @@ def capture_notice(path: Path | None, verdict: str,
         return ""
     if verdict == "rate_limit":
         return (f"  captured the event to {path}\n"
-                f"  check it against {table} — issue #9 is waiting on exactly this")
+                f"  check it against {table} — attach a new shape to issue #9")
     return (f"  captured the whole event to {path}\n"
             f"  if it turns out to be a rate limit, its shape belongs in {table}")
 
