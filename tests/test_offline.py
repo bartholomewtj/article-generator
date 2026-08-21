@@ -798,6 +798,178 @@ def test_idea_search_terms_reach_the_draft() -> None:
           "selectDraft(idea.title, terms)" in index_html)
 
 
+def test_paraphrase_terms_buy_a_distinct_query() -> None:
+    """When supplied or planned terms are near-duplicates, one distinct extra query is required (#190)."""
+    from articlegen import writer
+    from articlegen.writer import (
+        NEAR_DUPLICATE_OVERLAP, queries_are_near_duplicates, query_routes,
+    )
+
+    # Unit checks for queries_are_near_duplicates
+    check("paraphrase pair is near-duplicate",
+          queries_are_near_duplicates("seclusion reduction acute mental health",
+                                     "reducing seclusion in acute mental health wards"))
+    check("different intervention/setting pair is not near-duplicate",
+          not queries_are_near_duplicates("seclusion reduction acute mental health",
+                                         "post-incident debriefing psychiatric wards"))
+    check("pair where one side has empty normalisation is not near-duplicate",
+          not queries_are_near_duplicates("term one", ""))
+    check("pair where both sides have empty normalisation is not near-duplicate",
+          not queries_are_near_duplicates("", ""))
+
+    # Unit checks for query_routes
+    check("paraphrase terms have query_routes == 1",
+          query_routes(["seclusion reduction acute mental health",
+                        "reducing seclusion in acute mental health wards"]) == 1)
+    check("distinct terms have query_routes == 2",
+          query_routes(["seclusion reduction", "post-incident debriefing"]) == 2)
+    check("empty terms list has query_routes == 0", query_routes([]) == 0)
+    check("single term has query_routes == 1", query_routes(["single term"]) == 1)
+
+    captured_prompts: list[str] = []
+    call_count = 0
+    saved_generate_json = writer.generate_json
+    try:
+        # Supplied near-duplicate terms -> prompt contains "exactly ONE" demand, "Do not rewrite them", and appends distinct reply
+        def fake_distinct(prompt, schema, **kw):
+            captured_prompts.append(prompt)
+            return {"queries": ["debriefing and sensory rooms"], "core_entity": "seclusion"}
+
+        writer.generate_json = fake_distinct
+        q, core = writer.plan_queries(
+            "seclusion reduction",
+            search_terms=["seclusion reduction acute wards", "reducing seclusion in acute wards"]
+        )
+        check("supplied near-duplicate terms prompt contains 'exactly ONE' demand",
+              "exactly ONE" in captured_prompts[0])
+        check("supplied near-duplicate terms prompt contains 'Do not rewrite them'",
+              "Do not rewrite them" in captured_prompts[0])
+        check("distinct reply is appended after supplied terms in order",
+              q == ["seclusion reduction acute wards", "reducing seclusion in acute wards", "debriefing and sensory rooms"])
+        check("core_entity is preserved", core == "seclusion")
+
+        # Supplied near-duplicate terms + paraphrase reply -> rejected, exactly 2 generate_json calls (1 retry), retry failure leaves supplied unchanged
+        captured_prompts.clear()
+        call_count = 0
+
+        def fake_paraphrase_retry(prompt, schema, **kw):
+            nonlocal call_count
+            call_count += 1
+            captured_prompts.append(prompt)
+            if call_count == 1:
+                return {"queries": ["acute ward seclusion reduction"], "core_entity": "seclusion"}
+            # Retry also paraphrases
+            return {"queries": ["reducing seclusion in psychiatric wards"], "core_entity": "seclusion"}
+
+        writer.generate_json = fake_paraphrase_retry
+        q_retry, _ = writer.plan_queries(
+            "seclusion reduction",
+            search_terms=["seclusion reduction acute wards", "reducing seclusion in acute wards"]
+        )
+        check("paraphrase reply causes exactly one retry (2 calls total)", call_count == 2)
+        check("retry prompt quotes rejected paraphrase or notes re-wording",
+              "acute ward seclusion reduction" in captured_prompts[1] or "re-wording" in captured_prompts[1])
+        check("double paraphrase failure returns supplied terms unchanged",
+              q_retry == ["seclusion reduction acute wards", "reducing seclusion in acute wards"])
+
+        # Supplied terms that already take distinct routes -> 1 call only, prompt does not carry "exactly ONE", behaviour matches today
+        captured_prompts.clear()
+        call_count = 0
+
+        def fake_distinct_supplied(prompt, schema, **kw):
+            nonlocal call_count
+            call_count += 1
+            captured_prompts.append(prompt)
+            return {"queries": ["sensory modulation"], "core_entity": "seclusion"}
+
+        writer.generate_json = fake_distinct_supplied
+        q_dist, _ = writer.plan_queries(
+            "seclusion and sensory rooms",
+            search_terms=["seclusion reduction", "sensory rooms psychiatric"]
+        )
+        check("distinct supplied terms makes exactly 1 call", call_count == 1)
+        check("distinct supplied prompt does not contain 'These terms all search the same route'",
+              "These terms all search the same route" not in captured_prompts[0])
+        check("distinct supplied returns supplied plus extra",
+              q_dist == ["seclusion reduction", "sensory rooms psychiatric", "sensory modulation"])
+
+        # No-supplied path, planner returns 3 paraphrases -> exactly 1 follow-up call, distinct query appended, core_entity preserved
+        captured_prompts.clear()
+        call_count = 0
+
+        def fake_nosupplied_paraphrases(prompt, schema, **kw):
+            nonlocal call_count
+            call_count += 1
+            captured_prompts.append(prompt)
+            if call_count == 1:
+                return {
+                    "queries": [
+                        "seclusion reduction acute mental health",
+                        "reducing seclusion in acute mental health wards",
+                        "acute mental health seclusion reduction",
+                    ],
+                    "core_entity": "initial_core",
+                }
+            # Follow-up returns distinct query
+            return {"queries": ["Safewards intervention restraint"], "core_entity": "ignored_core"}
+
+        writer.generate_json = fake_nosupplied_paraphrases
+        q_nosup, core_nosup = writer.plan_queries("seclusion reduction", search_terms=None)
+        check("no-supplied paraphrase plan triggers exactly 1 follow-up call (2 calls total)", call_count == 2)
+        check("follow-up appends distinct query",
+              "Safewards intervention restraint" in q_nosup and len(q_nosup) == 4)
+        check("core_entity comes from first call", core_nosup == "initial_core")
+
+        # No-supplied path, planner returns 4 paraphrases (at cap) -> last near-duplicate dropped to make room, result <= MAX_PLANNED_QUERIES
+        captured_prompts.clear()
+        call_count = 0
+
+        def fake_nosupplied_four_paraphrases(prompt, schema, **kw):
+            nonlocal call_count
+            call_count += 1
+            captured_prompts.append(prompt)
+            if call_count == 1:
+                return {
+                    "queries": [
+                        "seclusion reduction acute mental health",
+                        "reducing seclusion in acute mental health wards",
+                        "acute mental health seclusion reduction",
+                        "reducing seclusion in acute mental health units",
+                    ],
+                    "core_entity": "core_four",
+                }
+            return {"queries": ["debriefing interventions"], "core_entity": "other"}
+
+        writer.generate_json = fake_nosupplied_four_paraphrases
+        q_four, core_four = writer.plan_queries("seclusion reduction", search_terms=None)
+        check("four paraphrases plan stays <= MAX_PLANNED_QUERIES after follow-up",
+              len(q_four) <= writer.MAX_PLANNED_QUERIES and len(q_four) == 4)
+        check("distinct query is added after dropping last duplicate",
+              q_four[-1] == "debriefing interventions")
+        check("core_entity is core_four", core_four == "core_four")
+
+        # No-supplied path, planner returns distinct queries -> no follow-up call
+        captured_prompts.clear()
+        call_count = 0
+
+        def fake_nosupplied_distinct(prompt, schema, **kw):
+            nonlocal call_count
+            call_count += 1
+            captured_prompts.append(prompt)
+            return {
+                "queries": ["seclusion reduction", "post-incident debriefing", "sensory modulation"],
+                "core_entity": "core_distinct",
+            }
+
+        writer.generate_json = fake_nosupplied_distinct
+        q_nodist, _ = writer.plan_queries("seclusion and alternatives", search_terms=None)
+        check("no-supplied distinct plan makes no follow-up call (1 call total)", call_count == 1)
+        check("queries returned as planned", len(q_nodist) == 3)
+
+    finally:
+        writer.generate_json = saved_generate_json
+
+
 def test_dead_sources_fail_before_the_caller_is_billed() -> None:
     """A doomed run must not spend an LLM call first.
 
@@ -6563,6 +6735,150 @@ def test_named_references_reads_names_not_noise() -> None:
                       clean_tok not in _NAMED_STOPLIST)
 
 
+def test_generic_named_lookups_are_skipped() -> None:
+    """A generic 'name' is never looked up and names that match most records are dropped (#190)."""
+    from articlegen import pipeline
+    from articlegen.sources import (
+        NAMED_MATCH_MIN_MATCHES, NAMED_MATCH_RATE_MAX, Paper,
+        filter_named_matches, named_references,
+    )
+
+    # Negative controls (each must return [])
+    negatives = [
+        "RESULTS Twelve studies were included in the review.",
+        "We included Twelve studies of seclusion.",
+        "We searched for English-language trials of seclusion reduction.",
+        "The ED intervention reduced restraint use.",
+        "Three ED interventions were compared.",
+        "Data from the US trial and UK trials were combined.",
+        "A population-based cohort study followed adults.",
+        "BACKGROUND Several trials have examined restraint.",
+    ]
+    for text in negatives:
+        check(f"named_references rejects: {text[:35]!r}", named_references(text) == [])
+
+    # Positive controls (must still be extracted)
+    check("named_references extracts Safewards trial",
+          named_references("the Safewards cluster randomised controlled trial") == ["Safewards trial"])
+    check("named_references extracts RAISE-ETP study",
+          named_references("In the RAISE-ETP study, comprehensive care improved outcomes.") == ["RAISE-ETP study"])
+    check("named_references extracts DOI",
+          named_references("(doi: 10.1001/jama.2015.1234)") == ["10.1001/jama.2015.1234"])
+    check("named_references extracts parenthesised acronym",
+          named_references("a stepped-wedge trial (STAR)") == ["STAR trial"])
+    check("named_references orders DOI first then real name",
+          named_references("In the Safewards trial (doi: 10.1001/jama.2015.1234), restraint dropped.") == [
+              "10.1001/jama.2015.1234", "Safewards trial"
+          ])
+
+    # filter_named_matches tests
+    # 1. 16 records, a name request matching 15 of them -> request dropped, none of its records kept
+    records_16 = [
+        Paper(title=f"Twelve study comparison in adult unit #{i}", abstract="text")
+        for i in range(16)
+    ]
+    records_16[15] = Paper(title="Completely unrelated study of restraint", abstract="text")
+    kept, dropped = filter_named_matches(records_16, ["Twelve study"])
+    check("filter_named_matches drops request matching 15 of 16 records", dropped == ["Twelve study"])
+    check("filter_named_matches keeps 0 records when only request is dropped", kept == [])
+
+    # 2. Same 16 records, a name request matching 2 -> kept
+    records_16_safewards = [
+        Paper(title=f"General psychiatric unit report #{i}", abstract="text")
+        for i in range(16)
+    ]
+    records_16_safewards[0] = Paper(title="Safewards model implementation in acute wards", abstract="text")
+    records_16_safewards[1] = Paper(title="Safewards outcomes in inpatient psychiatry", abstract="text")
+    kept, dropped = filter_named_matches(records_16_safewards, ["Safewards trial"])
+    check("filter_named_matches keeps request matching 2 of 16 records", dropped == [])
+    check("filter_named_matches keeps matching records for surviving request", len(kept) == 2)
+
+    # 3. A DOI request matching every record -> never dropped (a DOI identifies one work)
+    doi_records = [
+        Paper(title=f"Paper #{i}", abstract="text", doi="10.1001/jama.2015.1234")
+        for i in range(10)
+    ]
+    kept, dropped = filter_named_matches(doi_records, ["10.1001/jama.2015.1234"])
+    check("filter_named_matches never drops a DOI request (identifies one work)", dropped == [] and len(kept) == 10)
+
+    # 4. 3 records, a name matching 2 (0.67 rate, below NAMED_MATCH_MIN_MATCHES) -> kept
+    small_records = [
+        Paper(title="Safewards trial part 1", abstract="text"),
+        Paper(title="Safewards trial part 2", abstract="text"),
+        Paper(title="Unrelated study", abstract="text"),
+    ]
+    kept, dropped = filter_named_matches(small_records, ["Safewards trial"])
+    check("filter_named_matches keeps high-rate match below MIN_MATCHES floor", dropped == [] and len(kept) == 2)
+
+    # 5. A record matching one dropped and one surviving request -> kept
+    records_mixed = [
+        Paper(title="Twelve study of Safewards in psychiatric wards", abstract="text")
+    ]
+    records_mixed.extend([
+        Paper(title=f"Twelve study comparison #{i}", abstract="text") for i in range(15)
+    ])
+    kept, dropped = filter_named_matches(records_mixed, ["Twelve study", "Safewards trial"])
+    check("filter_named_matches drops generic name and keeps specific one",
+          dropped == ["Twelve study"])
+    check("filter_named_matches keeps record that matches surviving request",
+          len(kept) == 1 and kept[0].title == "Twelve study of Safewards in psychiatric wards")
+
+    # 6. Empty records and empty requests -> ([], [])
+    check("filter_named_matches returns ([], []) for empty inputs", filter_named_matches([], []) == ([], []))
+    check("filter_named_matches returns ([], []) for empty records", filter_named_matches([], ["Safewards trial"]) == ([], []))
+    check("filter_named_matches returns ([], []) for empty requests", filter_named_matches(small_records, []) == ([], []))
+
+    # Pipeline end-to-end: a second gather that returns records all matching one generic-behaving name adds no new papers
+    p_init = Paper(title="Initial paper", abstract="The Safewards trial showed reduction.", year=2024, doi="10.1000/p1")
+    initial_curation = {
+        "relevance": {1: "direct"},
+        "most_relevant_index": 1,
+        "counts": {"direct": 1, "related": 0, "tangential": 0},
+    }
+    article = {
+        "title": "Topic", "abstract": "Summary", "keywords": [], "sections": [],
+        "key_points": [], "glossary": [], "references": [1],
+    }
+    # Second gather returns 16 records that all match a generic term, but do not match Safewards
+    generic_results = [
+        Paper(title=f"Twelve study comparison in psychiatric wards #{i}", abstract="text", year=2020 + i, doi=f"10.2000/g{i}")
+        for i in range(16)
+    ]
+
+    saved = (
+        pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
+        pipeline.write_briefing, pipeline.write_article, pipeline.fetch_full_text,
+        pipeline.enforce_style, pipeline.resolve_pmcid,
+    )
+    gather_calls: list[dict] = []
+    try:
+        pipeline.plan_queries = lambda topic, **kw: (["query 1"], "core")
+
+        def fake_gather(queries, **kw):
+            gather_calls.append(dict(kw))
+            if len(gather_calls) == 1:
+                return [p_init]
+            return generic_results
+
+        pipeline.gather_evidence = fake_gather
+        pipeline.curate_sources = lambda topic, papers, **kw: dict(initial_curation)
+        pipeline.write_briefing = lambda topic, p, **kw: dict(article)
+        pipeline.write_article = pipeline.write_briefing
+        pipeline.enforce_style = lambda a, **kw: (a, {"issues": [], "stats": {}})
+        pipeline.resolve_pmcid = lambda p, **kw: False
+        pipeline.fetch_full_text = lambda p, **kw: ""
+
+        draft = pipeline.generate_draft("topic")
+        check("pipeline adds no generic-behaving records to draft.papers",
+              len(draft.papers) == 1 and draft.papers[0].title == "Initial paper")
+    finally:
+        (
+            pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
+            pipeline.write_briefing, pipeline.write_article, pipeline.fetch_full_text,
+            pipeline.enforce_style, pipeline.resolve_pmcid,
+        ) = saved
+
+
 def test_named_sources_merge_without_renumbering() -> None:
     """merge_candidates enriches duplicates and appends new records; named_matches filters properly."""
     from articlegen.sources import Paper, merge_candidates, named_matches
@@ -7203,6 +7519,7 @@ def main(argv: list[str] | None = None) -> int:
         test_refusal_fallbacks,
         test_pipeline_is_shared,
         test_idea_search_terms_reach_the_draft,
+        test_paraphrase_terms_buy_a_distinct_query,
         test_dead_sources_fail_before_the_caller_is_billed,
         test_draft_summary, test_rate_limit,
         test_keepalive_connection_reuse, test_substance_checks,
@@ -7225,6 +7542,7 @@ def main(argv: list[str] | None = None) -> int:
         test_unpaywall_fallback_in_resolve_pmcid,
         test_named_papers_in_abstracts_are_looked_up,
         test_named_references_reads_names_not_noise,
+        test_generic_named_lookups_are_skipped,
         test_named_sources_merge_without_renumbering,
         test_methods_names_the_named_source_pass,
         test_methods_names_only_sources_that_answered,

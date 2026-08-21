@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import copy
 import json
+import re
+from typing import Callable
 
 from .llm import generate_json
 from .sources import Paper, full_text_excerpts
@@ -29,6 +31,57 @@ from .sources import Paper, full_text_excerpts
 # it is never overwritten by the planner's own wording (#172).
 MAX_PLANNED_QUERIES = 4
 MAX_SUPPLIED_QUERIES = 3
+NEAR_DUPLICATE_OVERLAP = 0.6  # overlap coefficient above which two queries search the same route (#190)
+
+_QUERY_STOP_WORDS = frozenset(
+    "the a an of in on for and or to with among between using versus vs effect effects "
+    "impact study studies trial trials review reviews systematic randomised randomized "
+    "controlled zero one two three four five six seven eight nine ten eleven twelve "
+    "thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty thirty forty "
+    "fifty sixty seventy eighty ninety hundred thousand".split()
+)
+
+
+def _query_tokens(q: str) -> set[str]:
+    raw_tokens = re.findall(r"[a-z0-9]+", q.lower())
+    tokens: set[str] = set()
+    for t in raw_tokens:
+        if len(t) < 3 or t in _QUERY_STOP_WORDS:
+            continue
+        stem = t[:-1] if (t.endswith("s") and len(t) > 3 and not t.endswith("ss")) else t
+        if stem and stem not in _QUERY_STOP_WORDS:
+            tokens.add(stem)
+    return tokens
+
+
+def queries_are_near_duplicates(a: str, b: str) -> bool:
+    """Return True if queries a and b have token overlap coefficient >= NEAR_DUPLICATE_OVERLAP.
+
+    If either side normalises to an empty set of tokens, returns False.
+    """
+    ta = _query_tokens(a)
+    tb = _query_tokens(b)
+    if not ta or not tb:
+        return False
+    overlap = len(ta & tb) / min(len(ta), len(tb))
+    return overlap >= NEAR_DUPLICATE_OVERLAP
+
+
+def query_routes(queries: list[str]) -> int:
+    """Greedy single-link clustering under queries_are_near_duplicates; returns number of distinct clusters."""
+    if not queries:
+        return 0
+    clusters: list[list[str]] = []
+    for q in queries:
+        placed = False
+        for cluster in clusters:
+            if any(queries_are_near_duplicates(q, member) for member in cluster):
+                cluster.append(q)
+                placed = True
+                break
+        if not placed:
+            clusters.append([q])
+    return len(clusters)
 
 _QUERY_SCHEMA = {
     "type": "object",
@@ -887,6 +940,7 @@ def plan_queries(
     api_key: str | None = None,
     *,
     search_terms: list[str] | None = None,
+    log: Callable[[str], None] = lambda msg: None,
 ) -> tuple[list[str], str]:
     """Turn the topic into scholarly queries and identify its core on-topic entity."""
     supplied = clean_search_terms(search_terms)
@@ -906,22 +960,88 @@ def plan_queries(
             model=model,
             api_key=api_key,
         )
-        return (result.get("queries") or [])[:MAX_PLANNED_QUERIES], (result.get("core_entity") or "").strip()
+        queries = (result.get("queries") or [])[:MAX_PLANNED_QUERIES]
+        core_entity = (result.get("core_entity") or "").strip()
+        if queries and query_routes(queries) <= 1:
+            log(f"Planned queries are near-duplicates ({query_routes(queries)} route); requesting one distinct extra query")
+            planned_lines = "\n".join(f"  {i}. {q}" for i, q in enumerate(queries, 1))
+            follow_prompt = (
+                f"I want journal articles to support an evidence briefing about: {topic!r}\n\n"
+                "These queries were planned for this question:\n"
+                f"{planned_lines}\n\n"
+                "These terms all search the same route — they re-word one another. Return "
+                "`queries`: exactly ONE additional short keyword query that a scholarly "
+                "index would match to a different set of records — a different intervention, "
+                "population, outcome measure, setting, or the standard indexing term for the "
+                "subject. It must not be a re-wording, synonym, reordering or narrowing of "
+                "the terms above. An empty list is not an acceptable answer here. Also return "
+                "`core_entity`: the specific subject a source must be about to count as "
+                "directly on-topic."
+            )
+            follow_res = generate_json(
+                follow_prompt,
+                _QUERY_SCHEMA,
+                model=model,
+                api_key=api_key,
+            )
+            seen_lower = {q.lower() for q in queries}
+            candidate = None
+            for cand in follow_res.get("queries") or []:
+                cand = (cand or "").strip()
+                if cand and cand.lower() not in seen_lower and not any(queries_are_near_duplicates(cand, q) for q in queries):
+                    candidate = cand
+                    break
+            if candidate:
+                if len(queries) >= MAX_PLANNED_QUERIES:
+                    drop_idx = None
+                    for i in range(len(queries) - 1, 0, -1):
+                        if any(queries_are_near_duplicates(queries[i], queries[j]) for j in range(i)):
+                            drop_idx = i
+                            break
+                    if drop_idx is not None:
+                        queries.pop(drop_idx)
+                        queries.append(candidate)
+                else:
+                    queries.append(candidate)
+            else:
+                log("Planner follow-up did not return a distinct query; keeping planned queries")
+        return queries, core_entity
 
     terms_lines = "\n".join(f"  {i}. {t}" for i, t in enumerate(supplied, 1))
-    prompt = (
-        f"I want journal articles to support an evidence briefing about: {topic!r}\n\n"
-        "These scholarly search terms were already chosen for this question and will "
-        "be searched as they stand:\n"
-        f"{terms_lines}\n"
-        "Do not rewrite them, reorder them or propose alternatives to them.\n\n"
-        "Return `queries`: at most ONE additional short keyword query, and only if it "
-        "finds work the terms above would miss — make it specific enough to name the "
-        "exact subject (the most specific entity/population by name). Return an empty "
-        "list if the terms above already cover the question. Also return "
-        "`core_entity`: the specific subject a source must be about to count as "
-        "directly on-topic."
-    )
+    routes = query_routes(supplied)
+    near_dup = routes <= 1
+    if near_dup:
+        log(f"Supplied search terms are near-duplicates ({routes} route); requiring one distinct extra query")
+        prompt = (
+            f"I want journal articles to support an evidence briefing about: {topic!r}\n\n"
+            "These scholarly search terms were already chosen for this question and will "
+            "be searched as they stand:\n"
+            f"{terms_lines}\n"
+            "Do not rewrite them, reorder them or propose alternatives to them.\n\n"
+            "These terms all search the same route — they re-word one another. Return "
+            "`queries`: at most ONE additional short keyword query (and here, exactly ONE is required) "
+            "that a scholarly index would match to a different set of records — a different "
+            "intervention, population, outcome measure, setting, or the standard indexing term "
+            "for the subject. It must not be a re-wording, synonym, reordering or narrowing of "
+            "the terms above. An empty list is not an acceptable answer here. Also return "
+            "`core_entity`: the specific subject a source must be about to count as "
+            "directly on-topic."
+        )
+    else:
+        prompt = (
+            f"I want journal articles to support an evidence briefing about: {topic!r}\n\n"
+            "These scholarly search terms were already chosen for this question and will "
+            "be searched as they stand:\n"
+            f"{terms_lines}\n"
+            "Do not rewrite them, reorder them or propose alternatives to them.\n\n"
+            "Return `queries`: at most ONE additional short keyword query, and only if it "
+            "finds work the terms above would miss — make it specific enough to name the "
+            "exact subject (the most specific entity/population by name). Return an empty "
+            "list if the terms above already cover the question. Also return "
+            "`core_entity`: the specific subject a source must be about to count as "
+            "directly on-topic."
+        )
+
     result = generate_json(
         prompt,
         _QUERY_SCHEMA,
@@ -930,13 +1050,55 @@ def plan_queries(
     )
     queries = list(supplied)
     seen_lower = {s.lower() for s in queries}
+
+    if not near_dup:
+        for q in result.get("queries") or []:
+            q = (q or "").strip()
+            if q and q.lower() not in seen_lower:
+                queries.append(q)
+                break
+        return queries[:MAX_PLANNED_QUERIES], (result.get("core_entity") or "").strip()
+
+    candidate = None
     for q in result.get("queries") or []:
         q = (q or "").strip()
-        if q and q.lower() not in seen_lower:
-            queries.append(q)
+        if q and q.lower() not in seen_lower and not any(queries_are_near_duplicates(q, s) for s in queries):
+            candidate = q
             break
-    queries = queries[:MAX_PLANNED_QUERIES]
-    return queries, (result.get("core_entity") or "").strip()
+
+    if candidate:
+        queries.append(candidate)
+        return queries[:MAX_PLANNED_QUERIES], (result.get("core_entity") or "").strip()
+
+    # Retry once
+    rejected = ""
+    for q in result.get("queries") or []:
+        q = (q or "").strip()
+        if q:
+            rejected = q
+            break
+    if rejected:
+        log(f"Planner proposed near-duplicate extra query {rejected!r}; retrying once for a distinct route")
+        retry_note = f"\n\n{rejected!r} was a re-wording of the terms above — it searches the same records. Return a different indexing term."
+    else:
+        log("Planner returned no distinct query; retrying once for a distinct route")
+        retry_note = "\n\nThe previous reply was a re-wording or empty — it did not provide a different search route. Return a different indexing term."
+
+    retry_prompt = prompt + retry_note
+    retry_result = generate_json(
+        retry_prompt,
+        _QUERY_SCHEMA,
+        model=model,
+        api_key=api_key,
+    )
+    for q in retry_result.get("queries") or []:
+        q = (q or "").strip()
+        if q and q.lower() not in seen_lower and not any(queries_are_near_duplicates(q, s) for s in queries):
+            queries.append(q)
+            return queries[:MAX_PLANNED_QUERIES], (result.get("core_entity") or retry_result.get("core_entity") or "").strip()
+
+    log("Planner failed to provide a distinct extra query; using supplied terms unchanged")
+    return queries[:MAX_PLANNED_QUERIES], (result.get("core_entity") or retry_result.get("core_entity") or "").strip()
 
 
 def _truncate_abstract(abstract: str, limit: int | None) -> str:
