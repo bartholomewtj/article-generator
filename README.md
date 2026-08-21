@@ -3,11 +3,15 @@
 [![Tests](https://github.com/bartholomewtj/article-generator/actions/workflows/tests.yml/badge.svg)](https://github.com/bartholomewtj/article-generator/actions/workflows/tests.yml)
 [![Deployment health](https://github.com/bartholomewtj/article-generator/actions/workflows/health.yml/badge.svg)](https://github.com/bartholomewtj/article-generator/actions/workflows/health.yml)
 
-Turn a topic into a **sourced evidence briefing** — a journal-style review of the
-published literature, written as one self-contained HTML page (plus Markdown) that
-you can send as a link. Every claim is cited to a real paper, and every figure is
-checked back against the source it came from. Three stages: generate ideas →
-research collated automatically → draft prepared for your review.
+Turn a topic into a **sourced evidence briefing** — the question, what the
+evidence shows, what remains open, and three papers to open — as one
+self-contained HTML page (plus Markdown) you can send as a link. Every claim is
+cited to a real paper, and every figure is checked back against the source it
+came from. Three stages: pick a question → research collated automatically →
+briefing prepared for your review.
+
+`articlegen draft --long` still writes the journal-style Review; that path is
+kept for later, not deleted.
 
 ## 🚀 Live site
 
@@ -116,32 +120,30 @@ optional — it puts OpenAlex requests in its "polite pool".
 ## The same workflow, locally
 
 ```
-1. articlegen ideas "<theme>"      # generate ideas, pick one   ◀── you choose
-2. articlegen draft "<title>"      # research + draft, auto      ──▶ drafts/ queue
-3. review drafts/index.html                                      ◀── you review
+1. articlegen ideas "<theme>"      # briefing questions, pick one  ◀── you choose
+2. articlegen draft "<title>"      # research + briefing, auto     ──▶ drafts/
+3. review drafts/index.html                                        ◀── you review
 ```
 
-Two human gates (choose an idea, review the draft); everything in between is
-automatic. Under the hood, the `draft` stage:
+Two human gates (choose a question, review the briefing); everything in between
+is automatic. `draft --long` writes the parked Review instead. Under the hood,
+the `draft` stage:
 
 ```
 title ──▶ the model plans search queries
       ──▶ Semantic Scholar + OpenAlex + Europe PMC + arXiv return papers
           (with abstracts)
       ──▶ each source is labelled direct / related / background
-      ──▶ the model writes the review, citing sources inline as [1], [2, 3]…
+      ──▶ the model writes the briefing, citing sources inline as [1], [2, 3]…
       ──▶ rendered to drafts/<date>-<slug>.html  +  .md, listed in drafts/index.html
 ```
 
-- **Formatted like a journal Review article.** Article-type label, a
-  Nature-style unstructured abstract, a Key points box, superscript Vancouver
-  citations that collapse runs (`…as reported¹,³–⁵`), numbered display items
-  (**Box 1** for the key study, **Fig. 1** for the composition of the evidence
-  base, **Table 1** for the cited records), a **Methods** statement of the actual
-  search, and standard back matter — Evidence assessment with Limitations,
-  Glossary, References, Data availability, Competing interests. The conventions
-  and where each came from are documented in
-  [`docs/journal-style.md`](docs/journal-style.md).
+- **A briefing you can send.** Article-type label **Evidence briefing**, the
+  question, a short answer, 5–8 findings with citations, what remains open,
+  three papers to open, superscript Vancouver citations, a **Methods** statement
+  of the actual search, and standard back matter. `draft --long` is the parked
+  journal-style Review (Box 1, Fig. 1, Key points, Introduction → Conclusions).
+  Prose conventions live in [`docs/journal-style.md`](docs/journal-style.md).
 - **Journal prose, checked rather than requested.** The house style is the
   register of a Nature Reviews or Science Review piece: active voice, tense that
   carries evidential weight (present for established knowledge, past for what one
@@ -157,8 +159,8 @@ title ──▶ the model plans search queries
   writing, each source is scored for how *directly* it addresses the exact topic
   — so the article can say when direct evidence is thin instead of quietly
   substituting adjacent work. A deterministic check flags any statistic absent
-  from the material the writer was actually shown, and Fig. 1 and Table 1 are
-  built from the fetched records rather than written by the model. Clinical
+  from the material the writer was actually shown, and Table 1 is built from
+  the fetched records rather than written by the model. Clinical
   topics get a "not medical advice" disclaimer.
 - **No fabricated apparatus.** No invented journal name, volume, DOI, received
   dates or affiliations. The masthead says "Not peer reviewed" and the back
@@ -270,8 +272,8 @@ articlegen/
   pipeline.py   the draft pipeline — every caller, CLI and web, runs this one
   web.py        HTTP server + JSON API behind the web front end
   llm.py        provider layer: OpenRouter or Claude, auto-detected from keys
-  ideas.py      LLM call: theme -> shortlist of article ideas
-  writer.py     LLM calls: plan queries, write the article (structured JSON)
+  ideas.py      LLM call: theme -> shortlist of briefing questions
+  writer.py     LLM calls: plan queries, write the briefing (write_article is --long)
   sources.py    Semantic Scholar + OpenAlex + Europe PMC + arXiv fetching,
                 dedupe, ranking
   paperfetch.py optional: full text via the separate papers CLI (paperfetch)

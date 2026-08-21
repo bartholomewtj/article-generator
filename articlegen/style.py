@@ -313,9 +313,21 @@ def _strip_citations(text: str) -> str:
 def prose_blocks(article: dict) -> list[tuple[str, str]]:
     """(where, text) for every piece of model-written prose we hold to the style."""
     blocks: list[tuple[str, str]] = []
-    summary = article.get("abstract") or article.get("standfirst") or ""
+    if article.get("question"):
+        blocks.append(("question", article["question"]))
+    summary = (
+        article.get("answer")
+        or article.get("abstract")
+        or article.get("standfirst")
+        or ""
+    )
     if summary:
-        blocks.append(("abstract", summary))
+        where = "answer" if article.get("answer") else "abstract"
+        blocks.append((where, summary))
+    for finding in article.get("findings") or []:
+        blocks.append(("findings", finding))
+    for unknown in article.get("unknowns") or []:
+        blocks.append(("unknowns", unknown))
     for section in article.get("sections", []):
         heading = section.get("heading", "section")
         for para in section.get("paragraphs", []):
@@ -412,7 +424,9 @@ def check_style(article: dict, direct_sources: int | None = None) -> dict:
         words = re.findall(r"[A-Za-z][\w'-]*", text)
         total_words += len(words)
 
-        if "?" in text:
+        # The briefing's `question` field is the review question. A terminal
+        # '?' there is the artefact doing its job, not magazine rhetoric.
+        if "?" in text and where != "question":
             add("rhetorical-question", "error", where,
                 "Journal prose states; it does not ask the reader questions.",
                 _excerpt(text, text.index("?")))
@@ -537,6 +551,7 @@ def check_style(article: dict, direct_sources: int | None = None) -> dict:
 
     n_sections = len(article.get("sections") or [])
     required_sections = _required_sections(direct_sources)
+    briefing = (article or {}).get("form") == "briefing"
     if n_sections and n_sections < required_sections:
         add("too-few-sections", "error", "whole article",
             f"{n_sections} sections; this review needs at least {required_sections}. Add "
@@ -549,7 +564,9 @@ def check_style(article: dict, direct_sources: int | None = None) -> dict:
     # What separated them was hedge variety (8 distinct hedges vs one phrase at
     # 50%) and verbatim recycling. Failing a draft for brevity would reject the
     # known-good sample while passing the bad one, so length only informs.
-    if total_words and total_words < MIN_BODY_WORDS:
+    # The default artefact is a briefing: it is supposed to be short, so the
+    # Review word-count does not apply to it.
+    if (not briefing) and total_words and total_words < MIN_BODY_WORDS:
         add("under-length", "warning", "whole article",
             f"{total_words} words of body prose, against the {MIN_BODY_WORDS}-1600 a Review "
             "typically carries. If this is thin rather than merely concise, the remedy is "
@@ -615,17 +632,29 @@ def _section_text(article: dict, prefix: str) -> str:
 
 def _echo_pairs(article: dict) -> list[tuple[str, str, str, str]]:
     """(where, against, text, reference) for every pair worth checking for echo."""
-    abstract = article.get("abstract") or article.get("standfirst") or ""
-    points = " ".join(article.get("key_points") or article.get("key_takeaways") or [])
+    abstract = (
+        article.get("answer")
+        or article.get("abstract")
+        or article.get("standfirst")
+        or ""
+    )
+    points = " ".join(
+        article.get("findings")
+        or article.get("key_points")
+        or article.get("key_takeaways")
+        or []
+    )
+    against = "the answer" if article.get("answer") else "the abstract"
     introduction = _section_text(article, "introduction")
     conclusions = _section_text(article, "conclusion")
 
     pairs = []
     if abstract:
         if points:
-            pairs.append(("key points", "the abstract", points, abstract))
+            label = "findings" if article.get("findings") else "key points"
+            pairs.append((label, against, points, abstract))
         if introduction:
-            pairs.append(("Introduction", "the abstract", introduction, abstract))
+            pairs.append(("Introduction", against, introduction, abstract))
     # The other classic duplication: a Conclusions section that restates the
     # Introduction. Only caught before when it was verbatim.
     if introduction and conclusions:
@@ -660,7 +689,8 @@ def _never_cited_alone(article: dict) -> tuple[list[int], int]:
     reported, so that is where the credit has to be earned.
     """
     everywhere = " ".join(raw for _, raw in prose_blocks(article))
-    body = " ".join(
+    # On a briefing the findings *are* the body — there are no sections.
+    body = " ".join(article.get("findings") or []) or " ".join(
         para
         for section in article.get("sections") or []
         for para in section.get("paragraphs") or []

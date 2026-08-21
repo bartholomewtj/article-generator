@@ -1,16 +1,18 @@
-"""LLM calls: plan queries, assess source relevance, then write a grounded article.
+"""LLM calls: plan queries, assess source relevance, then write a grounded briefing.
 
 Works with any provider via articlegen.llm (OpenRouter by default, or Claude
 when an ANTHROPIC_API_KEY is the available credential — see
 llm.resolve_provider).
 
+The default artefact is `write_briefing`. `write_article` is the `--long` Review.
+
 The pipeline is deliberately honest about evidence:
 - `curate_sources` scores each fetched paper for how directly it addresses the
   *specific* topic, independently of how famous or highly cited it is.
-- `write_article` receives those labels, is told it only ever sees abstracts,
-  must flag when direct evidence is thin, and produces a featured-study box and
-  an evidence note. Numeric claims are separately checked against the abstracts
-  downstream (see articlegen.verify).
+- The writer receives those labels, is told it only ever sees abstracts (plus
+  any open-access full text fetched), and must flag when direct evidence is thin.
+  Numeric claims are separately checked against that material downstream
+  (see articlegen.verify).
 """
 
 from __future__ import annotations
@@ -153,6 +155,91 @@ _ARTICLE_SCHEMA = {
     ],
     "additionalProperties": False,
 }
+
+# The default artefact. The Review schema above is the `--long` path.
+# `form` is stamped in code after the model returns, never asked of the model —
+# additionalProperties is false, so it cannot emit it.
+FORM_BRIEFING = "briefing"
+FORM_REVIEW = "review"
+
+_BRIEFING_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title": {
+            "type": "string",
+            "description": "A descriptive title: the population, the intervention or "
+            "exposure, and the outcome. Sentence case. No puns, no questions, no "
+            "colon-clickbait, and no result claimed — the title names the question, "
+            "it does not answer it. Wrong: 'X reduces Y in Z'. Right: 'X for Y in Z'.",
+        },
+        "question": {
+            "type": "string",
+            "description": "The review question in one or two sentences. What is being "
+            "asked, in whom. No citation markers.",
+        },
+        "answer": {
+            "type": "string",
+            "description": "ONE paragraph, 80-140 words: what the evidence shows and "
+            "how strong it is. The thing a reader would paste into an email. No "
+            "citation markers, no undefined abbreviations, no second person, no "
+            "result stronger than the direct sources support.",
+        },
+        "findings": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "5-8 declarative bullets. Each is a NAMED finding from a "
+            "specific study: design, population, magnitude, citation [N]. Not a "
+            "restatement of `answer`. If a bullet would survive deleting every "
+            "source, it is too vague to include.",
+        },
+        "unknowns": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "2-4 bullets: what remains open. A gap, a disagreement, "
+            "or a design that has not been run. Not a hedge restating a finding.",
+        },
+        "open_these": {
+            "type": "array",
+            "items": {"type": "integer"},
+            "description": "Exactly 3 SOURCE indices, most useful first — the papers "
+            "a reader should open. Prefer direct systematic reviews and trials.",
+        },
+        "keywords": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "4-8 lowercase index terms, most specific first.",
+        },
+        "glossary": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "term": {"type": "string"},
+                    "definition": {"type": "string", "description": "One sentence, plain language."},
+                },
+                "required": ["term", "definition"],
+                "additionalProperties": False,
+            },
+            "description": "0-6 technical terms used in the briefing. Omit terms you never use.",
+        },
+        "references": {
+            "type": "array",
+            "items": {"type": "integer"},
+            "description": "SOURCE indices in citation order; [1] in text = first entry",
+        },
+    },
+    "required": [
+        "title", "question", "answer", "findings", "unknowns",
+        "open_these", "keywords", "glossary", "references",
+    ],
+    "additionalProperties": False,
+}
+
+
+def is_briefing(article: dict) -> bool:
+    """True when this payload is the default artefact, not the `--long` Review."""
+    return (article or {}).get("form") == FORM_BRIEFING
+
 
 _CURATE_SYSTEM = """\
 You are a research librarian. You judge how directly each source addresses ONE \
@@ -342,6 +429,102 @@ this schedule."
 """
 
 
+_BRIEFING_SYSTEM = """\
+You write evidence briefings — one page a clinician or researcher can send. \
+The register is a scientific synthesis speaking about other people's work: \
+precise, hedged, impersonal. You are NOT writing a magazine feature, a \
+popular-science pitch, or a journal Review article.
+
+You are working from ABSTRACTS ONLY — never the full papers. This constrains you:
+
+- Cite by the exact "SOURCE N" label in brackets at the sentence's end: [6], or \
+[6, 18] to combine. Never invent a source or cite a number with no SOURCE. \
+(The display converts these to superscript numerals.)
+- In `references`, list every SOURCE number you cited, in first-appearance order. \
+(The display renumbers to 1, 2, 3…)
+- ONLY state a specific number (effect size, %, sample size, confidence interval, \
+p-value, risk ratio) if that exact figure appears in the abstract you are citing. \
+If the abstract doesn't give the number, describe the direction and rough magnitude \
+in words instead ("approximately halved", "a large effect") — do NOT reconstruct \
+precise statistics from memory. Invented-looking precision is the worst failure here.
+- A FIGURE THE SOURCE ITSELF ATTRIBUTES TO ANOTHER WORK IS SECOND-HAND, and it \
+may not carry the briefing. If a source quotes a number from a study or review \
+it cites — rather than one it measured, pooled or reported itself — that \
+number is only as good as the quotation. So: never build the `title`, the \
+`question`, the `answer`, or a `findings` bullet on a second-hand figure while \
+any source you were given reports a comparable figure at first hand. Look for \
+the first-hand figure before reaching for the quoted one.
+- WHEN A SECOND-HAND FIGURE IS THE ONLY ONE THERE, use it and say so in the \
+prose, as this house style already does: "a meta-analysis cited within a \
+pilot study estimated…", "as summarised in [4]". Cite the source you actually \
+read. Where no figure survives that test, give the direction and rough \
+magnitude in words instead.
+- HONESTY ABOUT THE EVIDENCE IS MANDATORY. You are told each source's relevance \
+(direct / related / tangential). If few or no sources are "direct", say so plainly \
+in `answer` and `unknowns`, and explicitly label anything carried over from another \
+population or condition as extrapolation. Do NOT state counts or tallies of the \
+evidence — how many sources were cited, how many are direct, related or background, \
+and the year range are computed and printed for you.
+- When recommending a paper to open, summarise it FROM ITS ABSTRACT ONLY.
+
+DIVISION OF LABOUR — do not write the same summary four times:
+
+- `question` — what is being asked, in whom. Not the answer.
+- `answer` — the standalone verdict and its strength. No citations. The only \
+overview.
+- `findings` — specific findings, each tied to a named study. Not the answer \
+in bullets.
+- `unknowns` — gaps and disagreements. Not a hedge restating a finding.
+
+Do not reuse a phrase from `answer` in a finding.
+
+SUBSTANCE:
+
+- Every finding reports what a study DID (design, population, size) and what it \
+FOUND. "The evidence suggests these strategies may be effective" is not a finding.
+- Attribute findings to their study, not to a vague body of evidence. Name the \
+design and the population in the prose.
+- Cite about a dozen sources, preferring direct ones. Related sources only when \
+they earn a specific point.
+- Hedge to the evidence in front of you, and vary how: "in a single small trial", \
+"consistently across three cohorts", "no controlled study has tested".
+
+TITLE: descriptive. Names the question. Does not claim the result.
+
+REGISTER:
+
+- VOICE. Active where the active is available. The passive is fine where the \
+actor is genuinely irrelevant ("participants were randomized").
+- PERSON. Third person throughout. The ONLY permitted first person is the \
+reviewing frame — "here we review", "we consider". Never "I", never "our \
+findings", never "you".
+- TENSE. Present for established knowledge; past for what a specific study did \
+and found; present perfect for an accumulated body of work.
+- HEDGING. Hedge every claim to the strength of the evidence behind it.
+- SENTENCES. Average 15-30 words; none over 45.
+
+NEVER GIVE CLINICAL ADVICE — this is checked automatically and it is the one \
+rule with real-world consequences:
+
+- Report what studies DID and FOUND. Never state what a clinician, a patient or \
+a service SHOULD do.
+- No dose, no schedule, no titration step, no monitoring interval, no referral \
+or screening instruction — not even a hedged one, and not even when a source \
+recommends it. A published trial may conclude "X should be standard treatment"; \
+you are a synthesis and may only report that the trial concluded that.
+- "Future trials should measure X" is fine — a recommendation for research is \
+not a recommendation for care.
+- The footer disclaimer does not cover you. A reader given a dose and a \
+schedule has already been given advice.
+
+BANNED OUTRIGHT: second person; contractions; rhetorical questions; exclamation \
+marks; boosters and hype ("clearly", "obviously", "dramatically", "remarkable", \
+"striking", "unprecedented", "groundbreaking", "game-changer"); claims of proof \
+("proves", "definitively", "conclusively"); "in order to"; "utilize"; scare \
+quotes; jokes; emoji.
+"""
+
+
 _REVISE_SYSTEM = _WRITER_SYSTEM + """
 
 You are now REVISING an existing draft rather than writing a new one. Return the \
@@ -393,6 +576,7 @@ _REVISION_SCHEMA = {
                     "where": {
                         "type": "string",
                         "description": "Which block this replaces: 'title', 'abstract', "
+                        "'question', 'answer', 'findings', 'unknowns', "
                         "'key_points', 'featured_study/method', 'featured_study/results', "
                         "'featured_study/limitations', or the EXACT heading of a section.",
                     },
@@ -425,6 +609,10 @@ _PATCH_ALIASES = {
     "featured study/limitations": "featured_study/limitations",
     "featured study/why": "featured_study/why",
     "standfirst": "abstract",
+    "question": "question",
+    "answer": "answer",
+    "findings": "findings",
+    "unknowns": "unknowns",
 }
 
 
@@ -456,6 +644,12 @@ def apply_revisions(article: dict, edits: list[dict]) -> tuple[dict, list[str]]:
             revised["title"] = replacement[0]
         elif key == "abstract":
             revised["abstract"] = " ".join(replacement)
+        elif key == "question":
+            revised["question"] = " ".join(replacement)
+        elif key == "answer":
+            revised["answer"] = " ".join(replacement)
+        elif key in ("findings", "unknowns"):
+            revised[key] = replacement
         elif key == "key_points":
             revised["key_points"] = replacement
         elif key.startswith("featured_study/"):
@@ -502,6 +696,35 @@ _WRITER_SYSTEM_FULLTEXT = _with_fulltext_framing(_WRITER_SYSTEM)
 _REVISE_SYSTEM_FULLTEXT = _with_fulltext_framing(_REVISE_SYSTEM)
 _REVISE_PATCH_SYSTEM_FULLTEXT = _with_fulltext_framing(_REVISE_PATCH_SYSTEM)
 
+_REVISE_BRIEFING_SYSTEM = _BRIEFING_SYSTEM + """
+
+You are now REVISING an existing briefing rather than writing a new one. Return the \
+complete briefing in the same JSON shape, with only the prose changed. Every \
+"[N]" citation marker must survive exactly as it is and stay attached to the same \
+claim; `open_these`, the reference list and every number must be unchanged. Do not \
+add claims, sources or figures.
+"""
+
+_REVISE_BRIEFING_PATCH_SYSTEM = _BRIEFING_SYSTEM + """
+
+You are now REVISING an existing briefing rather than writing a new one, and you \
+return ONLY the blocks you changed — not the whole briefing.
+
+For each block that needs fixing, emit one edit naming `where` it goes and the \
+`replacement` text. `where` is one of: title, question, answer, findings, unknowns. \
+Leave every block the brief does not complain about out of your reply entirely; \
+anything you omit is kept exactly as it is.
+
+Within the blocks you do return: every "[N]" citation marker must survive exactly \
+as it is and stay attached to the same claim, and every number must be unchanged. \
+Do not add claims, sources or figures unless the brief explicitly tells you the \
+draft is too thin and names the sources to pull from.
+"""
+
+_BRIEFING_SYSTEM_FULLTEXT = _with_fulltext_framing(_BRIEFING_SYSTEM)
+_REVISE_BRIEFING_SYSTEM_FULLTEXT = _with_fulltext_framing(_REVISE_BRIEFING_SYSTEM)
+_REVISE_BRIEFING_PATCH_SYSTEM_FULLTEXT = _with_fulltext_framing(_REVISE_BRIEFING_PATCH_SYSTEM)
+
 
 def plan_queries(
     topic: str, model: str | None = None, api_key: str | None = None
@@ -509,7 +732,7 @@ def plan_queries(
     """Turn the topic into scholarly queries and identify its core on-topic entity."""
     result = generate_json(
         (
-            "I want journal articles to support an evidence review about: "
+            "I want journal articles to support an evidence briefing about: "
             f"{topic!r}\n\n"
             "Give 2-4 short keyword queries for scholarly search engines (Semantic "
             "Scholar / OpenAlex). Use researcher terminology. IMPORTANT: make at least "
@@ -663,16 +886,22 @@ def curate_sources(
     return {"relevance": relevance, "most_relevant_index": mri, "counts": counts}
 
 
-def write_article(
+def _writer_context(
     topic: str,
     papers: list[Paper],
-    model: str | None = None,
-    style_note: str = "",
-    curation: dict | None = None,
-    api_key: str | None = None,
-) -> dict:
-    """Write the article as structured JSON, grounded in the fetched abstracts."""
-    curation = curation or {}
+    style_note: str,
+    curation: dict,
+    *,
+    kind: str,
+) -> tuple[str, bool]:
+    """Shared source payload for the briefing and the `--long` Review.
+
+    `kind` is 'briefing' or 'article' — the prompt must not misdescribe what
+    it is asking the model to write. Tangential sources are dropped by number
+    rather than filtered out of the list: the SOURCE index IS the citation
+    scheme, so the remaining sources keep the numbers `render` will look them
+    up by.
+    """
     relevance = curation.get("relevance") or {}
     counts = curation.get("counts") or {}
     mri = curation.get("most_relevant_index")
@@ -692,28 +921,22 @@ def write_article(
             )
         context += "\n\n"
     if mri:
-        context += f"Suggested study to feature (most relevant): SOURCE {mri}.\n\n"
+        if kind == "briefing":
+            context += (
+                f"Suggested paper to put first in `open_these` (most relevant): "
+                f"SOURCE {mri}.\n\n"
+            )
+        else:
+            context += f"Suggested study to feature (most relevant): SOURCE {mri}.\n\n"
     excerpts = full_text_excerpts(papers)
     use_full_text = bool(excerpts)
 
-    # Tangential sources are background by definition — the curation prompt
-    # defines the label as "only good for background or framing sentences" —
-    # and the pipeline already refuses to spend a full-text fetch on one. They
-    # still arrived here with a full abstract each, several thousand tokens of
-    # material the relevance gate exists to keep out of the article.
-    #
-    # They are dropped by number rather than filtered out of the list: the
-    # SOURCE index IS the citation scheme, so the remaining sources keep the
-    # numbers `render` and `verify` will look them up by.
     omit = {i for i, label in relevance.items() if label == "tangential"}
     context += (
         "Here are the candidate sources with their relevance labels. Choose the ones "
-        "that genuinely support the article and write it.\n\n"
+        f"that genuinely support the {kind} and write it.\n\n"
     )
     if omit:
-        # The prompt must not misdescribe its own inputs. The tally above counts
-        # the tangential sources, so without this the model is told about
-        # material it cannot see and may cite a SOURCE number that is not there.
         context += (
             f"{len(omit)} tangential source(s) are counted in the tally above but are "
             "NOT reproduced below, because they are background only. The numbering "
@@ -721,7 +944,44 @@ def write_article(
             "can actually see.\n\n"
         )
     context += _format_sources(papers, relevance, excerpts, omit=omit)
-    return generate_json(
+    return context, use_full_text
+
+
+def write_briefing(
+    topic: str,
+    papers: list[Paper],
+    model: str | None = None,
+    style_note: str = "",
+    curation: dict | None = None,
+    api_key: str | None = None,
+) -> dict:
+    """Write the default artefact: a one-page sourced evidence briefing."""
+    context, use_full_text = _writer_context(
+        topic, papers, style_note, curation or {}, kind="briefing")
+    article = generate_json(
+        context,
+        _BRIEFING_SCHEMA,
+        system=_BRIEFING_SYSTEM_FULLTEXT if use_full_text else _BRIEFING_SYSTEM,
+        model=model,
+        deep=True,
+        api_key=api_key,
+    )
+    article["form"] = FORM_BRIEFING
+    return article
+
+
+def write_article(
+    topic: str,
+    papers: list[Paper],
+    model: str | None = None,
+    style_note: str = "",
+    curation: dict | None = None,
+    api_key: str | None = None,
+) -> dict:
+    """Write the `--long` Review as structured JSON, grounded in the fetched abstracts."""
+    context, use_full_text = _writer_context(
+        topic, papers, style_note, curation or {}, kind="article")
+    article = generate_json(
         context,
         _ARTICLE_SCHEMA,
         system=_WRITER_SYSTEM_FULLTEXT if use_full_text else _WRITER_SYSTEM,
@@ -729,6 +989,8 @@ def write_article(
         deep=True,
         api_key=api_key,
     )
+    article["form"] = FORM_REVIEW
+    return article
 
 
 def revise_prose(
@@ -772,21 +1034,32 @@ def revise_prose(
     else:
         use_full_text = False
     context += "Here is the draft to revise, as JSON:\n\n" + draft_json
+    briefing = is_briefing(article)
 
     if rewrite_whole:
-        return generate_json(
-            context,
-            _ARTICLE_SCHEMA,
-            system=_REVISE_SYSTEM_FULLTEXT if use_full_text else _REVISE_SYSTEM,
-            model=model,
-            deep=True,
-            api_key=api_key,
+        if briefing:
+            schema = _BRIEFING_SCHEMA
+            system = (_REVISE_BRIEFING_SYSTEM_FULLTEXT if use_full_text
+                      else _REVISE_BRIEFING_SYSTEM)
+        else:
+            schema = _ARTICLE_SCHEMA
+            system = _REVISE_SYSTEM_FULLTEXT if use_full_text else _REVISE_SYSTEM
+        revised = generate_json(
+            context, schema, system=system, model=model, deep=True, api_key=api_key,
         )
+        revised["form"] = article.get("form")
+        return revised
 
+    if briefing:
+        patch_system = (_REVISE_BRIEFING_PATCH_SYSTEM_FULLTEXT if use_full_text
+                        else _REVISE_BRIEFING_PATCH_SYSTEM)
+    else:
+        patch_system = (_REVISE_PATCH_SYSTEM_FULLTEXT if use_full_text
+                        else _REVISE_PATCH_SYSTEM)
     result = generate_json(
         context,
         _REVISION_SCHEMA,
-        system=_REVISE_PATCH_SYSTEM_FULLTEXT if use_full_text else _REVISE_PATCH_SYSTEM,
+        system=patch_system,
         model=model,
         deep=True,
         api_key=api_key,

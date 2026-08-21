@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>ArticleGen — sourced evidence briefings you can send</title>
-<meta name="description" content="Turn a topic into a sourced evidence briefing: a journal-style review of the published literature, written as one page you can send as a link.">
+<meta name="description" content="Turn a topic into a sourced evidence briefing: the question, what the evidence shows, what remains open, and three papers to open, on one page you can send as a link.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
@@ -582,9 +582,10 @@
   <!-- VIEW 1: Theme Input -->
   <div id="themeView" class="view active">
     <h1 class="hero-title">A sourced evidence briefing you can send</h1>
-    <p class="hero-subtitle">Pick a topic; get a journal-style review of the published
-      literature on it — every claim cited to a real paper, every figure checked back
-      against the source it came from, on one page you can share as a link.</p>
+    <p class="hero-subtitle">Pick a topic; get a sourced one-page briefing — the
+      question, what the evidence shows, what remains open, and three papers to
+      open. Every claim is cited to a real paper; every figure is checked back
+      against the source it came from.</p>
 
     <!-- Three finished reviews, linked straight at the files (#152). A stranger
          should see the output before being asked for anything. #111 put a link to
@@ -620,10 +621,10 @@
          prompt because a first impression of "paste a credential" is the thing
          worth avoiding. -->
     <a class="demo-band" href="drafts/">
-      <span class="demo-band-label">All published reviews</span>
+      <span class="demo-band-label">All published briefings</span>
       <span class="demo-band-text">Every briefing this has produced — no key, no
         account, nothing to set up.</span>
-      <span class="demo-band-go">Browse all evidence reviews →</span>
+      <span class="demo-band-go">Browse all evidence briefings →</span>
     </a>
 
     <!-- The setup is mandatory and used to be invisible: nothing on this view
@@ -632,10 +633,10 @@
          a gear icon they had not noticed (#95). This card is shown only until a
          key exists — `refreshSetupCard()` hides it once one is set. -->
     <div class="setup-card" id="setupCard" style="display:none;">
-      <p class="setup-title">Before your first article</p>
+      <p class="setup-title">Before your first briefing</p>
       <p class="setup-body">
         This site does the research and writing on <strong>your own OpenRouter
-        account</strong>, not ours. You paste a key once; each article then costs
+        account</strong>, not ours. You paste a key once; each briefing then costs
         you roughly 50c–$1. There is no free tier, and nothing works until the
         key is set.
       </p>
@@ -645,17 +646,11 @@
     </div>
 
     <div class="theme-box">
-      <label class="input-label" for="themeInput">1. Enter a Theme or Topic</label>
-      <input type="text" id="themeInput" name="article_topic" class="theme-input" placeholder="e.g. Gravity energy storage, Deep sea ecosystems..." autocomplete="off" autocorrect="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
+      <label class="input-label" for="themeInput">1. Enter a theme or question</label>
+      <input type="text" id="themeInput" name="article_topic" class="theme-input" placeholder="e.g. seclusion reduction in acute psychiatric wards" autocomplete="off" autocorrect="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
 
-      <div style="margin-top: 1rem;">
-        <label class="input-label" for="styleInput">Audience / Target Reader (Optional)</label>
-        <input type="text" id="styleInput" name="article_audience" class="theme-input" placeholder="e.g. for high school students, executives..." autocomplete="off" autocorrect="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
-      </div>
-
-      <!-- Length and evidence depth are no longer choices. Every article is an
-           in-depth longform review written to a strict empirical focus, which is
-           the only combination that matches what style.py enforces afterwards.
+      <!-- Length and evidence depth are not choices. The default artefact is a
+           sourced briefing; the parked Review is CLI `--long` only.
            See LENGTH_LABEL / DEPTH_LABEL below. -->
       <div style="margin-top: 1rem;">
         <label class="input-label" for="prefLang">Output Language</label>
@@ -671,7 +666,7 @@
 
       <button id="ideasBtn" class="btn-primary" onclick="requestIdeas()">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-        Generate Article Drafts
+        Propose briefing questions
       </button>
     </div>
   </div>
@@ -679,7 +674,7 @@
   <!-- VIEW 2: Draft Ideas Selection -->
   <div id="ideasView" class="view">
     <div class="section-header">
-      <h2 class="section-title">2. Choose an Article Idea</h2>
+      <h2 class="section-title">2. Choose a briefing question</h2>
       <button class="pill" onclick="showView('themeView')">← Change Theme</button>
     </div>
     <p style="color:var(--muted); font-size:0.9rem; margin-top:-0.5rem; margin-bottom:1.25rem;" id="themeLabel"></p>
@@ -693,14 +688,14 @@
   <div id="progressView" class="view">
     <div class="progress-card">
       <div class="spinner"></div>
-      <h2 class="progress-title" id="progressTitle">Researching & Writing Article</h2>
+      <h2 class="progress-title" id="progressTitle">Researching and writing the briefing</h2>
       <p class="progress-step" id="progressStepText">Planning scholarly search queries...</p>
 
       <div class="progress-steps-list">
         <div class="step-item done"><span class="step-icon">✓</span> <span>Theme & Angle Selected</span></div>
         <div class="step-item" id="stepQueries"><span class="step-icon">⏳</span> <span>Searching OpenAlex & Semantic Scholar</span></div>
         <div class="step-item" id="stepCurate"><span class="step-icon">⏳</span> <span>Curating Peer-Reviewed Evidence</span></div>
-        <div class="step-item" id="stepDraft"><span class="step-icon">⏳</span> <span>Drafting Grounded Article</span></div>
+        <div class="step-item" id="stepDraft"><span class="step-icon">⏳</span> <span>Drafting the briefing</span></div>
         <div class="step-item" id="stepVerify"><span class="step-icon">⏳</span> <span>Verifying Statistics & Citations</span></div>
       </div>
 
@@ -1371,7 +1366,7 @@
   // in style.py fail a draft for missing. The narrative and "balanced" depths
   // asked for storytelling over methods, against a checker that wants figures
   // attributed to designs and populations. One combination survives both.
-  const LENGTH_LABEL = 'In-Depth Longform (~1,800+ words, 5+ extensive sections with deep analysis)';
+  const LENGTH_LABEL = 'Evidence briefing (one-page sourced summary: question, findings, unknowns, papers to open)';
   const DEPTH_LABEL = 'Strict Empirical Focus (Emphasize methodology, sample sizes, and study limitations)';
 
   function getPreferences() {
@@ -1455,11 +1450,11 @@
     // with no key used to wait out the cold start to be told they needed one.
     if (!requireKey()) return;
 
-    const guidance = document.getElementById('styleInput').value.trim();
+    const guidance = (document.getElementById('styleInput')?.value || '').trim();
     const btn = document.getElementById('ideasBtn');
-    const idle = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg> Generate Article Drafts';
+    const idle = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg> Propose briefing questions';
     btn.disabled = true;
-    btn.innerHTML = '⏳ Generating Ideas...';
+    btn.innerHTML = '⏳ Proposing questions...';
     const settled = whileWaking(function (msg) { btn.innerHTML = '⏳ ' + msg; });
 
     const key = activeKey();
@@ -1523,7 +1518,7 @@
     document.getElementById('progressTitle').innerText = title;
     showView('progressView');
 
-    const style = document.getElementById('styleInput').value.trim();
+    const style = (document.getElementById('styleInput')?.value || '').trim();
     const key = activeKey();
 
     const stepText = document.getElementById('progressStepText');

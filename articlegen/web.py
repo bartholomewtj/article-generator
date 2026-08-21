@@ -2,7 +2,7 @@
 
 Endpoints:
 - GET  /api/drafts: list drafts on disk (local mode only; empty when shared)
-- POST /api/ideas:  generate draft ideas from a theme
+- POST /api/ideas:  generate briefing questions from a theme
 - POST /api/draft:  run the full evidence-grounded research & draft pipeline
 
 Runs in two modes, because a laptop and a shared host want opposite things:
@@ -384,7 +384,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         api_key = (payload.get("key") or "").strip() or None
 
         if not topic:
-            self._send_json({"error": "Please provide an article title/topic."}, status=400)
+            self._send_json({"error": "Please provide a briefing question."}, status=400)
             return
 
         if len(topic) > 300:
@@ -405,7 +405,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
             self._send_json({"error": str(exc)}, status=503 if exc.sources_failed else 422)
             return
         except Exception as exc:
-            self._send_json({"error": self._unexpected("writing the article", exc)},
+            self._send_json({"error": self._unexpected("writing the briefing", exc)},
                             status=500)
             return
 

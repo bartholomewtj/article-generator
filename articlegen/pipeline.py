@@ -28,7 +28,8 @@ from .sources import (DATABASE_NAMES, DEFAULT_MAX_PAPERS, Paper, _normalize_doi,
 from .style import (SUBSTANCE_RULES, check_style, errors as style_errors,
                     format_report as format_style, revision_brief)
 from .verify import check_statistics
-from .writer import curate_sources, plan_queries, revise_prose, write_article
+from .writer import (curate_sources, is_briefing, plan_queries, revise_prose,
+                     write_article, write_briefing)
 
 # A caller that wants progress reporting passes one of these; the default drops it.
 Logger = Callable[[str], None]
@@ -290,10 +291,16 @@ def enforce_style(
 
         # Intactness is measured against the draft in hand, not the draft this
         # function was handed: after an accepted pass, that is the revision.
-        intact = (
-            len(revised.get("references") or []) >= len(article.get("references") or [])
-            and len(revised.get("sections") or []) == len(article.get("sections") or [])
-        )
+        if is_briefing(article):
+            intact = (
+                len(revised.get("references") or []) >= len(article.get("references") or [])
+                and len(revised.get("findings") or []) >= len(article.get("findings") or [])
+            )
+        else:
+            intact = (
+                len(revised.get("references") or []) >= len(article.get("references") or [])
+                and len(revised.get("sections") or []) == len(article.get("sections") or [])
+            )
         revised_report = check_style(revised, direct_sources=direct_sources)
         revised_problems = style_errors(revised_report)
         if not intact or len(revised_problems) >= len(problems):
@@ -322,11 +329,14 @@ def generate_draft(
     model: str | None = None,
     api_key: str | None = None,
     log: Logger = _silent,
+    long: bool = False,
 ) -> Draft:
-    """Research and write one article. Raises NoPapersFound if the search comes back empty.
+    """Research and write one briefing (or a `--long` Review). Raises NoPapersFound
+    if the search comes back empty.
 
     `api_key` overrides the environment for this call only — the server passes
     the caller's key here and must never route it through `os.environ`.
+    `long=True` is the parked Review path; the default artefact is the briefing.
     """
     # Before anything paid. `plan_queries` is an LLM call, and on a day when
     # every scholarly API is refusing, the caller used to pay for it and then be
@@ -466,8 +476,10 @@ def generate_draft(
             "the shared Europe PMC quota.")
     log("  " + _read_subset_skew(papers, fetched))
 
-    log("Writing the article (this can take a few minutes)...")
-    article = write_article(
+    compose = write_article if long else write_briefing
+    log("Writing the review (this can take a few minutes)..." if long
+        else "Writing the briefing (this can take a few minutes)...")
+    article = compose(
         topic, papers, model=model, style_note=style_note, curation=curation, api_key=api_key
     )
 

@@ -1,10 +1,11 @@
 """Command-line interface — a three-stage workflow:
 
-    articlegen ideas  "<theme>"        # 1. generate ideas to pick from
-    articlegen draft  "<title>"        # 2. research + draft, into drafts/ for review
-    articlegen queue                   # (re)build / open the drafts review index
+    articlegen ideas  "<theme>"        # 1. briefing questions to pick from
+    articlegen draft  "<title>"        # 2. research + briefing, into drafts/
+    articlegen queue                   # (re)build / open the drafts index
 
-Stages 1 and 2 are the two human gates: you choose an idea, then you review the draft.
+Stages 1 and 2 are the two human gates: you choose a question, then you review the briefing.
+`draft --long` writes the parked journal-style Review instead.
 """
 
 from __future__ import annotations
@@ -92,6 +93,7 @@ def cmd_draft(args) -> int:
             max_papers=args.max_papers,
             model=args.model,
             log=_log,
+            long=getattr(args, "long", False),
         )
     except NoPapersFound as exc:
         _log(str(exc))
@@ -142,12 +144,13 @@ def cmd_queue(args) -> int:
 
 def cmd_demo(args) -> int:
     output_path = args.output or "demo.html"
+    sample = demo.SAMPLE_ARTICLE if getattr(args, "long", False) else demo.SAMPLE_BRIEFING
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(render_article(
-            demo.SAMPLE_ARTICLE, demo.SAMPLE_PAPERS, "the functions of sleep in the brain",
+            sample, demo.SAMPLE_PAPERS, "the functions of sleep in the brain",
             demo.SAMPLE_CURATION, None, demo.SAMPLE_PROVENANCE,
         ))
-    _log(f"Demo article written to {output_path}")
+    _log(f"Demo written to {output_path}")
     if args.open:
         _open_in_browser(output_path)
     return 0
@@ -167,9 +170,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="articlegen",
         description=(
-            "A three-stage workflow: generate ideas, auto-collate research, and prepare "
-            "a draft article for your review — as a self-contained single-page HTML file "
-            "(plus Markdown), grounded in journal-article abstracts."
+            "A three-stage workflow: pick a briefing question, auto-collate research, "
+            "and prepare a sourced one-page briefing for your review — as a "
+            "self-contained HTML file (plus Markdown), grounded in journal-article "
+            "abstracts and open-access full texts."
         ),
     )
     parser.add_argument(
@@ -186,18 +190,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p_ideas = sub.add_parser("ideas", help="Stage 1: turn a theme into article ideas to pick from")
+    p_ideas = sub.add_parser("ideas", help="Stage 1: turn a theme into briefing questions to pick from")
     p_ideas.add_argument("theme", help="Broad theme or interest area")
     p_ideas.add_argument("-n", type=int, default=6, help="How many ideas to generate (default: 6)")
     p_ideas.add_argument("-o", "--output", help="Output .md path (default: ideas/<theme>.md)")
     p_ideas.set_defaults(func=cmd_ideas)
 
-    p_draft = sub.add_parser("draft", help="Stage 2: research + draft an article for review")
-    p_draft.add_argument("topic", help="The article title/idea to write")
+    p_draft = sub.add_parser("draft", help="Stage 2: research + write a sourced briefing")
+    p_draft.add_argument("topic", help="The briefing question to write")
     p_draft.add_argument("--name", help="Draft filename stem (default: <date>-<slug>)")
-    p_draft.add_argument("--style", default="", help='Audience/tone note, e.g. "for high-school students"')
+    p_draft.add_argument("--style", default="", help='Optional extra constraint, e.g. "Australian spelling"')
     p_draft.add_argument("--max-papers", type=int, default=DEFAULT_MAX_PAPERS,
                          help=f"Max candidate papers (default: {DEFAULT_MAX_PAPERS})")
+    p_draft.add_argument(
+        "--long", action="store_true",
+        help="Write the journal-style Review instead of the default briefing",
+    )
     p_draft.add_argument("--open", action="store_true", help="Open the draft in your browser when done")
     p_draft.set_defaults(func=cmd_draft)
 
@@ -207,6 +215,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_demo = sub.add_parser("demo", help="Render a built-in sample (no API calls) to preview the design")
     p_demo.add_argument("-o", "--output", help="Output HTML path (default: demo.html)")
+    p_demo.add_argument(
+        "--long", action="store_true",
+        help="Render the parked Review sample instead of the briefing",
+    )
     p_demo.add_argument("--open", action="store_true", help="Open the sample in your browser")
     p_demo.set_defaults(func=cmd_demo)
 

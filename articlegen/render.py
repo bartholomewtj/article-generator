@@ -21,6 +21,7 @@ import os
 import re
 
 from .sources import Paper
+from .writer import is_briefing
 
 _CITATION_RE = re.compile(r"\[(\d+(?:\s*,\s*\d+)*)\]")
 # The same marker with any space in front of it, so dropping an ungrounded
@@ -232,8 +233,13 @@ _CLINICAL_HINTS = (
 
 
 def _summary_text(article: dict) -> str:
-    """The article's lead paragraph — `standfirst` on pre-journal-format drafts."""
-    return article.get("abstract") or article.get("standfirst") or ""
+    """The article's lead paragraph — `answer` on a briefing, `standfirst` on legacy drafts."""
+    return (
+        article.get("answer")
+        or article.get("abstract")
+        or article.get("standfirst")
+        or ""
+    )
 
 
 def _key_points(article: dict) -> list[str]:
@@ -1177,6 +1183,116 @@ def _read_phrase(cited: list[Paper]) -> str:
 # HTML
 # --------------------------------------------------------------------------
 
+def _review_body_html(
+    article: dict,
+    papers: list[Paper],
+    cite_map: dict[int, int],
+    valid_numbers: set[int],
+    flags: dict[str, str] | None,
+    cited: list[Paper],
+    labels: dict[int, str],
+    verification: dict | None,
+) -> str:
+    """Introduction → figure → thematic sections → box → key points → conclusions."""
+    sections_html = []
+    for section in article.get("sections", []):
+        paragraphs = "\n".join(
+            f"<p>{_prose(para, cite_map, valid_numbers, flags)}</p>"
+            for para in section.get("paragraphs", [])
+        )
+        sections_html.append(
+            f'<section class="body-section">\n<h2>{html.escape(section["heading"])}</h2>\n'
+            f"{paragraphs}\n</section>"
+        )
+
+    box = _box_html(article, papers, cite_map, flags)
+    figure = _figure_html(cited, labels)
+
+    key_points = "\n".join(
+        f"<li>{_prose(point, cite_map, valid_numbers, flags)}</li>"
+        for point in _key_points(article)
+    )
+    note = _grounding_note(verification, bool(_full_text_count(cited)))
+    note_html = f'<p class="key-points-note">{html.escape(note)}</p>\n' if note else ""
+    key_points_html = (
+        '<aside class="key-points">\n<h2>Key points</h2>\n'
+        f'{note_html}<ul>\n'
+        f"{key_points}\n</ul>\n</aside>" if key_points else ""
+    )
+
+    body: list[str] = []
+    pending = [item for item in (figure, box) if item]
+    positions = {1: figure, 2: box}
+    for i, section_html in enumerate(sections_html, start=1):
+        if key_points_html and i == len(sections_html) and i > 1:
+            body.append(key_points_html)
+        body.append(section_html)
+        item = positions.get(i)
+        if item and item in pending:
+            body.append(item)
+            pending.remove(item)
+    body.extend(pending)
+    if key_points_html and len(sections_html) <= 1:
+        body.append(key_points_html)
+    return "\n\n".join(body)
+
+
+def _briefing_body_html(
+    article: dict,
+    papers: list[Paper],
+    cite_map: dict[int, int],
+    valid_numbers: set[int],
+    flags: dict[str, str] | None,
+    verification: dict | None,
+    cited: list[Paper],
+) -> str:
+    """Findings, unknowns, three papers to open. No journal display items."""
+    note = _grounding_note(verification, bool(_full_text_count(cited)))
+    note_html = f'<p class="key-points-note">{html.escape(note)}</p>\n' if note else ""
+
+    findings = "\n".join(
+        f"<li>{_prose(item, cite_map, valid_numbers, flags)}</li>"
+        for item in (article.get("findings") or [])
+    )
+    findings_html = (
+        '<aside class="key-points">\n<h2>What the evidence shows</h2>\n'
+        f'{note_html}<ul>\n{findings}\n</ul>\n</aside>' if findings else ""
+    )
+
+    unknowns = "\n".join(
+        f"<li>{_prose(item, cite_map, valid_numbers, flags)}</li>"
+        for item in (article.get("unknowns") or [])
+    )
+    unknowns_html = (
+        '<aside class="key-points">\n<h2>What remains open</h2>\n'
+        f'<ul>\n{unknowns}\n</ul>\n</aside>' if unknowns else ""
+    )
+
+    items = []
+    for raw in (article.get("open_these") or []):
+        if not isinstance(raw, int) or not 1 <= raw <= len(papers):
+            continue
+        paper = papers[raw - 1]
+        n = cite_map.get(raw)
+        num = f'<sup class="cite"><a href="#ref-{n}">{n}</a></sup> ' if n else ""
+        title = html.escape(_titled(paper.title))
+        title_html = (
+            f'<a href="{html.escape(paper.link, quote=True)}">{title}</a>'
+            if paper.link else title
+        )
+        items.append(
+            f'<li>{num}{html.escape(_short_author(paper))} '
+            f'({paper.year or "n.d."}). {title_html}</li>'
+        )
+        if len(items) == 3:
+            break
+    open_html = (
+        '<aside class="key-points open-these">\n<h2>Three papers to open</h2>\n'
+        f'<ul>\n{" ".join(items)}\n</ul>\n</aside>' if items else ""
+    )
+    return "\n\n".join(p for p in (findings_html, unknowns_html, open_html) if p)
+
+
 def render_article(
     article: dict,
     papers: list[Paper],
@@ -1213,55 +1329,27 @@ def render_article(
     labels = _display_relevance(cite_map, curation)
     counts = _relevance_counts(cite_map, curation)
     flags = _figure_flags(verification)
-
-    sections_html = []
-    for section in article.get("sections", []):
-        paragraphs = "\n".join(
-            f"<p>{_prose(para, cite_map, valid_numbers, flags)}</p>"
-            for para in section.get("paragraphs", [])
-        )
-        sections_html.append(
-            f'<section class="body-section">\n<h2>{html.escape(section["heading"])}</h2>\n'
-            f"{paragraphs}\n</section>"
-        )
-
-    # Display items in the body: the figure after the introduction, the box
-    # after the first thematic section. Table 1 is reference apparatus, so it
-    # lives in the back matter with Methods and the reference list rather than
-    # interrupting the prose. Key points sit at the end of the body, directly
-    # before the conclusions, as the bridge from evidence to verdict.
-    box = _box_html(article, papers, cite_map, flags)
-    figure = _figure_html(cited, labels)
     table = _table_html(cited, labels)
+    briefing = is_briefing(article)
 
-    key_points = "\n".join(
-        f"<li>{_prose(point, cite_map, valid_numbers, flags)}</li>"
-        for point in _key_points(article)
-    )
-    # The grounding line sits directly under the heading, above the points, so
-    # a reader who copies the block copies the caveat with it.
-    note = _grounding_note(verification, bool(_full_text_count(cited)))
-    note_html = f'<p class="key-points-note">{html.escape(note)}</p>\n' if note else ""
-    key_points_html = (
-        '<aside class="key-points">\n<h2>Key points</h2>\n'
-        f'{note_html}<ul>\n'
-        f"{key_points}\n</ul>\n</aside>" if key_points else ""
-    )
+    if briefing:
+        body_html = _briefing_body_html(
+            article, papers, cite_map, valid_numbers, flags, verification, cited)
+        article_type = "Evidence briefing"
+        summary_label = "Answer"
+    else:
+        body_html = _review_body_html(
+            article, papers, cite_map, valid_numbers, flags, cited, labels,
+            verification)
+        article_type = "Evidence Review"
+        summary_label = "Abstract"
 
-    body: list[str] = []
-    pending = [item for item in (figure, box) if item]
-    positions = {1: figure, 2: box}
-    for i, section_html in enumerate(sections_html, start=1):
-        if key_points_html and i == len(sections_html) and i > 1:
-            body.append(key_points_html)
-        body.append(section_html)
-        item = positions.get(i)
-        if item and item in pending:
-            body.append(item)
-            pending.remove(item)
-    body.extend(pending)
-    if key_points_html and len(sections_html) <= 1:
-        body.append(key_points_html)
+    question_html = ""
+    if article.get("question"):
+        question_html = (
+            '<p class="question"><span class="run-in-head">Question</span>'
+            f'{_prose(article["question"], cite_map, valid_numbers, flags)}</p>'
+        )
 
     keywords = [k for k in (article.get("keywords") or []) if k]
     keywords_html = (
@@ -1304,9 +1392,12 @@ def render_article(
             title=html.escape(article["title"]),
             subject=html.escape(topic),
             meta_line=" &middot; ".join(html.escape(b) for b in meta_bits),
+            article_type=html.escape(article_type),
+            question=question_html,
+            summary_label=html.escape(summary_label),
             abstract=_prose(_summary_text(article), cite_map, valid_numbers, flags),
             keywords=keywords_html,
-            body="\n\n".join(body),
+            body=body_html,
             methods=_methods_html(provenance, len(papers), len(cited), topic),
             assessment=_assessment_html(cited, counts, verification, style_report),
             table=table,
@@ -1428,11 +1519,12 @@ _CSS = """
   /* ---- abstract & key points --------------------------------------- */
   .abstract { margin: 0 0 1.2rem; }
   .abstract p { margin: 0; font-size: 1.06rem; line-height: 1.6; color: var(--ink-2); }
-  .abstract .run-in-head {
+  .abstract .run-in-head, .question .run-in-head {
     font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
     font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em;
     text-transform: uppercase; color: var(--ink); margin-right: 0.5rem;
   }
+  .question { margin: 0 0 1rem; font-size: 1.06rem; line-height: 1.6; color: var(--ink-2); }
   .keywords { font-size: 0.8rem; color: var(--muted); margin: 0 0 2rem; }
   aside.key-points {
     background: var(--surface); border: 1px solid var(--rule);
@@ -1637,7 +1729,7 @@ _TEMPLATE = """<!DOCTYPE html>
 <main>
   <article>
   <header class="masthead">
-    <p class="article-type">Evidence Review</p>
+    <p class="article-type">{article_type}</p>
     <h1>{title}</h1>
     <p class="ai-disclosure">{disclosure_banner}</p>
     <p class="meta-line">{meta_line}</p>
@@ -1645,8 +1737,9 @@ _TEMPLATE = """<!DOCTYPE html>
 
     {toolbar}
 
+    {question}
     <div class="abstract">
-      <p><span class="run-in-head">Abstract</span>{abstract}</p>
+      <p><span class="run-in-head">{summary_label}</span>{abstract}</p>
     </div>
     {keywords}
   </header>
@@ -1711,8 +1804,9 @@ def render_markdown(
                 _shift_markers_after_punctuation(_remap_citations(text, cite_map)), flags)
         )
 
+    briefing = is_briefing(article)
     lines = [
-        "**EVIDENCE REVIEW**",
+        "**EVIDENCE BRIEFING**" if briefing else "**EVIDENCE REVIEW**",
         "",
         f"# {article['title']}",
         "",
@@ -1724,47 +1818,78 @@ def render_markdown(
         "",
         f"**Subject:** {topic}",
         "",
-        f"**Abstract.** {prose(_summary_text(article))}",
-        "",
     ]
+    if article.get("question"):
+        lines += [f"**Question.** {prose(article['question'])}", ""]
+    summary_label = "Answer" if briefing else "Abstract"
+    lines += [f"**{summary_label}.** {prose(_summary_text(article))}", ""]
 
     keywords = [k for k in (article.get("keywords") or []) if k]
     if keywords:
         lines += [f"**Keywords:** {'; '.join(keywords)}", ""]
 
-    # Same layout as the HTML: figure after the introduction, box after the
-    # first thematic section, key points directly before the conclusions, and
-    # Table 1 in the back matter rather than interrupting the prose.
-    points = _key_points(article)
-    note = _grounding_note(verification, bool(_full_text_count(cited)))
-    key_points_md = (
-        "\n".join(["## Key points", ""]
-                  + ([f"*{note}*", ""] if note else [])
-                  + [f"- {prose(p)}" for p in points])
-        if points else ""
-    )
-
-    sections = article.get("sections", [])
-    box_md = _box_markdown(article, papers, cite_map, flags)
-    figure_md = _figure_markdown(cited, labels)
     table_md = _table_markdown(cited, labels)
-    positions = {1: figure_md, 2: box_md}
-    pending = [item for item in (figure_md, box_md) if item]
+    note = _grounding_note(verification, bool(_full_text_count(cited)))
 
-    for i, section in enumerate(sections, start=1):
-        if key_points_md and i == len(sections) and i > 1:
-            lines += [key_points_md, ""]
-        lines += [f"## {section['heading']}", ""]
-        for para in section.get("paragraphs", []):
-            lines += [prose(para), ""]
-        item = positions.get(i)
-        if item and item in pending:
+    if briefing:
+        findings = article.get("findings") or []
+        if findings:
+            lines += ["## What the evidence shows", ""]
+            if note:
+                lines += [f"*{note}*", ""]
+            lines += [f"- {prose(p)}" for p in findings]
+            lines.append("")
+        unknowns = article.get("unknowns") or []
+        if unknowns:
+            lines += ["## What remains open", ""]
+            lines += [f"- {prose(p)}" for p in unknowns]
+            lines.append("")
+        opened = []
+        for raw in (article.get("open_these") or []):
+            if not isinstance(raw, int) or not 1 <= raw <= len(papers):
+                continue
+            paper = papers[raw - 1]
+            n = cite_map.get(raw)
+            num = f"[{n}] " if n else ""
+            link = f" <{paper.link}>" if paper.link else ""
+            opened.append(
+                f"- {num}{_short_author(paper)} ({paper.year or 'n.d.'}). "
+                f"{_titled(paper.title)}{link}"
+            )
+            if len(opened) == 3:
+                break
+        if opened:
+            lines += ["## Three papers to open", ""] + opened + [""]
+    else:
+        # Same layout as the HTML: figure after the introduction, box after the
+        # first thematic section, key points directly before the conclusions.
+        points = _key_points(article)
+        key_points_md = (
+            "\n".join(["## Key points", ""]
+                      + ([f"*{note}*", ""] if note else [])
+                      + [f"- {prose(p)}" for p in points])
+            if points else ""
+        )
+        sections = article.get("sections", [])
+        box_md = _box_markdown(article, papers, cite_map, flags)
+        figure_md = _figure_markdown(cited, labels)
+        positions = {1: figure_md, 2: box_md}
+        pending = [item for item in (figure_md, box_md) if item]
+
+        for i, section in enumerate(sections, start=1):
+            if key_points_md and i == len(sections) and i > 1:
+                lines += [key_points_md, ""]
+            lines += [f"## {section['heading']}", ""]
+            for para in section.get("paragraphs", []):
+                lines += [prose(para), ""]
+            item = positions.get(i)
+            if item and item in pending:
+                lines += [item, ""]
+                pending.remove(item)
+        for item in pending:
             lines += [item, ""]
-            pending.remove(item)
-    for item in pending:
-        lines += [item, ""]
-    if key_points_md and len(sections) <= 1:
-        lines += [key_points_md, ""]
+        if key_points_md and len(sections) <= 1:
+            lines += [key_points_md, ""]
 
     lines += _methods_markdown(provenance, len(papers), len(cited), topic)
     lines += _assessment_markdown(cited, counts, verification, style_report)
@@ -1912,7 +2037,7 @@ _INDEX_TEMPLATE = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Evidence reviews</title>
+<title>Evidence briefings</title>
 <script>
   (function() {{
     var saved = localStorage.getItem('articlegen_theme') || 'system';
@@ -1952,13 +2077,13 @@ _INDEX_TEMPLATE = """<!DOCTYPE html>
 <body>
 <main>
   <div class="header-row">
-    <h1>Evidence reviews</h1>
+    <h1>Evidence briefings</h1>
     <button class="theme-toggle-btn" onclick="toggleIndexTheme()"><span id="idxThemeIcon">&#9789;</span> Theme</button>
   </div>
-  <p class="idx-disclosure">Every article listed here was written by a language
+  <p class="idx-disclosure">Every briefing listed here was written by a language
   model from published research. No human author wrote or checked any of them,
   and none has been peer reviewed.</p>
-  <p class="sub">{count} review(s) · newest first</p>
+  <p class="sub">{count} briefing(s) · newest first</p>
   <ul>
     {items}
   </ul>
