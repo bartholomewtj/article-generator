@@ -30,9 +30,9 @@ from .sources import (DATABASE_NAMES, DEFAULT_MAX_PAPERS, NAMED_SOURCE_LIMIT,
 from .style import (SUBSTANCE_RULES, check_style, errors as style_errors,
                     format_report as format_style, revision_brief)
 from .verify import check_statistics, revision_brief as statistics_brief
-from .writer import (clean_search_terms, curate_sources, is_briefing,
-                     plan_queries, revise_prose, revise_statistics,
-                     write_article, write_briefing)
+from .writer import (cite_target, clean_search_terms, curate_sources,
+                     is_briefing, plan_queries, revise_prose,
+                     revise_statistics, write_article, write_briefing)
 
 # A caller that wants progress reporting passes one of these; the default drops it.
 Logger = Callable[[str], None]
@@ -691,6 +691,13 @@ def generate_draft(
             f"MAX_FULLTEXT_REQUESTS would find more, at more requests against "
             "the shared Europe PMC quota.")
     log("  " + _read_subset_skew(papers, fetched))
+
+    _n_direct = ((curation or {}).get("counts") or {}).get("direct")
+    _shown = len(papers) - sum(
+        1 for label in (curation.get("relevance") or {}).values() if label == "tangential"
+    )
+    log(f"  cite ceiling: {cite_target(_n_direct, _shown)} "
+        f"({_n_direct if _n_direct is not None else 'unlabelled'} direct of {_shown} shown)")
 
     compose = write_article if long else write_briefing
     log("Writing the review (this can take a few minutes)..." if long

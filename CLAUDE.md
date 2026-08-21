@@ -122,6 +122,8 @@ behaviour it describes.
 | A load-bearing figure is not quoted at second hand when a first-hand one exists | `test_second_hand_figures_are_a_last_resort` |
 | A candidate-pool default lives in one constant | `test_the_candidate_pool_is_big_enough_to_curate` |
 | The writer cites a working set, not everything screened | `test_the_writer_cites_a_working_set` |
+| The cite ceiling scales with the direct count | `test_the_cite_ceiling_scales_with_the_direct_count` |
+| The question and title stay on the reader's topic | `test_the_cite_ceiling_scales_with_the_direct_count` |
 | Full text via the papers CLI never breaks the Europe PMC path | `test_full_text_comes_from_the_papers_cli_when_it_is_there` |
 | A `queued_ckn` miss is no-open-access, not a failed OA fetch | `test_queued_ckn_counts_as_no_open_access` |
 | Fig. 1 counts study designs, and falls back to years when it cannot | `test_figure_one_counts_study_designs` |
@@ -305,14 +307,23 @@ and sections intact.
   are expected rather than bugs: the Methods "screened" count roughly doubles,
   and `MAX_FULLTEXT_REQUESTS` (18) now binds before `FULLTEXT_TARGET` more
   often, so the stop-reason NOTE fires routinely.
-  The pool is what is **screened**; `writer.TARGET_CITED_SOURCES` (12) is what
-  is **cited**. Those are two numbers and Methods prints both — raising the pool
-  without a citing target just produced longer reference lists (20 of 20, 17 of
-  20 cited, #167). The working-set rule lives in one string,
-  `writer._WORKING_SET_RULE`, spliced into both `_BRIEFING_SYSTEM` and
-  `_WRITER_SYSTEM`, with the run's own screened/shown counts added by
-  `_writer_context`. Table 1 stays the list of **cited** records; the screened
-  count lives in Methods.
+  The pool is what is **screened**; `writer.TARGET_CITED_SOURCES` (12) is the
+  ceiling on what is **cited**, not a flat quota. A run's ask is
+  `writer.cite_target` (`min(12, n_direct + 2)`, floored at `MIN_CITED_SOURCES`
+  (5) and capped at the number shown). Thin-direct runs padded with related and
+  weak-design papers when told to cite 12 (#188). Those are two numbers and
+  Methods prints both — raising the pool without a citing target just produced
+  longer reference lists (20 of 20, 17 of 20 cited, #167). The working-set rule
+  lives in one string, `writer._WORKING_SET_RULE`, spliced into both
+  `_BRIEFING_SYSTEM` and `_WRITER_SYSTEM`, with the run's own screened/shown
+  counts and direct-scaled ceiling added by `_writer_context`. Table 1 stays
+  the list of **cited** records; the screened count lives in Methods.
+- **Full texts fetched are named in the prompt and preferred over abstract-only padding.**
+  When open-access full texts are retrieved, `_writer_context` emits a DEEP READS
+  line naming the read SOURCE numbers. The pipeline spent a retrieval on each
+  because they were the most relevant reviews and trials it could read; leaving
+  one uncited while citing an abstract-only case report is the failure the
+  prompt line stops (#188).
 - **Full text has two routes: the `papers` CLI (paperfetch) first, Europe PMC as fallback.**
   When the `papers` CLI is installed and the paper has a DOI, full text is
   retrieved via `papers get` from any open-access copy (Unpaywall, OpenAlex,
