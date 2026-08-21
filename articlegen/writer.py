@@ -868,7 +868,9 @@ def curate_sources(
 ) -> dict:
     """Score each paper's relevance to the exact topic. Returns:
     {relevance: {index: label}, most_relevant_index: int,
-     counts: {direct, related, tangential}}. Degrades to empty on failure.
+     counts: {direct, related, tangential}}. An empty result carries an
+    `error` key naming the reason; the caller is expected to treat empty
+    as fatal.
 
     `abstract_chars` truncates each abstract in the prompt. Only the comparison
     harness passes it; the pipeline uses `CURATION_ABSTRACT_CHARS`, which is
@@ -890,8 +892,9 @@ def curate_sources(
             model=model,
             api_key=api_key,
         )
-    except Exception:
-        return {"relevance": {}, "most_relevant_index": None, "counts": {}}
+    except Exception as exc:
+        return {"relevance": {}, "most_relevant_index": None, "counts": {},
+                "error": f"{type(exc).__name__}: {exc}"[:200]}
 
     relevance: dict[int, str] = {}
     for a in result.get("assessments", []):
@@ -903,6 +906,9 @@ def curate_sources(
         level: sum(1 for v in relevance.values() if v == level)
         for level in ("direct", "related", "tangential")
     }
+    if not relevance:
+        return {"relevance": {}, "most_relevant_index": None, "counts": {},
+                "error": "the model returned no usable relevance labels"}
     mri = result.get("most_relevant_index")
     if not (isinstance(mri, int) and 1 <= mri <= len(papers)):
         # fall back to a direct source, else the first

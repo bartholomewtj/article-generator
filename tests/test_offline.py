@@ -5074,20 +5074,106 @@ def test_pipeline_fetches_full_text() -> None:
         check("provenance records which sources were read in full",
               draft.provenance["full_text_sources"] == [1, 3, 4])
 
-        # Curation returning nothing usable is the other way the step comes back
-        # empty. It must fetch none rather than fall back to fetching everything:
-        # unlabelled sources have not passed the relevance gate.
-        for p in papers:
-            p.full_text = ""
-        fetched_pmcids.clear()
-        pipeline.curate_sources = lambda topic, p, **kw: {
-            "relevance": {}, "most_relevant_index": None, "counts": {}}
-        draft = pipeline.generate_draft("topic")
-        check("no relevance labels means no full text is fetched",
-              fetched_pmcids == [] and draft.provenance["full_text_sources"] == [])
+        # Unlabelled sources are never fetched. Reaching this through
+        # generate_draft is no longer possible — an empty curation is a hard
+        # stop (#168) — but the ordering function is where the rule lives, so
+        # it is asserted here directly.
+        from articlegen.sources import full_text_order
+        check("no relevance labels means nothing is eligible for full text",
+              full_text_order(papers, {}) == [])
     finally:
         (pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
          pipeline.write_article, pipeline.fetch_full_text, pipeline.enforce_style) = saved
+
+
+def test_unlabelled_sources_stop_the_run() -> None:
+    """Curation swallows every exception and returns empty labels; the pipeline
+    used to log a warning and write anyway, which turned a failed relevance
+    gate into a normal-looking briefing with no topic-drift protection and no
+    full text (#168). An unlabelled pool now raises CurationFailed before the
+    writer or the named-source pass run.
+    """
+    import inspect
+    from articlegen import pipeline, writer
+    from articlegen.sources import Paper
+
+    papers = [Paper(title=f"p{i}", abstract="abstract text", pmcid=f"PMC{i}", is_open_access=True)
+              for i in range(1, 4)]
+    logged: list[str] = []
+
+    def _boom(*a, **kw):
+        raise AssertionError("the writer must not run")
+
+    saved_pipeline = (
+        pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
+        pipeline.write_article, pipeline.write_briefing, pipeline.enforce_style,
+        pipeline._named_source_pass,
+    )
+    saved_writer = (writer.generate_json,)
+    try:
+        pipeline.plan_queries = lambda topic, **kw: (["q"], "core")
+        def fake_gather(queries, **kw):
+            kw.get("outcomes", []).append(
+                {"source": "europe_pmc", "query": "q", "count": 3, "error": "", "cached": False})
+            return papers
+        pipeline.gather_evidence = fake_gather
+        pipeline.curate_sources = lambda topic, p, **kw: {
+            "relevance": {}, "most_relevant_index": None, "counts": {},
+            "error": "RuntimeError: provider exploded",
+        }
+        pipeline.write_briefing = pipeline.write_article = _boom
+        pipeline.enforce_style = _boom
+        named_called = [0]
+        def fake_named(*a, **kw):
+            named_called[0] += 1
+            return {"queries": [], "added": 0}
+        pipeline._named_source_pass = fake_named
+
+        raised = None
+        try:
+            pipeline.generate_draft("topic", log=logged.append)
+        except pipeline.CurationFailed as exc:
+            raised = exc
+
+        check("empty labelling stops the run", raised is not None)
+        check("and is caught by every existing NoPapersFound handler",
+              isinstance(raised, pipeline.NoPapersFound))
+        check("and is not blamed on the scholarly APIs",
+              raised is not None and raised.sources_failed is False)
+        check("the message names the reason",
+              raised is not None and "provider exploded" in str(raised))
+        check("the message says the write was not charged",
+              raised is not None and "charged" in str(raised).lower())
+        check("the writer is never called", True)
+        check("the named-source pass is never reached", named_called[0] == 0)
+        check("the WARNING log line survives",
+              any("no usable labels" in line for line in logged))
+
+        # curate_sources still degrades soft and now says why
+        def _raise_nope(*a, **kw):
+            raise RuntimeError("nope")
+        writer.generate_json = _raise_nope
+        res_exc = writer.curate_sources("topic", papers)
+        check("curate_sources returns a dict on provider error", isinstance(res_exc, dict))
+        check("curate_sources relevance is empty on provider error", res_exc.get("relevance") == {})
+        check("curate_sources error names the exception", "nope" in res_exc.get("error", ""))
+
+        writer.generate_json = lambda *a, **kw: {"assessments": []}
+        res_empty = writer.curate_sources("topic", papers)
+        check("curate_sources returns a dict on empty assessments", isinstance(res_empty, dict))
+        check("curate_sources relevance is empty on empty assessments", res_empty.get("relevance") == {})
+        check("curate_sources error describes empty assessments",
+              bool(res_empty.get("error")) and isinstance(res_empty.get("error"), str))
+
+        check("the named-source pass still degrades soft",
+              "CurationFailed" not in inspect.getsource(pipeline._named_source_pass))
+    finally:
+        (
+            pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
+            pipeline.write_article, pipeline.write_briefing, pipeline.enforce_style,
+            pipeline._named_source_pass,
+        ) = saved_pipeline
+        (writer.generate_json,) = saved_writer
 
 
 def test_full_text_comes_from_the_papers_cli_when_it_is_there() -> None:
@@ -6403,6 +6489,7 @@ def main(argv: list[str] | None = None) -> int:
         test_ungrounded_citations_leave_no_trace,
         test_second_hand_figures_are_a_last_resort,
         test_full_text_grounding, test_pipeline_fetches_full_text,
+        test_unlabelled_sources_stop_the_run,
         test_full_text_comes_from_the_papers_cli_when_it_is_there,
         test_full_text_order_favours_reviews_and_trials,
         test_pmcid_is_resolved_by_doi,

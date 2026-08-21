@@ -638,6 +638,27 @@ run's actual screened and shown counts (with a thin-pool branch if shown <= 12).
 acceptance measurement on the next few real runs: cited-of-screened should fall
 well below the old 16–19 of 20.
 
+### `#168` — empty curation produced an ungrounded draft in silence
+
+`curate_sources` swallowed every exception and returned empty labels.
+`generate_draft` logged a warning and continued. From that point the relevance
+gate was off (nothing was labelled `tangential`, so nothing was withheld from
+the writer), `full_text_order` returned `[]` so no open-access full text was
+fetched, and the model wrote a briefing anyway.
+
+A warning was not enough: nothing on the finished page indicated the gate had
+failed, so an abstracts-only draft with no topic-drift protection looked
+indistinguishable from a clean, properly curated piece.
+
+The run now stops as a hard failure before the named-source pass and before the
+writer. `generate_draft` raises `CurationFailed`, implemented as a subclass of
+`NoPapersFound` so every existing CLI and web handler catches it unchanged with
+zero caller edits (web returns 422 with the message detail, which the UI prints
+verbatim). `curate_sources` now reports why it returned empty via an `error`
+key. Deliberate non-choices: no retry loop (avoids burning quota on repeated
+failures) and no fallback to labelling everything `direct` (which would defeat
+the relevance gate entirely).
+
 ---
 
 ## Web app and deployment

@@ -168,6 +168,16 @@ class NoPapersFound(RuntimeError):
         self.sources_failed = sources_failed
 
 
+class CurationFailed(NoPapersFound):
+    """Source labelling came back empty, so the run stops before the write.
+
+    A subclass of `NoPapersFound` on purpose: every caller already has an
+    `except NoPapersFound` branch that prints the message and stops, and this
+    failure wants exactly that handling. A sibling class would mean two more
+    edits in two more files and a third way for a caller to forget.
+    """
+
+
 @dataclass
 class Draft:
     """Everything the renderers need, plus the provenance of how it was made."""
@@ -480,12 +490,22 @@ def generate_draft(
     # That is the quietest way this pipeline can go wrong — the relevance gate
     # is what stops topic drift, and full-text fetching skips every unlabelled
     # source, so the draft downgrades to abstracts-only for a reason nothing
-    # reports. Say so.
+    # reports. Stop the run here: an unlabelled pool means the gate that prevents
+    # topic drift is off, and the failure is invisible on the finished page (#168).
     if papers and not curation.get("relevance"):
         log("  WARNING: curation returned no usable labels for any of the "
             f"{len(papers)} sources. The relevance gate is not protecting this "
             "draft from topic drift, and no full text will be fetched. "
             "Re-run, or draft on a different provider.")
+        reason = curation.get("error") or "no reason was reported"
+        raise CurationFailed(
+            f"Source relevance labelling failed ({reason}), so the run stopped "
+            f"before writing. {len(papers)} papers were found, but none could be "
+            "labelled, and without labels the relevance gate cannot keep "
+            "off-topic evidence out of the briefing and no full text is "
+            "fetched. Nothing was charged for the writing step. Try again, or "
+            "draft on a different model."
+        )
 
     # Named-source pass (issue #165): look up landmark papers/trials named in
     # the top abstracts, merge into the candidate pool, and re-curate only the

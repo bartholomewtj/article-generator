@@ -72,7 +72,8 @@ tests/test_journal_conformance.py conventions as assertions over 5 fixtures
 ```
 
 **`pipeline.generate_draft()`, and nowhere else**: source pre-flight →
-`plan_queries` → `gather_evidence` → `curate_sources` → named-source pass →
+`plan_queries` → `gather_evidence` → `curate_sources` (an empty labelling
+result stops the run) → named-source pass →
 full-text fetch → `write_briefing` (or `write_article` when `long=True`) →
 `enforce_style` (up to `MAX_STYLE_PASSES` `revise_prose` passes if `check_style`
 finds errors) → `check_statistics` → a `Draft` carrying article, papers,
@@ -106,6 +107,7 @@ behaviour it describes.
 | Papers named in the top abstracts are looked up once, capped | `test_named_papers_in_abstracts_are_looked_up` |
 | A merged record never renumbers the pool | `test_named_sources_merge_without_renumbering` |
 | A doomed run is refused before the caller is billed | `test_dead_sources_fail_before_the_caller_is_billed` |
+| Unlabelled sources stop the run before the writer | `test_unlabelled_sources_stop_the_run` |
 | The article shape is not a preference (`TONE_LABEL`, `LENGTH_LABEL`, `DEPTH_LABEL` are constants) | `test_house_style_is_fixed_not_a_preference` |
 | Default artefact is a briefing; the Review is `--long` | `test_briefing_is_the_default_artefact` |
 | Register rules fire on investigator voice, not synthesis voice | `test_register_rules_are_scoped_to_the_synthesis_voice` |
@@ -326,6 +328,16 @@ and sections intact.
   seventh paper whether or not SOURCE 6 was dropped. The prompt says how many
   were withheld and that the numbering has gaps — a prompt that misdescribes its
   own inputs teaches the model to ignore it.
+- **An empty relevance result is fatal, not a warning.** `curate_sources`
+  returns empty on any failure, so a failed labelling call is
+  indistinguishable from a pool where everything was labelled tangential:
+  "0 direct / 0 related / 0 tangential", logged and passed over. The gate
+  is then off, no full text is fetched, and the model writes anyway — the
+  quietest way this pipeline can go wrong (#168). `generate_draft` now
+  raises `CurationFailed`, a subclass of `NoPapersFound`, so every existing
+  caller stops on it unchanged, and the empty result carries an `error` key
+  naming the reason. Do not retry curation in a loop and do not fall back
+  to labelling everything `direct`.
 - **The full-text path has four keyless dependencies and all of them fail
   soft**: Europe PMC search, Europe PMC fetch, DOI resolution, Unpaywall. Soft
   failure is right for the reader and useless for the operator, so both `except
