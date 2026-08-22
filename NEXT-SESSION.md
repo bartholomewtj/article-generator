@@ -1,23 +1,19 @@
 # Next session
 
-_Last handoff: 22 August 2026 — #208 on `main` (`e5d755c`); Pages will stamp that; Render still `89b401d` at merge_
+_Last handoff: 22 August 2026 — #208/#209 on `main`; Pages stamp `4f4eff8`; Render `4f4eff8`, `"gallery": true`_
 
 ## Where this stopped
 
-Public visitor gallery is on `main` (#208). Generating still does not
+Public visitor gallery is live (#208, #207). Generating still does not
 publish. **Share to gallery** asks first, then stores the briefing in a
 public gist and lists it under **From other visitors**. Cap 50.
 
-The Share button stays hidden until `ARTICLEGEN_GALLERY_TOKEN` is set on
-Render (gist scope only — not repo). `/api/health` on the live backend
-is still `"commit": "89b401d"` with no `gallery` field; auto-deploy of
-`e5d755c` had not finished at this handoff. After deploy, look for
-`"gallery": true` — false means the secret is still unset.
+`/api/health` → `"commit": "4f4eff8"`, `"gallery": true`, Luna. Pages
+stamps the same commit. `ARTICLEGEN_GALLERY_TOKEN` is set on Render
+(gist scope only).
 
-Index gist (public, empty until someone shares):
+Index gist:
 https://gist.github.com/bartholomewtj/3b864ca05620472d2644c3e9c1fd6a03
-
-#207 stays open until that token is set.
 
 The GitHub PAT named **articlegen cloudsync api** is not used by the
 site, Pages, or Render. Let it expire.
@@ -37,10 +33,8 @@ both packages own the `papers` command.
 
 ## Next thing to do
 
-1. **Set `ARTICLEGEN_GALLERY_TOKEN` on Render** (gist-only PAT). Then
-   confirm `curl https://articlegen-api.onrender.com/api/health` shows
-   `"gallery": true` and commit `e5d755c` (or later). Share one briefing
-   and check the landing list.
+1. **Share one briefing on the hosted site** and check it appears under
+   **From other visitors**. First real publish; the gist is still empty.
 2. **Re-run delusional disorder** on the hosted site. That run branded
    itself a working draft over RADAR's "dose reduction" arm and left
    Cochrane unread. It is the check for all three #203 fixes.
@@ -76,7 +70,6 @@ not regenerate the public demo Reviews.
 
 ## Open
 
-- #207 gallery token on Render — code is merged; secret is not
 - #173 hosted full text — public package exists; articlegen + Docker not wired
 - Phantom Fig. 1: briefings mention it, renderer does not draw it
 - Methods grammar: `1 of which are cited`
