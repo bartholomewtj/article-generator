@@ -984,3 +984,50 @@ read that folder. Both moved into the Web app section of `CLAUDE.md` before the
 file went. Content stranded in a runtime folder is a worse failure than a
 redundant pointer: the pointer wastes a read, the stranded rule gets
 rediscovered the expensive way.
+
+### The hosted image gets a public `paperfetch-oa` package instead of the private one (#173, August 2026)
+
+Issue #84 named the constraint: Render cannot `pip install` the private
+`paperfetch` repo without shipping GitHub credentials into the build, so the
+public web app was stuck reading full text from Europe PMC only, while local
+`articlegen draft` (using the private package) reached Unpaywall, OpenAlex,
+Semantic Scholar and preprint servers too. #173 gave two options — document
+the gap honestly, or fix it. Option 1 (fix it) won because the constraint was
+solvable without touching the private repo's threat model at all: publish a
+second, OA-only package under its own public repo
+(`bartholomewtj/paperfetch-oa`) and point the Dockerfile's `pip install` at
+its public git URL. No PAT, no deploy key, no secret in the build — a public
+`git+https://` URL needs none.
+
+The two packages both expose a console script named `papers`, so
+`articlegen/paperfetch.py` needed no code change to talk to either one — it
+already just shells out to whatever `papers` resolves to on PATH. The only
+code change was accepting the second package's not-open-access status,
+`no_oa`, alongside the private package's `queued_ckn` in
+`paperfetch.NOT_OA_STATUSES` — both mean "confirmed no OA copy exists," and
+without this, a paywalled landmark fetched through `paperfetch-oa` would have
+logged as a failed OA fetch, the exact miscount #191 already fixed once for
+the private package's status name.
+
+The Dockerfile installs `git` in the same `RUN` layer it uses to `pip install`
+the public repo, then purges `git` before the layer closes, so the final image
+never carries a source-control client it doesn't need. `PAPERS_MAILTO` was
+added to both the Dockerfile (a blank default) and `render.yaml` (a dashboard
+secret) because `paperfetch-oa`'s Unpaywall calls need a contact address the
+same way the private package's do — without it, `papers get` refuses every
+uncached DOI, which fails soft into the existing Europe PMC fallback rather
+than crashing the run.
+
+The pip line pins `@main` rather than a tag or commit SHA, and that is
+deliberate, not an oversight: `paperfetch-oa` is a single-maintainer package
+with no release process yet, `main` is the only branch, and Render rebuilds
+the image from a fresh `git clone` on every deploy rather than caching the
+dependency layer indefinitely, so a bad `main` is caught on the next deploy
+rather than baked in silently. Pin to a SHA once the package has tags worth
+trusting; until then `@main` is explicit about what's actually happening
+(this repo already floats on Render's own unpinned base image and
+`requirements.txt` ranges).
+
+`queued_ckn` was not renamed and was not going to be — CLAUDE.md already
+pins that (articlegenerator depends on it) — so the two statuses live
+side by side in `NOT_OA_STATUSES` rather than being unified into one name.

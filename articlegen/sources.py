@@ -219,8 +219,9 @@ class Paper:
     # Which fetcher produced `full_text` ("papers" or "europe_pmc"). Set by
     # fetch_full_text; not populated by search or dedupe.
     full_text_via: str = ""
-    # True when `papers` reported a not-OA status (`queued_ckn`). The pipeline
-    # tallies that as no-open-access, not as "OA but returned no text" (#191).
+    # True when `papers` reported a not-OA status (`queued_ckn`, or `no_oa`
+    # from the public `paperfetch-oa` package, #173). The pipeline tallies
+    # that as no-open-access, not as "OA but returned no text" (#191).
     full_text_not_oa: bool = False
     is_preprint: bool = False
     # Document type as the API reported it, lowercased, e.g. ("journal article",

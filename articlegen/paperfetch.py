@@ -25,9 +25,11 @@ DEFAULT_TIMEOUT = 120.0
 # papers statuses that mean "no open-access copy", not "OA but empty".
 # `queued_ckn` is Unpaywall (and the rest of the ladder) saying the paper is
 # paywalled; logging that as a failed OA fetch called landmarks fetch failures
-# (#191). Other non-ok statuses (`unreadable_pdf`, `retry`, `no_doi`) stay
+# (#191). `no_oa` is the public `paperfetch-oa` package's equivalent status —
+# same meaning, different name because it has no CKN ladder to queue into
+# (#173). Other non-ok statuses (`unreadable_pdf`, `retry`, `no_doi`) stay
 # fetch failures: those are not a confirmed absence of OA.
-NOT_OA_STATUSES = frozenset({"queued_ckn"})
+NOT_OA_STATUSES = frozenset({"queued_ckn", "no_oa"})
 
 # Tests reset process state by setting paperfetch._AVAILABLE = None,
 # paperfetch._ARGV = [], paperfetch._WARNED = False.
@@ -81,8 +83,9 @@ def fetch_via_papers_with_status(
     """Like fetch_via_papers, plus the papers JSON status.
 
     Returns `(text, status)`. `status` is the CLI's `status` field when JSON
-    parsed (`ok`, `queued_ckn`, `no_doi`, …), or `""` on transport/parse
-    failure. `queued_ckn` means no open-access copy, not a failed OA fetch.
+    parsed (`ok`, `queued_ckn`, `no_oa`, `no_doi`, …), or `""` on transport/parse
+    failure. `queued_ckn` and `no_oa` both mean no open-access copy, not a
+    failed OA fetch.
     """
     if not doi or not available(log):
         return "", ""
