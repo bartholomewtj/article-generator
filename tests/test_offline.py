@@ -2735,6 +2735,14 @@ def test_clinical_directives_are_an_error() -> None:
         # Idioms that borrow a clinical verb for something else.
         "These findings should be treated as provisional.",
         "The syndrome should be referred to as post-exertional malaise.",
+        # Trial-arm names are reports. A Luna briefing of RADAR was branded a
+        # working draft because `_PRESCRIPTION_RE` treated "dose reduction" as
+        # advice. Instructional dose changes still fail via starting/target dose
+        # or a modal + clinical act, tested above.
+        "A separate recurrent-psychosis trial found no social-functioning "
+        "advantage from dose reduction over maintenance at two years.",
+        "The RADAR trial assigned adults to gradual antipsychotic dose "
+        "reduction or maintenance.",
         # A recommendation for research is not a recommendation for care, and
         # it is standard in a Conclusions section.
         "Future trials should monitor adherence more closely.",
@@ -2801,7 +2809,10 @@ def test_full_text_dependencies_fail_loudly_enough_to_diagnose() -> None:
 
     # The pipeline has to pass the logger, or none of the above is reachable.
     check("the pipeline passes its logger through",
-          "resolve_pmcid(paper, log=log)" in inspect.getsource(articlegen_pipeline.generate_draft))
+          "resolve_pmcid(paper, log=log)" in inspect.getsource(
+              articlegen_pipeline._retrieve_full_texts)
+          and "_retrieve_full_texts(" in inspect.getsource(
+              articlegen_pipeline.generate_draft))
 
     # 2. /api/diag probes Unpaywall, which the three search probes never touch.
     diag = inspect.getsource(web.ArticleGenHandler._handle_diag)
@@ -5901,12 +5912,13 @@ def test_full_text_grounding() -> None:
 
 
 def test_pipeline_fetches_full_text() -> None:
-    """The pipeline stage itself: fetch only direct/related sources, respect the
-    cap, and record provenance.
+    """The pipeline stage itself: fetch only cited direct/related sources,
+    then rewrite with those texts.
 
-    The step used to be skipped entirely on Groq, whose per-minute token ceiling
-    could not fit a full text. Groq is gone, so it runs on every draft and the
-    only thing that stops a source being fetched is its relevance label.
+    Fetch used to run *before* the writer chose citations, so FULLTEXT_TARGET
+    filled with uncited OA while cited Cochrane reviews stayed unread. Groq
+    used to skip the step entirely; that path is gone. Tangential sources are
+    still never fetched, even if cited.
     """
     from articlegen import pipeline
     from articlegen.sources import Paper
@@ -5919,9 +5931,11 @@ def test_pipeline_fetches_full_text() -> None:
                 "most_relevant_index": 1,
                 "counts": {"direct": 2, "related": 1, "tangential": 1}}
     fetched_pmcids: list[str] = []
+    writes: list[list[int]] = []
 
     saved = (pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
-             pipeline.write_article, pipeline.fetch_full_text, pipeline.enforce_style)
+             pipeline.write_article, pipeline.write_briefing, pipeline.fetch_full_text,
+             pipeline.enforce_style)
     try:
         pipeline.plan_queries = lambda topic, **kw: (["q"], "core")
         def fake_gather(queries, **kw):
@@ -5930,17 +5944,37 @@ def test_pipeline_fetches_full_text() -> None:
             return papers
         pipeline.gather_evidence = fake_gather
         pipeline.curate_sources = lambda topic, p, **kw: curation
-        pipeline.write_article = lambda topic, p, **kw: dict(article)
-        pipeline.write_briefing = pipeline.write_article
+
+        def fake_write(topic, p, **kw):
+            writes.append([i for i, x in enumerate(p, 1) if x.full_text])
+            return dict(article)
+        pipeline.write_article = fake_write
+        pipeline.write_briefing = fake_write
         pipeline.fetch_full_text = (
             lambda p, use_cache=True: (fetched_pmcids.append(p.pmcid), "body text")[1])
         pipeline.enforce_style = lambda a, **kw: (a, {"issues": [], "stats": {}})
 
         draft = pipeline.generate_draft("topic")
-        check("direct sources are fetched before related, tangential never",
-              fetched_pmcids == ["PMC1", "PMC4", "PMC3"])
+        check("only cited sources are fetched (uncited direct OA is skipped)",
+              fetched_pmcids == ["PMC1"])
+        check("first draft is abstracts-only, rewrite sees the cited full text",
+              writes == [[], [1]])
         check("papers carry their full text", draft.papers[0].full_text == "body text")
-        check("provenance records which sources were read in full",
+        check("provenance records which cited sources were read in full",
+              draft.provenance["full_text_sources"] == [1])
+
+        fetched_pmcids.clear()
+        writes.clear()
+        for p in papers:
+            p.full_text = ""
+            p.full_text_via = ""
+        article["references"] = [1, 3, 4]
+        draft = pipeline.generate_draft("topic")
+        check("cited direct before related, tangential never",
+              fetched_pmcids == ["PMC1", "PMC4", "PMC3"])
+        check("rewrite sees all three cited full texts",
+              writes[0] == [] and writes[1] == [1, 3, 4])
+        check("provenance lists the cited full texts in index order",
               draft.provenance["full_text_sources"] == [1, 3, 4])
 
         # Unlabelled sources are never fetched. Reaching this through
@@ -5952,7 +5986,8 @@ def test_pipeline_fetches_full_text() -> None:
               full_text_order(papers, {}) == [])
     finally:
         (pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
-         pipeline.write_article, pipeline.fetch_full_text, pipeline.enforce_style) = saved
+         pipeline.write_article, pipeline.write_briefing, pipeline.fetch_full_text,
+         pipeline.enforce_style) = saved
 
 
 def test_unlabelled_sources_stop_the_run() -> None:
@@ -6546,12 +6581,13 @@ def test_pmcid_is_resolved_by_doi() -> None:
     curation = {"relevance": {i: "direct" for i in range(1, 11)},
                 "most_relevant_index": 1, "counts": {"direct": 10}}
     article = {"title": "t", "abstract": "x", "keywords": [], "sections": [],
-               "key_points": [], "glossary": [], "references": [1]}
+               "key_points": [], "glossary": [],
+               "references": list(range(1, 11))}
     resolved: list[str] = []
 
     saved = (pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
-             pipeline.write_article, pipeline.fetch_full_text, pipeline.resolve_pmcid,
-             pipeline.enforce_style)
+             pipeline.write_article, pipeline.write_briefing, pipeline.fetch_full_text,
+             pipeline.resolve_pmcid, pipeline.enforce_style)
     try:
         pipeline.plan_queries = lambda topic, **kw: (["q"], "core")
         def fake_gather(queries, **kw):
@@ -6593,8 +6629,8 @@ def test_pmcid_is_resolved_by_doi() -> None:
               len(resolved) <= pipeline.MAX_FULLTEXT_REQUESTS)
     finally:
         (pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
-         pipeline.write_article, pipeline.fetch_full_text, pipeline.resolve_pmcid,
-         pipeline.enforce_style) = saved
+         pipeline.write_article, pipeline.write_briefing, pipeline.fetch_full_text,
+         pipeline.resolve_pmcid, pipeline.enforce_style) = saved
 
 
 def test_unpaywall_fallback_in_resolve_pmcid() -> None:
@@ -6898,6 +6934,10 @@ def test_generic_named_lookups_are_skipped() -> None:
         "Data from the US trial and UK trials were combined.",
         "A population-based cohort study followed adults.",
         "BACKGROUND Several trials have examined restraint.",
+        # Live Luna runs looked these up from Cochrane abstracts (#190 missed them).
+        "The Cochrane Schizophrenia Group's trial register was searched.",
+        "We identified RCTs trial reports of pimozide versus placebo.",
+        "The International Clinical trial registry was searched for unpublished studies.",
     ]
     for text in negatives:
         check(f"named_references rejects: {text[:35]!r}", named_references(text) == [])
@@ -7236,7 +7276,8 @@ def test_full_text_run_says_why_it_stopped() -> None:
         lines = []
         saved = (pipeline.plan_queries, pipeline.gather_evidence,
                  pipeline.curate_sources, pipeline.write_article,
-                 pipeline.fetch_full_text, pipeline.enforce_style,
+                 pipeline.write_briefing, pipeline.fetch_full_text,
+                 pipeline.enforce_style,
                  pipeline.FULLTEXT_TARGET, pipeline.MAX_FULLTEXT_REQUESTS)
         try:
             if target is not None:
@@ -7255,7 +7296,8 @@ def test_full_text_run_says_why_it_stopped() -> None:
             pipeline.curate_sources = lambda t, p, **kw: curation
             pipeline.write_article = lambda t, p, **kw: {
                 "title": "t", "abstract": "x", "keywords": [], "sections": [],
-                "key_points": [], "glossary": [], "references": [1]}
+                "key_points": [], "glossary": [],
+                "references": list(range(1, n_papers + 1))}
             pipeline.write_briefing = pipeline.write_article
             pipeline.fetch_full_text = lambda p, use_cache=True: "body"
             pipeline.enforce_style = lambda a, **kw: (a, {"issues": [], "stats": {}})
@@ -7263,7 +7305,8 @@ def test_full_text_run_says_why_it_stopped() -> None:
         finally:
             (pipeline.plan_queries, pipeline.gather_evidence,
              pipeline.curate_sources, pipeline.write_article,
-             pipeline.fetch_full_text, pipeline.enforce_style,
+             pipeline.write_briefing, pipeline.fetch_full_text,
+             pipeline.enforce_style,
              pipeline.FULLTEXT_TARGET, pipeline.MAX_FULLTEXT_REQUESTS) = saved
         return "\n".join(lines)
 

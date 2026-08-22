@@ -126,11 +126,14 @@ _RESEARCH_SUBJECT = re.compile(
 # Prescription grammar with no modal in sight. These are multi-word on purpose:
 # a bare "titrated" appears in honest reporting of a trial protocol, but
 # "titrated upward" and "starting dose" are the vocabulary of an instruction.
+# "dose reduction" / "dose escalation" are *not* here: they name trial arms
+# ("dose reduction versus maintenance") and a Luna briefing of RADAR was
+# branded a working draft for reporting that. Instructional dose changes still
+# hit starting/target/recommended dose, titrate-upward, or a modal + clinical act.
 _PRESCRIPTION_RE = re.compile(
     r"\btitrat\w+\s+(?:upward|downward|up\b|down\b)"
     r"|\b(?:up|down)-titrat\w+"
     r"|\b(?:starting|initial|loading|maintenance|target|recommended)\s+dos\w+"
-    r"|\bdose\s+(?:escalation|reduction|adjustment)"
     r"|\btitration\s+(?:schedule|protocol|regimen)"
     r"|\bis\s+(?:an?\s+\w+\s+|an?\s+)?prerequisite"
     r"|\bfirst-line\s+(?:treatment|therapy|option|choice)\s+(?:should|must|is\s+recommended)",

@@ -11,6 +11,37 @@ that is what `CLAUDE.md` is for.
 
 ---
 
+## Public Luna runs (22 August 2026)
+
+Four hosted GPT-5.6 Luna briefings (synthetic cannabinoids vs cannabis;
+thyroid and first-episode psychosis; antipsychotics in delusional disorder;
+stimulants and new-onset psychosis in ADHD) were read against the papers
+they cited. Three product failures showed up on more than one run:
+
+1. **`dose reduction` branded as clinical advice.** The delusional-disorder
+   briefing reported RADAR's trial arms ("dose reduction over maintenance")
+   and `_PRESCRIPTION_RE` treated that as an instruction, so Limitations
+   called it a working draft. A revision could not delete the arm name
+   without lying about the trial. Trial-arm `dose reduction` / `dose
+   escalation` is now a report; instructional dose changes still hit
+   starting/target/recommended dose or a modal + clinical act.
+   `test_clinical_directives_are_an_error`.
+
+2. **Generic named lookups still fired.** Two runs looked up `RCTs trial`,
+   `International Clinical trial`, and `Cochrane Schizophrenia Group's
+   trial` from Cochrane abstracts. #190 skipped number-words and
+   two-letter acronyms; it did not skip literature-describing names.
+   `_GENERIC_NAME_WORDS` and a possessive/plural stem check close that.
+   `test_generic_named_lookups_are_skipped`.
+
+3. **Full text was fetched before the writer chose citations.**
+   `FULLTEXT_TARGET` filled with uncited OA papers; cited Cochrane reviews
+   stayed unread. The writer now drafts from abstracts, then only cited
+   eligible sources are fetched, then the briefing is written once more if
+   any cited full text landed. `test_pipeline_fetches_full_text`.
+
+---
+
 ## Providers
 
 ### Public web writes with Luna, CLI stays Opus (August 2026)

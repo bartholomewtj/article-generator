@@ -105,6 +105,7 @@ behaviour it describes.
 | Nothing needing a key costs a round trip to discover it | `test_first_visit_does_not_dead_end` |
 | The full-text dependencies fail loudly enough to diagnose | `test_full_text_dependencies_fail_loudly_enough_to_diagnose` |
 | Deep reads go to direct reviews and trials first | `test_full_text_order_favours_reviews_and_trials` |
+| Full text is fetched for cited sources, not uncited OA fillers | `test_pipeline_fetches_full_text` |
 | Papers named in the top abstracts are looked up once, capped | `test_named_papers_in_abstracts_are_looked_up` |
 | A merged record never renumbers the pool | `test_named_sources_merge_without_renumbering` |
 | A doomed run is refused before the caller is billed | `test_dead_sources_fail_before_the_caller_is_billed` |
@@ -258,10 +259,13 @@ and sections intact.
 - **`clinical-directive` is the one rule with real-world consequences.** The
   line is grammatical because that is what a deterministic check can see: past
   tense with a study subject **reports**, a modal or imperative aimed at a
-  clinical act **instructs**. Exempt: research recommendations and idioms that
-  borrow a clinical verb. `_IMPERATIVE_RE` is deliberately **not** built from
-  `_CLINICAL_ACTS` — those end in `\w*` and would fire on "Screening was…". The
-  negative controls in the test are the specification.
+  clinical act **instructs**. Exempt: research recommendations, idioms that
+  borrow a clinical verb, and trial-arm names (`dose reduction` versus
+  maintenance). `_PRESCRIPTION_RE` used to treat `dose reduction` as advice;
+  a Luna briefing of RADAR was branded a working draft for reporting the arm.
+  `_IMPERATIVE_RE` is deliberately **not** built from `_CLINICAL_ACTS` — those
+  end in `\w*` and would fire on "Screening was…". The negative controls in
+  the test are the specification.
 - **`SUBSTANCE_RULES`** (`under-length`, `too-few-sections`, `hedge-monotony`,
   `repeated-opener`, `recycled-phrasing`, `echoed-abstract`, `bundled-citations`)
   fail a draft for saying too little. When one fires, `revision_brief()`
@@ -342,12 +346,18 @@ and sections intact.
   The paper's own `[N]` citation brackets are stripped on **both** routes
   because they collide with the SOURCE-index scheme. `PAPERS_MAILTO` is
   required by `papers` and defaults from `OPENALEX_MAILTO`.
-- **Abstracts plus open-access full text.** `FULLTEXT_TARGET` (5) matches what
-  `full_text_excerpts` can show (5 × 12,000 = 60,000 chars);
+- **Abstracts plus open-access full text of cited sources.** The writer drafts
+  from abstracts first; then only **cited** eligible sources are fetched
+  (`full_text_order` among that set). Uncited OA is not fetched to fill
+  `FULLTEXT_TARGET` — four Luna public runs read five uncited papers and left
+  the cited Cochrane reviews unread. If any cited full text lands, the
+  briefing is written once more with those texts; a failed rewrite drops the
+  fetches so Methods still matches what the writer saw. `FULLTEXT_TARGET` (5)
+  matches what `full_text_excerpts` can show (5 × 12,000 = 60,000 chars);
   `MAX_FULLTEXT_REQUESTS` (18) stops a topic with no open-access literature
   spending a request per paper. **Tangential sources are never fetched**, even
-  when the target goes unmet.
-- **The fetch order is relevance tier, design weight, then recency, not rank** (`full_text_order`).
+  when the target goes unmet. → `test_pipeline_fetches_full_text`
+- **The fetch order is cited first, then relevance tier, design weight, then recency, not rank** (`full_text_order` among the cited set).
   Rank sorts on topic overlap then citation weight, so the five deep reads
   went to old, heavily-cited work — a measured run read median year 2019 /
   122 citations against an abstract-only rest at median 2023, and the article
@@ -433,7 +443,7 @@ and sections intact.
   arXiv-last ordering is what discards a preprint in favour of the published
   version. A value that is not a DOI normalises to `""` rather than itself,
   so a junk field shared by two unrelated records cannot merge them.
-- **The search is no longer one-shot; after curation the top `NAMED_SOURCE_SCAN` abstracts are scanned for DOIs and study names**, one extra gather runs for up to `NAMED_SOURCE_LIMIT` of them, matched records merge through the existing DOI/title dedupe and are **appended, never re-ranked**, because the index is the citation scheme; only the new records are re-curated; the pass shares the run's `exhausted` set and runs with `patient=False`, so it cannot buy a second 30-second Semantic Scholar wait. The extraction skips generic tokens — number words, structured-abstract headers, two-letter acronyms and hyphenated descriptors — and a name that matches more than `NAMED_MATCH_RATE_MAX` of what came back, over a floor of `NAMED_MATCH_MIN_MATCHES`, is dropped after the lookup because it is describing the literature rather than naming a paper (`filter_named_matches`, #190). → `test_generic_named_lookups_are_skipped`
+- **The search is no longer one-shot; after curation the top `NAMED_SOURCE_SCAN` abstracts are scanned for DOIs and study names**, one extra gather runs for up to `NAMED_SOURCE_LIMIT` of them, matched records merge through the existing DOI/title dedupe and are **appended, never re-ranked**, because the index is the citation scheme; only the new records are re-curated; the pass shares the run's `exhausted` set and runs with `patient=False`, so it cannot buy a second 30-second Semantic Scholar wait. The extraction skips generic tokens — number words, structured-abstract headers, two-letter acronyms, hyphenated descriptors, and literature-describing names (`RCTs trial`, `International Clinical trial`, `Cochrane Schizophrenia Group's trial`) — and a name that matches more than `NAMED_MATCH_RATE_MAX` of what came back, over a floor of `NAMED_MATCH_MIN_MATCHES`, is dropped after the lookup because it is describing the literature rather than naming a paper (`filter_named_matches`, #190). → `test_generic_named_lookups_are_skipped`
 - **Preprints are detected and marked, never excluded or down-ranked.**
   Preprints are detected from API type metadata where it exists (OpenAlex
   `type`, Europe PMC `PPR`, arXiv always) with an identifier fallback in

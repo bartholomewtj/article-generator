@@ -248,6 +248,7 @@ a modal or an imperative aimed at a clinical act instructs:
 | Participants received 10,000 lux for 30 minutes each morning. | Exposure should be titrated upward each week. |
 | The trial titrated the dose to response over eight weeks. | The starting dose is 25 mg at night. |
 | Screening was performed at baseline and at 12 weeks. | Monitor serum levels every four weeks. |
+| The trial assigned adults to dose reduction or maintenance. | Treatment should be initiated at a low dose. |
 
 Research recommendations are exempt — "future trials should measure adherence"
 is standard in a Conclusions section and is not advice about care.

@@ -154,6 +154,66 @@ def _silent(message: str) -> None:
     pass
 
 
+def _cited_indices(article: dict, n_papers: int) -> list[int]:
+    """SOURCE indices the writer cited, in citation order, in range."""
+    out: list[int] = []
+    seen: set[int] = set()
+    for raw in article.get("references") or []:
+        if isinstance(raw, int) and 1 <= raw <= n_papers and raw not in seen:
+            out.append(raw)
+            seen.add(raw)
+    return out
+
+
+def _retrieve_full_texts(
+    papers: list[Paper],
+    order: list[int],
+    log: Logger,
+) -> tuple[list[int], int, int, int, int, str]:
+    """Fetch open-access full text for papers in `order`.
+
+    Returns (fetched 1-based indices, eligible tried, no-open-access,
+    fetch-failed, requests spent, stop reason). Same bounds as the pre-cite
+    loop this replaced: FULLTEXT_TARGET and MAX_FULLTEXT_REQUESTS.
+    """
+    fetched: list[int] = []
+    requests_spent = 0
+    via_papers = paperfetch.available(log)
+    eligible = no_open_access = fetch_failed = 0
+    stopped = "ran out of eligible sources"
+    for index in order:
+        paper = papers[index - 1]
+        if len(fetched) >= FULLTEXT_TARGET:
+            stopped = f"target of {FULLTEXT_TARGET} reached"
+            break
+        if requests_spent >= MAX_FULLTEXT_REQUESTS:
+            stopped = f"request cap of {MAX_FULLTEXT_REQUESTS} reached"
+            break
+        eligible += 1
+        has_doi = bool(_normalize_doi(paper.doi))
+        if via_papers and has_doi:
+            pass
+        elif not paper.pmcid and paper.doi:
+            requests_spent += 1
+            resolve_pmcid(paper, log=log)
+        if not (via_papers and has_doi) and not (paper.pmcid and paper.is_open_access):
+            no_open_access += 1
+            continue
+        requests_spent += 1
+        try:
+            text = fetch_full_text(paper, log=log)
+        except TypeError:
+            text = fetch_full_text(paper)
+        if text:
+            paper.full_text = text
+            fetched.append(index)
+        elif getattr(paper, "full_text_not_oa", False):
+            no_open_access += 1
+        else:
+            fetch_failed += 1
+    return fetched, eligible, no_open_access, fetch_failed, requests_spent, stopped
+
+
 class NoPapersFound(RuntimeError):
     """No usable papers came back.
 
@@ -606,13 +666,13 @@ def generate_draft(
         outcomes=outcomes, core_entity=core_entity,
     )
 
-    # Full-text grounding: after curation, fetch the open-access full text of
-    # the sources that earned it — direct before related, reviews/trials first,
-    # newest first inside a design tier, search rank breaking ties (#166, revising #143).
-    #
-    # This step used to be skipped whenever the provider was Groq, whose
-    # per-minute token ceiling could not fit a single full text. Groq is gone,
-    # so it now runs on every draft.
+    # Full-text grounding used to run *before* the writer chose citations, so
+    # FULLTEXT_TARGET filled with uncited OA papers while cited Cochrane
+    # reviews stayed abstract-only. The writer now drafts from abstracts, then
+    # only cited eligible sources are fetched (still direct/related only,
+    # design-weighted among them). If any cited full text lands, the briefing
+    # is written once more with those texts. Methods and Table 1 still record
+    # what the writer was shown: a failed rewrite drops the fetched text.
     #
     # Two separate bounds, because they limit different things. FULLTEXT_TARGET
     # stops once the excerpt budget is full; MAX_FULLTEXT_REQUESTS stops a topic
@@ -622,78 +682,6 @@ def generate_draft(
     # A paper reaches the fetch only after `resolve_pmcid` has had a chance to
     # discover it is open access, which is what a paper found via OpenAlex
     # rather than Europe PMC always needed and never got.
-    fetched: list[int] = []
-    relevance = curation.get("relevance") or {}
-    log("Fetching open-access full texts...")
-    requests_spent = 0
-    via_papers = paperfetch.available(log)
-    # Still direct and related only, relevance then design then recency. Tangential
-    # sources are deliberately excluded even when that leaves the target unmet: they
-    # are background, and handing the writer 12,000 characters of an off-topic
-    # paper is exactly the topic drift the relevance gate exists to prevent.
-    # Why the loop stopped is a different question from how many it got, and
-    # they need completely different fixes: a request cap that bites is a
-    # tuning problem, while genuinely absent open access is a property of the
-    # literature and not fixable here at all. The old log reported only the
-    # count and then *asserted* availability, so the two were indistinguishable
-    # (#84). Each tally below is one of the exits.
-    eligible = no_open_access = fetch_failed = 0
-    stopped = "ran out of eligible sources"
-    for index in full_text_order(papers, relevance):
-        paper = papers[index - 1]
-        if len(fetched) >= FULLTEXT_TARGET:
-            stopped = f"target of {FULLTEXT_TARGET} reached"
-            break
-        if requests_spent >= MAX_FULLTEXT_REQUESTS:
-            stopped = f"request cap of {MAX_FULLTEXT_REQUESTS} reached"
-            break
-        eligible += 1
-        has_doi = bool(_normalize_doi(paper.doi))
-        if via_papers and has_doi:
-            pass
-        elif not paper.pmcid and paper.doi:
-            requests_spent += 1
-            # The logger matters: both lookups inside fail soft, and without it
-            # a blocked Unpaywall halves full-text coverage invisibly (#104).
-            resolve_pmcid(paper, log=log)
-        if not (via_papers and has_doi) and not (paper.pmcid and paper.is_open_access):
-            no_open_access += 1
-            continue
-        requests_spent += 1
-        try:
-            text = fetch_full_text(paper, log=log)
-        except TypeError:
-            text = fetch_full_text(paper)
-        if text:
-            paper.full_text = text
-            fetched.append(index)
-        elif getattr(paper, "full_text_not_oa", False):
-            # papers said queued_ckn (or equivalent): paywalled, not "OA but
-            # empty". Tesnières 2026 was logged as an OA failure (#191).
-            no_open_access += 1
-        else:
-            fetch_failed += 1
-
-    n_papers_via = sum(1 for i in fetched if papers[i - 1].full_text_via == "papers")
-    n_epmc_via = sum(1 for i in fetched if papers[i - 1].full_text_via == "europe_pmc")
-    breakdown = ""
-    if n_papers_via > 0 and n_epmc_via > 0:
-        breakdown = f" ({n_papers_via} via papers, {n_epmc_via} via Europe PMC)"
-    elif n_papers_via > 0:
-        breakdown = f" ({n_papers_via} via papers)"
-
-    log(f"  full text retrieved for {len(fetched)} source(s)"
-        + (f": {fetched}" if fetched else " (none)")
-        + f" in {requests_spent} request(s){breakdown}")
-    log(f"  stopped because: {stopped}. Of {eligible} eligible source(s), "
-        f"{no_open_access} had no open-access copy and {fetch_failed} were "
-        "open access but returned no text.")
-    if stopped.startswith("request cap"):
-        # The one case where the code, not the literature, is the constraint.
-        log(f"  NOTE: the cap bound before the target. Raising "
-            f"MAX_FULLTEXT_REQUESTS would find more, at more requests against "
-            "the shared Europe PMC quota.")
-    log("  " + _read_subset_skew(papers, fetched))
 
     _n_direct = ((curation or {}).get("counts") or {}).get("direct")
     _shown = len(papers) - sum(
@@ -708,6 +696,52 @@ def generate_draft(
     article = compose(
         topic, papers, model=model, style_note=style_note, curation=curation, api_key=api_key
     )
+
+    relevance = curation.get("relevance") or {}
+    cited_set = set(_cited_indices(article, len(papers)))
+    # Still direct and related only — tangential sources are background even
+    # if the writer cited one. Among the cited eligible set, keep the #166
+    # order (relevance tier → design → recency → rank).
+    order = [i for i in full_text_order(papers, relevance) if i in cited_set]
+
+    log("Fetching open-access full texts of cited sources...")
+    fetched, eligible, no_open_access, fetch_failed, requests_spent, stopped = (
+        _retrieve_full_texts(papers, order, log))
+
+    n_papers_via = sum(1 for i in fetched if papers[i - 1].full_text_via == "papers")
+    n_epmc_via = sum(1 for i in fetched if papers[i - 1].full_text_via == "europe_pmc")
+    breakdown = ""
+    if n_papers_via > 0 and n_epmc_via > 0:
+        breakdown = f" ({n_papers_via} via papers, {n_epmc_via} via Europe PMC)"
+    elif n_papers_via > 0:
+        breakdown = f" ({n_papers_via} via papers)"
+
+    log(f"  full text retrieved for {len(fetched)} cited source(s)"
+        + (f": {fetched}" if fetched else " (none)")
+        + f" in {requests_spent} request(s){breakdown}")
+    log(f"  stopped because: {stopped}. Of {eligible} eligible cited source(s), "
+        f"{no_open_access} had no open-access copy and {fetch_failed} were "
+        "open access but returned no text.")
+    if stopped.startswith("request cap"):
+        log(f"  NOTE: the cap bound before the target. Raising "
+            f"MAX_FULLTEXT_REQUESTS would find more, at more requests against "
+            "the shared Europe PMC quota.")
+    log("  " + _read_subset_skew(papers, fetched))
+
+    if fetched:
+        log("Rewriting with cited full text...")
+        try:
+            article = compose(
+                topic, papers, model=model, style_note=style_note,
+                curation=curation, api_key=api_key,
+            )
+        except Exception as exc:
+            log(f"  rewrite failed ({exc}); keeping the abstract-only draft")
+            for paper in papers:
+                paper.full_text = ""
+                paper.full_text_via = ""
+            fetched = []
+            n_papers_via = n_epmc_via = 0
 
     article, style_report = enforce_style(
         article, model=model, api_key=api_key, log=log, papers=papers, curation=curation
