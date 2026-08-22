@@ -128,7 +128,7 @@ behaviour it describes.
 | The cite ceiling scales with the direct count | `test_the_cite_ceiling_scales_with_the_direct_count` |
 | The question and title stay on the reader's topic | `test_the_cite_ceiling_scales_with_the_direct_count` |
 | Full text via the papers CLI never breaks the Europe PMC path | `test_full_text_comes_from_the_papers_cli_when_it_is_there` |
-| A `queued_ckn` miss is no-open-access, not a failed OA fetch | `test_queued_ckn_counts_as_no_open_access` |
+| A `queued_ckn` or `no_oa` miss is no-open-access, not a failed OA fetch | `test_queued_ckn_counts_as_no_open_access` |
 | Fig. 1 counts study designs, and falls back to years when it cannot | `test_figure_one_counts_study_designs` |
 | Table 1 prints no citation count | `test_figure_one_counts_study_designs` |
 | Table 1 prints a design word, never a dash | `test_figure_one_counts_study_designs` |
@@ -343,7 +343,11 @@ and sections intact.
   When the `papers` CLI is installed and the paper has a DOI, full text is
   retrieved via `papers get` from any open-access copy (Unpaywall, OpenAlex,
   Semantic Scholar, preprint servers); otherwise the pipeline falls back to
-  Europe PMC by PMCID. `papers` is optional and absent on the hosted backend.
+  Europe PMC by PMCID. `papers` is optional. The hosted backend runs the
+  public `paperfetch-oa` package under that same command name; a local
+  machine runs the private `paperfetch` instead — never both installed at
+  once (`paperfetch-oa` would shadow the private one). Absent either, the
+  pipeline falls back to Europe PMC by PMCID as before.
   The paper's own `[N]` citation brackets are stripped on **both** routes
   because they collide with the SOURCE-index scheme. `PAPERS_MAILTO` is
   required by `papers` and defaults from `OPENALEX_MAILTO`.
@@ -383,11 +387,12 @@ and sections intact.
   to report the count and then *assert* availability (#84). It now names the
   exit — target reached / request cap reached / ran out of eligible sources —
   with the eligible, no-open-access and fetched-but-empty tallies, and warns
-  explicitly when the cap bound before the target. A `queued_ckn` from
-  `papers` (see `NOT_OA_STATUSES`) increments no-open-access, not
+  explicitly when the cap bound before the target. A `queued_ckn` or `no_oa`
+  from `papers` (see `NOT_OA_STATUSES`) increments no-open-access, not
   fetched-but-empty: Unpaywall already said there is no OA copy, and logging
   that as "open access but returned no text" called paywalled landmarks fetch
-  failures (#191). It also prints the
+  failures (#191). `no_oa` is the public `paperfetch-oa` package's own name for
+  the same outcome — it has no CKN ladder to queue into (#173). It also prints the
   **read-subset skew** (median year and citations, read vs abstract-only),
   because Limitations tells the reader that subset skews and nobody had
   measured how. **Never fetch paywalled full text** — the Methods section's
@@ -698,6 +703,19 @@ index.html on GitHub Pages  ──POST /api/draft──▶  backend on Render
   `render.yaml`. The URL derives from `name:`, so they must stay in step.
   **Blueprint auto-sync is off**, so the `branch:` line is a record, not a
   control. Sleeps after 15 min idle, ~50s to wake.
+- **The hosted image installs the public `paperfetch-oa` package** (own repo,
+  `bartholomewtj/paperfetch-oa`) so the web path reads full text beyond Europe
+  PMC (#173, deploy half of #84). The Dockerfile apt-installs `git`, runs
+  `pip install git+https://github.com/bartholomewtj/paperfetch-oa.git`
+  (public, no credentials), then purges `git` in the same layer so it never
+  ships. Its console script is also named `papers`, so the pipeline's
+  `paperfetch.py` needs no code change to use it — only `PAPERS_MAILTO`
+  (Render dashboard secret, `render.yaml`) for its Unpaywall lookups; without
+  it `papers get` refuses every uncached DOI and falls back to Europe PMC, a
+  soft failure. **Never `pip install paperfetch-oa` on this machine** — it
+  would shadow the private `papers` (paperfetch) that this file elsewhere
+  protects. Its no-OA status is `no_oa`, added alongside `queued_ckn` in
+  `paperfetch.NOT_OA_STATUSES`.
 - **`GET /api/health`** reports the branch and commit the running service was
   built from, plus `public` (whether a visitor can draft without a key) and
   `public_model` when that is true, plus `gallery` (whether Share to gallery

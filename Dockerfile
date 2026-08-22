@@ -24,6 +24,18 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
+# The public `paperfetch-oa` package (bartholomewtj/paperfetch-oa, public repo,
+# no credentials needed) gives the hosted image a `papers` CLI beyond Europe
+# PMC (#173). git is only needed for `pip install git+https://...`; purge it
+# in the same layer so it never ships in the final image. This is the public
+# OA-safe package — never install it on a dev machine, where it would shadow
+# the private `papers` (paperfetch) that articlegenerator's CLAUDE.md protects.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && pip install --no-cache-dir "paperfetch-oa @ git+https://github.com/bartholomewtj/paperfetch-oa.git@main" \
+    && apt-get purge -y --auto-remove git \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY pyproject.toml ./
 COPY articlegen ./articlegen
 RUN pip install --no-cache-dir --no-deps -e .
@@ -37,5 +49,10 @@ EXPOSE 8000
 # Identifies us to OpenAlex's "polite pool", which gets better rate limits.
 # Override at deploy time with a real address.
 ENV OPENALEX_MAILTO=""
+
+# paperfetch-oa's Unpaywall lookups require a contact address; without it
+# `papers get` refuses every uncached DOI and the pipeline falls back to
+# Europe PMC (soft failure, no crash). Override at deploy time.
+ENV PAPERS_MAILTO=""
 
 CMD ["sh", "-c", "python -m articlegen web --port ${PORT}"]

@@ -6459,13 +6459,15 @@ def test_full_text_comes_from_the_papers_cli_when_it_is_there() -> None:
 
 
 def test_queued_ckn_counts_as_no_open_access() -> None:
-    """`queued_ckn` is paywalled, not "open access but returned no text".
+    """`queued_ckn` and `no_oa` are both paywalled, not "OA but returned no text".
 
     Four Grok 4.6 runs (21 Aug 2026) stopped on target of 5, and paywalled
     landmarks (Tesnières 2026) were logged as OA failures because `papers`
     returning `queued_ckn` produced empty text, which the loop counted as
-    `fetch_failed` (#191). A timeout or unreadable PDF still is a failed OA
-    fetch. The stop-reason and read-subset-skew lines still print.
+    `fetch_failed` (#191). `no_oa` is the public `paperfetch-oa` package's own
+    name for the same outcome (#173) and is covered by the same checks. A
+    timeout or unreadable PDF still is a failed OA fetch. The stop-reason and
+    read-subset-skew lines still print.
     """
     import json
     from dataclasses import dataclass
@@ -6569,6 +6571,49 @@ def test_queued_ckn_counts_as_no_open_access() -> None:
               "1 had no open-access copy" in queued)
         check("queued_ckn does not count as OA-but-empty",
               "0 were open access but returned no text" in queued)
+
+        # `no_oa` is the public paperfetch-oa package's equivalent status (#173) —
+        # same meaning as queued_ckn, no CKN ladder behind it.
+        reset_paperfetch()
+        paperfetch.shutil.which = lambda cmd: "papers"
+        paperfetch.subprocess.run = lambda argv, **kw: FakeProc(
+            stdout=json.dumps({"status": "no_oa"}), returncode=2)
+        text, status = paperfetch.fetch_via_papers_with_status("10.9999/paywalled")
+        check("no_oa returns empty text", text == "")
+        check("no_oa status is no_oa", status == "no_oa")
+        check("no_oa is in NOT_OA_STATUSES",
+              "no_oa" in paperfetch.NOT_OA_STATUSES)
+
+        # Negative controls: a fetch failure is not a confirmed absence of OA.
+        check("unreadable_pdf is not in NOT_OA_STATUSES",
+              "unreadable_pdf" not in paperfetch.NOT_OA_STATUSES)
+        check("retry is not in NOT_OA_STATUSES",
+              "retry" not in paperfetch.NOT_OA_STATUSES)
+        check("no_doi is not in NOT_OA_STATUSES",
+              "no_doi" not in paperfetch.NOT_OA_STATUSES)
+
+        reset_paperfetch()
+        paperfetch.shutil.which = lambda cmd: "papers"
+        paperfetch.subprocess.run = lambda argv, **kw: FakeProc(
+            stdout=json.dumps({"status": "no_oa"}), returncode=2)
+        no_oa_paper = Paper(title="paywalled landmark", abstract="a",
+                            doi="10.9999/paywalled")
+        body = sources.fetch_full_text(no_oa_paper)
+        check("no_oa DOI-only fetch is empty", body == "")
+        check("no_oa sets full_text_not_oa", no_oa_paper.full_text_not_oa is True)
+        check("no_oa does not set full_text_via", no_oa_paper.full_text_via == "")
+
+        no_oa_for_draft = Paper(title="paywalled landmark", abstract="a",
+                                doi="10.9999/paywalled")
+        no_oa_run = draft_logs(
+            [no_oa_for_draft],
+            lambda argv, **kw: FakeProc(
+                stdout=json.dumps({"status": "no_oa"}), returncode=2),
+        )
+        check("no_oa increments no-open-access",
+              "1 had no open-access copy" in no_oa_run)
+        check("no_oa does not count as OA-but-empty",
+              "0 were open access but returned no text" in no_oa_run)
 
         # Contrast: a timeout on a DOI-only paper is still a failed OA fetch.
         timed_out = Paper(title="timeout paper", abstract="a",

@@ -55,6 +55,13 @@ services:
       - key: OPENALEX_MAILTO
         sync: false
 
+      # Required by the `paperfetch-oa` package installed in the Dockerfile
+      # (#173) for its Unpaywall lookups. Without it, `papers get` refuses
+      # every uncached DOI and full text falls back to Europe PMC — a soft
+      # failure, not a crash. Set a real address in the Render dashboard.
+      - key: PAPERS_MAILTO
+        sync: false
+
       # Host-paid public drafts (GPT-5.6 Luna). Set the value in the Render
       # dashboard as a secret — never commit it. Absent: visitors must paste
       # their own key. Rate limits are the spend cap. A request without a
