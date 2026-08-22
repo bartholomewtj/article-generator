@@ -71,12 +71,14 @@ def _check_dir(run, name: str) -> Path:
     return path
 
 
-def _run(spec: QualityCheckSpec, run) -> QualityCheckResult:
+def _run(spec: QualityCheckSpec, run, extra_env: dict[str, str] | None = None) -> QualityCheckResult:
     phase = run.phases[-1]
     output_dir = _check_dir(run, spec.name)
     output_artifact = output_dir / "command.log"
     command = shlex.join(spec.argv)
     env = operator_env()             # the engineer's own shell environment
+    if extra_env:
+        env.update(extra_env)
 
     run.console.note(f"quality {spec.name}: {command}")
     started_at = now_iso()
@@ -159,7 +161,11 @@ def test(run) -> QualityCheckResult:
         argv=["cmd", "/c",
               "python tests/test_offline.py && python tests/test_journal_conformance.py"],
         timeout_seconds=600,
-    ), run)
+        # Shared-host mode: the suite must not write drafts/index.html (or
+        # any other draft) into the working tree. A dirty drafts/ file is
+        # out of scope for feature ADWs, and the reviewer treats it as a
+        # blocking miss — which is how a green suite failed the run.
+    ), run, extra_env={"ARTICLEGEN_STATELESS": "1"})
 
 
 def lint(run) -> QualityCheckResult:

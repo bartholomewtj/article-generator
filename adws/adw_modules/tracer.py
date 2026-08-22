@@ -274,6 +274,11 @@ class Tracer:
         run mints new phase_ids as it continues the sequence. The newest
         matching envelope per phase name wins, in case a phase name repeats
         (a joined run that re-enters the same phase).
+
+        A review that landed `approved: false` is not a checkpoint. The
+        phase succeeded at its job (it judged), but replaying that rejection
+        after the blocking cause was fixed would fail the run without asking
+        the reviewer again.
         """
         rows = self.conn.execute(
             "SELECT phases.name, envelopes.payload_json, envelopes.created_at "
@@ -284,6 +289,12 @@ class Tracer:
         ).fetchall()
         out: dict[str, str] = {}
         for name, payload_json, _created_at in rows:
+            try:
+                payload = json.loads(payload_json or "{}")
+            except ValueError:
+                payload = None
+            if isinstance(payload, dict) and payload.get("approved") is False:
+                continue
             out[name] = payload_json   # later rows overwrite earlier ones -- newest wins
         return out
 

@@ -1,8 +1,15 @@
 # Next session
 
-_Last handoff: 22 August 2026 — #211 on `main`; Pages stamp `5f74677`; Render `5f74677`, `"gallery": true`_
+_Last handoff: 22 August 2026 — run analytics on `run-analytics` (on top of
+#211); Pages/Render still `5f74677` until this PR lands_
 
 ## Where this stopped
+
+Website run analytics is built (`adw_id` `bc72253d`). Every `/api/ideas`,
+`/api/draft` and `/api/gallery` request writes one JSON line to stderr.
+Optional durable copy: set `ARTICLEGEN_ANALYTICS_GIST` on Render (secret
+gist, same gist-scoped token as the gallery). No topic, key, IP, or
+article text is logged.
 
 #173 is shipped (#211). Hosted image installs public `paperfetch-oa`.
 `NOT_OA_STATUSES` accepts `no_oa` and `queued_ckn`. `PAPERS_MAILTO` is
@@ -40,12 +47,16 @@ both packages own the `papers` command.
 
 ## Next thing to do
 
-1. **Re-run delusional disorder** on the hosted site. That run branded
+1. **Merge the `run-analytics` PR**, then create a secret gist
+   (`gh gist create --secret runs.jsonl`) and set
+   `ARTICLEGEN_ANALYTICS_GIST` on Render. Until that env is set, logs
+   are stderr-only and die when the free instance sleeps.
+2. **Re-run delusional disorder** on the hosted site. That run branded
    itself a working draft over RADAR's "dose reduction" arm and left
    Cochrane unread. It is the check for all three #203 fixes.
-2. Phantom Fig. 1: briefings mention it (the GPU-energy one does),
+3. Phantom Fig. 1: briefings mention it (the GPU-energy one does),
    renderer does not draw it.
-3. Leave local `papers` on the private package.
+4. Leave local `papers` on the private package.
 
 ## Measured drafts (keep)
 
@@ -100,6 +111,12 @@ not regenerate the public demo Reviews.
 - **Do not leave `sssf.config.yaml` dirty during a run.** The reviewer is
   `writes: []`; a dirty roster file is blamed on the reviewer and rolled
   back, which fails the phase. Commit roster edits before launching.
+- **ADW tests run with `ARTICLEGEN_STATELESS=1`** (`adws/adw_modules/quality.py`).
+  Without it the suite writes `drafts/index.html` (and stray briefings) and
+  the reviewer treats that as a blocking miss.
+- **Unapproved reviews are not replayed.** A rejected review is a successful
+  phase, so the old checkpoint stored it and resume replayed the rejection
+  even after the cause was fixed (`adws/adw_modules/tracer.py`).
 - **Do not squash-merge the first PR of a stack.** #175 squash left
   #176–#183 unmergeable; #201, #203, #208 and #211 landed as merge
   commits.
@@ -116,7 +133,7 @@ not regenerate the public demo Reviews.
   to 191`.
 - Local leftover: `tools/compare_models.py` is dirty (`wip: compare_models
   write-drafts`). Untracked Luna/Gemini ED drafts stay; do not commit
-  unless asked. Local `main` also has an unpushed spec
-  `aacf13a` (run analytics) — do not push it onto `main`.
+  unless asked. A test-generated `drafts/2026-08-22-seclusion` pair was
+  committed by the analytics ADW and then dropped — do not put it back.
 - **Landing chrome is house recipe software.** Do not restyle `render.py`
   journal HTML to match it.
