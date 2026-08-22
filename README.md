@@ -269,15 +269,26 @@ full text is retrieved from any open-access copy across Unpaywall, OpenAlex,
 Semantic Scholar, and preprint servers — not just Europe PMC — so non-biomedical
 topics and arXiv papers stop being abstract-only.
 
-- **Install:** `pip install -e` the private `paperfetch` repository, then set
-  `PAPERS_MAILTO=you@example.com` to a real email address (scholarly APIs require
-  it and block made-up addresses; defaults to `OPENALEX_MAILTO` if unset).
+- **Install:** two packages provide the same `papers` console command — the
+  private `paperfetch` repository (used locally, and the one this project
+  depends on for `queued_ckn`/CKN behaviour) and the public
+  [`paperfetch-oa`](https://github.com/bartholomewtj/paperfetch-oa) (used only
+  in the hosted Docker image). `pip install -e` whichever one applies to your
+  machine, then set `PAPERS_MAILTO=you@example.com` to a real email address
+  (scholarly APIs require it and block made-up addresses; defaults to
+  `OPENALEX_MAILTO` if unset). **Do not install both on the same machine** —
+  `paperfetch-oa` would shadow the private package.
 - **Executable path:** If `papers` is not on your PATH, set
   `ARTICLEGEN_PAPERS_CMD="python -m papers"`.
 - **Optional:** Without `papers`, articlegen behaves exactly as before,
   retrieving full text from Europe PMC only.
-- **Hosted deployment:** The hosted backend on Render does not have `paperfetch`
-  installed yet, so the public web app remains Europe PMC only.
+- **Hosted deployment:** The Render backend installs the public
+  [`paperfetch-oa`](https://github.com/bartholomewtj/paperfetch-oa) package in
+  its Docker image instead of the private `paperfetch` — same `papers`
+  console command, no GitHub credentials needed to build. So the public web
+  app also reads full text beyond Europe PMC. Local `articlegen draft` should
+  keep using the private `paperfetch`; never install `paperfetch-oa` on a dev
+  machine, it would shadow it.
 
 ## Layout
 
