@@ -1,21 +1,26 @@
 # Next session
 
-_Last handoff: 22 August 2026 — #205 on `main`; Pages stamp `21bc369`; Render still `e8fe9b4`_
+_Last handoff: 22 August 2026 — #208 on `main` (`e5d755c`); Pages will stamp that; Render still `89b401d` at merge_
 
 ## Where this stopped
 
-Landing chrome is the workspace software look (#205). GitHub Pages
-deployed; the live page stamps `21bc369` (Segoe UI, software tokens,
-you-step on the topic box). Generated articles still use the journal
-look. Render did not need a deploy — this was front end only.
+Public visitor gallery is on `main` (#208). Generating still does not
+publish. **Share to gallery** asks first, then stores the briefing in a
+public gist and lists it under **From other visitors**. Cap 50.
 
-#203 is still the running backend (`/api/health` → `"commit": "e8fe9b4"`,
-`"public": true`, Luna).
+The Share button stays hidden until `ARTICLEGEN_GALLERY_TOKEN` is set on
+Render (gist scope only — not repo). `/api/health` on the live backend
+is still `"commit": "89b401d"` with no `gallery` field; auto-deploy of
+`e5d755c` had not finished at this handoff. After deploy, look for
+`"gallery": true` — false means the secret is still unset.
 
-A public OA-only sibling of paperfetch exists:
-`bartholomewtj/paperfetch-oa` (`Projects\tools\paperfetch-oa`). Missing OA
-is status `no_oa`. articlegen still only treats the private name as
-"not OA".
+Index gist (public, empty until someone shares):
+https://gist.github.com/bartholomewtj/3b864ca05620472d2644c3e9c1fd6a03
+
+#207 stays open until that token is set.
+
+The GitHub PAT named **articlegen cloudsync api** is not used by the
+site, Pages, or Render. Let it expire.
 
 ## Resume with
 
@@ -32,15 +37,19 @@ both packages own the `papers` command.
 
 ## Next thing to do
 
-1. **Re-run delusional disorder** on the hosted site. That run branded
+1. **Set `ARTICLEGEN_GALLERY_TOKEN` on Render** (gist-only PAT). Then
+   confirm `curl https://articlegen-api.onrender.com/api/health` shows
+   `"gallery": true` and commit `e5d755c` (or later). Share one briefing
+   and check the landing list.
+2. **Re-run delusional disorder** on the hosted site. That run branded
    itself a working draft over RADAR's "dose reduction" arm and left
    Cochrane unread. It is the check for all three #203 fixes.
-2. **#173** — articlegen `NOT_OA_STATUSES` must accept `no_oa` (keep the
+3. **#173** — articlegen `NOT_OA_STATUSES` must accept `no_oa` (keep the
    private name too). Then add `paperfetch-oa` to the Docker image from
    the public git URL. Do not put GitHub credentials in the Render build.
    Do not also rewrite the landing page as "Europe PMC only" if you ship
    this — pick one story.
-3. Leave local `papers` on the private package.
+4. Leave local `papers` on the private package.
 
 ## Measured drafts (keep)
 
@@ -67,6 +76,7 @@ not regenerate the public demo Reviews.
 
 ## Open
 
+- #207 gallery token on Render — code is merged; secret is not
 - #173 hosted full text — public package exists; articlegen + Docker not wired
 - Phantom Fig. 1: briefings mention it, renderer does not draw it
 - Methods grammar: `1 of which are cited`
@@ -80,6 +90,9 @@ not regenerate the public demo Reviews.
   measurement.
 - **The public key is a bill.** Rate limits (20/IP, 120/hour everyone)
   are the spend cap. Never commit it.
+- **Do not put a repo-scoped GitHub token on Render.** Gallery token is
+  gist scope only. The `gh` login on this machine has `repo`; that is
+  the wrong secret.
 - **#203 adds a second write call** when any cited paper is OA (~2c extra
   on Luna).
 - **agy Gemini quota is exhausted.** Builder and documenter are
@@ -89,7 +102,7 @@ not regenerate the public demo Reviews.
   `writes: []`; a dirty roster file is blamed on the reviewer and rolled
   back, which fails the phase. Commit roster edits before launching.
 - **Do not squash-merge the first PR of a stack.** #175 squash left
-  #176–#183 unmergeable; #201 and #203 landed as merge commits.
+  #176–#183 unmergeable; #201, #203 and #208 landed as merge commits.
 - **A `?` in the briefing `question` field is allowed.** Other `?` still
   fail `rhetorical-question`.
 - **agy CLI 1.1.15 dies after the agent finishes** (missing `toolSummary`;
