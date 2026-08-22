@@ -1375,6 +1375,17 @@ _GENERIC_NAME_SUFFIXES = frozenset(
     "adjusted matched only".split()
 )
 
+# Capitalised words that look like a study name and are not. Live Luna runs
+# looked up "RCTs trial" and "International Clinical trial" from Cochrane
+# abstracts; both are how reviews describe the literature, not a paper.
+_GENERIC_NAME_WORDS = frozenset(
+    "international clinical national european american australian canadian british "
+    "randomised randomized controlled observational prospective retrospective "
+    "systematic narrative scoping qualitative quantitative "
+    "cochrane group groups collaboration register registry "
+    "placebo".split()
+)
+
 _DOI_EXTRACT_RE = re.compile(r"10\.\d{4,9}/[^\s\"'<>,;)\]]+")
 
 _STUDY_ADJS_RE = (
@@ -1413,11 +1424,22 @@ def _is_sentence_initial(text: str, pos: int) -> bool:
     return bool(re.search(r'(?:[\.\!\?]\s*[\"\')\]]*|[\:\n]\s*)$', prefix))
 
 
+def _name_token_key(token: str) -> str:
+    """Lowercased token with a trailing possessive or plural-s stripped when known."""
+    t = token.strip(".,;:\"'()").lower()
+    t = re.sub(r"'s$", "", t)
+    known = _NAMED_STOPLIST | _GENERIC_NAME_WORDS
+    if t.endswith("s") and t[:-1] in known:
+        return t[:-1]
+    return t
+
+
 def _is_generic_name_token(token: str) -> bool:
     t = token.strip(".,;:\"'()")
     if not t:
         return True
-    if t.lower() in _NAMED_STOPLIST:
+    key = _name_token_key(t)
+    if key in _NAMED_STOPLIST or key in _GENERIC_NAME_WORDS:
         return True
     if "-" in t:
         tail = t.split("-")[-1].strip(".,;:\"'()").lower()
