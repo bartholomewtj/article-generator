@@ -560,6 +560,10 @@
     display: block; font-size: 0.87rem; font-weight: 600; color: var(--ink);
     margin-top: 0.5rem;
   }
+  .public-band-note {
+    font-size: 0.83rem; line-height: 1.45; color: var(--muted);
+    margin: 0 0 0.7rem;
+  }
 
   /* First-run explainer, and the in-page error state that replaced alert(). */
   .setup-card {
@@ -597,6 +601,9 @@
     </button>
     <button class="icon-btn" id="themeToggleBtn" onclick="cycleTheme()" title="Theme">
       <span id="themeToggleIcon">Sys</span>
+    </button>
+    <button class="icon-btn" onclick="showView('publicListView'); loadPublicList();" title="Briefings from visitors">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
     </button>
     <button class="icon-btn" onclick="showView('libraryView'); loadLibrary();" title="Your articles">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
@@ -651,6 +658,17 @@
         account, nothing to set up.</span>
       <span class="demo-band-go">Browse all evidence briefings →</span>
     </a>
+
+    <!-- Visitor-shared briefings. Not drafts/ (those are curated CLI pieces)
+         and not the personal library (that stays in this browser). Loaded from
+         the public gist so a cold Render does not hide the list. -->
+    <section class="featured" id="publicBand">
+      <h2 class="featured-label">From other visitors</h2>
+      <p class="public-band-note">Briefings someone chose to share. Generating
+        one does not put yours here.</p>
+      <div id="publicPreview"></div>
+      <button type="button" class="demo-band-go" id="publicSeeAll" onclick="showView('publicListView'); loadPublicList();" style="background:none; border:none; padding:0; cursor:pointer; font: inherit; text-align:left;">Browse shared briefings →</button>
+    </section>
 
     <!-- Shown only when the backend cannot draft without a visitor key.
          `refreshSetupCard()` hides it once a key is set or `/api/health`
@@ -745,6 +763,7 @@
              "Save to Published Library" button did, via a second storage key
              holding a second copy of the same HTML. -->
         <button class="pill" id="starCurrentBtn" onclick="starCurrentArticle()" title="Keep this article in your library">Keep</button>
+        <button class="pill" id="shareGalleryBtn" onclick="shareToGallery()" title="Put this briefing on the public list" style="display:none;">Share to gallery</button>
         <span style="font-size:0.8rem; color:var(--muted);" id="articleMeta">Ready</span>
       </div>
     </div>
@@ -794,6 +813,19 @@
     <div id="libraryList">
       <!-- Dynamically filled -->
     </div>
+  </div>
+
+  <!-- VIEW 6: Briefings other visitors chose to share. -->
+  <div id="publicListView" class="view">
+    <div class="section-header" style="flex-wrap:wrap; gap:0.5rem;">
+      <h2 class="section-title">From other visitors</h2>
+      <button class="pill" onclick="showView('themeView')">← Home</button>
+    </div>
+    <p style="font-size:0.85rem; color:var(--muted); margin-top:-0.5rem; margin-bottom:1rem;">
+      These are briefings someone tapped Share to gallery on. Generating does
+      not add yours. You cannot delete someone else's.
+    </p>
+    <div id="publicList"></div>
   </div>
 
 </main>
@@ -953,6 +985,14 @@
     return API_BASE + path;
   }
 
+  // Public visitor gallery. Same gist id as articlegen.gallery.GALLERY_INDEX_GIST.
+  const GALLERY_INDEX_GIST = '3b864ca05620472d2644c3e9c1fd6a03';
+  const GALLERY_INDEX_FILE = 'articlegen-gallery-index.json';
+
+  // Hosted Pages can list without waiting for Render. Local `articlegen web`
+  // has no gist token, so it asks the same-origin API instead.
+  let galleryEnabled = false;
+
   // ---- first-run and cold-start handling (#95) ---------------------------
   //
   // Three separate failures shared one cause: the visitor could not see what
@@ -975,6 +1015,10 @@
         if (info && typeof info.public === 'boolean') {
           publicGeneration = info.public;
           refreshSetupCard();
+        }
+        if (info && typeof info.gallery === 'boolean') {
+          galleryEnabled = info.gallery;
+          refreshShareGalleryButton();
         }
       })
       .catch(function () {});
@@ -1455,6 +1499,10 @@
       } catch (e) {
         console.warn("Error loading shared article:", e);
       }
+    } else if (hash.startsWith('#g=')) {
+      const gistId = hash.replace('#g=', '').split('&')[0];
+      if (gistId) openPublicItem({ id: gistId, title: 'Shared briefing',
+        html_url: 'https://gist.githubusercontent.com/bartholomewtj/' + gistId + '/raw/article.html' });
     } else if (hash.startsWith('#read=')) {
       const html = decodeArticleFromHash(hash);
       if (html) {
@@ -1470,6 +1518,7 @@
     loadPreferences();
     checkUrlHashForArticle();
     refreshSetupCard();
+    loadPublicPreview();
     // Start the ~50s Render cold start now, while the visitor is still typing
     // a theme, instead of at the moment they tap.
     warmBackend();
@@ -1650,6 +1699,7 @@
       currentTitle = data.title || title;
       document.getElementById('articleMeta').innerText =
         (data.sources_count || 0) + ' Sources Cited';
+      refreshShareGalleryButton();
       showView('readerView');
     } catch (err) {
       // Stay on the progress card and put the failure in it, with a Try again
@@ -1795,6 +1845,152 @@
       `;
     } catch (e) {
       wrapper.innerHTML = '<p style="color:var(--danger); font-size:0.85rem;">Failed to generate QR code.</p>';
+    }
+  }
+
+  // ---------------------------------------------------------------- public gallery
+  //
+  // Briefings someone tapped Share to gallery on. Not the personal library
+  // (this browser) and not drafts/ (curated CLI pieces). Hosted listing
+  // reads the public gist directly so a sleeping Render does not hide it.
+
+  async function fetchPublicItems() {
+    if (!API_BASE) {
+      const resp = await fetch('/api/gallery');
+      if (!resp.ok) return [];
+      const data = await resp.json();
+      return Array.isArray(data.items) ? data.items : [];
+    }
+    const resp = await fetch('https://api.github.com/gists/' + GALLERY_INDEX_GIST);
+    if (!resp.ok) return [];
+    const gist = await resp.json();
+    const file = (gist.files || {})[GALLERY_INDEX_FILE] || {};
+    let text = file.content || '';
+    if (!text && file.raw_url) {
+      const raw = await fetch(file.raw_url);
+      text = raw.ok ? await raw.text() : '';
+    }
+    if (!text) return [];
+    const data = JSON.parse(text);
+    const items = data && data.items;
+    return Array.isArray(items) ? items : [];
+  }
+
+  function publicCard(item) {
+    const card = document.createElement('a');
+    card.className = 'featured-card';
+    card.href = '#g=' + encodeURIComponent(item.id);
+    card.onclick = function (e) {
+      e.preventDefault();
+      openPublicItem(item);
+    };
+    const title = document.createElement('span');
+    title.className = 'featured-title';
+    title.textContent = item.title || 'Untitled briefing';
+    const meta = document.createElement('span');
+    meta.className = 'featured-take';
+    const when = item.date ? new Date(item.date) : null;
+    meta.textContent = when && !isNaN(when) ? when.toLocaleDateString() : 'Shared briefing';
+    card.appendChild(title);
+    card.appendChild(meta);
+    return card;
+  }
+
+  async function loadPublicPreview() {
+    const box = document.getElementById('publicPreview');
+    if (!box) return;
+    box.innerHTML = '<p class="public-band-note">Loading shared briefings…</p>';
+    try {
+      const items = await fetchPublicItems();
+      box.innerHTML = '';
+      if (!items.length) {
+        box.innerHTML = '<p class="public-band-note">None shared yet. After you generate one, Share to gallery puts it here.</p>';
+        return;
+      }
+      items.slice(0, 5).forEach(function (item) { box.appendChild(publicCard(item)); });
+    } catch (e) {
+      box.innerHTML = '<p class="public-band-note">Could not load shared briefings.</p>';
+    }
+  }
+
+  async function loadPublicList() {
+    const box = document.getElementById('publicList');
+    if (!box) return;
+    box.innerHTML = '<p style="color:var(--muted);">Loading…</p>';
+    try {
+      const items = await fetchPublicItems();
+      box.innerHTML = '';
+      if (!items.length) {
+        box.innerHTML = '<p style="color:var(--muted); text-align:center; padding:2rem 0;">No shared briefings yet.</p>';
+        return;
+      }
+      items.forEach(function (item) { box.appendChild(publicCard(item)); });
+    } catch (e) {
+      box.innerHTML = '<p style="color:var(--muted);">Could not load shared briefings.</p>';
+    }
+  }
+
+  async function openPublicItem(item) {
+    const iframe = document.getElementById('articleIframe');
+    currentArticleId = '';
+    cachedShareUrl = '';
+    currentMarkdownUrl = '';
+    currentTitle = item.title || 'Shared briefing';
+    document.getElementById('articleMeta').innerText = currentTitle;
+    updateStarButton();
+    refreshShareGalleryButton();
+    showView('readerView');
+    try {
+      const resp = await fetch(item.html_url);
+      if (!resp.ok) throw new Error('missing');
+      const html = await resp.text();
+      iframe.removeAttribute('src');
+      iframe.srcdoc = html;
+      currentArticleUrl = window.location.pathname + '#g=' + item.id;
+      window.location.hash = 'g=' + item.id;
+      refreshShareGalleryButton();
+    } catch (e) {
+      showToast('Could not open that briefing.');
+    }
+  }
+
+  function refreshShareGalleryButton() {
+    const btn = document.getElementById('shareGalleryBtn');
+    if (!btn) return;
+    const html = document.getElementById('articleIframe')?.srcdoc || '';
+    btn.style.display = (galleryEnabled && html) ? '' : 'none';
+  }
+
+  async function shareToGallery() {
+    const html = document.getElementById('articleIframe')?.srcdoc || '';
+    if (!html) {
+      showToast('Generate a briefing first.');
+      return;
+    }
+    const ok = confirm(
+      'Share this briefing to the public gallery?\n\n' +
+      'Anyone who opens the site will be able to read it. It is stored in a ' +
+      'public GitHub gist and you cannot take it down from here.\n\n' +
+      'Generating did not share it. Cancel if you do not want it listed.'
+    );
+    if (!ok) return;
+    try {
+      const resp = await fetch(apiUrl('/api/gallery'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: currentTitle || '', html: html })
+      });
+      if (!resp.ok) throw new Error(await apiError(resp));
+      const data = await resp.json();
+      const id = data.item && data.item.id;
+      if (id) {
+        window.location.hash = 'g=' + id;
+        currentArticleUrl = window.location.pathname + '#g=' + id;
+      }
+      showToast('On the public gallery. Anyone on the site can read it.');
+      loadPublicPreview();
+    } catch (e) {
+      showToast('Could not share to the gallery: ' + e.message);
     }
   }
 
@@ -2048,6 +2244,7 @@
     cachedShareUrl = '';
     document.getElementById('articleMeta').innerText = title || 'Draft';
     updateStarButton();
+    refreshShareGalleryButton();
     showView('readerView');
   }
 
@@ -2064,6 +2261,7 @@
       currentArticleUrl = window.location.pathname + hash;
     }
     updateStarButton();
+    refreshShareGalleryButton();
     showView('readerView');
   }
 

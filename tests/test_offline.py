@@ -96,9 +96,9 @@ def test_per_request_api_key() -> None:
     # that can see a key.
     import re as _re
 
-    from articlegen import cli, paperfetch, pipeline, sources
+    from articlegen import cli, gallery, paperfetch, pipeline, sources
 
-    modules = (llm, web, writer, ideas, pipeline, cli, sources, paperfetch)
+    modules = (llm, web, writer, ideas, pipeline, cli, sources, paperfetch, gallery)
     assign = _re.compile(
         r"os\.environ\s*(?:\[[^\]]*\]\s*=(?!=)|\.update\s*\(|\.setdefault\s*\()")
     for module in modules:
@@ -3041,12 +3041,14 @@ def test_the_front_end_has_one_article_list() -> None:
         encoding="utf-8",
     ).read()
 
-    check("only one list view", page.count('id="libraryView"') == 1
-          and 'id="galleryView"' not in page and 'id="publishedView"' not in page)
-    check("only one search box",
+    check("only one personal library view", page.count('id="libraryView"') == 1
+          and 'id="publishedView"' not in page)
+    check("only one personal search box",
           page.count('id="librarySearchInput"') == 1
-          and 'id="gallerySearchInput"' not in page
           and 'id="publishedSearchInput"' not in page)
+    check("the visitor gallery is a separate view, not a second library",
+          'id="publicListView"' in page
+          and 'id="publicPreview"' in page)
 
     # The legacy keys may still be *touched* only inside the one-time migration,
     # which folds them in and deletes them. A localStorage call on one of them
@@ -5610,6 +5612,167 @@ def test_demo_and_index() -> None:
         check("index builds", os.path.exists(idx))
 
 
+def test_visitor_gallery() -> None:
+    """Shared briefings are opt-in, capped, and not the personal library.
+
+    Generating must not publish. The hosted backend has no disk, so the
+    durable copy is a public gist — listed from the front end without
+    waiting on Render. A gist-scoped token cannot rewrite the generator.
+    """
+    import inspect
+    import json as json_mod
+    import tempfile
+    from unittest.mock import patch
+
+    import requests
+
+    from articlegen import gallery, web
+
+    check("empty html is refused", gallery.validate_html("") is not None)
+    check("a script tag is refused",
+          gallery.validate_html("<h1>Hi</h1><script>x</script>") is not None)
+    check("html without a heading is refused",
+          gallery.validate_html("<p>no heading</p>") is not None)
+    check("a normal briefing html is accepted",
+          gallery.validate_html("<h1>A question</h1><p>findings</p>") is None)
+    too_big = "<h1>x</h1>" + ("a" * (gallery.GALLERY_MAX_HTML + 10))
+    check("oversize html is refused", gallery.validate_html(too_big) is not None)
+
+    saved = {k: os.environ.get(k) for k in (
+        "ARTICLEGEN_GALLERY_TOKEN", "ARTICLEGEN_STATELESS")}
+    original_dir = gallery.GALLERY_DIR
+    original_max = gallery.GALLERY_MAX
+    try:
+        os.environ.pop("ARTICLEGEN_GALLERY_TOKEN", None)
+        os.environ.pop("ARTICLEGEN_STATELESS", None)
+        check("a local server can accept shares", gallery.gallery_enabled())
+        os.environ["ARTICLEGEN_STATELESS"] = "1"
+        check("stateless without a token cannot", not gallery.gallery_enabled())
+        os.environ["ARTICLEGEN_GALLERY_TOKEN"] = "ghp_test"
+        check("a gist token enables the hosted gallery", gallery.gallery_enabled())
+
+        os.environ.pop("ARTICLEGEN_GALLERY_TOKEN", None)
+        os.environ.pop("ARTICLEGEN_STATELESS", None)
+        tmp = tempfile.mkdtemp()
+        gallery.GALLERY_DIR = tmp
+        gallery.GALLERY_MAX = 2
+        first = gallery.publish("First question", "<h1>First</h1><p>a</p>")
+        second = gallery.publish("Second question", "<h1>Second</h1><p>b</p>")
+        third = gallery.publish("Third question", "<h1>Third</h1><p>c</p>")
+        items = gallery.list_items()
+        check("newest shared briefing is first", items[0]["id"] == third["id"])
+        check("the gallery is capped", len(items) == 2)
+        check("the oldest dropped off the index",
+              first["id"] not in {i["id"] for i in items})
+        check("the dropped file is gone",
+              not os.path.exists(os.path.join(tmp, os.path.basename(first["html_url"]))))
+        check("local html_url is a gallery path",
+              second["html_url"].startswith("/gallery/"))
+    finally:
+        gallery.GALLERY_DIR = original_dir
+        gallery.GALLERY_MAX = original_max
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    # Gist publish: create article gist, rewrite index, drop overflow.
+    class _Resp:
+        def __init__(self, payload, status=200):
+            self.status_code = status
+            self._payload = payload
+            self.content = b"{}" if payload is not None else b""
+
+        def json(self):
+            return self._payload
+
+    calls = []
+
+    def fake_request(method, url, headers=None, json=None, timeout=None):
+        calls.append({"method": method, "url": url, "json": json,
+                      "auth": bool((headers or {}).get("Authorization"))})
+        if method == "POST" and url.endswith("/gists"):
+            return _Resp({"id": "newgist1"})
+        if method == "GET" and gallery.GALLERY_INDEX_GIST in url:
+            return _Resp({
+                "files": {
+                    gallery.GALLERY_INDEX_FILE: {
+                        "content": json_mod.dumps({"items": [
+                            {"id": "old1", "title": "Old", "html_url": "u1"},
+                            {"id": "old2", "title": "Older", "html_url": "u2"},
+                        ]})
+                    }
+                }
+            })
+        if method == "PATCH":
+            return _Resp({})
+        if method == "DELETE":
+            return _Resp({}, status=204)
+        return _Resp({}, status=500)
+
+    saved_token = os.environ.get("ARTICLEGEN_GALLERY_TOKEN")
+    try:
+        os.environ["ARTICLEGEN_GALLERY_TOKEN"] = "ghp_test"
+        gallery.GALLERY_MAX = 2
+        with patch.object(requests, "request", fake_request):
+            item = gallery.publish("Gist title", "<h1>Gist</h1><p>ok</p>")
+        check("gist publish returns the new id", item["id"] == "newgist1")
+        check("gist html_url is a raw gist url",
+              item["html_url"].startswith(
+                  "https://gist.githubusercontent.com/bartholomewtj/newgist1/"))
+        methods = [c["method"] for c in calls]
+        check("gist publish creates then updates the index",
+              methods[0] == "POST" and "GET" in methods and "PATCH" in methods)
+        check("overflow gists are deleted", "DELETE" in methods)
+        check("the gist token is sent as a header, not a query",
+              all(c["auth"] for c in calls) and all(
+                  "ghp_test" not in (c["url"] or "") for c in calls))
+        patch_body = next(c["json"] for c in calls if c["method"] == "PATCH")
+        index = json_mod.loads(
+            patch_body["files"][gallery.GALLERY_INDEX_FILE]["content"])
+        check("the new briefing is first in the index",
+              index["items"][0]["id"] == "newgist1")
+        check("the gist index is capped too", len(index["items"]) <= 2)
+    finally:
+        gallery.GALLERY_MAX = original_max
+        if saved_token is None:
+            os.environ.pop("ARTICLEGEN_GALLERY_TOKEN", None)
+        else:
+            os.environ["ARTICLEGEN_GALLERY_TOKEN"] = saved_token
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    page = open(os.path.join(root, "index.html"), encoding="utf-8").read()
+    check("front end gist id matches the server",
+          f"GALLERY_INDEX_GIST = '{gallery.GALLERY_INDEX_GIST}'" in page)
+    check("front end gist file matches the server",
+          f"GALLERY_INDEX_FILE = '{gallery.GALLERY_INDEX_FILE}'" in page)
+
+    draft_src = inspect.getsource(web.ArticleGenHandler._handle_draft)
+    check("generating does not publish to the gallery",
+          "gallery.publish" not in draft_src and "_handle_publish_gallery" not in draft_src)
+    share = page[page.index("async function shareToGallery"):]
+    share = share[:share.index("\n  }\n")]
+    check("Share to gallery asks first", "confirm(" in share)
+    check("and posts to /api/gallery, not /api/draft",
+          "/api/gallery" in share and "/api/draft" not in share)
+    select = page[page.index("async function selectDraft"):]
+    select = select[:select.index("\n  }\n")]
+    check("choosing an idea does not share to the gallery",
+          "shareToGallery" not in select)
+
+    health = inspect.getsource(web.ArticleGenHandler.do_GET)
+    check("health reports whether the gallery is on",
+          '"gallery"' in health or "gallery.gallery_enabled" in health)
+    check("GET /api/gallery is served", "_handle_get_gallery" in health)
+    post = inspect.getsource(web.ArticleGenHandler.do_POST)
+    check("POST /api/gallery is the publish path",
+          "_handle_publish_gallery" in post)
+    check("publish is rate-limited",
+          "_over_rate_limit" in inspect.getsource(
+              web.ArticleGenHandler._handle_publish_gallery))
+
+
 def test_web_server() -> None:
     import json
     from io import BytesIO
@@ -7528,10 +7691,10 @@ def test_claude_md_still_describes_this_code() -> None:
 
     # Every module, not a subset — a constant named in the docs is stale
     # wherever it lives, and a partial sweep fails on correct text.
-    from articlegen import (llm, paperfetch, pipeline, render, sources, style,
+    from articlegen import (gallery, llm, paperfetch, pipeline, render, sources, style,
                             verify, web, writer)
 
-    modules = (llm, paperfetch, pipeline, render, sources, style, verify, web, writer)
+    modules = (gallery, llm, paperfetch, pipeline, render, sources, style, verify, web, writer)
     # Env vars and front-end constants are not module attributes, so a plain
     # `hasattr` sweep would fail on a dozen names that are perfectly current.
     # Falling back to "appears anywhere in the code" still catches the case
@@ -7738,6 +7901,7 @@ def main(argv: list[str] | None = None) -> int:
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
         test_prose_style_check, test_rules_do_not_reject_real_journal_prose,
         test_the_front_end_has_one_article_list,
+        test_visitor_gallery,
         test_article_in_the_web_app_cannot_run_scripts,
         test_health_reports_which_build_is_running,
         test_openalex_reaches_for_recent_work_as_well,

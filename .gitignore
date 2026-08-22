@@ -10,6 +10,8 @@ venv/
 .env.*
 !.env.example
 # generated output (drafts/ is intentionally tracked — it's the review surface)
+# visitor gallery on a local `articlegen web` — hosted copy is a gist, not git
+/gallery/
 /*.html
 !README*.html
 /ideas/

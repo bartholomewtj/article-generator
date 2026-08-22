@@ -794,6 +794,24 @@ Three fixes landed:
 
 ## Web app and deployment
 
+### `#207` — public gallery of visitor briefings
+
+The live site could show curated CLI drafts in `drafts/` and whatever was in
+the current browser. Other visitors' generations vanished when Render
+returned them. Putting every generation into `drafts/` on the shared host
+was rejected in the original stateless split: topics can identify people,
+URLs would be guessable, and Render's disk is wiped on sleep anyway.
+
+The gallery is therefore **opt-in** (Share to gallery asks first; generate
+does not publish) and stored in a **public GitHub gist**, not in this repo
+and not on Render's disk. The token is gist-scoped: a leak cannot push to
+`main`. The index gist id is a public fact so the landing page can list
+briefings without waking Render. Cap 50, oldest dropped from the index.
+
+Not chosen: auto-publish every generation (privacy); commit into `drafts/`
+or `main` (visitor HTML in the repo, CI on every share, a contents token
+that can rewrite the site).
+
 ### `#100` — the reader iframe ran same-origin
 
 It is fed model-written HTML, and `#read=`/`#p=` links let anyone hand a visitor
