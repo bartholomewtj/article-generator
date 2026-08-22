@@ -8,9 +8,6 @@
 <meta http-equiv="Expires" content="0">
 <title>ArticleGen — sourced evidence briefings you can send</title>
 <meta name="description" content="Turn a topic into a sourced evidence briefing: the question, what the evidence shows, what remains open, and three papers to open, on one page you can send as a link.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
 <script>
   (function() {
     var saved = localStorage.getItem('articlegen_theme') || 'system';
@@ -20,126 +17,167 @@
   })();
 </script>
 <style>
+  /* recipe: software (tokens.md). Type: Tool. Signature: you on .theme-box. */
   :root, html[data-theme="dark"] {
-    --bg: #0f1115;
-    --card-bg: #181b20;
-    --card-border: #272a30;
-    --ink: #f1f5f9;
-    --muted: #94a3b8;
-    --accent: #2dd4bf;
-    --accent-hover: #5eead4;
-    --accent-soft: rgba(45, 212, 191, 0.15);
-    --gold: #f59e0b;
-    --header-bg: rgba(15, 17, 21, 0.85);
-    --glass-bg: rgba(24, 27, 32, 0.8);
-    --modal-overlay: rgba(0, 0, 0, 0.75);
-    --action-bar-bg: rgba(15, 17, 21, 0.92);
-    --font-ui: 'Inter', -apple-system, sans-serif;
-    --font-heading: 'Outfit', sans-serif;
+    --paper: #121624;
+    --ink: #f1f3fa;
+    --muted: #939ebd;
+    --accent: #38bdf8;
+    --you: #38bdf8;
+    --accent-soft: #19344a;
+    --you-soft: #19344a;
+    --you-fill: #225c7d;
+    --warn: #f87171;
+    --warn-soft: #3b2632;
+    --ok: #34d399;
+    --ok-soft: #183839;
+    --ok-fill: #206555;
+    --navy: #a78bfa;
+    --navy-soft: #2d2b4b;
+    --navy-fill: #51477e;
+    --card: #1b2035;
+    --cage: #151a2b;
+    --line: #3a3e4b;
+    --boxline: #4c5369;
+    --nav: #0f131f;
+    --nav-hover: #20273f;
+    --on-accent: #121624;
+    --bg: var(--paper);
+    --card-bg: var(--card);
+    --card-border: var(--line);
+    --header-bg: var(--nav);
+    --modal-overlay: rgba(18, 22, 36, 0.78);
+    --action-bar-bg: var(--nav);
+    --font-ui: "Segoe UI", Calibri, sans-serif;
+    --font-heading: "Segoe UI", Calibri, sans-serif;
+    --font-utility: Consolas, "Courier New", monospace;
     color-scheme: dark;
   }
+  /* Light is the software recipe with paper/ink swapped. Accent stays
+     you-fill so labels still read on the light paper; the bright accent is
+     you-fill's partner, not a fifth hue. Washes are paper mixed into the hue. */
   @media (prefers-color-scheme: light) {
     :root:not([data-theme="dark"]) {
-      --bg: #f8fafc;
-      --card-bg: #ffffff;
-      --card-border: #e2e8f0;
-      --ink: #0f172a;
-      --muted: #64748b;
-      --accent: #0d9488;
-      --accent-hover: #0f766e;
-      --accent-soft: rgba(13, 148, 136, 0.1);
-      --gold: #d97706;
-      --header-bg: rgba(248, 250, 252, 0.85);
-      --glass-bg: rgba(255, 255, 255, 0.85);
-      --modal-overlay: rgba(15, 23, 42, 0.6);
-      --action-bar-bg: rgba(248, 250, 252, 0.92);
+      --paper: #f1f3fa;
+      --ink: #121624;
+      --muted: #4c5369;
+      --accent: #225c7d;
+      --you: #225c7d;
+      --accent-soft: #cfe9fa;
+      --you-soft: #cfe9fa;
+      --you-fill: #38bdf8;
+      --warn: #f87171;
+      --warn-soft: #f3d4d4;
+      --ok: #206555;
+      --ok-soft: #d4efe3;
+      --ok-fill: #34d399;
+      --navy: #51477e;
+      --navy-soft: #ddd7f0;
+      --navy-fill: #a78bfa;
+      --card: #ffffff;
+      --cage: #e8ebf4;
+      --line: #3a3e4b;
+      --boxline: #4c5369;
+      --nav: #e4e8f4;
+      --nav-hover: #d5dae8;
+      --on-accent: #121624;
+      --bg: var(--paper);
+      --card-bg: var(--card);
+      --card-border: var(--line);
+      --header-bg: var(--nav);
+      --modal-overlay: rgba(18, 22, 36, 0.55);
+      --action-bar-bg: var(--nav);
       color-scheme: light;
     }
   }
   html[data-theme="light"] {
-    --bg: #f8fafc;
-    --card-bg: #ffffff;
-    --card-border: #e2e8f0;
-    --ink: #0f172a;
-    --muted: #64748b;
-    --accent: #0d9488;
-    --accent-hover: #0f766e;
-    --accent-soft: rgba(13, 148, 136, 0.1);
-    --gold: #d97706;
-    --header-bg: rgba(248, 250, 252, 0.85);
-    --glass-bg: rgba(255, 255, 255, 0.85);
-    --modal-overlay: rgba(15, 23, 42, 0.6);
-    --action-bar-bg: rgba(248, 250, 252, 0.92);
+    --paper: #f1f3fa;
+    --ink: #121624;
+    --muted: #4c5369;
+    --accent: #225c7d;
+    --you: #225c7d;
+    --accent-soft: #cfe9fa;
+    --you-soft: #cfe9fa;
+    --you-fill: #38bdf8;
+    --warn: #f87171;
+    --warn-soft: #f3d4d4;
+    --ok: #206555;
+    --ok-soft: #d4efe3;
+    --ok-fill: #34d399;
+    --navy: #51477e;
+    --navy-soft: #ddd7f0;
+    --navy-fill: #a78bfa;
+    --card: #ffffff;
+    --cage: #e8ebf4;
+    --line: #3a3e4b;
+    --boxline: #4c5369;
+    --nav: #e4e8f4;
+    --nav-hover: #d5dae8;
+    --on-accent: #121624;
+    --bg: var(--paper);
+    --card-bg: var(--card);
+    --card-border: var(--line);
+    --header-bg: var(--nav);
+    --modal-overlay: rgba(18, 22, 36, 0.55);
+    --action-bar-bg: var(--nav);
     color-scheme: light;
   }
 
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  body {
+  html, body {
     margin: 0;
     padding: 0;
-    background: var(--bg);
+    background: var(--paper);
     color: var(--ink);
-    font-family: var(--font-ui);
-    line-height: 1.5;
+    font: 16px/1.5 var(--font-ui);
     min-height: 100vh;
+  }
+  body {
     display: flex;
     flex-direction: column;
   }
+  a { color: var(--navy); }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
 
-  /* Header */
   header.app-header {
     position: sticky;
     top: 0;
     z-index: 100;
-    background: var(--header-bg);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-bottom: 1px solid var(--card-border);
+    background: var(--nav);
+    border-bottom: 1px solid var(--line);
     padding: 0.85rem 1.25rem;
     display: flex;
     align-items: center;
     justify-content: space-between;
   }
-
   .logo {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    font-family: var(--font-heading);
-    font-weight: 800;
-    font-size: 1.2rem;
+    font: 700 1.05rem/1 var(--font-heading);
     color: var(--ink);
     text-decoration: none;
+    letter-spacing: 0.01em;
   }
-  .logo-icon {
-    width: 28px;
-    height: 28px;
-    background: linear-gradient(135deg, var(--accent), #3b82f6);
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-size: 0.85rem;
-  }
-
-  .header-actions { display: flex; gap: 0.5rem; }
+  .header-actions { display: flex; gap: 0.4rem; }
   .icon-btn {
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
+    background: var(--card);
+    border: 1px solid var(--line);
     color: var(--ink);
-    width: 36px;
+    min-width: 36px;
     height: 36px;
+    padding: 0 0.55rem;
     border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.2s;
+    font: 700 0.68rem/1 var(--font-ui);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
   }
-  .icon-btn:active { transform: scale(0.95); }
+  .icon-btn:hover { background: var(--nav-hover); }
 
-  /* Main layout */
   main.container {
     max-width: 640px;
     margin: 0 auto;
@@ -154,83 +192,89 @@
     main.container:has(#readerView.active) { max-width: min(88vw, 1040px); }
   }
 
-  /* View Containers */
   .view { display: none; }
-  .view.active { display: block; animation: fadeIn 0.25s ease-out; }
-  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .view.active { display: block; }
 
-  /* Hero & Theme Input */
+  .kicker {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 0.45rem;
+  }
   .hero-title {
-    font-family: var(--font-heading);
-    font-size: clamp(1.6rem, 5vw, 2.2rem);
-    font-weight: 800;
-    line-height: 1.2;
-    margin: 0.5rem 0 0.5rem;
-    background: linear-gradient(135deg, var(--ink), var(--muted));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    font: 650 clamp(1.7rem, 5vw, 2.15rem)/1.1 var(--font-heading);
+    color: var(--ink);
+    margin: 0 0 0.55rem;
+    padding-bottom: 0.7rem;
+    border-bottom: 3px solid var(--ink);
+    text-wrap: balance;
   }
   .hero-subtitle {
     color: var(--muted);
     font-size: 0.95rem;
-    margin-bottom: 1.5rem;
+    margin: 0.85rem 0 1.35rem;
   }
 
   .theme-box {
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 16px;
+    background: var(--card);
+    border: 2px solid var(--ink);
+    border-radius: 12px;
     padding: 1.25rem;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.05);
     margin-bottom: 1.5rem;
   }
+  .theme-box.you {
+    background: var(--you-soft);
+    border-color: var(--you);
+  }
+  .theme-box.you .input-label { color: var(--you); }
 
   .input-label {
     display: block;
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: var(--accent);
+    color: var(--muted);
     margin-bottom: 0.5rem;
   }
   .theme-input {
     width: 100%;
-    background: var(--bg);
-    border: 1px solid var(--card-border);
+    background: var(--paper);
+    border: 2px solid var(--line);
     color: var(--ink);
     border-radius: 10px;
     padding: 0.85rem 1rem;
     font-size: 1rem;
     font-family: inherit;
-    outline: none;
-    transition: border-color 0.2s;
   }
-  .theme-input:focus { border-color: var(--accent); }
-
+  .theme-input:focus { border-color: var(--accent); outline: none; }
 
   .pill {
-    background: var(--bg);
-    border: 1px solid var(--card-border);
+    background: var(--paper);
+    border: 2px solid var(--ink);
     color: var(--ink);
     font-size: 0.82rem;
     padding: 0.4rem 0.8rem;
-    border-radius: 20px;
+    border-radius: 99px;
     cursor: pointer;
-    transition: all 0.2s;
   }
   .pill:hover, .pill:active {
-    border-color: var(--accent);
-    background: var(--accent-soft);
-    color: var(--accent);
+    background: var(--nav-hover);
+  }
+  .pill.warn {
+    color: var(--warn);
+    border-color: var(--warn);
+    background: var(--warn-soft);
   }
 
   .btn-primary {
     width: 100%;
     margin-top: 1.25rem;
-    background: linear-gradient(135deg, var(--accent), #0f766e);
-    color: white;
-    border: none;
+    background: var(--you-fill);
+    color: var(--ink);
+    border: 2px solid var(--you);
     padding: 0.95rem;
     border-radius: 12px;
     font-size: 1rem;
@@ -240,13 +284,10 @@
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    box-shadow: 0 4px 14px var(--accent-soft);
-    transition: transform 0.15s, opacity 0.2s;
   }
-  .btn-primary:active { transform: scale(0.98); }
-  .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+  .btn-primary:hover { filter: brightness(1.08); }
+  .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; filter: none; }
 
-  /* Draft Cards View */
   .section-header {
     display: flex;
     align-items: center;
@@ -254,36 +295,27 @@
     margin-bottom: 1rem;
   }
   .section-title {
-    font-family: var(--font-heading);
-    font-size: 1.3rem;
-    font-weight: 700;
+    font: 650 1.25rem/1.2 var(--font-heading);
     margin: 0;
   }
 
   .draft-card {
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 14px;
+    background: var(--card);
+    border: 2px solid var(--ink);
+    border-radius: 12px;
     padding: 1.25rem;
     margin-bottom: 1rem;
-    transition: all 0.2s;
   }
-  .draft-card:hover { border-color: var(--accent); }
   .draft-num {
     display: inline-block;
-    background: var(--accent-soft);
-    color: var(--accent);
+    font-family: var(--font-utility);
     font-size: 0.75rem;
     font-weight: 700;
-    padding: 0.2rem 0.6rem;
-    border-radius: 6px;
+    color: var(--muted);
     margin-bottom: 0.6rem;
   }
   .draft-title {
-    font-family: var(--font-heading);
-    font-size: 1.15rem;
-    font-weight: 700;
-    line-height: 1.3;
+    font: 650 1.1rem/1.3 var(--font-heading);
     margin: 0 0 0.5rem;
   }
   .draft-angle {
@@ -299,60 +331,58 @@
   }
   .draft-term {
     font-size: 0.75rem;
-    background: var(--bg);
+    background: var(--paper);
     color: var(--muted);
     padding: 0.2rem 0.5rem;
-    border-radius: 4px;
-    border: 1px solid var(--card-border);
+    border-radius: 99px;
+    border: 1px solid var(--line);
   }
 
   .btn-select {
     width: 100%;
-    background: var(--accent-soft);
-    color: var(--accent);
-    border: 1px solid var(--accent);
+    background: var(--paper);
+    color: var(--ink);
+    border: 2px solid var(--ink);
     padding: 0.7rem;
     border-radius: 10px;
     font-weight: 600;
     font-size: 0.9rem;
     cursor: pointer;
-    transition: all 0.2s;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.4rem;
   }
   .btn-select:hover, .btn-select:active {
-    background: var(--accent);
-    color: white;
+    background: var(--nav-hover);
   }
 
-  /* Progress View */
   .progress-card {
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 16px;
+    background: var(--card);
+    border: 2px solid var(--ink);
+    border-radius: 12px;
     padding: 2rem 1.5rem;
     text-align: center;
   }
   .spinner {
-    width: 48px;
-    height: 48px;
-    border: 4px solid var(--card-border);
+    width: 36px;
+    height: 36px;
+    border: 3px solid var(--line);
     border-top-color: var(--accent);
     border-radius: 50%;
     animation: spin 1s infinite linear;
     margin: 0 auto 1.5rem;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    .spinner { animation: none; border-top-color: var(--line); }
+  }
   .progress-title {
-    font-family: var(--font-heading);
-    font-size: 1.25rem;
-    font-weight: 700;
+    font: 650 1.2rem/1.25 var(--font-heading);
     margin: 0 0 0.5rem;
   }
   .progress-step {
-    color: var(--accent);
+    color: var(--muted);
     font-weight: 600;
     font-size: 0.95rem;
     margin-bottom: 1.5rem;
@@ -370,15 +400,20 @@
     gap: 0.6rem;
     margin-bottom: 0.6rem;
   }
-  .step-item.done { color: var(--ink); }
-  .step-icon { width: 18px; text-align: center; }
+  .step-item.done { color: var(--ok); }
+  .step-icon {
+    font-family: var(--font-utility);
+    width: 1.2rem;
+    text-align: center;
+  }
+  .step-icon::before { content: "·"; }
+  .step-item.done .step-icon::before { content: "ok"; }
 
-  /* Reader / Article Frame */
   .reader-frame-wrapper {
     width: 100%;
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 16px;
+    background: var(--card);
+    border: 2px solid var(--ink);
+    border-radius: 12px;
     overflow: hidden;
     margin-bottom: 1.5rem;
   }
@@ -389,23 +424,19 @@
     display: block;
   }
 
-  /* Sticky Share Action Bar */
   .sticky-action-bar {
     position: fixed;
     bottom: 0;
     left: 0;
     right: 0;
-    background: var(--action-bar-bg);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-top: 1px solid var(--card-border);
+    background: var(--nav);
+    border-top: 2px solid var(--ink);
     padding: 0.75rem 1.25rem;
     display: flex;
     align-items: center;
     justify-content: space-around;
     z-index: 90;
   }
-
   .action-btn {
     display: flex;
     flex-direction: column;
@@ -419,17 +450,13 @@
     cursor: pointer;
     padding: 0.2rem 0.6rem;
     border-radius: 8px;
-    transition: opacity 0.2s;
   }
-  .action-btn:active { opacity: 0.7; }
   .action-btn svg { width: 20px; height: 20px; color: var(--accent); }
 
-  /* Settings Modal */
   .modal-overlay {
     position: fixed;
     inset: 0;
     background: var(--modal-overlay);
-    backdrop-filter: blur(4px);
     z-index: 200;
     display: none;
     align-items: center;
@@ -438,13 +465,12 @@
   }
   .modal-overlay.active { display: flex; }
   .modal-card {
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 16px;
+    background: var(--card);
+    border: 2px solid var(--ink);
+    border-radius: 12px;
     padding: 1.5rem;
     width: 100%;
     max-width: 440px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
   }
   .modal-header {
     display: flex;
@@ -452,31 +478,28 @@
     align-items: center;
     margin-bottom: 1rem;
   }
-  .modal-title { font-family: var(--font-heading); font-size: 1.2rem; font-weight: 700; margin: 0; }
+  .modal-title { font: 650 1.15rem/1.2 var(--font-heading); margin: 0; }
 
-  /* Toast Notification */
   .toast {
     position: fixed;
     bottom: 80px;
     left: 50%;
     transform: translateX(-50%);
-    background: var(--accent);
-    color: white;
-    padding: 0.6rem 1.2rem;
-    border-radius: 20px;
+    background: var(--ok-soft);
+    color: var(--ok);
+    border: 2px solid var(--ok);
+    padding: 0.55rem 1.1rem;
+    border-radius: 12px;
     font-size: 0.85rem;
     font-weight: 600;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.2);
     z-index: 300;
     display: none;
   }
-  .toast.active { display: block; animation: popUp 0.3s ease-out; }
-  @keyframes popUp { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+  .toast.active { display: block; }
 
-  /* Gallery / Review Queue */
   .gallery-item {
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
+    background: var(--card);
+    border: 2px solid var(--ink);
     border-radius: 12px;
     padding: 1rem 1.25rem;
     margin-bottom: 0.75rem;
@@ -493,21 +516,21 @@
     text-align: center; font-size: 0.7rem; color: var(--muted);
     margin: 2rem 0 1rem; opacity: 0.75;
   }
-  .build-stamp code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.7rem; }
+  .build-stamp code { font-family: var(--font-utility); font-size: 0.7rem; }
 
   /* Featured evidence reviews on the landing page (#152). */
   .featured { margin-bottom: 1rem; }
   .featured-label {
     display: block; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em;
-    text-transform: uppercase; color: var(--accent); margin: 0 0 0.5rem;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 0.5rem;
   }
   .featured-card {
     display: block; text-decoration: none; color: inherit;
-    border: 1px solid var(--border, rgba(128,128,128,0.3)); border-radius: 14px;
+    background: var(--card);
+    border: 2px solid var(--ink); border-radius: 12px;
     padding: 0.85rem 1.1rem; margin-bottom: 0.6rem;
-    transition: border-color 0.15s ease;
   }
-  .featured-card:hover { border-color: var(--accent); }
+  .featured-card:hover { background: var(--nav-hover); }
   .featured-title {
     display: block; font-size: 0.92rem; font-weight: 600; color: var(--ink);
     line-height: 1.4; margin-bottom: 0.3rem;
@@ -521,52 +544,59 @@
      rather than as a second call to action competing with generating one. */
   .demo-band {
     display: block; text-decoration: none; color: inherit;
-    border: 1px solid var(--border, rgba(128,128,128,0.3)); border-radius: 14px;
+    background: var(--card);
+    border: 2px solid var(--ink); border-radius: 12px;
     padding: 0.9rem 1.1rem; margin-bottom: 1rem;
   }
-  .demo-band:hover { border-color: var(--accent); }
+  .demo-band:hover { background: var(--nav-hover); }
   .demo-band-label {
     display: block; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em;
-    text-transform: uppercase; color: var(--accent); margin-bottom: 0.35rem;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 0.35rem;
   }
   .demo-band-text {
     display: block; font-size: 0.87rem; line-height: 1.5; color: var(--muted);
   }
   .demo-band-go {
-    display: block; font-size: 0.87rem; font-weight: 600; color: var(--accent);
+    display: block; font-size: 0.87rem; font-weight: 600; color: var(--ink);
     margin-top: 0.5rem;
   }
 
   /* First-run explainer, and the in-page error state that replaced alert(). */
   .setup-card {
-    border: 1px solid var(--accent); border-radius: 14px;
-    background: var(--accent-soft); padding: 1rem 1.1rem; margin-bottom: 1.25rem;
+    border: 2px solid var(--ink); border-radius: 12px;
+    background: var(--card); padding: 1rem 1.1rem; margin-bottom: 1.25rem;
   }
   .setup-title { font-weight: 700; font-size: 0.95rem; margin: 0 0 0.4rem; }
   .setup-body { font-size: 0.87rem; line-height: 1.55; margin: 0 0 0.9rem; }
-  .setup-btn { margin-top: 0; }
+  .setup-btn {
+    margin-top: 0;
+    background: var(--paper);
+    color: var(--ink);
+    border-color: var(--ink);
+  }
+  .setup-btn:hover { filter: none; background: var(--nav-hover); }
   .error-card {
-    border: 1px solid var(--danger, #d33); border-radius: 14px;
+    border: 2px solid var(--warn); border-radius: 12px;
+    background: var(--warn-soft);
     padding: 1rem 1.1rem; margin-top: 1rem; text-align: left;
   }
-  .error-title { font-weight: 700; font-size: 0.95rem; margin: 0 0 0.4rem; }
+  .error-title { font-weight: 700; font-size: 0.95rem; margin: 0 0 0.4rem; color: var(--warn); }
   .error-body { font-size: 0.87rem; line-height: 1.55; margin: 0 0 0.9rem; }
   .error-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+  .starred { background: var(--you-fill); color: var(--ink); border-color: var(--you); }
 </style>
 </head>
 <body>
 
 <header class="app-header">
-  <a href="https://bartholomewtj.github.io/article-generator/" class="logo">
-    <div class="logo-icon">✨</div>
-    ArticleGen
-  </a>
+  <a href="https://bartholomewtj.github.io/article-generator/" class="logo">ArticleGen</a>
   <div class="header-actions">
     <button class="icon-btn" onclick="window.location.href='https://bartholomewtj.github.io/article-generator/'" title="Home">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
     </button>
-    <button class="icon-btn" id="themeToggleBtn" onclick="cycleTheme()" title="Toggle Dark/Light Theme">
-      <span id="themeToggleIcon">🌙</span>
+    <button class="icon-btn" id="themeToggleBtn" onclick="cycleTheme()" title="Theme">
+      <span id="themeToggleIcon">Sys</span>
     </button>
     <button class="icon-btn" onclick="showView('libraryView'); loadLibrary();" title="Your articles">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
@@ -581,6 +611,7 @@
 
   <!-- VIEW 1: Theme Input -->
   <div id="themeView" class="view active">
+    <p class="kicker">From published papers</p>
     <h1 class="hero-title">A sourced evidence briefing you can send</h1>
     <p class="hero-subtitle">Pick a topic; get a sourced one-page briefing — the
       question, what the evidence shows, what remains open, and three papers to
@@ -636,7 +667,7 @@
       </button>
     </div>
 
-    <div class="theme-box">
+    <div class="theme-box you">
       <label class="input-label" for="themeInput">1. Enter a theme or question</label>
       <input type="text" id="themeInput" name="article_topic" class="theme-input" placeholder="e.g. seclusion reduction in acute psychiatric wards" autocomplete="off" autocorrect="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
 
@@ -646,12 +677,12 @@
       <div style="margin-top: 1rem;">
         <label class="input-label" for="prefLang">Output Language</label>
         <select id="prefLang" class="theme-input" onchange="savePreferences()">
-          <option value="English" selected>🇺🇸 English</option>
-          <option value="Spanish">🇪🇸 Spanish (Español)</option>
-          <option value="French">🇫🇷 French (Français)</option>
-          <option value="German">🇩🇪 German (Deutsch)</option>
-          <option value="Japanese">🇯🇵 Japanese (日本語)</option>
-          <option value="Chinese">🇨🇳 Chinese (中文)</option>
+          <option value="English" selected>English</option>
+          <option value="Spanish">Spanish (Español)</option>
+          <option value="French">French (Français)</option>
+          <option value="German">German (Deutsch)</option>
+          <option value="Japanese">Japanese (日本語)</option>
+          <option value="Chinese">Chinese (中文)</option>
         </select>
       </div>
 
@@ -683,11 +714,11 @@
       <p class="progress-step" id="progressStepText">Planning scholarly search queries...</p>
 
       <div class="progress-steps-list">
-        <div class="step-item done"><span class="step-icon">✓</span> <span>Theme & Angle Selected</span></div>
-        <div class="step-item" id="stepQueries"><span class="step-icon">⏳</span> <span>Searching OpenAlex & Semantic Scholar</span></div>
-        <div class="step-item" id="stepCurate"><span class="step-icon">⏳</span> <span>Curating Peer-Reviewed Evidence</span></div>
-        <div class="step-item" id="stepDraft"><span class="step-icon">⏳</span> <span>Drafting the briefing</span></div>
-        <div class="step-item" id="stepVerify"><span class="step-icon">⏳</span> <span>Verifying Statistics & Citations</span></div>
+        <div class="step-item done"><span class="step-icon"></span> <span>Theme and angle selected</span></div>
+        <div class="step-item" id="stepQueries"><span class="step-icon"></span> <span>Searching OpenAlex and Semantic Scholar</span></div>
+        <div class="step-item" id="stepCurate"><span class="step-icon"></span> <span>Curating peer-reviewed evidence</span></div>
+        <div class="step-item" id="stepDraft"><span class="step-icon"></span> <span>Drafting the briefing</span></div>
+        <div class="step-item" id="stepVerify"><span class="step-icon"></span> <span>Verifying statistics and citations</span></div>
       </div>
 
       <!-- Failures used to arrive as a browser alert() carrying whatever the
@@ -713,7 +744,7 @@
              library to keep it past the rolling limit — which is all the old
              "Save to Published Library" button did, via a second storage key
              holding a second copy of the same HTML. -->
-        <button class="pill" id="starCurrentBtn" onclick="starCurrentArticle()" title="Keep this article in your library">☆ Keep</button>
+        <button class="pill" id="starCurrentBtn" onclick="starCurrentArticle()" title="Keep this article in your library">Keep</button>
         <span style="font-size:0.8rem; color:var(--muted);" id="articleMeta">Ready</span>
       </div>
     </div>
@@ -747,7 +778,7 @@
     <div class="section-header" style="flex-wrap:wrap; gap:0.5rem;">
       <h2 class="section-title">Your articles</h2>
       <div style="display:flex; gap:0.4rem;">
-        <button class="pill" style="color:#ef4444; border-color:rgba(239,68,68,0.3);" onclick="clearLibrary()">🗑️ Clear All</button>
+        <button class="pill warn" onclick="clearLibrary()">Clear all</button>
         <button class="pill" onclick="showView('themeView')">+ New Theme</button>
       </div>
     </div>
@@ -757,7 +788,7 @@
     </p>
 
     <div style="margin-bottom: 1rem;">
-      <input type="text" id="librarySearchInput" name="search_articles" class="theme-input" placeholder="🔍 Search by title..." oninput="loadLibrary()" style="padding:0.6rem 0.9rem; font-size:0.9rem;" autocomplete="off" autocorrect="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
+      <input type="text" id="librarySearchInput" name="search_articles" class="theme-input" placeholder="Search by title" oninput="loadLibrary()" style="padding:0.6rem 0.9rem; font-size:0.9rem;" autocomplete="off" autocorrect="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
     </div>
 
     <div id="libraryList">
@@ -1095,15 +1126,14 @@
     if (!iconEl) return;
 
     if (currentThemeSetting === 'light') {
-      iconEl.textContent = '☀️';
-      if (btnEl) btnEl.title = 'Theme: Light (Click to switch to Dark)';
+      iconEl.textContent = 'Light';
+      if (btnEl) btnEl.title = 'Theme: Light (click for Dark)';
     } else if (currentThemeSetting === 'dark') {
-      iconEl.textContent = '🌙';
-      if (btnEl) btnEl.title = 'Theme: Dark (Click to switch to System)';
+      iconEl.textContent = 'Dark';
+      if (btnEl) btnEl.title = 'Theme: Dark (click for System)';
     } else {
-      const isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-      iconEl.textContent = isSysDark ? '🌓' : '☀️';
-      if (btnEl) btnEl.title = 'Theme: System (Click to switch to Light)';
+      iconEl.textContent = 'Sys';
+      if (btnEl) btnEl.title = 'Theme: System (click for Light)';
     }
   }
 
@@ -1460,8 +1490,8 @@
     const btn = document.getElementById('ideasBtn');
     const idle = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg> Propose briefing questions';
     btn.disabled = true;
-    btn.innerHTML = '⏳ Proposing questions...';
-    const settled = whileWaking(function (msg) { btn.innerHTML = '⏳ ' + msg; });
+    btn.innerHTML = 'Proposing questions…';
+    const settled = whileWaking(function (msg) { btn.innerHTML = msg; });
 
     const key = activeKey();
 
@@ -1752,7 +1782,7 @@
     const shareUrl = await publishPublicLink();
     if (!shareUrl) return;
 
-    wrapper.innerHTML = '<p style="color:var(--muted); font-size:0.9rem;">⏳ Generating mobile QR code...</p>';
+    wrapper.innerHTML = '<p style="color:var(--muted); font-size:0.9rem;">Generating QR code…</p>';
     openModal('qrModal');
 
     try {
@@ -1893,10 +1923,8 @@
     if (!btn) return;
     const item = readLibrary().find(it => it.id === currentArticleId);
     const on = !!(item && item.starred);
-    btn.innerText = on ? '★ Kept' : '☆ Keep';
-    btn.style.background = on ? 'var(--accent)' : '';
-    btn.style.color = on ? '#fff' : '';
-    btn.style.border = on ? 'none' : '';
+    btn.innerText = on ? 'Kept' : 'Keep';
+    btn.classList.toggle('starred', on);
   }
 
   function starCurrentArticle() {
@@ -1981,12 +2009,12 @@
       card.className = 'gallery-item';
       card.style.gap = '0.5rem';
       const publish = d.publicUrl
-        ? `<button type="button" class="pill" style="font-size:0.75rem; padding:0.2rem 0.6rem;" onclick="copyLinkDirect('${escapeHtml(d.publicUrl)}')">🔗 Link</button>
-           <button type="button" class="pill" style="font-size:0.75rem; padding:0.2rem 0.6rem;" onclick="showQrForUrl('${escapeHtml(d.publicUrl)}')">📱 QR</button>`
-        : `<button type="button" class="pill" style="font-size:0.75rem; padding:0.2rem 0.6rem; white-space:nowrap;" onclick="publishLibraryItem('${d.id}')">🌐 Publish</button>`;
+        ? `<button type="button" class="pill" style="font-size:0.75rem; padding:0.2rem 0.6rem;" onclick="copyLinkDirect('${escapeHtml(d.publicUrl)}')">Link</button>
+           <button type="button" class="pill" style="font-size:0.75rem; padding:0.2rem 0.6rem;" onclick="showQrForUrl('${escapeHtml(d.publicUrl)}')">QR</button>`
+        : `<button type="button" class="pill" style="font-size:0.75rem; padding:0.2rem 0.6rem; white-space:nowrap;" onclick="publishLibraryItem('${d.id}')">Publish</button>`;
       card.innerHTML = `
-        <button type="button" class="icon-btn" style="width:30px; height:30px; border:none; background:none; font-size:1.1rem; cursor:pointer;" onclick="toggleStar('${d.id}')" title="${d.starred ? 'Stop keeping this' : 'Keep this article'}">
-          ${d.starred ? '⭐' : '☆'}
+        <button type="button" class="pill${d.starred ? ' starred' : ''}" style="font-size:0.75rem; padding:0.2rem 0.55rem;" onclick="toggleStar('${d.id}')" title="${d.starred ? 'Stop keeping this' : 'Keep this article'}">
+          ${d.starred ? 'Kept' : 'Keep'}
         </button>
         <div style="flex:1; min-width:0;">
           <div class="gallery-title" style="line-height:1.35; margin-bottom:0.25rem;">${escapeHtml(d.title)}</div>
@@ -1995,7 +2023,7 @@
         <div style="display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap; justify-content:flex-end;">
           ${publish}
           <a class="gallery-action" href="#" onclick="openLibraryItem('${d.id}'); return false;">Read →</a>
-          <button type="button" class="icon-btn" style="width:32px; height:32px; color:#ef4444; border-color:rgba(239,68,68,0.3); font-size:0.85rem;" onclick="deleteLibraryItem('${d.id}')" title="Delete">🗑️</button>
+          <button type="button" class="pill warn" style="font-size:0.75rem; padding:0.2rem 0.55rem;" onclick="deleteLibraryItem('${d.id}')" title="Delete">Delete</button>
         </div>
       `;
       container.appendChild(card);
