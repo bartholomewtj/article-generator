@@ -1,20 +1,21 @@
 # Next session
 
-_Last handoff: 22 August 2026 — #203 on `main`; next is a Render deploy, then #173_
+_Last handoff: 22 August 2026 — #205 on `main`; Pages stamp `21bc369`; Render still `e8fe9b4`_
 
 ## Where this stopped
 
-Four public Luna briefings were read against the papers they cited.
-Three product failures showed up on more than one run and are now on
-`main` (#203, merge commit): trial-arm `dose reduction` is a report, not
-advice; generic named lookups (`RCTs trial`, `International Clinical
-trial`) are skipped; full text is fetched for **cited** sources, then the
-briefing is rewritten if any cited OA lands.
+Landing chrome is the workspace software look (#205). GitHub Pages
+deployed; the live page stamps `21bc369` (Segoe UI, software tokens,
+you-step on the topic box). Generated articles still use the journal
+look. Render did not need a deploy — this was front end only.
 
-Public generation is live (`/api/health` → `"public": true`, Luna). The
-Render service is still built from `06f062c` (pre-#203). Blueprint
-auto-sync is off, so a dashboard deploy is required before the three
-fixes are on the hosted site.
+#203 is still the running backend (`/api/health` → `"commit": "e8fe9b4"`,
+`"public": true`, Luna).
+
+A public OA-only sibling of paperfetch exists:
+`bartholomewtj/paperfetch-oa` (`Projects\tools\paperfetch-oa`). Missing OA
+is status `no_oa`. articlegen still only treats the private name as
+"not OA".
 
 ## Resume with
 
@@ -24,24 +25,22 @@ cd /c/claudeOS/Projects/articlegenerator && git checkout main && git pull && pyt
 
 To use full text locally, `papers` must resolve. In Git Bash it is not on
 PATH; either run from PowerShell or set
-`ARTICLEGEN_PAPERS_CMD="python -m papers"` with paperfetch installed
-(`pip install -e C:/claudeOS/Projects/tools/paperfetch`). Set `PAPERS_MAILTO`.
+`ARTICLEGEN_PAPERS_CMD="python -m papers"` with the **private** paperfetch
+installed (`pip install -e C:/claudeOS/Projects/tools/paperfetch`). Set
+`PAPERS_MAILTO`. Do **not** `pip install` paperfetch-oa on this machine —
+both packages own the `papers` command.
 
 ## Next thing to do
 
-1. **Deploy Render** — dashboard → `articlegen-api` → Manual Deploy of
-   `main`. Then `curl https://articlegen-api.onrender.com/api/health`
-   should show `"commit"` at `7c82a01` (or the #203 merge short hash).
-   Until that, hosted drafts still fetch full text *before* the writer
-   cites.
-2. **Re-run delusional disorder** on the hosted site after the deploy.
-   That run branded itself a working draft over RADAR's "dose reduction"
-   arm and left Cochrane unread. It is the check for all three #203
-   fixes.
-3. **#173** — pick one: vendor a minimal `papers get` into the Docker
-   image, or say on the landing page that the hosted app is Europe PMC
-   only. Do not do both. Do not put GitHub credentials in the Render
-   build.
+1. **Re-run delusional disorder** on the hosted site. That run branded
+   itself a working draft over RADAR's "dose reduction" arm and left
+   Cochrane unread. It is the check for all three #203 fixes.
+2. **#173** — articlegen `NOT_OA_STATUSES` must accept `no_oa` (keep the
+   private name too). Then add `paperfetch-oa` to the Docker image from
+   the public git URL. Do not put GitHub credentials in the Render build.
+   Do not also rewrite the landing page as "Europe PMC only" if you ship
+   this — pick one story.
+3. Leave local `papers` on the private package.
 
 ## Measured drafts (keep)
 
@@ -68,8 +67,7 @@ not regenerate the public demo Reviews.
 
 ## Open
 
-- Render deploy of #203 — dashboard, not git
-- #173 hosted full text (Europe PMC only on Render) — needs a pick
+- #173 hosted full text — public package exists; articlegen + Docker not wired
 - Phantom Fig. 1: briefings mention it, renderer does not draw it
 - Methods grammar: `1 of which are cited`
 - Cite floor: delusional-disorder run cited 4 against a floor of 5
@@ -106,3 +104,7 @@ not regenerate the public demo Reviews.
 - Local leftover: `tools/compare_models.py` is dirty (`wip: compare_models
   write-drafts`). Land or drop separately. Untracked Luna/Gemini ED
   drafts stay; do not commit unless asked.
+- **Do not `pip install` paperfetch-oa locally.** It would replace the
+  private `papers` CLI.
+- **Landing chrome is house recipe software.** Do not restyle `render.py`
+  journal HTML to match it.
