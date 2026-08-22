@@ -41,8 +41,6 @@ Log lines enforce an explicit field allowlist (`RUN_FIELDS`) ensuring that no us
 - `CLAUDE.md`
 - `docs/decisions.md`
 - `tests/test_offline.py`
-- `drafts/2026-08-22-seclusion.html`
-- `drafts/2026-08-22-seclusion.md`
 
 ## Verification
 
