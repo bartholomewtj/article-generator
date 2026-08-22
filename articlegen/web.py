@@ -46,8 +46,15 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from . import gallery, llm
 from .ideas import generate_ideas
 from .pipeline import NoPapersFound, generate_draft
-from .render import _draft_title, build_index, render_article, render_markdown
+from .render import (
+    _draft_title,
+    _working_draft_sentence,
+    build_index,
+    render_article,
+    render_markdown,
+)
 from .sources import DEFAULT_MAX_PAPERS, gather_evidence, probe_unpaywall
+from .style import errors as style_errors
 from .writer import clean_search_terms
 
 DRAFTS_DIR = "drafts"
@@ -61,6 +68,26 @@ ALLOWED_MODELS = frozenset({
     llm.OPENROUTER_DEFAULT_MODEL,
     llm.OPENROUTER_PUBLIC_MODEL,
 })
+
+# Every key a run line may carry. The record is built by filtering against this
+# set, so a field nobody thought about cannot reach the log. Nothing here is
+# content: no topic, theme, search term, query, article text, key or address.
+RUN_FIELDS = frozenset({
+    # every endpoint
+    "kind", "t", "endpoint", "method", "status", "ok", "ms",
+    "model", "key", "commit", "stateless", "error",
+    # /api/ideas
+    "n_asked", "n_ideas", "guidance",
+    # /api/draft
+    "screened", "cited", "cited_direct", "direct", "related", "tangential",
+    "full_text", "full_text_via", "named_added", "named_queries",
+    "style_errors", "style_rules", "figures", "unverified", "misattributed",
+    "working_draft",
+    # /api/gallery
+    "backend", "items", "html_kb",
+})
+
+RUN_ENDPOINTS = ("/api/ideas", "/api/draft", "/api/gallery")
 
 # Shared hosts set this. Local runs leave it unset and keep writing to drafts/.
 STATELESS = os.environ.get("ARTICLEGEN_STATELESS", "").strip().lower() in ("1", "true", "yes")
@@ -220,6 +247,88 @@ def _credentials(payload: dict) -> tuple[str | None, str | None]:
     return None, requested
 
 
+def _key_mode(payload: dict) -> str:
+    """Who is paying: 'visitor', 'public' (the host's key) or 'none'."""
+    visitor = (payload.get("key") or "").strip()
+    if visitor:
+        return "visitor"
+    if _hosted_openrouter_key():
+        return "public"
+    return "none"
+
+
+def _resolve_model_name(model: str | None, api_key: str | None) -> str | None:
+    try:
+        return llm.resolve_provider(model, api_key)[1]
+    except Exception:
+        return model
+
+
+def build_run_record(
+    endpoint: str, method: str, status: int, ms: int | float, extra: dict | None = None
+) -> dict:
+    """One run's log line. Only RUN_FIELDS survive."""
+    now_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rec = {
+        "kind": "run",
+        "t": now_utc,
+        "endpoint": endpoint,
+        "method": method,
+        "status": status,
+        "ok": status < 400,
+        "ms": int(ms),
+        "stateless": STATELESS,
+    }
+    commit = _build_info().get("commit")
+    if commit:
+        rec["commit"] = commit
+    if extra:
+        for k, v in extra.items():
+            if k in RUN_FIELDS:
+                rec[k] = v
+    return rec
+
+
+def draft_run_fields(draft) -> dict:
+    """Counts describing one finished draft. Never any of its text."""
+    try:
+        papers = getattr(draft, "papers", None) or []
+        cited_refs = getattr(draft, "cited_refs", None) or []
+        curation = getattr(draft, "curation", None) or {}
+        counts = curation.get("counts") or {}
+        relevance = curation.get("relevance") or {}
+        provenance = getattr(draft, "provenance", None) or {}
+        named_sources = provenance.get("named_sources") or {}
+        verification = getattr(draft, "verification", None) or {}
+        style_report = getattr(draft, "style_report", None)
+
+        st_errors = style_errors(style_report) if style_report else []
+        style_rules = sorted({err["rule"] for err in st_errors if "rule" in err})
+
+        fields = {
+            "screened": len(papers),
+            "cited": len(cited_refs),
+            "cited_direct": sum(1 for r in cited_refs if relevance.get(r) == "direct"),
+            "direct": counts.get("direct", 0),
+            "related": counts.get("related", 0),
+            "tangential": counts.get("tangential", 0),
+            "full_text": len(provenance.get("full_text_sources") or []),
+            "named_added": named_sources.get("added", 0),
+            "named_queries": len(named_sources.get("queries") or []),
+            "style_errors": len(st_errors),
+            "style_rules": style_rules,
+            "figures": verification.get("total", 0),
+            "unverified": len(verification.get("unverified") or []),
+            "misattributed": len(verification.get("misattributed") or []),
+            "working_draft": bool(_working_draft_sentence(style_report, verification)),
+        }
+        if "full_text_via" in provenance:
+            fields["full_text_via"] = provenance["full_text_via"]
+        return fields
+    except Exception:
+        return {}
+
+
 def _slugify(text: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
     return slug[:60] or "article"
@@ -243,6 +352,30 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
     # do_OPTIONS sends an explicit zero below.
     protocol_version = "HTTP/1.1"
 
+    _run_status: int = 0
+    _run_extra: dict | None = None
+
+    def _note_run(self, **fields) -> None:
+        """Record fields for this request's run line. Unknown keys are dropped."""
+        if self._run_extra is None:
+            self._run_extra = {}
+        for k, v in fields.items():
+            if k in RUN_FIELDS:
+                self._run_extra[k] = v
+
+    def _emit_run(self, endpoint: str, method: str, started: float) -> None:
+        try:
+            ms = int((time.time() - started) * 1000)
+            status = self._run_status or 200
+            record = build_run_record(endpoint, method, status, ms, self._run_extra)
+            sys.stderr.write(json.dumps(record) + "\n")
+            try:
+                gallery.append_run(record)
+            except Exception as exc:
+                sys.stderr.write(f"[web] run-log gist write failed: {type(exc).__name__}\n")
+        except Exception:
+            pass
+
     def log_message(self, format_str: str, *args) -> None:
         sys.stderr.write(f"[web] {format_str % args}\n")
 
@@ -257,6 +390,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         """
         if api_key or public_generation_enabled() or os.environ.get("ANTHROPIC_API_KEY"):
             return False
+        self._note_run(error="missing_key")
         self._send_json(
             {"error": "No API key set. Open Settings (⚙️) and paste an OpenRouter "
                       "key — create one at openrouter.ai/keys."},
@@ -274,6 +408,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
 
     def _unexpected(self, doing: str, exc: Exception) -> str:
         """A sentence for the visitor; the detail goes to the log."""
+        self._note_run(error=type(exc).__name__)
         detail = f"{type(exc).__name__}: {exc}"
         self._log_stage(f"ERROR while {doing}: {detail}")
         lowered = str(exc).lower()
@@ -294,6 +429,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         )
         if refusal is None:
             return False
+        self._note_run(error="rate_limited")
         self._send_json({"error": refusal}, status=429)
         return True
 
@@ -314,6 +450,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 
     def _send_json(self, data: dict, status: int = 200) -> None:
+        self._run_status = status
         body = json.dumps(data).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -331,74 +468,99 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self) -> None:
-        if self.path in ("/api/drafts", "/api/drafts/"):
-            self._handle_get_drafts()
-            return
-        if self.path in ("/api/health", "/api/health/"):
-            public = public_generation_enabled()
-            body = {"ok": True, "stateless": STATELESS, "public": public,
-                    "gallery": gallery.gallery_enabled(),
-                    **_build_info()}
-            if public:
-                body["public_model"] = llm.OPENROUTER_PUBLIC_MODEL
-            self._send_json(body)
-            return
-        if self.path in ("/api/gallery", "/api/gallery/"):
-            self._handle_get_gallery()
-            return
-        if self.path in ("/api/diag", "/api/diag/"):
-            self._handle_diag()
-            return
-        super().do_GET()
+        started = time.time()
+        self._run_status, self._run_extra = 0, {}
+        path_without_slash = self.path.rstrip("/")
+        is_run_endpoint = path_without_slash in RUN_ENDPOINTS or self.path in RUN_ENDPOINTS
+        try:
+            if self.path in ("/api/drafts", "/api/drafts/"):
+                self._handle_get_drafts()
+                return
+            if self.path in ("/api/health", "/api/health/"):
+                public = public_generation_enabled()
+                body = {"ok": True, "stateless": STATELESS, "public": public,
+                        "gallery": gallery.gallery_enabled(),
+                        **_build_info()}
+                if public:
+                    body["public_model"] = llm.OPENROUTER_PUBLIC_MODEL
+                self._send_json(body)
+                return
+            if self.path in ("/api/gallery", "/api/gallery/"):
+                self._handle_get_gallery()
+                return
+            if self.path in ("/api/diag", "/api/diag/"):
+                self._handle_diag()
+                return
+            super().do_GET()
+        finally:
+            if is_run_endpoint:
+                endpoint = "/api/gallery" if path_without_slash == "/api/gallery" else self.path
+                self._emit_run(endpoint, "GET", started)
 
     def do_POST(self) -> None:
+        started = time.time()
+        self._run_status, self._run_extra = 0, {}
         try:
-            content_length = int(self.headers.get("Content-Length", 0))
-        except (TypeError, ValueError):
-            self._send_json({"error": "Invalid Content-Length"}, status=400)
-            return
-        # Ideas and draft payloads are small. Share to gallery sends the
-        # article HTML; GALLERY_MAX_HTML is 400 KB, and the JSON envelope
-        # needs a little more. Anything past that is not a real request.
-        if content_length > 512 * 1024:
-            self._send_json({"error": "Request body too large."}, status=413)
-            return
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+            except (TypeError, ValueError):
+                self._note_run(error="invalid_content_length")
+                self._send_json({"error": "Invalid Content-Length"}, status=400)
+                return
+            # Ideas and draft payloads are small. Share to gallery sends the
+            # article HTML; GALLERY_MAX_HTML is 400 KB, and the JSON envelope
+            # needs a little more. Anything past that is not a real request.
+            if content_length > 512 * 1024:
+                self._note_run(error="body_too_large")
+                self._send_json({"error": "Request body too large."}, status=413)
+                return
 
-        post_data = self.rfile.read(content_length) if content_length > 0 else b"{}"
-        try:
-            payload = json.loads(post_data.decode("utf-8")) if post_data else {}
-        except Exception:
-            self._send_json({"error": "Invalid JSON payload"}, status=400)
-            return
-        if not isinstance(payload, dict):
-            self._send_json({"error": "Invalid JSON payload"}, status=400)
-            return
+            post_data = self.rfile.read(content_length) if content_length > 0 else b"{}"
+            try:
+                payload = json.loads(post_data.decode("utf-8")) if post_data else {}
+            except Exception:
+                self._note_run(error="invalid_json")
+                self._send_json({"error": "Invalid JSON payload"}, status=400)
+                return
+            if not isinstance(payload, dict):
+                self._note_run(error="invalid_json")
+                self._send_json({"error": "Invalid JSON payload"}, status=400)
+                return
 
-        if self.path == "/api/ideas":
-            self._handle_ideas(payload)
-        elif self.path == "/api/draft":
-            self._handle_draft(payload)
-        elif self.path == "/api/gallery":
-            self._handle_publish_gallery(payload)
-        else:
-            self._send_json({"error": "Endpoint not found"}, status=404)
+            if self.path == "/api/ideas":
+                self._handle_ideas(payload)
+            elif self.path == "/api/draft":
+                self._handle_draft(payload)
+            elif self.path == "/api/gallery":
+                self._handle_publish_gallery(payload)
+            else:
+                self._send_json({"error": "Endpoint not found"}, status=404)
+        finally:
+            if self.path in RUN_ENDPOINTS:
+                self._emit_run(self.path, "POST", started)
 
     def _handle_get_gallery(self) -> None:
         """List shared briefings. Empty when the store is missing, never 500."""
+        items = gallery.list_items()
+        self._note_run(backend=gallery._backend(), items=len(items))
         self._send_json({
             "enabled": gallery.gallery_enabled(),
-            "items": gallery.list_items(),
+            "items": items,
         })
 
     def _handle_publish_gallery(self, payload: dict) -> None:
         """Opt-in publish. Generating does not call this."""
+        self._note_run(backend=gallery._backend())
         html = payload.get("html")
         if not isinstance(html, str):
+            self._note_run(error="invalid_html")
             self._send_json({"error": "Generate a briefing first."}, status=400)
             return
+        self._note_run(html_kb=len(html.encode("utf-8")) // 1024)
         title = payload.get("title") if isinstance(payload.get("title"), str) else ""
         reason = gallery.validate_html(html)
         if reason:
+            self._note_run(error="invalid_html")
             self._send_json({"error": reason}, status=400)
             return
         if self._over_rate_limit():
@@ -406,6 +568,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         try:
             item = gallery.publish(title, html)
         except gallery.GalleryError as exc:
+            self._note_run(error=type(exc).__name__)
             self._send_json({"error": str(exc)}, status=503)
             return
         except Exception as exc:
@@ -448,12 +611,21 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         theme = (payload.get("theme") or "").strip()
         guidance = (payload.get("guidance") or "").strip()
         api_key, model = _credentials(payload)
+        resolved = _resolve_model_name(model, api_key)
         try:
             n = max(1, min(int(payload.get("n") or 6), 12))
         except (TypeError, ValueError):
             n = 6
 
+        self._note_run(
+            key=_key_mode(payload),
+            model=resolved,
+            n_asked=n,
+            guidance=bool(guidance),
+        )
+
         if not theme:
+            self._note_run(error="missing_theme")
             self._send_json({"error": "Please provide a theme."}, status=400)
             return
         if self._missing_key(api_key) or self._over_rate_limit():
@@ -466,6 +638,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         try:
             ideas = generate_ideas(prompt_theme, n=n, api_key=api_key,
                                    model=model)
+            self._note_run(n_ideas=len(ideas))
             self._send_json({"theme": theme, "ideas": ideas})
         except Exception as exc:
             self._send_json({"error": self._unexpected("generating ideas", exc)}, status=500)
@@ -474,17 +647,26 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         topic = (payload.get("topic") or "").strip()
         style = (payload.get("style") or "").strip()
         api_key, model = _credentials(payload)
+        resolved = _resolve_model_name(model, api_key)
+
+        self._note_run(
+            key=_key_mode(payload),
+            model=resolved,
+        )
 
         if not topic:
+            self._note_run(error="missing_topic")
             self._send_json({"error": "Please provide a briefing question."}, status=400)
             return
 
         if len(topic) > 300:
+            self._note_run(error="topic_too_long")
             self._send_json({"error": "Topic is too long (300 characters max)."}, status=400)
             return
 
         raw_terms = payload.get("search_terms")
         if raw_terms is not None and not isinstance(raw_terms, (list, tuple)):
+            self._note_run(error="bad_search_terms")
             self._send_json({"error": "search_terms must be a list of strings."}, status=400)
             return
         search_terms = clean_search_terms(raw_terms)
@@ -499,6 +681,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
                 search_terms=search_terms,
             )
         except NoPapersFound as exc:
+            self._note_run(error=type(exc).__name__)
             # 503 when the upstream APIs are the problem: it's not the caller's
             # request that was unprocessable, and the distinction tells them
             # whether to reword the topic or simply try again.
@@ -508,6 +691,11 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
             self._send_json({"error": self._unexpected("writing the briefing", exc)},
                             status=500)
             return
+
+        self._note_run(
+            **draft_run_fields(draft),
+            model=draft.provenance.get("model") or resolved,
+        )
 
         render_args = (
             draft.article, draft.papers, draft.topic,

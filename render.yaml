@@ -66,3 +66,10 @@ services:
       # Set in the Render dashboard. Absent: Share to gallery is hidden.
       - key: ARTICLEGEN_GALLERY_TOKEN
         sync: false
+
+      # Optional run log. Set to the id of a *secret* gist you created with
+      # `gh gist create --secret runs.jsonl`; run lines are appended there so
+      # they survive a restart. Uses ARTICLEGEN_GALLERY_TOKEN (gist scope).
+      # Unset: run lines still go to stderr, and only there.
+      - key: ARTICLEGEN_ANALYTICS_GIST
+        sync: false

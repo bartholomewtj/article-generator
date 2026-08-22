@@ -73,6 +73,44 @@ asks for it; leaving it blank disables public generation.
 | `SEMANTIC_SCHOLAR_API_KEY` | unset | Recommended (free; without it the source refuses nearly every call, #148). Set as a *secret*. |
 | `ARTICLEGEN_PUBLIC_OPENROUTER_KEY` | unset | Host-paid public drafts (Luna). Set as a *secret*. Absent: visitors must paste their own key. |
 | `ARTICLEGEN_GALLERY_TOKEN` | unset | GitHub token with **gist** scope only. Lets Share to gallery persist briefings in a public gist so they show on the landing page. A `contents` token is the wrong scope — a leak could rewrite the repo. Absent: the Share to gallery button stays hidden. |
+| `ARTICLEGEN_ANALYTICS_GIST` | unset | Id of a secret gist to append run lines to. Uses the gallery's gist-scoped token. Absent: stderr only. |
+
+## Run analytics
+
+Every request to `/api/ideas`, `/api/draft` and `/api/gallery` writes one JSON
+line to stderr recording how the request went:
+
+```json
+{"kind": "run", "t": "2026-08-23T04:12:00Z", "endpoint": "/api/draft", "method": "POST", "status": 200, "ok": true, "ms": 41250, "stateless": true, "commit": "a1b2c3d", "key": "public", "model": "openai/gpt-5.6-luna", "screened": 40, "cited": 10, "cited_direct": 7, "direct": 14, "related": 18, "tangential": 8, "full_text": 4, "full_text_via": {"papers": 3, "europe_pmc": 1}, "named_added": 2, "named_queries": 2, "style_errors": 0, "style_rules": [], "figures": 6, "unverified": 0, "misattributed": 0, "working_draft": false}
+```
+
+No topic, theme, search term, query string, article text, API key or IP
+address is ever logged: records contain counts, statuses, durations and
+rule names only.
+
+Read the log in the Render dashboard's **Logs** tab, or filter a downloaded log:
+
+```bash
+grep '"kind": "run"' render.log | jq -s 'map(select(.endpoint=="/api/draft"))'
+```
+
+### Durable history in a private gist
+
+Render's live log clears on restart or redeploy. To keep a durable history,
+create a secret gist and point the server at it:
+
+```bash
+gh gist create --secret runs.jsonl
+```
+
+Set the returned gist id as `ARTICLEGEN_ANALYTICS_GIST` in the Render
+dashboard. The server appends each run line to `articlegen-runs.jsonl` in that
+gist using `ARTICLEGEN_GALLERY_TOKEN` (reusing the same `gist`-scoped token).
+Lines are capped at 1,000 (~400 KB).
+
+**Secret gists are unlisted, not access-controlled** — anyone who knows the URL
+can read the file. That is safe here only because the log contains counts and
+fixed vocabulary, never user topics or personal data.
 
 ## Two things about the free tier
 

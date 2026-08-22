@@ -912,6 +912,37 @@ may have silently stopped" into a one-line check.
 The `github-pages` **environment** carries its own branch allowlist, separate
 from the workflow's trigger list. A rename has to consider both.
 
+### Run analytics (August 2026)
+
+Every request to `/api/ideas`, `/api/draft` and `/api/gallery` emits one JSON
+line to stderr, with an optional private GitHub gist sink
+(`ARTICLEGEN_ANALYTICS_GIST`) for durable history across Render restarts.
+
+- **Stderr first**: works on every host, requires zero configuration or token,
+  and Render already aggregates it in the dashboard logs. The gist is a durable
+  convenience, not the primary sink.
+- **Allowlist (`RUN_FIELDS`) rather than denylist**: a denylist leaks content
+  the first time a new field is added to `Draft` or request handlers. An allowlist
+  guarantees unrecognised fields are dropped.
+- **Counts and categories only, never content**: `ARTICLEGEN_STATELESS` exists
+  because visitor research topics are sensitive. Storing topics or prompts in a log
+  would defeat the privacy guarantee. Hashing does not protect short topics
+  against rainbow-table dictionary attacks.
+- **Query count, not query strings**: `provenance["queries"]` and
+  `provenance["named_sources"]["queries"]` derive directly from the topic and
+  search terms, so only `len(queries)` is logged.
+- **No buffering before gist writes**: the free Render tier sleeps after 15
+  minutes idle, which would drop buffered entries at the end of every active
+  period. With a 120 requests/hour ceiling, one synchronous write per run is
+  negligible overhead and runs after the response is already sent.
+- **Secret gist with `gist`-scoped token**: secret gists are unlisted rather than
+  access-controlled. That is safe here only because the records carry no user
+  content. Reusing `ARTICLEGEN_GALLERY_TOKEN` avoids asking for additional
+  permissions.
+- **No `/api/runs` endpoint**: adding a public API endpoint would expose an
+  unnecessary attack and scraping surface for a log the repo owner can already
+  inspect via Render logs or GitHub gists.
+
 ---
 
 ## Product

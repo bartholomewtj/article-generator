@@ -5801,6 +5801,347 @@ def test_web_server() -> None:
     check("web handler GET /api/drafts returns 200 OK", "200 OK" in output and "application/json" in output)
 
 
+def test_run_log_never_carries_the_topic() -> None:
+    """A run log line carries counts, durations and fixed vocabulary — never content.
+
+    The shared host is stateless because visitor research topics are sensitive.
+    An allowlist (RUN_FIELDS) ensures no topic, prompt, search term, query string,
+    article text, API key, or IP address reaches the log.
+    """
+    import json as json_mod
+    from types import SimpleNamespace
+    from articlegen import web
+
+    # 1. Check forbidden field names are absent from web.RUN_FIELDS
+    forbidden = (
+        "topic", "theme", "question", "title", "search_terms", "queries",
+        "html", "markdown", "api_key", "ip", "client_ip", "error_message",
+    )
+    for name in forbidden:
+        check(f"forbidden field {name!r} not in RUN_FIELDS", name not in web.RUN_FIELDS)
+
+    sentinels = [
+        "SENTINEL-TOPIC",
+        "SENTINEL-QUERY-1",
+        "SENTINEL-QUERY-2",
+        "SENTINEL-NAMED-QUERY",
+        "sk-or-v1-SENTINEL-KEY",
+        "203.0.113.9",
+        "SENTINEL-UNVERIFIED-42",
+        "SENTINEL-MISATTRIBUTED-12",
+        "SENTINEL-CLINICAL",
+        "SENTINEL-EXCERPT",
+        "SENTINEL-TITLE",
+    ]
+
+    fake_draft = SimpleNamespace(
+        papers=[{"title": "Paper 1"}],
+        cited_refs=[1],
+        curation={
+            "counts": {"direct": 1, "related": 0, "tangential": 0},
+            "relevance": {1: "direct"},
+        },
+        provenance={
+            "queries": ["SENTINEL-QUERY-1", "SENTINEL-QUERY-2"],
+            "named_sources": {
+                "added": 1,
+                "queries": ["SENTINEL-NAMED-QUERY"],
+            },
+            "full_text_sources": [1],
+            "full_text_via": {"papers": 1, "europe_pmc": 0},
+            "model": "openai/gpt-5.6-luna",
+        },
+        verification={
+            "total": 2,
+            "unverified": ["SENTINEL-UNVERIFIED-42%"],
+            "misattributed": ["SENTINEL-MISATTRIBUTED-12%"],
+        },
+        style_report={
+            "stats": {"sentences": 20, "mean_sentence_words": 18, "hedges_per_sentence": 0.3, "passive_ratio": 0.1},
+            "issues": [
+                {"severity": "error", "rule": "clinical-directive", "where": "Conclusions", "detail": "SENTINEL-CLINICAL", "excerpt": "SENTINEL-EXCERPT"}
+            ],
+        },
+        article={"title": "SENTINEL-TITLE"},
+        topic="SENTINEL-TOPIC",
+    )
+
+    fields = web.draft_run_fields(fake_draft)
+    check("screened count is 1", fields["screened"] == 1)
+    check("cited count is 1", fields["cited"] == 1)
+    check("cited_direct count is 1", fields["cited_direct"] == 1)
+    check("direct count is 1", fields["direct"] == 1)
+    check("full_text count is 1", fields["full_text"] == 1)
+    check("named_added count is 1", fields["named_added"] == 1)
+    check("named_queries is int count 1", fields["named_queries"] == 1 and isinstance(fields["named_queries"], int))
+    check("figures count is 2", fields["figures"] == 2)
+    check("unverified is int count 1", fields["unverified"] == 1 and isinstance(fields["unverified"], int))
+    check("misattributed is int count 1", fields["misattributed"] == 1 and isinstance(fields["misattributed"], int))
+    check("style_errors count is 1", fields["style_errors"] == 1)
+    check("style_rules lists rule name", fields["style_rules"] == ["clinical-directive"])
+    check("working_draft is boolean True", fields["working_draft"] is True)
+
+    raw_payload = {
+        "topic": "SENTINEL-TOPIC",
+        "api_key": "sk-or-v1-SENTINEL-KEY",
+        "html": "<h1>SENTINEL-TITLE</h1>",
+        "ip": "203.0.113.9",
+        "queries": ["SENTINEL-QUERY-1"],
+    }
+    extra = {**fields, **raw_payload}
+    record = web.build_run_record("/api/draft", "POST", 200, 1234, extra)
+    record_json = json_mod.dumps(record)
+
+    for sentinel in sentinels:
+        check(f"sentinel absent from run record: {sentinel}", sentinel not in record_json)
+
+    handler = web.ArticleGenHandler.__new__(web.ArticleGenHandler)
+    handler._run_extra = {}
+    handler._note_run(topic="SENTINEL-TOPIC", api_key="sk-or-v1-SENTINEL-KEY", screened=5)
+    check("topic dropped by _note_run", "topic" not in handler._run_extra)
+    check("api_key dropped by _note_run", "api_key" not in handler._run_extra)
+    check("screened kept by _note_run", handler._run_extra.get("screened") == 5)
+
+    check("build_run_record ok is True for 200", web.build_run_record("/api/draft", "POST", 200, 100)["ok"] is True)
+    check("build_run_record ok is False for 500", web.build_run_record("/api/draft", "POST", 500, 100)["ok"] is False)
+
+
+def test_every_endpoint_logs_one_run_line() -> None:
+    """Every request to /api/ideas, /api/draft and /api/gallery emits one JSON line to stderr."""
+    import io
+    import json as json_mod
+    import sys
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    from articlegen import gallery, web
+    from articlegen.pipeline import NoPapersFound
+
+    saved_env = {k: os.environ.get(k) for k in ("ARTICLEGEN_ANALYTICS_GIST", "ARTICLEGEN_PUBLIC_OPENROUTER_KEY", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY")}
+    try:
+        os.environ.pop("ARTICLEGEN_ANALYTICS_GIST", None)
+        os.environ.pop("ARTICLEGEN_PUBLIC_OPENROUTER_KEY", None)
+        os.environ["OPENROUTER_API_KEY"] = "sk-test-fake"
+
+        def make_handler(method: str, path: str, body: dict | None = None, raw_body: bytes | None = None) -> tuple[web.ArticleGenHandler, list[dict], io.StringIO]:
+            handler = web.ArticleGenHandler.__new__(web.ArticleGenHandler)
+            handler.client_address = ("127.0.0.1", 12345)
+            handler.path = path
+
+            if raw_body is not None:
+                encoded = raw_body
+            elif body is not None:
+                encoded = json_mod.dumps(body).encode("utf-8")
+            else:
+                encoded = b""
+
+            handler.rfile = io.BytesIO(encoded)
+            handler.headers = {"Content-Length": str(len(encoded))}
+
+            sent = []
+            def fake_send_json(data: dict, status: int = 200) -> None:
+                handler._run_status = status
+                sent.append({"data": data, "status": status})
+            handler._send_json = fake_send_json
+
+            stderr_buf = io.StringIO()
+            return handler, sent, stderr_buf
+
+        # 1. ideas success
+        handler, sent, buf = make_handler("POST", "/api/ideas", {"theme": "delirium"})
+        with patch.object(sys, "stderr", buf), patch.object(web, "generate_ideas", return_value=["Idea 1", "Idea 2"]):
+            handler.do_POST()
+        lines = [json_mod.loads(l) for l in buf.getvalue().splitlines() if l.startswith("{")]
+        check("ideas success emits exactly 1 run line", len(lines) == 1)
+        check("ideas kind == 'run'", lines[0]["kind"] == "run")
+        check("ideas endpoint == '/api/ideas'", lines[0]["endpoint"] == "/api/ideas")
+        check("ideas status == 200", lines[0]["status"] == 200)
+        check("ideas n_ideas == 2", lines[0]["n_ideas"] == 2)
+        check("theme text not in record", "delirium" not in json_mod.dumps(lines[0]))
+
+        # 2. ideas missing theme (400)
+        handler, sent, buf = make_handler("POST", "/api/ideas", {"theme": ""})
+        with patch.object(sys, "stderr", buf):
+            handler.do_POST()
+        lines = [json_mod.loads(l) for l in buf.getvalue().splitlines() if l.startswith("{")]
+        check("ideas missing theme emits 1 run line", len(lines) == 1)
+        check("ideas missing theme status == 400", lines[0]["status"] == 400)
+        check("ideas missing theme error == 'missing_theme'", lines[0].get("error") == "missing_theme")
+
+        # 3. ideas raising exception (500)
+        handler, sent, buf = make_handler("POST", "/api/ideas", {"theme": "delirium"})
+        with patch.object(sys, "stderr", buf), patch.object(web, "generate_ideas", side_effect=RuntimeError("Provider exploded")):
+            handler.do_POST()
+        lines = [json_mod.loads(l) for l in buf.getvalue().splitlines() if l.startswith("{")]
+        check("ideas error emits 1 run line", len(lines) == 1)
+        check("ideas error status == 500", lines[0]["status"] == 500)
+        check("ideas error == 'RuntimeError'", lines[0].get("error") == "RuntimeError")
+
+        # 4. draft success
+        fake_draft = SimpleNamespace(
+            papers=[{"title": "Paper 1"}],
+            cited_refs=[1],
+            curation={"counts": {"direct": 1, "related": 0, "tangential": 0}, "relevance": {1: "direct"}},
+            provenance={"queries": ["query 1"], "named_sources": {"added": 0, "queries": []}, "full_text_sources": [], "model": "openai/gpt-5.6-luna"},
+            verification={"total": 0, "unverified": [], "misattributed": []},
+            style_report={"stats": {"sentences": 10, "mean_sentence_words": 15, "hedges_per_sentence": 0.3, "passive_ratio": 0.1}, "issues": []},
+            article={
+                "form": "briefing",
+                "title": "Test Title",
+                "question": "What is the evidence on seclusion?",
+                "answer": "Answer here.",
+                "keywords": ["seclusion"],
+                "findings": ["Finding one [1]."],
+                "unknowns": ["Unknown one."],
+                "papers_to_open": [{"source": 1, "why": "Landmark trial"}],
+            },
+            topic="test topic",
+            summary=lambda: "1 of 1 screened sources cited",
+        )
+        handler, sent, buf = make_handler("POST", "/api/draft", {"topic": "seclusion"})
+        with patch.object(sys, "stderr", buf), patch.object(web, "generate_draft", return_value=fake_draft):
+            handler.do_POST()
+        lines = [json_mod.loads(l) for l in buf.getvalue().splitlines() if l.startswith("{")]
+        check("draft success emits 1 run line", len(lines) == 1)
+        check("draft status == 200", lines[0]["status"] == 200)
+        check("draft endpoint == '/api/draft'", lines[0]["endpoint"] == "/api/draft")
+        check("draft screened == 1", lines[0]["screened"] == 1)
+        check("draft topic not in json", "seclusion" not in json_mod.dumps(lines[0]))
+
+        # 5. draft raising NoPapersFound (422)
+        handler, sent, buf = make_handler("POST", "/api/draft", {"topic": "seclusion"})
+        with patch.object(sys, "stderr", buf), patch.object(web, "generate_draft", side_effect=NoPapersFound("No literature found")):
+            handler.do_POST()
+        lines = [json_mod.loads(l) for l in buf.getvalue().splitlines() if l.startswith("{")]
+        check("draft NoPapersFound emits 1 run line", len(lines) == 1)
+        check("draft NoPapersFound status == 422", lines[0]["status"] == 422)
+        check("draft error == 'NoPapersFound'", lines[0].get("error") == "NoPapersFound")
+
+        # 6. gallery publish success
+        handler, sent, buf = make_handler("POST", "/api/gallery", {"html": "<h1>Test</h1><p>content</p>", "title": "Title"})
+        with patch.object(sys, "stderr", buf), patch.object(gallery, "publish", return_value={"id": "g1", "title": "Title", "html_url": "url"}):
+            handler.do_POST()
+        lines = [json_mod.loads(l) for l in buf.getvalue().splitlines() if l.startswith("{")]
+        check("gallery publish emits 1 run line", len(lines) == 1)
+        check("gallery publish status == 200", lines[0]["status"] == 200)
+        check("gallery publish endpoint == '/api/gallery'", lines[0]["endpoint"] == "/api/gallery")
+
+        # 7. gallery publish GalleryError (503)
+        handler, sent, buf = make_handler("POST", "/api/gallery", {"html": "<h1>Test</h1><p>content</p>"})
+        with patch.object(sys, "stderr", buf), patch.object(gallery, "publish", side_effect=gallery.GalleryError("Gist store unavailable")):
+            handler.do_POST()
+        lines = [json_mod.loads(l) for l in buf.getvalue().splitlines() if l.startswith("{")]
+        check("gallery error emits 1 run line", len(lines) == 1)
+        check("gallery error status == 503", lines[0]["status"] == 503)
+        check("gallery error == 'GalleryError'", lines[0].get("error") == "GalleryError")
+
+        # 8. gallery GET list
+        handler, sent, buf = make_handler("GET", "/api/gallery")
+        with patch.object(sys, "stderr", buf), patch.object(gallery, "list_items", return_value=[{"id": "1"}, {"id": "2"}]):
+            handler.do_GET()
+        lines = [json_mod.loads(l) for l in buf.getvalue().splitlines() if l.startswith("{")]
+        check("gallery GET emits 1 run line", len(lines) == 1)
+        check("gallery GET status == 200", lines[0]["status"] == 200)
+        check("gallery GET method == 'GET'", lines[0]["method"] == "GET")
+        check("gallery GET items == 2", lines[0]["items"] == 2)
+    finally:
+        for k, v in saved_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def test_run_log_gist_is_optional_and_gist_scoped() -> None:
+    """Run log private gist sink is opt-in, capped, and never raises."""
+    import json as json_mod
+    from unittest.mock import patch
+    from articlegen import gallery
+
+    saved_env = {k: os.environ.get(k) for k in ("ARTICLEGEN_ANALYTICS_GIST", "ARTICLEGEN_GALLERY_TOKEN")}
+    try:
+        # 1. Unset: analytics_enabled is False, append_run makes 0 calls
+        os.environ.pop("ARTICLEGEN_ANALYTICS_GIST", None)
+        os.environ["ARTICLEGEN_GALLERY_TOKEN"] = "ghp_fake"
+        check("analytics_enabled is False when gist id is unset", not gallery.analytics_enabled())
+        github_calls = []
+        with patch.object(gallery, "_github", side_effect=lambda *args, **kwargs: github_calls.append(args)):
+            gallery.append_run({"kind": "run", "status": 200})
+        check("append_run makes zero calls when gist is unset", len(github_calls) == 0)
+
+        # 2. Set: calls GET then PATCH on /gists/<id>
+        os.environ["ARTICLEGEN_ANALYTICS_GIST"] = "secret_gist_123"
+        os.environ["ARTICLEGEN_GALLERY_TOKEN"] = "ghp_fake"
+        check("analytics_enabled is True when gist and token are set", gallery.analytics_enabled())
+
+        calls = []
+        def fake_github(method: str, path: str, body: dict | None = None) -> dict:
+            calls.append({"method": method, "path": path, "body": body})
+            if method == "GET":
+                return {
+                    "files": {
+                        gallery.ANALYTICS_FILE: {
+                            "content": json_mod.dumps({"kind": "run", "t": "2026-08-23T01:00:00Z", "id": 1}) + "\n"
+                        }
+                    }
+                }
+            if method == "PATCH":
+                return {}
+            return {}
+
+        with patch.object(gallery, "_github", fake_github):
+            gallery.append_run({"kind": "run", "t": "2026-08-23T02:00:00Z", "id": 2})
+
+        check("append_run called GET then PATCH", [c["method"] for c in calls] == ["GET", "PATCH"])
+        check("append_run called the right gist id", all(c["path"] == "/gists/secret_gist_123" for c in calls))
+        patch_body = calls[1]["body"]
+        content = patch_body["files"][gallery.ANALYTICS_FILE]["content"]
+        lines = [json_mod.loads(l) for l in content.splitlines() if l.strip()]
+        check("written file has 2 lines", len(lines) == 2)
+        check("newest record is last", lines[-1]["id"] == 2)
+
+        # 3. Max lines capping
+        calls.clear()
+        seed_lines = [json_mod.dumps({"kind": "run", "id": i}) for i in range(gallery.ANALYTICS_MAX_LINES + 5)]
+        def fake_github_overflow(method: str, path: str, body: dict | None = None) -> dict:
+            calls.append({"method": method, "path": path, "body": body})
+            if method == "GET":
+                return {
+                    "files": {
+                        gallery.ANALYTICS_FILE: {
+                            "content": "\n".join(seed_lines) + "\n"
+                        }
+                    }
+                }
+            return {}
+
+        with patch.object(gallery, "_github", fake_github_overflow):
+            gallery.append_run({"kind": "run", "id": "latest"})
+
+        content = calls[1]["body"]["files"][gallery.ANALYTICS_FILE]["content"]
+        capped_lines = [json_mod.loads(l) for l in content.splitlines() if l.strip()]
+        check("capped to ANALYTICS_MAX_LINES", len(capped_lines) == gallery.ANALYTICS_MAX_LINES)
+        check("latest line is at the end", capped_lines[-1]["id"] == "latest")
+
+        # 4. Errors in _github are swallowed (GalleryError and RuntimeError)
+        with patch.object(gallery, "_github", side_effect=gallery.GalleryError("API 500")):
+            gallery.append_run({"kind": "run"})  # must not raise
+        check("append_run swallows GalleryError", True)
+
+        with patch.object(gallery, "_github", side_effect=RuntimeError("unexpected network error")):
+            gallery.append_run({"kind": "run"})  # must not raise
+        check("append_run swallows RuntimeError", True)
+
+        # 5. File name and isolation
+        check("append_run targets ANALYTICS_FILE", gallery.ANALYTICS_FILE == "articlegen-runs.jsonl")
+        check("append_run does not target GALLERY_INDEX_FILE", gallery.ANALYTICS_FILE != gallery.GALLERY_INDEX_FILE)
+    finally:
+        for k, v in saved_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
 def test_ungrounded_citations_leave_no_trace() -> None:
     """A model does cite SOURCE numbers it was never given. The marker is
     dropped — but it used to leave its leading space behind, stranding the
@@ -7936,6 +8277,9 @@ def main(argv: list[str] | None = None) -> int:
         test_ranking, test_recency_actually_counts, test_render_blocks,
         test_display_item_placement, test_legacy_draft_fields,
         test_demo_and_index, test_web_server,
+        test_run_log_never_carries_the_topic,
+        test_every_endpoint_logs_one_run_line,
+        test_run_log_gist_is_optional_and_gist_scoped,
     ):
         print(f"\n# {fn.__name__}")
         # One crash used to abort the whole run. Several tests mutate shared
