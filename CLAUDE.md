@@ -612,15 +612,20 @@ and sections intact.
 
 ## Web app (`index.html` + `web.py`)
 
+- **Landing chrome is house recipe software.** `index.html` uses the workspace
+  software tokens (paper `#121624`, accent `#38bdf8`), Segoe UI, no webfont.
+  The you-step is the theme box (`.theme-box.you`). Generated articles keep
+  the journal look in `render.py` — do not restyle them to match the landing.
 - **The reader iframe is sandboxed** `allow-same-origin` — deliberately **not**
   `allow-scripts` (#100). `allow-same-origin` does not re-enable scripts; it is
   what keeps `contentDocument` reachable for the theme sync, in-place edit and
   save. Older draft files on disk still carry a toolbar and
   `hideArticleToolbar()` hides it.
-- **A sub-template's own `:root` defaults must match the app's.** An iframe or
+- **A sub-template's own `:root` defaults must ship dark.** An iframe or
   sub-template that ships light defaults flashes white inside the dark app
-  before the theme sync lands, and stays white if the sync fails. Set the same
-  dark defaults (`--bg: #0f1115`, `--ink: #f1f5f9`) and put an explicit
+  before the theme sync lands, and stays white if the sync fails. The landing
+  paper is `#121624`; journal HTML in `render.py` keeps its own dark default
+  (`#14150f`) because it is a different surface. Put an explicit
   `color: var(--ink)` on `p`, `h2`, `h3`, `li`, `blockquote` and `aside` --
   inheriting from `body` alone leaves elements the UA stylesheet colours.
 - **Key and token inputs must opt out of password managers.** 1Password,
