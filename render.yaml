@@ -61,3 +61,8 @@ services:
       # visitor key is forced to Luna; it cannot select Opus on this bill.
       - key: ARTICLEGEN_PUBLIC_OPENROUTER_KEY
         sync: false
+
+      # Opt-in public gallery (gist scope only — not repo contents).
+      # Set in the Render dashboard. Absent: Share to gallery is hidden.
+      - key: ARTICLEGEN_GALLERY_TOKEN
+        sync: false

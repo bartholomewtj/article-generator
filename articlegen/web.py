@@ -2,6 +2,8 @@
 
 Endpoints:
 - GET  /api/drafts: list drafts on disk (local mode only; empty when shared)
+- GET  /api/gallery: list briefings someone shared to the public gallery
+- POST /api/gallery: opt-in publish to that gallery (not called by generate)
 - POST /api/ideas:  generate briefing questions from a theme
 - POST /api/draft:  run the full evidence-grounded research & draft pipeline
 
@@ -41,7 +43,7 @@ import time
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-from . import llm
+from . import gallery, llm
 from .ideas import generate_ideas
 from .pipeline import NoPapersFound, generate_draft
 from .render import _draft_title, build_index, render_article, render_markdown
@@ -335,10 +337,14 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         if self.path in ("/api/health", "/api/health/"):
             public = public_generation_enabled()
             body = {"ok": True, "stateless": STATELESS, "public": public,
+                    "gallery": gallery.gallery_enabled(),
                     **_build_info()}
             if public:
                 body["public_model"] = llm.OPENROUTER_PUBLIC_MODEL
             self._send_json(body)
+            return
+        if self.path in ("/api/gallery", "/api/gallery/"):
+            self._handle_get_gallery()
             return
         if self.path in ("/api/diag", "/api/diag/"):
             self._handle_diag()
@@ -351,8 +357,10 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         except (TypeError, ValueError):
             self._send_json({"error": "Invalid Content-Length"}, status=400)
             return
-        # A topic and a key are small; anything larger is not a real request.
-        if content_length > 64 * 1024:
+        # Ideas and draft payloads are small. Share to gallery sends the
+        # article HTML; GALLERY_MAX_HTML is 400 KB, and the JSON envelope
+        # needs a little more. Anything past that is not a real request.
+        if content_length > 512 * 1024:
             self._send_json({"error": "Request body too large."}, status=413)
             return
 
@@ -370,8 +378,43 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
             self._handle_ideas(payload)
         elif self.path == "/api/draft":
             self._handle_draft(payload)
+        elif self.path == "/api/gallery":
+            self._handle_publish_gallery(payload)
         else:
             self._send_json({"error": "Endpoint not found"}, status=404)
+
+    def _handle_get_gallery(self) -> None:
+        """List shared briefings. Empty when the store is missing, never 500."""
+        self._send_json({
+            "enabled": gallery.gallery_enabled(),
+            "items": gallery.list_items(),
+        })
+
+    def _handle_publish_gallery(self, payload: dict) -> None:
+        """Opt-in publish. Generating does not call this."""
+        html = payload.get("html")
+        if not isinstance(html, str):
+            self._send_json({"error": "Generate a briefing first."}, status=400)
+            return
+        title = payload.get("title") if isinstance(payload.get("title"), str) else ""
+        reason = gallery.validate_html(html)
+        if reason:
+            self._send_json({"error": reason}, status=400)
+            return
+        if self._over_rate_limit():
+            return
+        try:
+            item = gallery.publish(title, html)
+        except gallery.GalleryError as exc:
+            self._send_json({"error": str(exc)}, status=503)
+            return
+        except Exception as exc:
+            self._send_json(
+                {"error": self._unexpected("sharing to the gallery", exc)},
+                status=500,
+            )
+            return
+        self._send_json({"ok": True, "item": item})
 
     def _handle_get_drafts(self) -> None:
         if not os.path.exists(DRAFTS_DIR):

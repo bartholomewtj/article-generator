@@ -72,6 +72,7 @@ asks for it; leaving it blank disables public generation.
 | `OPENALEX_MAILTO` | unset | Your email; OpenAlex "polite pool". |
 | `SEMANTIC_SCHOLAR_API_KEY` | unset | Recommended (free; without it the source refuses nearly every call, #148). Set as a *secret*. |
 | `ARTICLEGEN_PUBLIC_OPENROUTER_KEY` | unset | Host-paid public drafts (Luna). Set as a *secret*. Absent: visitors must paste their own key. |
+| `ARTICLEGEN_GALLERY_TOKEN` | unset | GitHub token with **gist** scope only. Lets Share to gallery persist briefings in a public gist so they show on the landing page. A `contents` token is the wrong scope — a leak could rewrite the repo. Absent: the Share to gallery button stays hidden. |
 
 ## Two things about the free tier
 
@@ -89,11 +90,16 @@ computing.
 ## Why stateless
 
 With `ARTICLEGEN_STATELESS=1` the server renders each article, returns it, and
-keeps nothing. Turning it off on a shared host would put every visitor's article
-into one `drafts/` directory, readable by any other visitor at a guessable URL
-and listed by topic in the queue index — and nobody generating an article would
-have any reason to expect that. Local runs (`articlegen web`) leave it off,
-which is what makes `articlegen queue` work.
+keeps nothing on disk. Turning it off on a shared host would put every visitor's
+article into one `drafts/` directory, readable by any other visitor at a
+guessable URL and listed by topic in the queue index — and nobody generating an
+article would have any reason to expect that. Local runs (`articlegen web`)
+leave it off, which is what makes `articlegen queue` work.
+
+The public gallery is the one exception, and it is opt-in: Share to gallery
+writes a public gist (not `drafts/`, not this repo). Generating does not
+publish. The landing page lists that gist directly, so a sleeping Render does
+not hide other people's briefings.
 
 ## Running the image locally
 

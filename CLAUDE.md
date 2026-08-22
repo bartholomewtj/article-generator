@@ -48,6 +48,7 @@ articlegen/
   cli.py       subcommands (ideas / draft / queue / demo / web); file output only
   pipeline.py  THE draft pipeline — generate_draft(); every caller goes through it
   web.py       HTTP server + REST API for the web app UI
+  gallery.py   opt-in public visitor gallery (local `gallery/` or a gist)
   llm.py       provider layer: ONE generate_json(); OpenRouter, Anthropic,
                claude-cli, gemini-cli
   ideas.py     LLM: theme -> shortlist of briefing questions
@@ -654,6 +655,13 @@ and sections intact.
   the deployment sets) renders, returns, persists nothing — a common `drafts/`
   on a shared host would make every visitor's article readable by every other
   visitor at a guessable URL.
+- **The public visitor gallery is opt-in, not generate.** Share to gallery
+  asks, then `POST /api/gallery`. Generating does not publish.
+  `gallery.py` stores on local disk when the server is not stateless, and in
+  a public GitHub gist when `ARTICLEGEN_GALLERY_TOKEN` is set (gist scope
+  only — a leak cannot rewrite this repo). The index gist id
+  (`GALLERY_INDEX_GIST`) is public; the front end lists it without waiting
+  on Render. Cap `GALLERY_MAX` (50). → `test_visitor_gallery`
 - **The per-IP limit needs a real client IP and an aggregate partner** (#96).
   `_client_ip` takes the **rightmost** `X-Forwarded-For` entry, and only when
   `TRUST_PROXY`: a caller can send their own header and the proxy appends the
@@ -692,7 +700,8 @@ index.html on GitHub Pages  ──POST /api/draft──▶  backend on Render
   control. Sleeps after 15 min idle, ~50s to wake.
 - **`GET /api/health`** reports the branch and commit the running service was
   built from, plus `public` (whether a visitor can draft without a key) and
-  `public_model` when that is true. It never returns the key.
+  `public_model` when that is true, plus `gallery` (whether Share to gallery
+  will work). It never returns the key or the gallery token.
   `.github/workflows/health.yml` runs it daily.
 - **`GET /api/diag`** runs one keyless search and reports what *that host* gets
   from the scholarly APIs. Bypasses the cache and is therefore rate-limited —
@@ -731,7 +740,10 @@ index.html on GitHub Pages  ──POST /api/draft──▶  backend on Render
   Semantic Scholar 429s on effectively every call, #148). Optional: `OPENALEX_MAILTO`,
   `PAPERS_MAILTO`, `ARTICLEGEN_PAPERS_CMD`. The hosted public path uses
   `ARTICLEGEN_PUBLIC_OPENROUTER_KEY` (Render secret) and writes Luna.
+  The visitor gallery uses `ARTICLEGEN_GALLERY_TOKEN` (Render secret, gist
+  scope only).
 - **Never commit that public key.** A leak is a bill, not just an outage.
+  Never commit the gallery token either.
 
 ## Conventions
 
