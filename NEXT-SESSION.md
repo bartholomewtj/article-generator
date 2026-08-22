@@ -1,19 +1,26 @@
 # Next session
 
-_Last handoff: 22 August 2026 — #208/#209 on `main`; Pages stamp `4f4eff8`; Render `4f4eff8`, `"gallery": true`_
+_Last handoff: 22 August 2026 — #211 on `main`; Pages stamp `5f74677`; Render `5f74677`, `"gallery": true`_
 
 ## Where this stopped
 
-Public visitor gallery is live (#208, #207). Generating still does not
-publish. **Share to gallery** asks first, then stores the briefing in a
-public gist and lists it under **From other visitors**. Cap 50.
+#173 is shipped (#211). Hosted image installs public `paperfetch-oa`.
+`NOT_OA_STATUSES` accepts `no_oa` and `queued_ckn`. `PAPERS_MAILTO` is
+set on Render.
 
-`/api/health` → `"commit": "4f4eff8"`, `"gallery": true`, Luna. Pages
-stamps the same commit. `ARTICLEGEN_GALLERY_TOKEN` is set on Render
-(gist scope only).
+Public visitor gallery is live (#208). First real publish is up:
 
-Index gist:
-https://gist.github.com/bartholomewtj/3b864ca05620472d2644c3e9c1fd6a03
+- **Measured energy and inference latency of GPUs, TPUs, and
+  application-specific accelerators across AI workloads** (Luna, 22 Aug
+  2026). 8 cited / 2 full text (Kong 2026 Scientific Reports, Xu 2020
+  AutoDNNchip). Non-biomed topic — Europe PMC would have missed these;
+  that is the #173 check.
+- Gist: https://gist.github.com/bartholomewtj/cad249350b8e5c9a3f5237f69467c035
+- Index: https://gist.github.com/bartholomewtj/3b864ca05620472d2644c3e9c1fd6a03
+
+`/api/health` → `"commit": "5f74677"`, `"gallery": true`, Luna. Pages
+stamps the same commit. Generating still does not publish; **Share to
+gallery** asks first. Cap 50.
 
 The GitHub PAT named **articlegen cloudsync api** is not used by the
 site, Pages, or Render. Let it expire.
@@ -33,19 +40,19 @@ both packages own the `papers` command.
 
 ## Next thing to do
 
-1. **Share one briefing on the hosted site** and check it appears under
-   **From other visitors**. First real publish; the gist is still empty.
-2. **Re-run delusional disorder** on the hosted site. That run branded
+1. **Re-run delusional disorder** on the hosted site. That run branded
    itself a working draft over RADAR's "dose reduction" arm and left
    Cochrane unread. It is the check for all three #203 fixes.
-3. **#173** — articlegen `NOT_OA_STATUSES` must accept `no_oa` (keep the
-   private name too). Then add `paperfetch-oa` to the Docker image from
-   the public git URL. Do not put GitHub credentials in the Render build.
-   Do not also rewrite the landing page as "Europe PMC only" if you ship
-   this — pick one story.
-4. Leave local `papers` on the private package.
+2. Phantom Fig. 1: briefings mention it (the GPU-energy one does),
+   renderer does not draw it.
+3. Leave local `papers` on the private package.
 
 ## Measured drafts (keep)
+
+Hosted gallery (gist, public):
+
+- GPU / TPU / ASIC energy and latency — 8 cited / 2 full text. First
+  gallery item.
 
 Public Luna, 21–22 August 2026 (dpaste, 30 days; the #203 baseline):
 
@@ -70,7 +77,6 @@ not regenerate the public demo Reviews.
 
 ## Open
 
-- #173 hosted full text — public package exists; articlegen + Docker not wired
 - Phantom Fig. 1: briefings mention it, renderer does not draw it
 - Methods grammar: `1 of which are cited`
 - Cite floor: delusional-disorder run cited 4 against a floor of 5
@@ -88,14 +94,15 @@ not regenerate the public demo Reviews.
   the wrong secret.
 - **#203 adds a second write call** when any cited paper is OA (~2c extra
   on Luna).
-- **agy Gemini quota is exhausted.** Builder and documenter are
-  `openrouter/google/gemini-3.7-flash` (pi, billed). Scout is still agy —
-  it will fail. Reviewer is still grok. Planner is still opus.
+- **Roster after #211 is subscription:** opus planner, sonnet builder,
+  haiku scout/documenter, grok-4.6 reviewer. agy still exhausted — do
+  not put scout back on agy. Do not `pip install` paperfetch-oa locally.
 - **Do not leave `sssf.config.yaml` dirty during a run.** The reviewer is
   `writes: []`; a dirty roster file is blamed on the reviewer and rolled
   back, which fails the phase. Commit roster edits before launching.
 - **Do not squash-merge the first PR of a stack.** #175 squash left
-  #176–#183 unmergeable; #201, #203 and #208 landed as merge commits.
+  #176–#183 unmergeable; #201, #203, #208 and #211 landed as merge
+  commits.
 - **A `?` in the briefing `question` field is allowed.** Other `?` still
   fail `rhetorical-question`.
 - **agy CLI 1.1.15 dies after the agent finishes** (missing `toolSummary`;
@@ -106,11 +113,10 @@ not regenerate the public demo Reviews.
 - Docs-current CI gate; write "Refs #NNN, stays open" never "does not
   close #NNN".
 - **Grok `max_tokens` edits are in stash** `wip: grok max_tokens unrelated
-  to 191`. Do not fold them into a #173 PR.
+  to 191`.
 - Local leftover: `tools/compare_models.py` is dirty (`wip: compare_models
-  write-drafts`). Land or drop separately. Untracked Luna/Gemini ED
-  drafts stay; do not commit unless asked.
-- **Do not `pip install` paperfetch-oa locally.** It would replace the
-  private `papers` CLI.
+  write-drafts`). Untracked Luna/Gemini ED drafts stay; do not commit
+  unless asked. Local `main` also has an unpushed spec
+  `aacf13a` (run analytics) — do not push it onto `main`.
 - **Landing chrome is house recipe software.** Do not restyle `render.py`
   journal HTML to match it.
