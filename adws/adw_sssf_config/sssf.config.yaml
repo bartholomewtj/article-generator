@@ -1,10 +1,12 @@
 # sssf.config.yaml — the factory's agent roster. One agent, one prompt, one purpose.
 #
-# This is the claudeSSSF roster. Every agent runs on the Claude Code CLI, so the
-# whole factory spends one subscription allowance. Models are picked per phase:
-# haiku for mechanical work, sonnet for the builder (the long pole), opus where
-# judgement decides the run. `coding_agent: pi` is selectable per-agent for
-# OpenRouter models — set it and a matching `openrouter/<model-id>`.
+# Subscription roster (22 Aug 2026). Every agent is on a flat-rate CLI:
+# Claude Code (planner/builder/scout/documenter) and Grok (reviewer).
+# Latest seats that have a subscription route: grok-4.6 reviewer
+# (~x-ai/grok-latest). agy Gemini quota is exhausted, so scout/documenter
+# stay off Gemini CLI. Do not put builder/documenter on OpenRouter for this
+# run — that is metered cash. `coding_agent: pi` is still selectable per-agent
+# with `openrouter/<model-id>` when a billed seat is wanted.
 defaults:
   coding_agent: claude_code
   model: sonnet                    # alias (opus|sonnet|haiku|fable) or an explicit claude-* id
@@ -64,8 +66,7 @@ agents:
       - Task                       # Claude Code's built-in subagents, in place of pi's subagents.ts
 
   - name: builder
-    coding_agent: pi               # OpenRouter cash — agy Gemini quota was exhausted
-    model: openrouter/google/gemini-3.7-flash
+    model: sonnet                  # long pole; Claude subscription, not OpenRouter
     thinking: medium
     color: "#22d3ee"
     purpose: Implement the plan exactly; report every changed file in the envelope.
@@ -83,8 +84,7 @@ agents:
       - Glob
 
   - name: scout
-    coding_agent: agy              # mechanical recon on free Gemini quota
-    model: gemini-3.7-flash-medium # effort rides the id suffix
+    model: haiku                   # mechanical recon; agy quota is exhausted
     thinking: low
     color: "#fbbf24"
     purpose: Find and report where things live; change nothing.
@@ -93,14 +93,19 @@ agents:
       user: adws/adw_data/prompt_engineering/scout/user.md
     writes: []                     # read-only, and now actually read-only: its findings
                                    # go to context_handoff/, which is runtime, not the repo
-    # No `tools` key: agy has no tools flag; `writes: []` is what holds.
+    tools:
+      - Read
+      - Grep
+      - Glob
+      - Bash
+      - Write                      # handoff artifact; writes: [] still blocks the repo
 
   # No tester agent: running the suite is a known command, so it is a kind="code"
   # phase over adw_modules/quality.py. See SKILL.md hard rule 8.
 
   - name: reviewer
     coding_agent: grok             # a different model FAMILY from the builder — real
-    model: grok-4.5                # blind-spot diversity, not just a different tier
+    model: grok-4.6                # latest grok; subscription CLI, not openrouter/x-ai/*
     thinking: high
     color: "#fb7185"
     purpose: Confirm that what was built is what was asked for; change nothing.
@@ -117,8 +122,7 @@ agents:
       - write
 
   - name: documenter
-    coding_agent: pi               # OpenRouter cash — same Gemini as the builder
-    model: openrouter/google/gemini-3.7-flash
+    model: haiku                   # write-up; Claude subscription, not OpenRouter
     thinking: low
     color: "#e879f9"
     purpose: Write up the change that was just made, from the diff; document only.
