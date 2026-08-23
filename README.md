@@ -44,7 +44,7 @@ renders, returns, and forgets. A briefing someone taps **Share to gallery** on
 is stored in a public GitHub gist and listed on the landing page; generating
 does not do that. Public generation uses a host-held OpenRouter key for Luna
 only; a visitor key is sent per request and never stored. Your private copies
-live in your own browser. See [`deploy/`](deploy/README.md) to host the backend yourself.
+live in your own browser. See [`render.yaml`](render.yaml) to host the backend yourself.
 
 ### Where your key is kept
 
@@ -158,7 +158,6 @@ title ──▶ the model plans search queries
   three papers to open, superscript Vancouver citations, a **Methods** statement
   of the actual search, and standard back matter. `draft --long` is the parked
   journal-style Review (Box 1, Fig. 1, Key points, Introduction → Conclusions).
-  Prose conventions live in [`docs/journal-style.md`](docs/journal-style.md).
 - **Journal prose, checked rather than requested.** The house style is the
   register of a Nature Reviews or Science Review piece: active voice, tense that
   carries evidential weight (present for established knowledge, past for what one
@@ -308,8 +307,6 @@ articlegen/
   verify.py     deterministic check of every figure against the abstracts
   style.py      deterministic check of the prose against journal writing conventions
   demo.py       built-in sample for `articlegen demo`
-docs/
-  journal-style.md   the journal conventions we follow, and their sources
 tests/
   test_offline.py             pure-logic tests (no keys, no network)
   test_journal_conformance.py the journal conventions, as assertions over

@@ -8032,9 +8032,15 @@ def test_claude_md_still_describes_this_code() -> None:
     # docs/decisions.md the settled history — and drift is as bad in the
     # second: a post-mortem naming a function that no longer exists sends the
     # next reader looking for it.
+    # Those files left the public tree; skip when they are not at repo root
+    # (they live in archive/ on this machine, gitignored).
+    names = ("CLAUDE.md", "docs/decisions.md")
+    if not all(os.path.isfile(os.path.join(root, name)) for name in names):
+        print("SKIP test_claude_md_still_describes_this_code (docs not in this checkout)")
+        return
     doc = "\n".join(
         open(os.path.join(root, name), encoding="utf-8").read()
-        for name in ("CLAUDE.md", "docs/decisions.md")
+        for name in names
     )
 
     # 1. Paths. Anything backticked that looks like a repo file must be one.

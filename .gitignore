@@ -24,3 +24,13 @@ adws/adw_data/sssf.db*
 # auto-written by agent /init; CLAUDE.md is the working agreement
 /AGENTS.md
 /GEMINI.md
+
+# Factory stays on this machine; not on GitHub
+/adws/
+/specs/
+/requests/
+/app_docs/
+/justfile
+
+# Public-repo extras moved off GitHub
+/archive/
