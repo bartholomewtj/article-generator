@@ -9,6 +9,7 @@ disposes.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Optional
@@ -199,18 +200,33 @@ def execute(run, phase: Phase, call: AgentCall) -> EnvelopeBase:
         # This phase already finished in an earlier invocation of this same
         # adw-id. Re-running the agent would pay for an answer we already
         # have, and would probably give a different one -- which is worse.
+        fingerprint = _prompt_fingerprint(call.prompt)
         try:
-            envelope = call.output_type.model_validate_json(stored)
-        except Exception as error:  # noqa: BLE001 -- a bad checkpoint must never be fatal
-            run.console.note(f"{phase.params.name}: stored envelope did not match "
-                             f"{call.output_type.__name__} ({error}) -- running the agent instead")
-        else:
-            run.console.note(f"{phase.params.name}: replayed from the previous "
-                             f"invocation (no agent call, no spend)")
+            recorded = run.tracer.prompt_fingerprints(run.adw_id).get(phase.params.name)
+        except Exception:
+            recorded = None
+
+        if recorded and recorded != fingerprint:
+            run.console.note(f"{phase.params.name}: the prompt changed since the last invocation — "
+                             f"running the agent instead of replaying")
             run.tracer.event(EventRecord(adw_id=run.adw_id, phase_id=phase.phase_id,
-                                         type="log", name="replayed",
-                                         payload={"phase": phase.params.name}))
-            return envelope
+                                         type="log", name="prompt_changed",
+                                         payload={"phase": phase.params.name,
+                                                  "was": recorded,
+                                                  "now": fingerprint}))
+        else:
+            try:
+                envelope = call.output_type.model_validate_json(stored)
+            except Exception as error:  # noqa: BLE001 -- a bad checkpoint must never be fatal
+                run.console.note(f"{phase.params.name}: stored envelope did not match "
+                                 f"{call.output_type.__name__} ({error}) -- running the agent instead")
+            else:
+                run.console.note(f"{phase.params.name}: replayed from the previous "
+                                 f"invocation (no agent call, no spend)")
+                run.tracer.event(EventRecord(adw_id=run.adw_id, phase_id=phase.phase_id,
+                                             type="log", name="replayed",
+                                             payload={"phase": phase.params.name}))
+                return envelope
 
     agent = resolve(run.cfg, phase.params.owner)
     coding_agent = interface(agent)
@@ -340,6 +356,10 @@ def execute(run, phase: Phase, call: AgentCall) -> EnvelopeBase:
                                      payload={"agent": agent.name, "paths": touched}))
 
     _persist_envelope(run, phase, agent.name, call, envelope, attempt, valid=True)
+    run.tracer.event(EventRecord(adw_id=run.adw_id, phase_id=phase.phase_id,
+                                 type="log", name="phase_prompt",
+                                 payload={"phase": phase.params.name,
+                                          "fingerprint": _prompt_fingerprint(call.prompt)}))
     run.console.envelope_summary(envelope)
     context = latest or result
     run.tracer.agent_session_row(run.adw_id, agent, session_id,
@@ -367,6 +387,10 @@ def execute(run, phase: Phase, call: AgentCall) -> EnvelopeBase:
 
 
 # ── internals ────────────────────────────────────────────────────────────────
+
+def _prompt_fingerprint(prompt: str) -> str:
+    """Stable id of the ask a phase was given. Same prompt -> same hash."""
+    return hashlib.sha256((prompt or "").encode("utf-8")).hexdigest()[:16]
 
 def _as_report(result) -> GateReport:
     """Accept a GateReport, or a legacy gate that returned a violations list."""

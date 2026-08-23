@@ -102,6 +102,54 @@ MIGRATIONS = [("agent_sessions", "color", "TEXT"),
               ("sessions", "pane_id", "TEXT")]
 
 
+# Phases whose output a review was ruling on. Once a reject is seen in the
+# checkpoint, replaying these hands the builder its own rejected work back.
+REDO_AFTER_A_REJECT = ("build", "revise", "fix")
+REVIEW = "review"
+NEVER_REPLAYED = ("revise",)
+
+
+def usable_checkpoint(envelopes: dict[str, str]) -> dict[str, str]:
+    """Filter envelopes to only those that represent reusable completed work.
+
+    Rules (#69):
+    1. A review phase is a checkpoint ONLY when its envelope parses and says
+       `approved: true`. An explicit `approved: false` also marks the run
+       as rejected; an unreadable or missing verdict is dropped without
+       setting the reject flag.
+    2. A revise phase is NEVER replayed: it answered findings that no longer
+       exist on a subsequent invocation.
+    3. If any review rejected, drop all builder phases (build / revise / fix)
+       that the review was ruling on, forcing them to re-run.
+    4. The plan survives. It is not what was rejected, and re-planning would
+       move the commit the reviewer's diff is measured from.
+    """
+    kept: dict[str, str] = {}
+    rejected = False
+    for name, payload_json in envelopes.items():
+        if name.startswith(NEVER_REPLAYED):
+            continue
+        if name.startswith(REVIEW):
+            try:
+                data = json.loads(payload_json or "{}")
+            except (ValueError, TypeError):
+                continue
+            if not isinstance(data, dict):
+                continue
+            approved = data.get("approved")
+            if approved is False:
+                rejected = True
+            elif approved is True:
+                kept[name] = payload_json
+            continue
+        kept[name] = payload_json
+
+    if rejected:
+        kept = {name: payload for name, payload in kept.items()
+                if not name.startswith(REDO_AFTER_A_REJECT)}
+    return kept
+
+
 class Tracer:
     def __init__(self, db_path: str | Path, events_jsonl: str | Path):
         ensure_dir(Path(db_path).parent)
@@ -285,6 +333,34 @@ class Tracer:
         out: dict[str, str] = {}
         for name, payload_json, _created_at in rows:
             out[name] = payload_json   # later rows overwrite earlier ones -- newest wins
+        return usable_checkpoint(out)
+
+    def prompt_fingerprints(self, adw_id: str) -> dict[str, str]:
+        """phase name -> fingerprint of the prompt that phase was given.
+
+        Read out of the events for the same reason completed_envelopes is: the
+        checkpoint is keyed by phase NAME, and a joined run reuses those names
+        with a DIFFERENT prompt. Replaying `build` then hands the builder the
+        previous ask (#69). This is how execute() tells "the run died here, redo
+        nothing" apart from "same session, new ask".
+
+        Written by agents.execute() once a phase has produced a valid envelope,
+        so only finished work is fingerprinted. Later rows win.
+        """
+        out: dict[str, str] = {}
+        rows = self.conn.execute(
+            "SELECT payload_json FROM events WHERE adw_id = ? AND type = 'log' "
+            "AND name = 'phase_prompt' ORDER BY rowid", (adw_id,)).fetchall()
+        for (payload_json,) in rows:
+            try:
+                payload = json.loads(payload_json or "{}")
+            except ValueError:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            phase = payload.get("phase")
+            if phase:
+                out[str(phase)] = str(payload.get("fingerprint") or "")
         return out
 
     def paths_touched(self, adw_id: str) -> dict[str, list[str]]:
@@ -309,6 +385,30 @@ class Tracer:
             for path in payload.get("paths") or []:
                 if path not in seen:
                     seen.append(str(path))
+        return out
+
+    def paths_touched_any(self) -> set[str]:
+        """Every repo path ANY run in this db has changed. No adw_id filter.
+
+        paths_touched answers "what did THIS run touch". This answers "has a run
+        ever touched this file at all", which is the only form of the question a
+        dirty tree at startup can be checked against: git records that a file
+        changed, not who changed it, so at commit time the operator's own work
+        and the last run's rejected build are the same string (#85). The ledger
+        can tell them apart, so ask it before the run starts rather than guess
+        after it finishes.
+        """
+        out: set[str] = set()
+        rows = self.conn.execute(
+            "SELECT payload_json FROM events WHERE type = 'log' "
+            "AND name = 'paths_touched' ORDER BY rowid").fetchall()
+        for (payload_json,) in rows:
+            try:
+                payload = json.loads(payload_json or "{}")
+            except ValueError:
+                continue
+            for path in payload.get("paths") or []:
+                out.add(str(path))
         return out
 
     def agent_session_row(self, adw_id: str, agent: AgentConfig, session_id: str,

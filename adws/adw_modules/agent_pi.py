@@ -4,14 +4,21 @@ Runs `pi -p --mode json` and tails its JSONL stdout line by line, forwarding
 each event to a callback WHILE the agent works (the streaming crack, solved
 by construction). `--session-id` creates-or-continues, so running and
 continuing an agent are the same call: same session id = same context window.
+
+A stalled turn is bounded (PI_IDLE_TIMEOUT_SECONDS, default 15 min): if the
+stream goes silent the child process TREE is killed and the phase fails with
+a real error, rather than the ADW waiting on a tool call that never returns.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import queue
 import shutil
 import subprocess
+import sys
+import threading
 import time
 from functools import lru_cache
 from pathlib import Path
@@ -284,6 +291,72 @@ class ToolCallTracker:
         }
 
 
+# How long pi's stream may go silent before the turn is judged stalled.
+#
+# pi's `bash` tool is Git Bash on Windows, and `grep ... | head` is a known
+# Git-Bash hang: head closes the pipe, GNU grep does not die, and the wrapper
+# bash never exits. The tool call never returns, so pi waits on it forever and
+# the ADW waits on pi -- no events, no spend, no error, until someone finds the
+# pid tree by hand. Observed on gene-analyser 18e49f09: a 12-file import scan
+# sat for 20 minutes with a toolCall and no toolResult (issue #68).
+#
+# A rate limit is not this, so control.with_rate_limit_retries never fires. A
+# working turn streams events every few seconds; a long tool step still emits
+# its start. Silence for this long means nothing is coming. 0 disables it.
+IDLE_TIMEOUT_SECONDS = float(os.environ.get("PI_IDLE_TIMEOUT_SECONDS", "900"))
+
+
+def _kill_tree(process) -> None:
+    """Kill the child AND its descendants.
+
+    process.kill() ends the node process only. The hang this exists for is two
+    levels below it -- node -> bash.exe -> usr/bin/bash.exe -- and those
+    survive their parent, holding the pipe open and the CPU idle. Windows has
+    no process groups to signal, so taskkill /T is the tree walk.
+    """
+    if sys.platform == "win32":
+        try:
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)],
+                           capture_output=True, timeout=30, check=False)
+            return
+        except (OSError, subprocess.TimeoutExpired):
+            pass                             # fall through to the plain kill
+    try:
+        process.kill()
+    except OSError:
+        pass
+
+
+def _lines_or_stall(process, idle_seconds: float):
+    """Yield stdout lines; yield None once and stop if the stream goes silent.
+
+    A blocking `for line in process.stdout` cannot notice silence, so a thread
+    reads and the main loop waits on a queue with a timeout. On a stall the
+    child tree is killed here, so the caller's process.wait() returns.
+
+    Same shape as agent_agy._lines_or_stall, deliberately: two adapters that
+    detect the same failure differently is two things to debug.
+    """
+    lines: "queue.Queue[Optional[str]]" = queue.Queue()
+
+    def pump():
+        for line in process.stdout:
+            lines.put(line)
+        lines.put(None)
+
+    threading.Thread(target=pump, daemon=True).start()
+    while True:
+        try:
+            line = lines.get(timeout=idle_seconds if idle_seconds > 0 else None)
+        except queue.Empty:
+            _kill_tree(process)
+            yield None
+            return
+        if line is None:
+            return
+        yield line
+
+
 def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
         on_spawn: Optional[Callable[[int], None]] = None,
         on_exit: Optional[Callable[[int], None]] = None) -> PiResult:
@@ -330,9 +403,14 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
                                env=operator_env())
     if on_spawn:
         on_spawn(process.pid)
+    stalled = False
+    last_tool = ""
     with raw_path.open("a") as raw:
         assert process.stdout is not None
-        for line in process.stdout:
+        for line in _lines_or_stall(process, IDLE_TIMEOUT_SECONDS):
+            if line is None:
+                stalled = True
+                break
             raw.write(line)
             raw.flush()                      # events land on disk as they happen
             line = line.strip()
@@ -342,6 +420,8 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
                 event = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            if event.get("type") == "toolCall":
+                last_tool = str(event.get("name") or event.get("tool") or "")
             if event.get("type") == "message_end":
                 message = event.get("message", {})
                 if message.get("role") == "assistant":
@@ -365,6 +445,15 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
     result.returncode = process.wait()
     if on_exit:
         on_exit(process.pid)
+    if stalled:
+        raise RuntimeError(
+            f"pi stalled — no stream event for {IDLE_TIMEOUT_SECONDS:.0f}s, killed "
+            f"the process tree"
+            f"{f' (last tool call: {last_tool})' if last_tool else ''}. On Windows "
+            "this is usually a `grep | head` in pi's bash tool: head closes the "
+            "pipe, grep does not exit, and the tool call never returns. Use the "
+            "grep tool instead of a bash pipeline, or raise "
+            "PI_IDLE_TIMEOUT_SECONDS if the step is genuinely this slow.")
     if result.returncode != 0 and not result.text:
         raise RuntimeError(f"pi exited {result.returncode}: {stderr.strip()[-800:]}")
     return result

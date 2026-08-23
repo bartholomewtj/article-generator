@@ -170,6 +170,11 @@ class QualityResult(BaseModel):
     checks: list[QualityCheckResult] = Field(default_factory=list)
     failures: list[str] = Field(default_factory=list)
     artifacts: list[str] = Field(default_factory=list)
+    # True when EVERY command was the shipped placeholder — the phase ran, but
+    # nothing was actually checked. `passed` alone cannot say that: a
+    # placeholder exits 0, so a repo with no suite wired up looks green. An ADW
+    # reads this to refuse acceptance (see utils.placeholder_blocks_acceptance).
+    placeholder: bool = False
 
 
 # ── Change capture (git diff, deterministic) ─────────────────────────────────
