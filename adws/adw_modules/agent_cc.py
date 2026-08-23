@@ -346,34 +346,26 @@ def _record_session(session_dir: Path, key: str) -> None:
     ledger.write_text(json.dumps(sorted(known), indent=2))
 
 
-def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
-        on_spawn: Optional[Callable[[int], None]] = None,
-        on_exit: Optional[Callable[[int], None]] = None) -> PiResult:
-    """Run one non-interactive Claude Code turn.
+def _build_command(request: PiRequest, model_id: str, cc_session: str,
+                   starting: bool) -> list[str]:
+    """The full argv for one `claude -p` turn.
 
-    `on_spawn(pid)` and `on_exit(pid)` bracket the child process so the caller
-    can record it as killable — a hung coding agent is otherwise a pid you have
-    to hunt for in `ps` while the run sits there.
+    Its own function so a test can read the argv without faking a subprocess.
+    Argument ORDER is load-bearing — see the two comment blocks below.
     """
-    faked = fake_rate_limit_due()
-    if faked is not None:
-        # Deliberately before Popen: a drill must not cost a call, need a
-        # network, or depend on a box being logged in.
-        seconds, why = reset_delay(faked)
-        raise RateLimited(f"(fake) rate limited — {why}", seconds, faked)
-
-    _, model_id = resolve_model(request.model)
-    session_dir = Path(request.session_dir)
-    session_dir.mkdir(parents=True, exist_ok=True)
-    cc_session = session_uuid(request.session_id)
-    starting = _is_new_session(session_dir, request.session_id)
-
     cmd = [
         CC_PATH, "-p",
         "--output-format", "stream-json", "--verbose",
         "--model", model_id,
         "--effort", EFFORT.get(request.thinking, request.thinking),
         "--permission-mode", PERMISSION_MODE,
+        # Agents get ZERO MCP servers. Without this the CLI loads whatever the
+        # operator has configured at user, project and plugin level, so an
+        # agent's tool surface changes from machine to machine and reaches
+        # services no roster declared. --strict-mcp-config restricts MCP to
+        # what --mcp-config names, and we name nothing. Granting a server on
+        # purpose would mean passing --mcp-config here; that is not built yet.
+        "--strict-mcp-config",
         "--system-prompt", request.system_prompt,
     ]
     # Creating and continuing are different flags for the same idea. Getting
@@ -397,6 +389,32 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
         denied = sorted(DENYABLE_TOOLS - set(request.tools))
         if denied:
             cmd += ["--disallowedTools", ",".join(denied)]
+    return cmd
+
+
+def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
+        on_spawn: Optional[Callable[[int], None]] = None,
+        on_exit: Optional[Callable[[int], None]] = None) -> PiResult:
+    """Run one non-interactive Claude Code turn.
+
+    `on_spawn(pid)` and `on_exit(pid)` bracket the child process so the caller
+    can record it as killable — a hung coding agent is otherwise a pid you have
+    to hunt for in `ps` while the run sits there.
+    """
+    faked = fake_rate_limit_due()
+    if faked is not None:
+        # Deliberately before Popen: a drill must not cost a call, need a
+        # network, or depend on a box being logged in.
+        seconds, why = reset_delay(faked)
+        raise RateLimited(f"(fake) rate limited — {why}", seconds, faked)
+
+    _, model_id = resolve_model(request.model)
+    session_dir = Path(request.session_dir)
+    session_dir.mkdir(parents=True, exist_ok=True)
+    cc_session = session_uuid(request.session_id)
+    starting = _is_new_session(session_dir, request.session_id)
+
+    cmd = _build_command(request, model_id, cc_session, starting)
 
     raw_path = Path(request.raw_output_path)
     raw_path.parent.mkdir(parents=True, exist_ok=True)

@@ -59,7 +59,9 @@ def commit_paths(message: str, paths: list[str]) -> str:
     work already committed is a no-op rather than a "pathspec did not match"
     failure. The resume no-op of commit_all applies here too, scoped: nothing
     of ours left to stage AND HEAD already carries this message means the
-    commit landed on an earlier invocation.
+    commit landed on an earlier invocation. A matching message is sufficient
+    but not required — if the recorded paths are already blobs in HEAD, the
+    work landed even when the envelope's wording no longer matches git's.
     """
     if not is_repo():
         raise RuntimeError(_NOT_A_REPO)
@@ -70,6 +72,9 @@ def commit_paths(message: str, paths: list[str]) -> str:
     if control.commit_already_made(scoped, recent, message):
         return _git("rev-parse", "--short", "HEAD")
     if not owned:
+        already = [p for p in dict.fromkeys(paths) if path_in_head(p)]
+        if already:
+            return _git("rev-parse", "--short", "HEAD")
         raise RuntimeError(
             "nothing to commit — the agents this phase commits for changed no "
             f"files. {len(paths)} path(s) were recorded as theirs, none of them "
@@ -77,6 +82,20 @@ def commit_paths(message: str, paths: list[str]) -> str:
     _git("add", "-A", "--", *owned)
     _git("commit", "-m", message, "--", *owned)
     return _git("rev-parse", "--short", "HEAD")
+
+
+def files_in_commit(ref: str = "HEAD") -> list[str]:
+    """Every path `ref` actually carries. git's account, not the caller's list.
+
+    A commit phase knows which paths it ASKED for; commit_paths() then drops
+    the ones that were no longer pending. Logging the request as though it
+    were the result is how a commit that landed a subset still reported the
+    full count.
+    """
+    if not is_repo() or not ref_exists(ref):
+        return []
+    out = _git("show", "--name-only", "--pretty=", ref)
+    return [line.strip() for line in out.splitlines() if line.strip()]
 
 
 def commit_all(message: str) -> str:
@@ -123,10 +142,26 @@ def changed_files() -> list[str]:
 
 # ── diff plumbing (composed into a ChangeSet by documentation.py) ────────────
 
-def ref_exists(ref: str) -> bool:
+def ref_exists(ref: str, cwd=None) -> bool:
     """True when `ref` resolves to a commit. Never raises — this is a question."""
     result = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
-                            capture_output=True, text=True)
+                            cwd=cwd, capture_output=True, text=True)
+    return result.returncode == 0
+
+
+def path_in_head(path: str, cwd=None) -> bool:
+    """True when HEAD already has this path as a blob. Never raises.
+
+    `cwd` is the repo to ask; without it git answers about the process's own
+    directory.
+    """
+    if not ref_exists("HEAD", cwd=cwd):
+        return False
+    git_path = path.replace("\\", "/")
+    result = subprocess.run(
+        ["git", "cat-file", "-e", f"HEAD:{git_path}"],
+        cwd=cwd, capture_output=True, text=True,
+    )
     return result.returncode == 0
 
 

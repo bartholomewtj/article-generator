@@ -47,6 +47,29 @@ def operator_env() -> dict[str, str]:
     return env
 
 
+# What a run says when it refuses a placeholder suite. One string, five ADWs.
+PLACEHOLDER_REASON = ("the test phase ran a placeholder — "
+                      "edit adws/adw_modules/quality.py")
+
+
+def placeholder_blocks_acceptance(result) -> bool:
+    """True when a placeholder suite must stop the run being accepted.
+
+    A placeholder exits 0, so `result.passed` is useless here — a stamped repo
+    with no suite wired up reported success for a test phase that checked
+    nothing (issue #88). The phase still succeeds (the runner did its job); the
+    RUN must not.
+
+    `SSSF_ALLOW_PLACEHOLDER_TESTS=1` is the deliberate opt-out, for a repo that
+    genuinely has no suite yet and wants the chain to run end to end anyway.
+    Read at call time, not import time, so setting it in `.env` or the shell
+    both work.
+    """
+    if result is None or not getattr(result, "placeholder", False):
+        return False
+    return os.environ.get("SSSF_ALLOW_PLACEHOLDER_TESTS", "").strip() != "1"
+
+
 def new_id(length: int = 8) -> str:
     return secrets.token_hex(length // 2)
 
