@@ -30,6 +30,17 @@ GALLERY_MAX = 50
 GALLERY_MAX_HTML = 400 * 1024
 GALLERY_MAX_TITLE = 300
 
+# Optional run log. The gist id goes in ARTICLEGEN_ANALYTICS_GIST; the token is
+# the same gist-scoped one the gallery uses. Create the gist as *secret*:
+#   gh gist create --secret runs.jsonl
+# Secret means unlisted, not access-controlled — which is safe here only
+# because a run line carries no topic, key or address.
+ANALYTICS_FILE = "articlegen-runs.jsonl"
+ANALYTICS_MAX_LINES = 1000        # ~400 KB; a gist file over 1 MB stops
+                                  # returning inline content from the API.
+_analytics_lock = threading.Lock()   # separate from _lock: a run line must
+                                     # never queue behind a gallery publish.
+
 _lock = threading.Lock()
 
 
@@ -40,6 +51,46 @@ class GalleryError(Exception):
 def gallery_enabled() -> bool:
     """True when this host can accept a Share to gallery request."""
     return _backend() != "off"
+
+
+def analytics_gist() -> str:
+    """The gist id to append run lines to, or '' when the sink is off."""
+    return os.environ.get("ARTICLEGEN_ANALYTICS_GIST", "").strip()
+
+
+def analytics_enabled() -> bool:
+    """True when both the gist id and the gist token are set."""
+    return bool(analytics_gist()) and bool(_token())
+
+
+def append_run(record: dict) -> None:
+    """Append one run line to the private gist. Never raises.
+
+    Read-modify-write is executed synchronously under an in-process lock:
+    traffic ceiling is low, and background buffers lose lines on free-tier sleep.
+    """
+    if not analytics_enabled():
+        return
+    try:
+        gist_id = analytics_gist()
+        line = json.dumps(record)
+        with _analytics_lock:
+            gist = _github("GET", f"/gists/{gist_id}")
+            text = _gist_file_text(gist, ANALYTICS_FILE)
+            lines = [l.strip() for l in text.splitlines() if l.strip()]
+            lines.append(line)
+            if len(lines) > ANALYTICS_MAX_LINES:
+                lines = lines[-ANALYTICS_MAX_LINES:]
+            new_text = "\n".join(lines) + "\n"
+            _github("PATCH", f"/gists/{gist_id}", {
+                "files": {
+                    ANALYTICS_FILE: {
+                        "content": new_text,
+                    }
+                }
+            })
+    except Exception:
+        pass
 
 
 def _backend() -> str:

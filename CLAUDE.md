@@ -138,6 +138,9 @@ behaviour it describes.
 | A figure stated in a paper's title is grounded | `test_statistic_verification` |
 | A hyphenated range is one figure, not two | `test_statistic_verification` |
 | Flagged figures buy one revision, a clean draft buys none | `test_flagged_figures_buy_one_revision` |
+| A run line carries counts, never content | `test_run_log_never_carries_the_topic` |
+| Every logged endpoint emits exactly one line, success or failure | `test_every_endpoint_logs_one_run_line` |
+| The run-log gist is optional and cannot break a request | `test_run_log_gist_is_optional_and_gist_scoped` |
 
 **Not pinned by a test** — these need the reasoning, because nothing else
 carries it:
@@ -682,6 +685,27 @@ and sections intact.
   block a draft that would have worked. Two memos keep it off the healthy path
   (`SOURCE_PROBE_TTL`, `SOURCE_PROBE_FAIL_TTL`); `ARTICLEGEN_SOURCE_PROBE=0`
   disables it.
+- **Every website run writes one JSON line to stderr.** `/api/ideas`,
+  `/api/draft` and `/api/gallery` each emit one `{"kind": "run", ...}` line with
+  time, status, duration, model, whether a visitor or the host's key paid, and
+  for drafts the screened/cited/direct counts, full-text count and route,
+  named-sources added, style errors, unverified/misattributed figures and
+  whether the page was branded a working draft. `RUN_FIELDS` is an **allowlist**
+  — the record is filtered against it, so a field nobody thought about cannot
+  reach the log. `RUN_ENDPOINTS` names the tracked endpoints. **No topic,
+  theme, search term, query string, article text, API key or IP address is
+  ever logged**, and `provenance["queries"]` is a search term, so only its
+  length goes in. `working_draft` reuses `render._working_draft_sentence`, so
+  the log and the printed page cannot disagree. → `test_run_log_never_carries_the_topic`
+- **Analytics never breaks a response.** The line is emitted from a `finally`
+  after the body is written, and the optional gist write is swallowed. →
+  `test_every_endpoint_logs_one_run_line`
+- **The durable copy is an optional secret gist**
+  (`ARTICLEGEN_ANALYTICS_GIST`), appended through `gallery.append_run` with the
+  same gist-scoped token the gallery uses, written to `ANALYTICS_FILE` and
+  trimmed to `ANALYTICS_MAX_LINES`. A secret gist is unlisted, not
+  access-controlled — safe only because the line carries no content. →
+  `test_run_log_gist_is_optional_and_gist_scoped`
 - **`protocol_version = "HTTP/1.1"` is load-bearing.** http.server defaults to
   HTTP/1.0, which closes the connection after every response and makes pooling
   clients fail instantly. It presents as flaky networking and **curl cannot
@@ -759,7 +783,8 @@ index.html on GitHub Pages  ──POST /api/draft──▶  backend on Render
   `PAPERS_MAILTO`, `ARTICLEGEN_PAPERS_CMD`. The hosted public path uses
   `ARTICLEGEN_PUBLIC_OPENROUTER_KEY` (Render secret) and writes Luna.
   The visitor gallery uses `ARTICLEGEN_GALLERY_TOKEN` (Render secret, gist
-  scope only).
+  scope only). The optional private run-log sink uses
+  `ARTICLEGEN_ANALYTICS_GIST` with the same token.
 - **Never commit that public key.** A leak is a bill, not just an outage.
   Never commit the gallery token either.
 
