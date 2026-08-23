@@ -393,6 +393,12 @@ class PiRequest(BaseModel):
     tools: Optional[list[str]] = None
     extensions: list[str] = Field(default_factory=list)
     cwd: str = "."                  # set from run.repo_root — the codebase root agents work in
+    # Repo paths this agent must not write, in SSSF pattern form (see
+    # permissions.deny_globs). An interface whose CLI can refuse a tool call
+    # before it lands translates these into its own rule syntax; one that
+    # cannot ignores them, and permissions.enforce() still catches the write
+    # after the phase. Empty means "nothing extra to forbid".
+    deny_writes: list[str] = Field(default_factory=list)
 
 
 class UsageBreakdown(BaseModel):

@@ -53,16 +53,24 @@ _COMMAND = re.compile(
 # reviewer quoting exactly that output and the gate not recognising it.
 # #57 / #58: "40 tests passed", "clean"/"untouched", a commit SHA, and a
 # comma-list of filenames after git status.
+# #105: the commonest scope outcome is counted, not quoted -- "git diff --stat
+# -> those two files only", "git status only the four planned files", "git diff
+# --stat against those paths empty". The command is named and the result is
+# given; only the wording was outside the list. This widens the OUTCOME half
+# only, so a bare assertion with no command still fails.
+_NUM = r'\d+|one|two|three|four|five|six|seven|eight|nine|ten'
 _OUTCOME = re.compile(
     r'\b(?:\d+\s+(?:tests?\s+)?(?:pass(?:ed)?|fail(?:ed)?)'
     r'|\d+\s+(?:skipped|errors?|coords?|entries)'
     r'|\d+\s+files?\s+changed'
     r'|exit(?:\s+code)?\s+\d+|no\s+(?:errors|mismatches|changes)'
-    r'|untouched|unchanged|unmodified|clean'
+    r'|untouched|unchanged|unmodified|clean|empty'
     r'|absent from (?:the )?(?:diff|changed files))\b'
     r'|(?:^|\s)[MADR?]{1,2}\s+[\w./\\-]+\.\w+'
     r'|\b[0-9a-f]{7}(?:[0-9a-f]{33})?\b'
-    r'|[A-Za-z0-9_.-]+\.[A-Za-z0-9]+(?:\s*,\s*[A-Za-z0-9_.-]+\.[A-Za-z0-9]+)+',
+    r'|[A-Za-z0-9_.-]+\.[A-Za-z0-9]+(?:\s*,\s*[A-Za-z0-9_.-]+\.[A-Za-z0-9]+)+'
+    rf'|\b(?:only|just|exactly)\s+(?:the\s+)?(?:those|these|that|{_NUM})\b'
+    rf'|\b(?:those|these)\s+(?:{_NUM})?\s*(?:files?|paths?|entries)\s+only\b',
     re.I)
 
 

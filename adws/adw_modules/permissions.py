@@ -27,6 +27,11 @@ happened. It aborts the phase and names every offending path.
 Two keys drive it, both in sssf.config.yaml:
     defaults.protected_files   paths no agent may touch unless it names them itself
     agents[].writes      None = unrestricted · [] = read-only · [...] = only these
+
+`deny_globs()` hands the harness half of that policy FORWARD, to a coding
+agent whose CLI can refuse a tool call before it lands. That is a first line
+of defence, not a sandbox — it is best-effort, per-interface, and only ever
+narrower than the rule below it. `enforce()` remains the enforcement.
 """
 
 from __future__ import annotations
@@ -184,6 +189,34 @@ def permitted(path: str, agent: AgentConfig, cfg: SSSFConfig) -> bool:
     if any(_matches(path, p) for p in cfg.defaults.protected_files):
         return False
     return agent.writes is None          # None = unrestricted, [] = no repo writes
+
+
+def deny_globs(agent: AgentConfig, cfg: SSSFConfig) -> list[str]:
+    """The protected patterns this agent may not write, for the coding agent.
+
+    `enforce()` is the account of what happened; this is the warning given
+    BEFORE anything happens. A CLI that can refuse a tool call at the moment
+    it is made turns "the phase died after every token was spent, and the
+    change had to be rolled back" into "the agent got a permission error and
+    carried on" — seven runs in a week ended the first way, every one of them
+    on the factory's own files (PR #102 lists them).
+
+    Only `protected_files` is exported, and only the entries the agent's own
+    `writes:` list does not reach. The rest of the policy cannot be said in
+    deny patterns: "read-only" means everything except the session runtime,
+    and no deny glob can carve an exception out of itself. A restricted agent
+    therefore still gets its harness paths blocked up front and everything
+    else caught by enforce() afterwards — narrower than the real rule, never
+    wider, so nothing this returns can permit a write that enforce() forbids.
+
+    Naming a path in `writes:` is what unlocks it, exactly as in permitted():
+    a grant that equals a protected pattern, or falls under it, drops that
+    pattern from the list.
+    """
+    grants = agent.writes or []
+    return [pattern for pattern in cfg.defaults.protected_files
+            if not any(grant == pattern or _matches(grant, pattern)
+                       for grant in grants)]
 
 
 def _roll_back(run, path: str, before: dict[str, str], after: dict[str, str]) -> str:

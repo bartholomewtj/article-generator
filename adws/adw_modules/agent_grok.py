@@ -206,6 +206,12 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
         denied = sorted(DENYABLE_TOOLS - set(tools))
         if denied:
             cmd += ["--disallowed-tools", ",".join(denied)]
+    # `request.deny_writes` is deliberately NOT sent. Claude Code takes
+    # `Edit(<glob>)` path rules on this flag; grok's tool vocabulary is its own
+    # (`run_terminal_command`, `write`), and whether it reads the same rule
+    # grammar is unmeasured. A rule the CLI silently ignores looks like
+    # protection and is none. Protected paths stay with permissions.enforce()
+    # here until someone measures it.
 
     raw_path = Path(request.raw_output_path)
     raw_path.parent.mkdir(parents=True, exist_ok=True)

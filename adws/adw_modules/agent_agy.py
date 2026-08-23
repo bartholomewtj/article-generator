@@ -453,9 +453,13 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
         cmd += ["--conversation", conversation]
     if SKIP_PERMISSIONS:
         cmd += ["--dangerously-skip-permissions"]
-    # No tools flag exists, so a roster `tools:` list cannot be enforced here.
-    # That is a documented gap, not a silent one — and `writes:` (the actual
-    # boundary) is enforced by permissions.py regardless of interface.
+    # No tools flag exists, so a roster `tools:` list cannot be enforced here,
+    # and there is no path-scoped permission flag either — `request.deny_writes`
+    # has nowhere to go. That is a documented gap, not a silent one: `writes:`
+    # (the actual boundary) is enforced by permissions.py after the phase
+    # regardless of interface. It is the widest gap of the four adapters —
+    # claudeSSSF 0412fad6 and 3374db69 both had an agy builder edit a
+    # protected file with `replace_file_content` and lose the phase for it.
 
     raw_path = Path(request.raw_output_path)
     raw_path.parent.mkdir(parents=True, exist_ok=True)
