@@ -276,6 +276,10 @@ def execute(run, phase: Phase, call: AgentCall) -> EnvelopeBase:
             tools=agent.tools,
             extensions=agent.harness_engineering,
             cwd=str(run.repo_root),
+            # The same protected paths enforce() checks below, handed to the
+            # coding agent up front so a CLI that can refuse the tool call
+            # does. Interfaces with no such flag ignore it.
+            deny_writes=permissions.deny_globs(agent, run.cfg),
         )
         def _notify(message: str, sleep_seconds: float, detail: str) -> None:
             run.console.note(message)

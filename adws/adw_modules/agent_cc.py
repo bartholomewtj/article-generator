@@ -346,6 +346,22 @@ def _record_session(session_dir: Path, key: str) -> None:
     ledger.write_text(json.dumps(sorted(known), indent=2))
 
 
+def path_deny_rule(pattern: str) -> str:
+    """One SSSF protected pattern as a Claude Code permission rule.
+
+    `Edit(<path>)` is the file-permission rule, and the CLI says so itself if
+    you write `Write(...)`: "only Edit(path) rules are [matched by file
+    permission checks] — Edit rules cover all file-editing tools."
+
+    A directory prefix (`adws/adw_modules/`) becomes `adws/adw_modules/**`.
+    A glob (`adws/adw_*.py`) and a plain path go through as written; the CLI
+    reads them relative to cwd, which is repo_root, and matches the absolute
+    file_path an agent actually sends.
+    """
+    body = f"{pattern}**" if pattern.endswith("/") else pattern
+    return f"Edit({body})"
+
+
 def _build_command(request: PiRequest, model_id: str, cc_session: str,
                    starting: bool) -> list[str]:
     """The full argv for one `claude -p` turn.
@@ -384,11 +400,33 @@ def _build_command(request: PiRequest, model_id: str, cc_session: str,
     # approves nothing that was not already approved. The allow list still
     # matters the moment the operator flips CC_PERMISSION_MODE to something
     # stricter, so it is kept.
+    #
+    # Protected paths ride the SAME flag, as `Edit(<glob>)` rules. Deny rules
+    # apply in every permission mode, bypassPermissions included, so this is
+    # the one thing in the argv that can stop a write while it is happening
+    # rather than roll it back afterwards. Measured against the CLI on
+    # 2026-08-23, under --permission-mode bypassPermissions:
+    #
+    #   Edit / Write tool on a denied path      blocked
+    #   Bash: printf ... > denied/path          blocked
+    #   Bash: cp src denied/path                blocked
+    #   Bash: sed -i ... denied/path            blocked
+    #   PowerShell: Set-Content denied/path     blocked
+    #   Bash: cd denied && printf ... > path    NOT blocked
+    #   Bash: python -c "open('den'+'ied/p')"   NOT blocked
+    #
+    # So the shell side is a literal-path check, not a sandbox: it catches an
+    # agent that reaches for a forbidden file, and misses one that assembles
+    # the path. permissions.enforce() stays the enforcement; this only moves
+    # the honest case from "phase dies at the end" to "tool call fails now".
+    denied_tools = sorted(DENYABLE_TOOLS - set(request.tools)) if request.tools else []
+    denied_paths = [path_deny_rule(p) for p in request.deny_writes]
     if request.tools:
         cmd += ["--allowedTools", ",".join(request.tools)]
-        denied = sorted(DENYABLE_TOOLS - set(request.tools))
-        if denied:
-            cmd += ["--disallowedTools", ",".join(denied)]
+    if denied_tools or denied_paths:
+        cmd += ["--disallowedTools",
+                *([",".join(denied_tools)] if denied_tools else []),
+                *denied_paths]
     return cmd
 
 

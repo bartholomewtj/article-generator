@@ -378,6 +378,10 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
     tools = translate_tools(request.tools)
     if tools:
         cmd += ["--tools", ",".join(tools)]
+    # `--tools` filters by tool NAME. pi has no path-scoped permission flag, so
+    # `request.deny_writes` cannot be honoured here and protected paths rest
+    # entirely on permissions.enforce(). Measured cost: geneanalysis bccb6762,
+    # where a pi builder wrote a protected file with `git show HEAD:x > x`.
     for extension in request.extensions:
         cmd += ["-e", extension]
     cmd.append(request.prompt)
