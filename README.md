@@ -17,9 +17,8 @@ kept for later, not deleted.
 
 🔗 **[Open the site](https://bartholomewtj.github.io/article-generator/)**
 
-📄 **[Read a finished article](https://bartholomewtj.github.io/article-generator/drafts/)**
-— no key and no account needed. Generating is free on the public site (GPT-5.6
-Luna, host-paid, rate-limited). Briefings other people chose to share are listed
+Generating is free on the public site (GPT-5.6 Luna, host-paid, rate-limited).
+No key and no account needed. Briefings other people chose to share are listed
 on the landing page under **From other visitors**. Generating does not put
 yours there — tap **Add to public gallery** after you have read it.
 
@@ -36,10 +35,10 @@ yours there — tap **Add to public gallery** after you have read it.
    anyone can open. **Add to public gallery** puts it on the public list for
    other visitors.
 
-Below the topic box the landing page has two browse links: **All published
-briefings** (the `drafts/` index — everything this has produced) and **From
-other visitors** (briefings someone chose to share). Your own saved briefings
-are under **Your articles**.
+Below the topic box the landing page lists **From other visitors**
+(briefings someone chose to share). Your own saved briefings are under
+**Your articles**. CLI drafts stay in `drafts/` on this machine; they are
+not on the public site.
 
 On a window wider than 1100px the page switches to a desktop layout: a left
 sidebar instead of the top icon row, a wider column, and the article's actions

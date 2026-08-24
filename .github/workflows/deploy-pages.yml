@@ -84,10 +84,22 @@ jobs:
           echo "Stamped index.html with $SHA"
           grep -o "build <code>$SHA</code>" index.html
 
+      - name: Assemble Pages site without drafts
+        run: |
+          # drafts/ is the local CLI review surface. Keep it in the repo;
+          # do not put it on the public site.
+          mkdir _site
+          rsync -a --exclude '.git' --exclude 'drafts' --exclude '_site' ./ _site/
+          if [ -e _site/drafts ]; then
+            echo "::error::drafts/ leaked into the Pages artifact"
+            exit 1
+          fi
+          test -f _site/index.html
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: '.'
+          path: '_site'
 
       - name: Deploy to GitHub Pages
         id: deployment

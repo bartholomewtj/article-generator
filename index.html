@@ -587,22 +587,6 @@
     display: block; font-size: 0.83rem; line-height: 1.45; color: var(--muted);
   }
 
-  /* The read-only demo path (#111). Quieter than the primary button so it
-     reads as "here is the output" rather than as a second call to action. */
-  .demo-band {
-    display: block; text-decoration: none; color: inherit;
-    background: var(--card);
-    border: 2px solid var(--ink); border-radius: 12px;
-    padding: 0.9rem 1.1rem; margin-bottom: 1rem;
-  }
-  .demo-band:hover { background: var(--nav-hover); }
-  .demo-band-label {
-    display: block; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em;
-    text-transform: uppercase; color: var(--muted); margin-bottom: 0.35rem;
-  }
-  .demo-band-text {
-    display: block; font-size: 0.87rem; line-height: 1.5; color: var(--muted);
-  }
   .demo-band-go {
     display: block; font-size: 0.87rem; font-weight: 600; color: var(--ink);
     margin-top: 0.5rem;
@@ -697,19 +681,10 @@
       </button>
     </div>
 
-    <!-- The read-only path. drafts/ is already public. Generating is also
-         free on the hosted backend (Luna, the host pays, rate-limited), so the
-         input sits above this now and the browse links follow it. -->
-    <a class="demo-band" href="drafts/">
-      <span class="demo-band-label">All published briefings</span>
-      <span class="demo-band-text">Every briefing this has produced — no key, no
-        account, nothing to set up.</span>
-      <span class="demo-band-go">Browse all evidence briefings →</span>
-    </a>
-
-    <!-- Visitor-shared briefings. Not drafts/ (those are curated CLI pieces)
-         and not the personal library (that stays in this browser). Loaded from
-         the public gist so a cold Render does not hide the list. -->
+    <!-- Visitor-shared briefings. Not drafts/ (those stay in the project
+         folder as the CLI review surface, not on this site) and not the
+         personal library (that stays in this browser). Loaded from the
+         public gist so a cold Render does not hide the list. -->
     <section class="featured" id="publicBand">
       <h2 class="featured-label">From other visitors</h2>
       <p class="public-band-note">Briefings someone chose to share. Generating
