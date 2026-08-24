@@ -63,9 +63,10 @@ services:
         sync: false
 
       # Host-paid public drafts (GPT-5.6 Luna). Set the value in the Render
-      # dashboard as a secret — never commit it. Absent: visitors must paste
-      # their own key. Rate limits are the spend cap. A request without a
-      # visitor key is forced to Luna; it cannot select Opus on this bill.
+      # dashboard as a secret — never commit it. Absent: generate returns 400.
+      # The web app does not take a visitor key. Rate limits are the spend
+      # cap. Hosted generation is forced to Luna; a crafted POST cannot
+      # select Opus on this bill.
       - key: ARTICLEGEN_PUBLIC_OPENROUTER_KEY
         sync: false
 
