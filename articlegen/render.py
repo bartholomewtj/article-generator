@@ -1608,14 +1608,11 @@ _CSS = """
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
   }
-  /* Fluid column: phones keep the viewport width exactly as before (the 40rem
-     floor only binds once the screen exceeds it); desktops scale with the
-     window up to 52rem. The wide-screen font bump below grows the rem, so the
-     ceiling is ~985px of column while the measure stays near 75 characters —
-     wider than this stops being readable prose, which is why journals cap it. */
-  main { max-width: clamp(40rem, 72vw, 52rem); margin: 0 auto; padding: 2rem 1.25rem 4rem; }
-  @media (min-width: 1200px) {
-    html { font-size: 112.5%; }
+  /* Phone: padded viewport. Desktop: the page uses the window, not a boxed
+     column — side padding only. */
+  main { max-width: none; width: 100%; margin: 0; padding: 2rem 1.25rem 4rem; }
+  @media (min-width: 1100px) {
+    main { padding: 2.5rem 4.5rem 4rem; }
   }
   .sans, .meta-line, .subject-line, .keywords, .di-caption, .fig-legend, .key-points,
   .refs ol, .toolbar, .colophon, table, .meta-label {

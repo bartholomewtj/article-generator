@@ -182,11 +182,11 @@
     padding: 1.25rem 1.25rem 5rem;
     flex: 1;
   }
-  /* Only the article reader earns a wider shell on big screens: the iframe's
-     own CSS scales its text column to the room it gets. Forms and idea cards
-     stay at the 640px column they were designed for. */
+  /* Forms and idea cards stay at the 640px column they were designed for.
+     The article reader takes the remaining window — its own CSS pads the
+     page; this shell must not box it into a second column. */
   @media (min-width: 900px) {
-    main.container:has(#readerView.active) { max-width: min(88vw, 1040px); }
+    main.container:has(#readerView.active) { max-width: none; }
   }
 
   .view { display: none; }
@@ -464,10 +464,11 @@
   /* ---- desktop shell ------------------------------------------------------
      Under 1100px nothing changes: the top icon row and the bottom action bar
      are what a phone wants. Above it the same views get a desktop frame — a
-     persistent left nav instead of the icon row, a wider column, and the
-     reader's actions as an ordinary toolbar above the article. */
+     persistent left nav instead of the icon row, the article filling the
+     remaining window, and the reader's actions as an ordinary toolbar above
+     it. */
   .shell { display: flex; flex: 1; min-height: 0; }
-  .shell-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .shell-main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
   .sidebar { display: none; }
   .sidebar-item {
     display: flex;
@@ -504,8 +505,38 @@
     }
     .sidebar .logo { padding: 0 0.7rem; margin-bottom: 1.15rem; }
     main.container { max-width: 780px; padding: 2rem 2rem 3rem; }
-    main.container:has(#readerView.active) { max-width: min(92vw, 1120px); }
-    iframe.article-iframe { height: calc(100vh - 210px); }
+    body:has(#readerView.active) { height: 100vh; overflow: hidden; }
+    main.container:has(#readerView.active) {
+      max-width: none;
+      width: 100%;
+      padding: 0.85rem 1rem 0;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+    #readerView.active {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+    }
+    #readerView.active .reader-frame-wrapper {
+      flex: 1;
+      min-height: 0;
+      margin-bottom: 0;
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      position: relative;
+    }
+    #readerView.active iframe.article-iframe {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+    body:has(#readerView.active) .build-stamp { display: none; }
 
     .reader-actions {
       position: static;
