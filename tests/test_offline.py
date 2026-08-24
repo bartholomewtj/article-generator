@@ -2964,6 +2964,10 @@ def test_the_landing_page_leads_with_the_input() -> None:
           "Recent evidence briefings" not in page)
     check("the head frames the output as a briefing, not an article generator",
           "Research-Grounded Articles on Mobile" not in page)
+    check("landing page uses the general recipe",
+          "recipe: general" in page and "#6ec4bb" in page)
+    check("invented sky accent is gone",
+          "#38bdf8" not in page)
 
 
 def test_the_web_app_does_not_take_a_visitor_key() -> None:
