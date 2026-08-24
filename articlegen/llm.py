@@ -48,9 +48,9 @@ import time
 
 # Claude Fable 5 is the top of the Claude 5 family, above Opus in capability.
 # `claude-opus-5` and `claude-opus-4-8` still work if you pass them with
-# --model. Keep OPENROUTER_PUBLIC_MODEL in step with the Settings dropdown in
-# index.html: the web app sends that name, and web.ALLOWED_MODELS is built from
-# the constants here, so a stale name there is quietly dropped rather than honoured.
+# --model. Keep OPENROUTER_PUBLIC_MODEL as the hosted web model:
+# web.ALLOWED_MODELS is built from the constants here, and the public path
+# always writes with this name so a stale front end cannot pick another.
 ANTHROPIC_DEFAULT_MODEL = "claude-fable-5"
 # Claude Opus 5, resold by OpenRouter at $5/$25 per million tokens. Fable 5 was
 # the default briefly and cost twice as much for a model whose extra capability
@@ -62,7 +62,7 @@ ANTHROPIC_DEFAULT_MODEL = "claude-fable-5"
 # `anthropic/claude-sonnet-5` for a cheaper Claude that carries no elevated
 # classifiers, `anthropic/claude-fable-5` for the hardest topics.
 OPENROUTER_DEFAULT_MODEL = "anthropic/claude-opus-5"
-# What the hosted web app writes with when the visitor brings no key.
+# What the hosted web app writes with. Visitors do not supply a key.
 # Measured against Gemini 3.7 Flash on three psychiatry ED topics (lithium
 # toxicity, NMS, catatonia): Luna keeps the question on the topic and names
 # the shape of the evidence; Flash writes a textbook summary. CLI default
@@ -88,8 +88,8 @@ DEFAULT_PROVIDER = "openrouter"
 #
 # **Local runs only, and deliberately not in web.ALLOWED_MODELS.** The Render
 # host has no `claude` binary and no seat to authenticate against, so offering
-# this in the web app's Settings dropdown would advertise a provider that
-# cannot work there. Drafting on the subscription is a CLI activity.
+# this on the web app would advertise a provider that cannot work there.
+# Drafting on the subscription is a CLI activity.
 CLAUDE_CLI_DEFAULT_MODEL = "opus"
 CLAUDE_CLI_PREFIX = "cli:"
 # The CLI loads every configured MCP server's tool schemas into the system

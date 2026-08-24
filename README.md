@@ -19,17 +19,16 @@ kept for later, not deleted.
 
 📄 **[Read a finished article](https://bartholomewtj.github.io/article-generator/drafts/)**
 — no key and no account needed. Generating is free on the public site (GPT-5.6
-Luna, host-paid, rate-limited). Pasting your own OpenRouter key is optional.
-Briefings other people chose to share are listed on the landing page under
-**From other visitors**. Generating does not put yours there — tap
-**Add to public gallery** after you have read it.
+Luna, host-paid, rate-limited). Briefings other people chose to share are listed
+on the landing page under **From other visitors**. Generating does not put
+yours there — tap **Add to public gallery** after you have read it.
 
 ---
 
 ## Use it from your phone or desktop
 
 1. **Open the site:** [https://bartholomewtj.github.io/article-generator/](https://bartholomewtj.github.io/article-generator/) (or run `articlegen web --open` locally).
-2. **Type a theme:** Enter your topic (e.g. `renewable energy storage`) and optional audience/style notes. The box is the first thing on the page. On the public site you do not need a key.
+2. **Type a theme:** Enter your topic (e.g. `renewable energy storage`) and optional audience/style notes. The box is the first thing on the page.
 3. **Choose a draft:** Tap any generated **Draft Idea Card** to launch the evidence-grounded research pipeline.
 4. **Read, save & share:** View the rendered article. **Keep** holds it in your
    library past the rolling limit. **Download** saves it as a single HTML file you
@@ -47,7 +46,7 @@ sidebar instead of the top icon row, a wider column, and the article's actions
 in a toolbar above it rather than a bar along the bottom of the screen. Narrower
 than that, you get the phone layout.
 
-The public site writes with **GPT-5.6 Luna**. It is free to you; the host pays, and an hourly cap applies to everyone together. Settings still accepts an [OpenRouter API key](https://openrouter.ai/keys) if you want to use your own credit instead of the shared cap. A remembered key stays in the browser — see [Where your key is kept](#where-your-key-is-kept). The web app offers OpenRouter only; the CLI below also supports Anthropic and a Claude subscription.
+The public site writes with **GPT-5.6 Luna**. It is free to you; the host pays, and an hourly cap applies to everyone together. The web app does not take a visitor key. The CLI below also supports Anthropic and a Claude subscription. Local `articlegen web` needs `OPENROUTER_API_KEY` in the environment.
 
 **How it fits together.** The page is a front end only — the pipeline below is
 the same Python that the CLI runs, on a small backend the page calls. There is
@@ -57,29 +56,10 @@ generated from the terminal. The hosted backend keeps no articles on disk: it
 renders, returns, and forgets. A briefing someone taps **Add to public gallery** on
 is stored in a public GitHub gist and listed on the landing page; generating
 does not do that. Public generation uses a host-held OpenRouter key for Luna
-only; a visitor key is sent per request and never stored. Your private copies
-live in your own browser. See [`render.yaml`](render.yaml) to host the backend yourself.
+only. Your private copies live in your own browser. See [`render.yaml`](render.yaml)
+to host the backend yourself.
 
-### Where your key is kept
-
-The backend never stores your key. The browser does, and where it puts it
-matters more than it looks:
-
-- **Default — this tab only.** The key goes in `sessionStorage` and is gone when
-  you close the tab. You paste it again next visit. Nothing persistent is left
-  behind.
-- **"Remember this key" — the whole domain.** The key goes in `localStorage`,
-  which browsers scope to the **origin**, not to the path. Every GitHub Pages
-  site published under `bartholomewtj.github.io` shares that one origin, so a
-  remembered key is readable by any other project published there — including
-  ones added years from now — and by anyone with push access to those repos.
-
-This is a paid key with no daily cap, so a leak is a real bill. If you use the
-hosted page on a shared or public machine, leave the box unticked, and revoke
-the key at [openrouter.ai/keys](https://openrouter.ai/keys) if you have any
-doubt. Running `articlegen web` locally avoids the shared origin entirely.
-
-**Provider key setup:**
+**Provider key setup (CLI):**
 
 - **OpenRouter** (the default; **roughly 50c–$1 an article**): create a key at
   https://openrouter.ai/keys and set `OPENROUTER_API_KEY`.
@@ -122,9 +102,9 @@ pick for drafting at your own desk, and the wrong one for anything automated.
 
 **The public web app is the exception: generating there is free to the visitor.**
 It writes with GPT-5.6 Luna on the host's key, at roughly **2c an article** to
-the host, inside the hourly rate limits. A visitor key is optional.
+the host, inside the hourly rate limits.
 
-**CLI and a pasted key still cost real money.** OpenRouter's CLI default is
+**CLI still costs real money.** OpenRouter's CLI default is
 Claude Opus 5, at roughly **50c–$1 an article**. The Anthropic default is Fable
 5, at roughly **$1–2**. Those are per article, and a failed run still bills you.
 Neither has a daily cap, which is the point — but it also means nothing stops a

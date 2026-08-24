@@ -46,7 +46,6 @@
     --card-bg: var(--card);
     --card-border: var(--line);
     --header-bg: var(--nav);
-    --modal-overlay: rgba(18, 22, 36, 0.78);
     --action-bar-bg: var(--nav);
     --font-ui: "Segoe UI", Calibri, sans-serif;
     --font-heading: "Segoe UI", Calibri, sans-serif;
@@ -85,7 +84,6 @@
       --card-bg: var(--card);
       --card-border: var(--line);
       --header-bg: var(--nav);
-      --modal-overlay: rgba(18, 22, 36, 0.55);
       --action-bar-bg: var(--nav);
       color-scheme: light;
     }
@@ -118,7 +116,6 @@
     --card-bg: var(--card);
     --card-border: var(--line);
     --header-bg: var(--nav);
-    --modal-overlay: rgba(18, 22, 36, 0.55);
     --action-bar-bg: var(--nav);
     color-scheme: light;
   }
@@ -531,33 +528,6 @@
     .action-btn svg { width: 16px; height: 16px; }
   }
 
-  .modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: var(--modal-overlay);
-    z-index: 200;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    padding: 1.25rem;
-  }
-  .modal-overlay.active { display: flex; }
-  .modal-card {
-    background: var(--card);
-    border: 2px solid var(--ink);
-    border-radius: 12px;
-    padding: 1.5rem;
-    width: 100%;
-    max-width: 440px;
-  }
-  .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1rem;
-  }
-  .modal-title { font: 650 1.15rem/1.2 var(--font-heading); margin: 0; }
-
   .toast {
     position: fixed;
     bottom: 80px;
@@ -617,9 +587,8 @@
     display: block; font-size: 0.83rem; line-height: 1.45; color: var(--muted);
   }
 
-  /* The read-only demo path (#111). Deliberately quieter than the primary
-     button but above the key prompt, so it reads as "here is the output"
-     rather than as a second call to action competing with generating one. */
+  /* The read-only demo path (#111). Quieter than the primary button so it
+     reads as "here is the output" rather than as a second call to action. */
   .demo-band {
     display: block; text-decoration: none; color: inherit;
     background: var(--card);
@@ -643,20 +612,7 @@
     margin: 0 0 0.7rem;
   }
 
-  /* First-run explainer, and the in-page error state that replaced alert(). */
-  .setup-card {
-    border: 2px solid var(--ink); border-radius: 12px;
-    background: var(--card); padding: 1rem 1.1rem; margin-bottom: 1.25rem;
-  }
-  .setup-title { font-weight: 700; font-size: 0.95rem; margin: 0 0 0.4rem; }
-  .setup-body { font-size: 0.87rem; line-height: 1.55; margin: 0 0 0.9rem; }
-  .setup-btn {
-    margin-top: 0;
-    background: var(--paper);
-    color: var(--ink);
-    border-color: var(--ink);
-  }
-  .setup-btn:hover { filter: none; background: var(--nav-hover); }
+  /* In-page error state that replaced alert(). */
   .error-card {
     border: 2px solid var(--warn); border-radius: 12px;
     background: var(--warn-soft);
@@ -683,7 +639,6 @@
   <button class="sidebar-item" onclick="showView('publicListView'); loadPublicList();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>Gallery</button>
   <div class="sidebar-spacer"></div>
   <button class="sidebar-item" onclick="cycleTheme()" title="Theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg><span class="theme-icon">Sys</span></button>
-  <button class="sidebar-item" onclick="openModal('settingsModal')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Settings</button>
 </aside>
 
 <div class="shell-main">
@@ -703,9 +658,6 @@
     <button class="icon-btn" onclick="showView('libraryView'); loadLibrary();" title="Your articles">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
     </button>
-    <button class="icon-btn" onclick="openModal('settingsModal')" title="Settings">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-    </button>
   </div>
 </header>
 
@@ -719,21 +671,6 @@
       question, what the evidence shows, what remains open, and three papers to
       open. Every claim is cited to a real paper; every figure is checked back
       against the source it came from.</p>
-
-    <!-- Shown only when the backend cannot draft without a visitor key.
-         `refreshSetupCard()` hides it once a key is set or `/api/health`
-         reports `public: true`. -->
-    <div class="setup-card" id="setupCard" style="display:none;">
-      <p class="setup-title">Before your first briefing</p>
-      <p class="setup-body">
-        This local server has no OpenRouter key of its own. Paste one in
-        Settings to generate a briefing, or run against the hosted site, which
-        writes with GPT-5.6 Luna at no cost to you.
-      </p>
-      <button class="btn-primary setup-btn" onclick="openModal('settingsModal')">
-        Set up — about 2 minutes
-      </button>
-    </div>
 
     <div class="theme-box you">
       <label class="input-label" for="themeInput">1. Enter a theme or question</label>
@@ -762,9 +699,7 @@
 
     <!-- The read-only path. drafts/ is already public. Generating is also
          free on the hosted backend (Luna, the host pays, rate-limited), so the
-         input sits above this now and the browse links follow it. The setup
-         card is only for a local server with no key, or a hosted backend whose
-         public secret is not set. -->
+         input sits above this now and the browse links follow it. -->
     <a class="demo-band" href="drafts/">
       <span class="demo-band-label">All published briefings</span>
       <span class="demo-band-text">Every briefing this has produced — no key, no
@@ -863,8 +798,8 @@
            No script runs inside this frame — not inline, not an event handler,
            nothing. That is the point: what lands in here is model-written HTML,
            and a #read= or #p= link lets anyone else choose it. Unsandboxed it
-           ran same-origin, one localStorage.getItem away from the visitor's
-           OpenRouter key (issue #100).
+           ran same-origin, one localStorage.getItem away from this visitor's
+           saved articles (issue #100).
            allow-same-origin is kept deliberately, and it does NOT re-enable
            scripts. It is what lets this page still reach contentDocument to
            sync the theme and read the article back out when saving it.
@@ -920,83 +855,13 @@
 
 </main>
 
-<!-- Settings Modal -->
-<div id="settingsModal" class="modal-overlay" onclick="closeModal('settingsModal')">
-  <div class="modal-card" onclick="event.stopPropagation()">
-    <form autocomplete="off" onsubmit="return false;" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
-      <div class="modal-header">
-        <h3 class="modal-title">Your OpenRouter key</h3>
-        <button type="button" class="icon-btn" onclick="closeModal('settingsModal')">✕</button>
-      </div>
-      
-      <!-- Only OpenRouter is offered for now. The select stays in the DOM, with
-           its single option, so onProviderChange() and saveApiKey() keep working
-           unchanged and restoring a provider is a matter of adding its <option>
-           and its PROVIDERS entry back. -->
-      <select id="providerSelect" class="theme-input" onchange="onProviderChange()" style="display:none;">
-        <option value="openrouter">OpenRouter &mdash; GPT-5.6 Luna</option>
-      </select>
-
-      <!-- The panel used to open on an unexplained password box and a list of
-           steps, and talk about "prepaid credit" without ever saying what a
-           key is or why this site needs one (#95). -->
-      <p style="font-size:0.85rem; line-height:1.55; margin:0 0 1rem;">
-        Generating on the public site is free — it writes with GPT-5.6 Luna on
-        the host's OpenRouter account, rate-limited. An API key is a password
-        that lets this site use <strong>your</strong> OpenRouter account
-        instead, so you are not sharing the public hourly cap. That is
-        optional. You pay OpenRouter directly for those runs, and you can
-        revoke the key at any time.
-      </p>
-
-      <div style="margin-bottom: 1.25rem;">
-        <label class="input-label" for="apiKeyInput"><span id="apiKeyLabel">OpenRouter API Key</span></label>
-        <input type="password" id="apiKeyInput" name="provider_key_token" class="theme-input" placeholder="sk-or-v1-..." autocomplete="new-password" data-1p-ignore="true" data-lpignore="true" data-bwignore="true">
-
-        <p style="font-size:0.8rem; color:var(--muted); margin-top:0.9rem; margin-bottom:0.4rem; font-weight:600;">How to get a key</p>
-        <ul style="font-size:0.8rem; color:var(--muted); line-height:1.6; margin:0; padding-left:1.1rem;">
-          <li>Sign up at <a href="https://openrouter.ai" target="_blank" style="color:var(--accent);">openrouter.ai</a>.</li>
-          <li>Add prepaid credit under <strong>Settings &rarr; Credits</strong>.</li>
-          <li>Go to <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--accent);">openrouter.ai/keys</a> and click <strong>Create Key</strong>.</li>
-          <li>Copy the key (it starts with <code>sk-or-v1-</code>) and paste it above.</li>
-          <li>Press <strong>Save Settings</strong>.</li>
-        </ul>
-        <label style="display:flex; align-items:flex-start; gap:0.5rem; font-size:0.8rem; color:var(--muted); margin-top:0.9rem; line-height:1.5; cursor:pointer;">
-          <input type="checkbox" id="rememberKey" style="margin-top:0.15rem; flex:none;">
-          <span>Remember this key on this browser. Leave it off and the key is
-          kept for this tab only, and you paste it again next visit.</span>
-        </label>
-
-        <p style="font-size:0.75rem; color:var(--muted); margin-top:0.9rem; line-height:1.5;">
-          Your key is sent only to the article generator backend for the request
-          you asked for. It is never stored on the server.
-        </p>
-        <p style="font-size:0.75rem; color:var(--muted); margin-top:0.5rem; line-height:1.5;">
-          <strong>Where it is kept.</strong> Anyone with access to this device
-          can read it. If you tick <em>Remember this key</em>, it is also
-          readable by <strong>every other site published under
-          bartholomewtj.github.io</strong> &mdash; browsers scope stored data to
-          the whole domain, not to this one app, and that domain hosts other
-          projects. Untick the box to keep the key in this tab only. Either way,
-          revoke it at
-          <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--accent);">openrouter.ai/keys</a>
-          if you have any doubt &mdash; it is a paid key with no daily cap.
-        </p>
-      </div>
-
-      <button type="button" class="btn-primary" style="margin-top:1.25rem;" onclick="saveApiKey()">Save Settings</button>
-    </form>
-  </div>
-</div>
-
 <div id="toast" class="toast">Action completed!</div>
 
 <!-- Which build you are actually looking at.
      GitHub Pages serves this file with Cache-Control: max-age=600, so for ten
      minutes after a deploy a browser can show the old page while the server
      has the new one — and nothing on the page said which. That is not only
-     cosmetic: the front end picks the model, so a cached copy can go on
-     requesting a model that has been retired.
+     cosmetic: a cached copy can keep calling an API that has moved.
      /api/health answers this question for the backend. This is the front
      end's version of it. The placeholder below is substituted with the commit
      SHA by the Pages workflow; if you can still read the placeholder, you are
@@ -1050,54 +915,25 @@
   // has no gist token, so it asks the same-origin API instead.
   let galleryEnabled = false;
 
-  // ---- first-run and cold-start handling (#95) ---------------------------
+  // ---- cold-start handling (#95) ----------------------------------------
   //
-  // Three separate failures shared one cause: the visitor could not see what
-  // was happening. No key check meant the longest possible wait ended in a
-  // dead end; the ~50s Render cold start looked like a hang; and when
-  // something did fail it arrived as a browser alert() full of internals.
+  // The ~50s Render cold start used to look like a hang, and failures used
+  // to arrive as a browser alert() full of internals. The host pays for
+  // generation; the page does not take a visitor key.
 
   const WAKE_HINT_MS = 8000;
-
-  // Hosted Pages talks to Render: assume public Luna until /api/health says
-  // otherwise, so a stranger is not asked for a key during the cold start.
-  // Local `articlegen web` (API_BASE === '') stays false until health reports.
-  let publicGeneration = !!API_BASE;
 
   /** Nudge the sleeping backend awake as soon as the page loads. */
   function warmBackend() {
     fetch(apiUrl('/api/health'), { method: 'GET' })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (info) {
-        if (info && typeof info.public === 'boolean') {
-          publicGeneration = info.public;
-          refreshSetupCard();
-        }
         if (info && typeof info.gallery === 'boolean') {
           galleryEnabled = info.gallery;
           refreshShareGalleryButton();
         }
       })
       .catch(function () {});
-  }
-
-  /** Show/hide the first-run explainer according to whether a key is needed. */
-  function refreshSetupCard() {
-    const card = document.getElementById('setupCard');
-    if (card) card.style.display = (activeKey() || publicGeneration) ? 'none' : '';
-  }
-
-  /**
-   * Gate every request that needs a key. Returns false and opens Settings
-   * rather than letting the visitor wait out a cold start to be told no.
-   * On the hosted public path the host pays, so a missing visitor key is fine.
-   */
-  function requireKey() {
-    if (activeKey() || publicGeneration) return true;
-    refreshSetupCard();
-    openModal('settingsModal');
-    showToast('Add your OpenRouter key first — this local server has none of its own.');
-    return false;
   }
 
   /**
@@ -1165,21 +1001,13 @@
              (why && why.length < 160 ? ' (' + why.trim() + ')' : '');
     }
     if (resp.status >= 500 && /api key/i.test(detail)) {
-      return 'The backend could not use that API key. Check it in Settings (⚙️).';
+      return 'The writing service could not start. Try again in a minute.';
     }
-    // Both of these used to end "switch to Groq/Claude in Settings", which is
-    // now advice to use a provider the Settings panel no longer offers. With
-    // one provider there is nowhere to switch to, so they have to say what to
-    // actually do instead.
     if (/insufficient credit|402/i.test(detail)) {
-      return 'Your OpenRouter credit is exhausted. Top it up at openrouter.ai/credits ' +
-             'and try again.';
+      return 'The public writing budget is exhausted right now. Try again later.';
     }
-    // A 403 mentioning a limit is a per-key spending cap, not spent credit —
-    // different page, different fix, and topping up credit does nothing.
     if (/403/.test(detail) && /limit|cap/i.test(detail)) {
-      return 'That OpenRouter key has hit its own spending cap. Raise or clear it at ' +
-             'openrouter.ai/keys — adding credit will not help.';
+      return 'The public writing budget has hit its cap. Try again later.';
     }
     if (/rate.?limit|quota|tokens per day|TPD|429/i.test(detail)) {
       return 'The writing model is rate-limited right now. Wait a moment and try again.';
@@ -1273,12 +1101,16 @@
     });
   }
 
-  // One-time cleanup: earlier builds stored a GitHub personal access token in
-  // localStorage to sync settings through a gist. That feature is gone; this
-  // clears any token left behind on devices that used it. Safe to delete once
-  // enough time has passed that no browser still holds one.
+  // One-time cleanup: earlier builds stored a GitHub personal access token
+  // (gist sync) and, later, a visitor OpenRouter key. Both features are gone.
+  // Safe to delete once enough time has passed that no browser still holds one.
   function purgeLegacyGistCredentials() {
-    ['articlegen_gh_token', 'articlegen_gist_id'].forEach(k => localStorage.removeItem(k));
+    ['articlegen_gh_token', 'articlegen_gist_id',
+     'articlegen_key_openrouter', 'articlegen_key_anthropic', 'articlegen_key_groq',
+     'articlegen_provider'].forEach(function (k) {
+      localStorage.removeItem(k);
+      sessionStorage.removeItem(k);
+    });
   }
 
   document.addEventListener('DOMContentLoaded', function() {
@@ -1296,117 +1128,6 @@
   function showView(viewId) {
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     document.getElementById(viewId).classList.add('active');
-  }
-
-
-
-  function openModal(id) {
-    document.getElementById(id).classList.add('active');
-    if (id === 'settingsModal') {
-      const sel = document.getElementById('providerSelect');
-      if (sel) sel.value = currentProvider();
-      onProviderChange();
-    }
-  }
-
-  function closeModal(id) {
-    document.getElementById(id).classList.remove('active');
-  }
-
-  // Each provider keeps its own key slot, so switching between them doesn't
-  // discard the other. The model id is sent to the backend, which accepts it
-  // only if it matches one it actually supports.
-  // Only OpenRouter. Anthropic was removed from the UI but not from the
-  // backend — web.ALLOWED_MODELS still accepts its model, so the CLI is
-  // unaffected and restoring it here is a matter of adding its entry and its
-  // <option> back. Groq is gone everywhere, backend included. Stored keys for
-  // both are left in localStorage untouched, so anyone who had an Anthropic
-  // key keeps it if that provider comes back.
-  const PROVIDERS = {
-    openrouter: {
-      model: 'openai/gpt-5.6-luna',
-      store: 'articlegen_key_openrouter',
-      label: 'OpenRouter API Key',
-      placeholder: 'sk-or-v1-...'
-    }
-  };
-
-  const DEFAULT_PROVIDER = 'openrouter';
-
-  function currentProvider() {
-    // The fallback is load-bearing now rather than defensive: anyone who used
-    // this before carries articlegen_provider = 'groq' or 'anthropic' in local
-    // storage, and those keys no longer exist in PROVIDERS. Without this they
-    // would land on `undefined` and every activeKey()/activeModel() call would
-    // throw on page load.
-    const p = localStorage.getItem('articlegen_provider');
-    return (p && PROVIDERS[p]) ? p : DEFAULT_PROVIDER;
-  }
-
-  // A key lives in exactly one of two stores, never both.
-  //
-  // localStorage is scoped to the ORIGIN, not the path, and every GitHub Pages
-  // site under bartholomewtj.github.io shares one origin. A remembered key is
-  // therefore readable by any other Pages site the account publishes — now, or
-  // years from now — and by anyone with push access to those repos (#113). The
-  // sandboxed reader iframe (#100) does nothing about this: different threat,
-  // different boundary, and no amount of sandboxing changes where the browser
-  // files the key.
-  //
-  // So sessionStorage is the default and the box is unticked for a new key: it
-  // dies with the tab and leaves no persistent credential behind. Ticking the
-  // box is an informed choice the Settings text spells out. An existing
-  // remembered key keeps working and shows the box ticked, because that is the
-  // truth about where it is.
-  function keyName() {
-    return PROVIDERS[currentProvider()].store;
-  }
-
-  function activeKey() {
-    const name = keyName();
-    return sessionStorage.getItem(name) || localStorage.getItem(name) || '';
-  }
-
-  function activeModel() {
-    return PROVIDERS[currentProvider()].model;
-  }
-
-  function onProviderChange() {
-    const chosen = document.getElementById('providerSelect')?.value || DEFAULT_PROVIDER;
-    const cfg = PROVIDERS[chosen] || PROVIDERS[DEFAULT_PROVIDER];
-    localStorage.setItem('articlegen_provider', chosen);
-
-    const label = document.getElementById('apiKeyLabel');
-    const input = document.getElementById('apiKeyInput');
-    if (label) label.textContent = cfg.label;
-    if (input) {
-      input.placeholder = cfg.placeholder;
-      input.value = sessionStorage.getItem(cfg.store) || localStorage.getItem(cfg.store) || '';
-    }
-    const remember = document.getElementById('rememberKey');
-    if (remember) remember.checked = !!localStorage.getItem(cfg.store);
-  }
-
-  function saveApiKey() {
-    const chosen = document.getElementById('providerSelect')?.value || currentProvider();
-    const cfg = PROVIDERS[chosen] || PROVIDERS[DEFAULT_PROVIDER];
-    const k = document.getElementById('apiKeyInput')?.value.trim() || '';
-    const remember = !!document.getElementById('rememberKey')?.checked;
-
-    localStorage.setItem('articlegen_provider', chosen);
-    // Clear both stores before writing. Unticking the box has to actually
-    // remove the persistent copy — otherwise "don't remember this key" would
-    // leave the credential exactly where it already was, which is the one
-    // outcome the checkbox exists to prevent.
-    localStorage.removeItem(cfg.store);
-    sessionStorage.removeItem(cfg.store);
-    if (k) (remember ? localStorage : sessionStorage).setItem(cfg.store, k);
-
-    if (typeof savePreferences === 'function') savePreferences();
-    refreshSetupCard();
-
-    showToast(k && !remember ? 'Saved for this tab only' : 'Settings saved!');
-    closeModal('settingsModal');
   }
 
   function showToast(msg) {
@@ -1537,7 +1258,6 @@
     migrateLegacyLibraries();
     loadPreferences();
     checkUrlHashForArticle();
-    refreshSetupCard();
     loadPublicPreview();
     // Start the ~50s Render cold start now, while the visitor is still typing
     // a theme, instead of at the moment they tap.
@@ -1551,10 +1271,6 @@
       return;
     }
 
-    // Before the round trip, not after it. This is the whole point: a visitor
-    // with no key used to wait out the cold start to be told they needed one.
-    if (!requireKey()) return;
-
     const guidance = (document.getElementById('styleInput')?.value || '').trim();
     const btn = document.getElementById('ideasBtn');
     const idle = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg> Propose briefing questions';
@@ -1562,15 +1278,13 @@
     btn.innerHTML = 'Proposing questions…';
     const settled = whileWaking(function (msg) { btn.innerHTML = msg; });
 
-    const key = activeKey();
-
     try {
       let resp;
       try {
         resp = await fetch(apiUrl('/api/ideas'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ theme, guidance: styleGuidance(guidance), key, model: activeModel(), n: 6 })
+          body: JSON.stringify({ theme, guidance: styleGuidance(guidance), n: 6 })
         });
       } catch (netErr) {
         throw new Error(await apiError(null, netErr));
@@ -1617,8 +1331,6 @@
   }
 
   async function selectDraft(title, searchTerms) {
-    if (!requireKey()) return;
-
     const terms = Array.isArray(searchTerms) ? searchTerms : [];
     currentTitle = title;
     lastAction = function () { selectDraft(title, terms); };
@@ -1627,7 +1339,6 @@
     showView('progressView');
 
     const style = (document.getElementById('styleInput')?.value || '').trim();
-    const key = activeKey();
 
     const stepText = document.getElementById('progressStepText');
     const steps = ['stepQueries', 'stepCurate', 'stepDraft', 'stepVerify']
@@ -1677,8 +1388,6 @@
           body: JSON.stringify({
             topic: title,
             style: styleGuidance(style),
-            key,
-            model: activeModel(),
             search_terms: terms
           })
         });
