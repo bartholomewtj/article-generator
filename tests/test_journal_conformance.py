@@ -435,5 +435,19 @@ def main() -> int:
     return 1 if FAILURES else 0
 
 
+def test_journal_conventions() -> None:
+    """The whole suite as one pytest case, so pytest cannot report a quiet zero.
+
+    Nothing in this file was named `test_*`, so `pytest tests/` collected no
+    cases from it and still printed a green summary for the other suite — the
+    conventions had simply not run. CI runs this file directly and always did;
+    this wrapper only closes the gap for anyone reaching for pytest. It adds no
+    dependency: `main()` collects into `FAILURES` exactly as before and this
+    turns a non-zero exit into an assertion.
+    """
+    FAILURES.clear()
+    assert main() == 0, "; ".join(FAILURES)
+
+
 if __name__ == "__main__":
     raise SystemExit(main())
