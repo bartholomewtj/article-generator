@@ -1432,53 +1432,38 @@ def test_source_failures_are_distinguishable() -> None:
 
 
 def test_front_end_models_match_the_allowlist() -> None:
-    """Every model the Settings dropdown offers must be one the server accepts.
+    """The web app has no model picker; the public path is Luna.
 
-    The model ids live in two places — `llm.py` and the PROVIDERS map in
-    index.html — and nothing links them. `web._requested_model` silently drops a
-    name that isn't on the allowlist, so a stale front end doesn't error: it just
-    quietly stops honouring the provider the user picked. This catches the drift
-    instead of leaving it to be noticed in a bill.
+    A Settings dropdown used to send a visitor-chosen model. That UI is gone.
+    The remaining invariant is that the hosted model is on the allowlist, and
+    the page does not advertise a model the server would drop.
     """
     import re
 
+    from articlegen import llm
     from articlegen.web import ALLOWED_MODELS
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     with open(os.path.join(root, "index.html"), encoding="utf-8") as f:
         page = f.read()
 
+    check("the public model is on the allowlist",
+          llm.OPENROUTER_PUBLIC_MODEL in ALLOWED_MODELS)
+    check("the page has no provider picker", 'id="providerSelect"' not in page)
+    check("the page has no PROVIDERS map", "const PROVIDERS" not in page)
     offered = re.findall(r"^\s*model: '([^']+)'", page, re.MULTILINE)
-    # One provider is offered right now (OpenRouter), so this floor is 1 rather
-    # than 2. The assertion that matters is the next one — the direction of the
-    # check is front end ⊆ server, so *narrowing* the front end is always safe
-    # and only adding an unknown model can break it.
-    check("the front end offers a model at all", len(offered) >= 1)
     for model in offered:
-        check(f"index.html offers {model}, which the server accepts",
+        check(f"index.html names {model}, which the server accepts",
               model in ALLOWED_MODELS)
-
-    # Every provider the picker lists must have a PROVIDERS entry, or selecting
-    # it yields `undefined` and activeKey()/activeModel() throw on page load.
-    # Removing a provider means editing two places in one file; this is what
-    # notices when only one of them was done.
-    # Scoped to the provider picker: the page has other <select>s (article
-    # length, style) whose options are not provider names.
-    picker = re.search(r"<select id=\"providerSelect\".*?</select>", page, re.DOTALL)
-    check("the provider picker exists", picker is not None)
-    listed = set(re.findall(r"<option value=\"([a-z_]+)\"", picker.group(0) if picker else ""))
-    configured = set(re.findall(r"^    ([a-z_]+): \{$", page, re.MULTILINE))
-    check(f"every offered provider {sorted(listed)} is configured {sorted(configured)}",
-          bool(listed) and listed <= configured)
 
 
 def test_public_generation_forces_luna_on_the_hosted_key() -> None:
-    """A keyless request on the hosted key must write Luna, never Opus.
+    """A request on the hosted key must write Luna, never Opus.
 
     The public site pays from ARTICLEGEN_PUBLIC_OPENROUTER_KEY. If `_credentials`
     honoured the payload's model, a crafted POST could select
-    `anthropic/claude-opus-5` and bill the host at $5/$25. Visitor-supplied
-    keys still choose any allowlisted model — they are paying.
+    `anthropic/claude-opus-5` and bill the host at $5/$25. A visitor-supplied
+    key in the payload is ignored for the same reason.
     """
     from articlegen import llm, web
 
@@ -1508,9 +1493,10 @@ def test_public_generation_forces_luna_on_the_hosted_key() -> None:
 
         key, model = web._credentials({
             "model": llm.OPENROUTER_DEFAULT_MODEL, "key": "sk-or-v1-visitor"})
-        check("a visitor key is used as given", key == "sk-or-v1-visitor")
-        check("and their allowlisted model is honoured",
-              model == llm.OPENROUTER_DEFAULT_MODEL)
+        check("a visitor key in the payload is ignored",
+              key == "sk-or-v1-hosted")
+        check("and Luna is still forced",
+              model == llm.OPENROUTER_PUBLIC_MODEL)
 
         os.environ.pop("ARTICLEGEN_PUBLIC_OPENROUTER_KEY", None)
         check("no hosted key means public generation is off",
@@ -2884,10 +2870,11 @@ def test_full_text_dependencies_fail_loudly_enough_to_diagnose() -> None:
 def test_first_visit_does_not_dead_end() -> None:
     """The longest possible wait must not end in "you needed a key".
 
-    A stranger opened the site, saw nothing about a key, typed a theme, tapped,
-    sat through the ~50s Render cold start, and got the server's 400 as a raw
-    browser alert() telling them to open a gear icon among five icon buttons
-    (issue #95).
+    A stranger opened the site, typed a theme, tapped, sat through the ~50s
+    Render cold start, and used to get the server's 400 as a raw browser
+    alert() telling them to open a gear icon (issue #95). Generating is host
+    paid now, so the page must not ask for a key and must not fail as an
+    alert.
     """
     import inspect
     import re as _re
@@ -2895,17 +2882,12 @@ def test_first_visit_does_not_dead_end() -> None:
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     page = open(os.path.join(root, "index.html"), encoding="utf-8").read()
 
-    # 1. The key check happens before the request, in both entry points.
-    for fn in ("requestIdeas", "selectDraft"):
-        body = page[page.index(f"async function {fn}("):]
-        body = body[:body.index("\n  }\n")]
-        check(f"{fn} checks for a key", "requireKey()" in body)
-        check(f"{fn} checks before it fetches",
-              body.index("requireKey()") < body.index("fetch(apiUrl"))
+    # 1. Neither entry point waits on a visitor key.
+    check("the page does not gate on a visitor key", "requireKey()" not in page)
+    check("ideas still fetches", "apiUrl('/api/ideas')" in page)
+    check("draft still fetches", "apiUrl('/api/draft')" in page)
 
     # 2. The backend is woken on load, and a slow request says why it is slow.
-    #    The cold-start explanation already existed — but only in apiError, so
-    #    it appeared after a failure and never during the wait it explains.
     check("the backend is warmed on page load",
           "warmBackend()" in page and "/api/health" in page)
     check("a slow request explains itself while it is still running",
@@ -2920,31 +2902,15 @@ def test_first_visit_does_not_dead_end() -> None:
     check("and offer a retry that repeats the same action",
           "retryLastAction()" in page and "lastAction = function ()" in page)
 
-    # 4. The landing view still has a setup card for a keyless local server,
-    #    and the version badge is gone. The hosted path is free (Luna) and
-    #    does not show this card once /api/health reports public.
-    check("the landing view explains the setup",
-          'id="setupCard"' in page and "Set up — about 2 minutes" in page)
-    check("the explainer hides once a key is set or the host is public",
-          "refreshSetupCard()" in page and "publicGeneration" in page)
-    check("the settings panel says what an API key is",
-          "An API key is a password" in page)
-    check("the hosted path says generating is free",
-          "Generating on the public site is free" in page)
+    # 4. No setup card, no settings, no version badge.
+    check("there is no first-run key card", 'id="setupCard"' not in page)
+    check("there is no settings panel", 'id="settingsModal"' not in page)
     check("the version badge is gone", "SyncFix" not in page and "v2.3" not in page)
 
-    # drafts/ is already public. Generating on the hosted backend is now also
-    # free (host-paid Luna). The topic input leads the page and the read-only
-    # band follows it, so the key prompt is no longer above either one: the
-    # setup card is hidden in the markup and only a keyless local server sees
-    # it, which is what keeps a first impression from being "paste a
-    # credential".
     readme = open(os.path.join(root, "README.md"), encoding="utf-8").read()
     check("the landing view offers a read-only path",
           'class="demo-band"' in page and 'href="drafts/"' in page)
-    check("the key prompt is hidden until the backend needs it",
-          'id="setupCard" style="display:none;"' in page)
-    check("and the topic input is above it either way",
+    check("and the topic input is above it",
           page.index('id="themeInput"') < page.index('class="demo-band"'))
     check("it says outright that no key is needed", "no key, no" in page)
     check("README points at it too",
@@ -3000,54 +2966,43 @@ def test_the_landing_page_leads_with_the_input() -> None:
           "Research-Grounded Articles on Mobile" not in page)
 
 
-def test_api_key_is_session_only_by_default() -> None:
-    """The stored key must not silently outlive the tab, and the page must say why.
+def test_the_web_app_does_not_take_a_visitor_key() -> None:
+    """The page has no Settings, no key box, and does not send a key.
 
-    localStorage is scoped to the origin, not the path, and every GitHub Pages
-    site under bartholomewtj.github.io shares one origin — so a remembered key
-    is readable by any other project published there, now or later (issue
-    #113). The sandbox fix in #100 does nothing about this: different threat,
-    different boundary.
-
-    Asserted on the *wording and the calls a reader can check*, not on the
-    helper names, because the defect was a true-about-the-network claim that
-    was misleading about the origin.
+    A remembered OpenRouter key on bartholomewtj.github.io was readable by
+    every other Pages site on that origin (issue #113). Removing the
+    component is the fix. The backend must also ignore a crafted `key` in
+    the payload, or the UI removal is only cosmetic.
     """
+    import inspect
+
+    from articlegen import web
+
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     page = open(os.path.join(root, "index.html"), encoding="utf-8").read()
     readme = open(os.path.join(root, "README.md"), encoding="utf-8").read()
 
-    check("the opt-in checkbox exists", 'id="rememberKey"' in page)
-    check("and is not checked in the markup, so a new key is tab-only",
-          'id="rememberKey"' in page
-          and "checked" not in page[page.index('id="rememberKey"'):
-                                    page.index('id="rememberKey"') + 120])
+    check("no settings modal", 'id="settingsModal"' not in page)
+    check("no API key input", 'id="apiKeyInput"' not in page)
+    check("no remember-key checkbox", 'id="rememberKey"' not in page)
+    check("no Settings nav item", ">Settings</button>" not in page)
+    check("ideas request does not send a key or model",
+          "JSON.stringify({ theme, guidance: styleGuidance(guidance), n: 6 })" in page)
+    check("draft request does not send a key or model",
+          "style: styleGuidance(style),\n            search_terms: terms" in page)
+    check("the page does not store a visitor key",
+          "function saveApiKey" not in page and "function activeKey" not in page)
+    check("the page clears leftover keys",
+          "articlegen_key_openrouter" in page
+          and "removeItem" in page[page.index("purgeLegacyGistCredentials"):
+                                   page.index("purgeLegacyGistCredentials") + 500])
+    check("README does not tell visitors to paste a key",
+          "Where your key is kept" not in readme
+          and "Settings still accepts" not in readme)
 
-    # The reader has to try sessionStorage first or a tab-only key is invisible.
-    active = page[page.index("function activeKey"):]
-    active = active[:active.index("\n  }")]
-    check("activeKey reads the session store first",
-          active.index("sessionStorage") < active.index("localStorage"))
-
-    # Unticking the box has to *remove* the persistent copy. Leaving it behind
-    # is the one outcome the checkbox exists to prevent.
-    save = page[page.index("function saveApiKey"):]
-    save = save[:save.index("\n  }")]
-    check("saving clears both stores before writing",
-          "localStorage.removeItem(cfg.store)" in save
-          and "sessionStorage.removeItem(cfg.store)" in save)
-    check("and writes to exactly one of them",
-          "(remember ? localStorage : sessionStorage).setItem(cfg.store, k)" in save)
-
-    # The claim that started this: true about the network, misleading about the
-    # origin. It must not come back.
-    check("the settings text no longer claims the key is shared with nobody",
-          "never shared with anyone else" not in page)
-    check("the settings text names the shared-origin exposure",
-          "bartholomewtj.github.io" in page and "Remember this key" in page)
-    check("README documents where the key is kept",
-          "Where your key is kept" in readme
-          and "scope" in readme and "bartholomewtj.github.io" in readme)
+    cred = inspect.getsource(web._credentials)
+    check("the server ignores a payload key",
+          'payload.get("key")' not in cred)
 
 
 def test_the_front_end_has_one_article_list() -> None:
@@ -3105,7 +3060,7 @@ def test_article_in_the_web_app_cannot_run_scripts() -> None:
 
     The iframe used to run same-origin with no sandbox, and `#read=` / `#p=`
     links mean the HTML in it is not merely model-written but attacker-choosable:
-    one localStorage.getItem reaches the visitor's OpenRouter key. Two halves fix
+    one localStorage.getItem reaches the visitor's saved articles. Two halves fix
     it and both have to hold — the sandbox attribute, and an article rendered
     without the scripted toolbar so the sandbox costs nothing (issue #100).
     """
@@ -8343,7 +8298,7 @@ def main(argv: list[str] | None = None) -> int:
         test_full_text_dependencies_fail_loudly_enough_to_diagnose,
         test_first_visit_does_not_dead_end,
         test_the_landing_page_leads_with_the_input,
-        test_api_key_is_session_only_by_default,
+        test_the_web_app_does_not_take_a_visitor_key,
         test_house_style_is_fixed_not_a_preference,
         test_briefing_is_the_default_artefact,
         test_titles_describe_the_question,

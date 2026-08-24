@@ -19,15 +19,11 @@ every other visitor at a guessable URL, and list their topics in the queue index
 Someone researching something they'd rather not broadcast would have no way to
 know. The browser keeps its own copies in localStorage either way.
 
-The caller's API key arrives in the request body and is passed down the call
-chain as an argument. It is never written to `os.environ`, never logged, and
-never persisted — the environment is process-global and this server is threaded,
-so an env-var handoff would let concurrent requests pick up each other's keys.
-
-A shared host may also hold `ARTICLEGEN_PUBLIC_OPENROUTER_KEY` (or
-`OPENROUTER_API_KEY`) so visitors can draft without pasting a key. That path
-always writes with `OPENROUTER_PUBLIC_MODEL`. The rate limits are then a
-spend cap, not just a scholarly-API cap.
+The web app does not take a visitor key. A shared host holds
+`ARTICLEGEN_PUBLIC_OPENROUTER_KEY` (or `OPENROUTER_API_KEY`) and always writes
+with `OPENROUTER_PUBLIC_MODEL`. A `key` field in the request body is ignored.
+The rate limits are a spend cap, not just a scholarly-API cap. Local
+`articlegen web` uses the same env vars; without one, generate returns 400.
 """
 
 from __future__ import annotations
@@ -214,8 +210,8 @@ def _hosted_openrouter_key() -> str | None:
 
     `ARTICLEGEN_PUBLIC_OPENROUTER_KEY` is the dedicated public-billing secret.
     `OPENROUTER_API_KEY` is the fallback so a local `articlegen web` with the
-    usual env var already set also serves keyless requests. Neither is ever
-    returned from an API or written to a log line.
+    usual env var already set can generate. Neither is ever returned from an
+    API or written to a log line.
     """
     for var in ("ARTICLEGEN_PUBLIC_OPENROUTER_KEY", "OPENROUTER_API_KEY"):
         raw = os.environ.get(var, "").strip()
@@ -225,33 +221,26 @@ def _hosted_openrouter_key() -> str | None:
 
 
 def public_generation_enabled() -> bool:
-    """True when a visitor can draft without pasting a key."""
+    """True when the host has a key and visitors can generate."""
     return _hosted_openrouter_key() is not None
 
 
 def _credentials(payload: dict) -> tuple[str | None, str | None]:
     """(api_key, model) for this request.
 
-    A visitor key pays for the model they asked for (if allowed). No visitor
-    key and a hosted key: the host pays, and the model is forced to Luna so
-    a crafted POST cannot select Opus on the public bill. No key anywhere:
-    both are None and `_missing_key` refuses.
+    The web app does not take a visitor key. A hosted key pays, and the model
+    is forced to Luna so a crafted POST cannot select Opus on the public bill.
+    A `key` in the payload is ignored. No key anywhere: both are None and
+    `_missing_key` refuses.
     """
-    visitor = (payload.get("key") or "").strip() or None
-    requested = _requested_model(payload)
-    if visitor:
-        return visitor, requested
     hosted = _hosted_openrouter_key()
     if hosted:
         return hosted, llm.OPENROUTER_PUBLIC_MODEL
-    return None, requested
+    return None, _requested_model(payload)
 
 
-def _key_mode(payload: dict) -> str:
-    """Who is paying: 'visitor', 'public' (the host's key) or 'none'."""
-    visitor = (payload.get("key") or "").strip()
-    if visitor:
-        return "visitor"
+def _key_mode() -> str:
+    """Who is paying: 'public' (the host's key) or 'none'."""
     if _hosted_openrouter_key():
         return "public"
     return "none"
@@ -384,16 +373,16 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
 
         Without this the provider layer raises "OPENROUTER_API_KEY environment
         variable is not set", which is true and useless to someone using the web
-        app — they have no environment to set. A locally-run server with its own
-        key configured needs no key in the request, so only fail when both are
-        absent.
+        app — they have no environment to set. Fail only when the host has no
+        key either.
         """
         if api_key or public_generation_enabled() or os.environ.get("ANTHROPIC_API_KEY"):
             return False
         self._note_run(error="missing_key")
         self._send_json(
-            {"error": "No API key set. Open Settings (⚙️) and paste an OpenRouter "
-                      "key — create one at openrouter.ai/keys."},
+            {"error": "This server has no OpenRouter key, so it cannot generate. "
+                      "Set OPENROUTER_API_KEY (or ARTICLEGEN_PUBLIC_OPENROUTER_KEY) "
+                      "on the host."},
             status=400,
         )
         return True
@@ -618,7 +607,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
             n = 6
 
         self._note_run(
-            key=_key_mode(payload),
+            key=_key_mode(),
             model=resolved,
             n_asked=n,
             guidance=bool(guidance),
@@ -650,7 +639,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         resolved = _resolve_model_name(model, api_key)
 
         self._note_run(
-            key=_key_mode(payload),
+            key=_key_mode(),
             model=resolved,
         )
 
