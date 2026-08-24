@@ -293,6 +293,9 @@ topics and arXiv papers stop being abstract-only.
   `paperfetch-oa` would shadow the private package.
 - **Executable path:** If `papers` is not on your PATH, set
   `ARTICLEGEN_PAPERS_CMD="python -m papers"`.
+- **CKN miss list:** Local drafts set `PAPERS_NO_CKN_QUEUE=1` on the
+  `papers` subprocess, so a paywalled cite is not added to the CKN pickup
+  list. `papers get` on its own still queues as usual.
 - **Optional:** Without `papers`, articlegen behaves exactly as before,
   retrieving full text from Europe PMC only.
 - **Hosted deployment:** The Render backend installs the public
@@ -333,3 +336,20 @@ tests/
 python tests/test_offline.py             # provider, citations, render blocks
 python tests/test_journal_conformance.py # journal conventions over 5 fixtures
 ```
+
+Run them as scripts, the way CI does. Both print one `OK`/`FAIL` line per
+check, collect every failure, and exit non-zero — so one broken check does not
+hide the rest of the run.
+
+pytest is not a dependency and CI does not use it. It works if you have it
+(`python -m pytest tests`), but only because both suites now guard against the
+two ways it used to lie:
+
+- `check()` in `test_offline.py` records failures instead of raising. pytest saw
+  no exception and called every test passed while the suite printed `FAIL`.
+  It now raises as well when `PYTEST_CURRENT_TEST` is set.
+- `test_journal_conformance.py` had no `test_*` function, so pytest collected
+  nothing from it and still printed a green total. `test_journal_conventions()`
+  wraps the whole suite as one case.
+
+If you add a check helper or a new suite here, make it fail under both runners.

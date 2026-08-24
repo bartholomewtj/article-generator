@@ -23,9 +23,27 @@ FAILURES: list[str] = []
 
 
 def check(name: str, cond: bool) -> None:
+    """Record a failed check. Raises instead when pytest is the runner.
+
+    Collecting rather than raising is deliberate for `python tests/…`: one bad
+    check does not hide the rest of the run, and the summary lists everything
+    that broke at once.
+
+    pytest is not a dependency of this repo and CI does not use it, but it will
+    happily collect these `test_*` functions if someone runs it — and a runner
+    that only watches for exceptions called every one of them passing while
+    this file printed FAIL and `main()` would have exited 1. That is a green
+    local run followed by a red CI run, which is exactly backwards.
+
+    `PYTEST_CURRENT_TEST` is set by pytest for the duration of each test, so
+    the runner is detected without importing it. Read at call time, not import
+    time: the variable is not reliably set while modules are being collected.
+    """
     print(("OK   " if cond else "FAIL ") + name)
     if not cond:
         FAILURES.append(name)
+        if "PYTEST_CURRENT_TEST" in os.environ:
+            raise AssertionError(name)
 
 
 def test_provider_resolution() -> None:
