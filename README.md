@@ -293,6 +293,9 @@ topics and arXiv papers stop being abstract-only.
   `paperfetch-oa` would shadow the private package.
 - **Executable path:** If `papers` is not on your PATH, set
   `ARTICLEGEN_PAPERS_CMD="python -m papers"`.
+- **CKN miss list:** Local drafts set `PAPERS_NO_CKN_QUEUE=1` on the
+  `papers` subprocess, so a paywalled cite is not added to the CKN pickup
+  list. `papers get` on its own still queues as usual.
 - **Optional:** Without `papers`, articlegen behaves exactly as before,
   retrieving full text from Europe PMC only.
 - **Hosted deployment:** The Render backend installs the public
