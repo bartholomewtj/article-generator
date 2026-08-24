@@ -851,7 +851,6 @@
   <!-- VIEW 4: Article Reader & Mobile Share -->
   <div id="readerView" class="view">
     <div class="section-header reader-bar">
-      <button class="pill" onclick="showView('ideasView')">← Back to Ideas</button>
       <span class="reader-meta" id="articleMeta">Ready</span>
 
       <!-- The whole reader action set. Three buttons, two of them sharing:
@@ -872,7 +871,11 @@
         </button>
         <button class="action-btn" id="shareGalleryBtn" onclick="shareToGallery()" title="Put this briefing on the public list" style="display:none;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-          Add to gallery
+          Add to public gallery
+        </button>
+        <button class="action-btn" onclick="downloadArticle()" title="Save this briefing to your device as an HTML file">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download
         </button>
       </div>
     </div>
@@ -1943,6 +1946,57 @@
     } catch (e) {
       showToast('Could not open that briefing.');
     }
+  }
+
+  /**
+   * Save the briefing to disk as one self-contained HTML file.
+   *
+   * No conversion and no library: the article already IS a standalone HTML
+   * document sitting in the iframe's srcdoc, so this hands over a copy of it.
+   * Opens in any browser, keeps the citation links live, and the browser's own
+   * Print -> Save as PDF covers anyone who wants a PDF.
+   *
+   * Articles loaded from a file on disk (a draft, or a gallery item) have no
+   * srcdoc -- they are a real URL in the iframe -- so those download straight
+   * from that URL instead.
+   */
+  function downloadArticle() {
+    const iframe = document.getElementById('articleIframe');
+    const html = iframe?.srcdoc || '';
+
+    if (!html) {
+      if (currentArticleUrl && !currentArticleUrl.includes('#')) {
+        triggerDownload(currentArticleUrl, currentArticleUrl.split('/').pop());
+        return;
+      }
+      showToast('Generate a briefing first.');
+      return;
+    }
+
+    // The article names itself; fall back if the h1 is missing or unreadable.
+    let title = 'briefing';
+    try {
+      title = iframe.contentDocument?.querySelector('h1')?.textContent || title;
+    } catch (e) { /* cross-origin, keep the fallback */ }
+    const name = title.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+                      .replace(/^-|-$/g, '').slice(0, 60) || 'briefing';
+
+    const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+    triggerDownload(url, name + '.html');
+    // Revoking straight away can cancel the download in some browsers before
+    // it has read the blob. A second is plenty, and frees the memory either way.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  /** Click an <a download> the user never sees. */
+  function triggerDownload(href, filename) {
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    showToast('Saved ' + filename);
   }
 
   function refreshShareGalleryButton() {
