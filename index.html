@@ -720,51 +720,6 @@
       open. Every claim is cited to a real paper; every figure is checked back
       against the source it came from.</p>
 
-    <!-- Three finished reviews, linked straight at the files (#152). A stranger
-         should see the output before being asked for anything. #111 put a link to
-         the drafts index above the key prompt; an index is still one click away
-         from the thing itself, so the reviews come first now.
-         Hardcoded on purpose: no manifest, no fetch, no CMS. When a new draft is
-         worth featuring, edit these anchors.
-         test_the_landing_page_leads_with_finished_reviews checks the files exist. -->
-    <section class="featured">
-      <h2 class="featured-label">Recent evidence briefings</h2>
-      <a class="featured-card" href="drafts/seclusion-restraint-cli.html">
-        <span class="featured-title">Reducing seclusion and restraint in psychiatric inpatient care</span>
-        <span class="featured-take">Multicomponent programmes reduce both, but the supporting study designs are weak.</span>
-      </a>
-      <a class="featured-card" href="drafts/co-responder-cli.html">
-        <span class="featured-title">Police and clinician co-responder models in crisis care</span>
-        <span class="featured-take">Process-level effects are consistent; downstream outcomes are not.</span>
-      </a>
-      <a class="featured-card" href="drafts/2026-08-12-safety-planning-ed-opus-5.html">
-        <span class="featured-title">Safety planning after an emergency department visit</span>
-        <span class="featured-take">Associated with reduced suicidal behaviour in adults, but not in adolescents.</span>
-      </a>
-    </section>
-
-    <!-- The read-only path, and it comes first (#111). drafts/ is already
-         public. Generating is now also free on the hosted backend (Luna, the
-         host pays, rate-limited). The setup card is only for a local server
-         with no key, or a hosted backend whose public secret is not set. -->
-    <a class="demo-band" href="drafts/">
-      <span class="demo-band-label">All published briefings</span>
-      <span class="demo-band-text">Every briefing this has produced — no key, no
-        account, nothing to set up.</span>
-      <span class="demo-band-go">Browse all evidence briefings →</span>
-    </a>
-
-    <!-- Visitor-shared briefings. Not drafts/ (those are curated CLI pieces)
-         and not the personal library (that stays in this browser). Loaded from
-         the public gist so a cold Render does not hide the list. -->
-    <section class="featured" id="publicBand">
-      <h2 class="featured-label">From other visitors</h2>
-      <p class="public-band-note">Briefings someone chose to share. Generating
-        one does not put yours here.</p>
-      <div id="publicPreview"></div>
-      <button type="button" class="demo-band-go" id="publicSeeAll" onclick="showView('publicListView'); loadPublicList();" style="background:none; border:none; padding:0; cursor:pointer; font: inherit; text-align:left;">Browse shared briefings →</button>
-    </section>
-
     <!-- Shown only when the backend cannot draft without a visitor key.
          `refreshSetupCard()` hides it once a key is set or `/api/health`
          reports `public: true`. -->
@@ -804,6 +759,29 @@
         Propose briefing questions
       </button>
     </div>
+
+    <!-- The read-only path. drafts/ is already public. Generating is also
+         free on the hosted backend (Luna, the host pays, rate-limited), so the
+         input sits above this now and the browse links follow it. The setup
+         card is only for a local server with no key, or a hosted backend whose
+         public secret is not set. -->
+    <a class="demo-band" href="drafts/">
+      <span class="demo-band-label">All published briefings</span>
+      <span class="demo-band-text">Every briefing this has produced — no key, no
+        account, nothing to set up.</span>
+      <span class="demo-band-go">Browse all evidence briefings →</span>
+    </a>
+
+    <!-- Visitor-shared briefings. Not drafts/ (those are curated CLI pieces)
+         and not the personal library (that stays in this browser). Loaded from
+         the public gist so a cold Render does not hide the list. -->
+    <section class="featured" id="publicBand">
+      <h2 class="featured-label">From other visitors</h2>
+      <p class="public-band-note">Briefings someone chose to share. Generating
+        one does not put yours here.</p>
+      <div id="publicPreview"></div>
+      <button type="button" class="demo-band-go" id="publicSeeAll" onclick="showView('publicListView'); loadPublicList();" style="background:none; border:none; padding:0; cursor:pointer; font: inherit; text-align:left;">Browse shared briefings →</button>
+    </section>
   </div>
 
   <!-- VIEW 2: Draft Ideas Selection -->
