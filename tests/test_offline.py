@@ -3100,6 +3100,39 @@ def test_article_in_the_web_app_cannot_run_scripts() -> None:
     check("the API returns the script-free copy", "standalone=False" in src)
 
 
+def test_desktop_article_uses_the_full_window() -> None:
+    """On a desktop the article is the remaining window, not a boxed column.
+
+    A clamp to 52rem plus a 1120px iframe card left a phone-width page sitting
+    in the middle of a wide screen. Newly rendered articles drop the column
+    cap; the web app's reader, above 1100px, drops the card and fills the
+    space beside the sidebar.
+    """
+    from articlegen import demo, render
+
+    html = render.render_article(demo.SAMPLE_BRIEFING, demo.SAMPLE_PAPERS, "t")
+    check("article CSS does not cap the column at 52rem",
+          "clamp(40rem, 72vw, 52rem)" not in html)
+    check("article main has no boxed max-width",
+          "max-width: 40rem" not in html and "max-width: 52rem" not in html)
+    check("article main uses the window", "max-width: none" in html)
+
+    page = open(
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "index.html"),
+        encoding="utf-8",
+    ).read()
+    check("the reader is not a 1120px card",
+          "min(92vw, 1120px)" not in page and "min(88vw, 1040px)" not in page)
+    check("desktop reader takes the remaining window",
+          "main.container:has(#readerView.active)" in page
+          and "max-width: none" in page)
+    check("desktop reader drops the iframe card chrome",
+          "#readerView.active .reader-frame-wrapper" in page
+          and "border: none" in page)
+    check("the build stamp is hidden while reading",
+          "body:has(#readerView.active) .build-stamp" in page)
+
+
 def test_health_reports_which_build_is_running() -> None:
     """The deployment must be able to say what it is running, and from where.
 
