@@ -29,13 +29,18 @@ Briefings other people chose to share are listed on the landing page under
 ## Use it from your phone or desktop
 
 1. **Open the site:** [https://bartholomewtj.github.io/article-generator/](https://bartholomewtj.github.io/article-generator/) (or run `articlegen web --open` locally).
-2. **Type a theme:** Enter your topic (e.g. `renewable energy storage`) and optional audience/style notes. On the public site you do not need a key.
+2. **Type a theme:** Enter your topic (e.g. `renewable energy storage`) and optional audience/style notes. The box is the first thing on the page. On the public site you do not need a key.
 3. **Choose a draft:** Tap any generated **Draft Idea Card** to launch the evidence-grounded research pipeline.
 4. **Read, save & share:** View the rendered article. **Keep** holds it in your
    library past the rolling limit. **Download** saves it as a single HTML file you
    can open offline or print to PDF. **Shareable link** gives you a short link
    anyone can open. **Add to public gallery** puts it on the public list for
    other visitors.
+
+Below the topic box the landing page has two browse links: **All published
+briefings** (the `drafts/` index — everything this has produced) and **From
+other visitors** (briefings someone chose to share). Your own saved briefings
+are under **Your articles**.
 
 On a window wider than 1100px the page switches to a desktop layout: a left
 sidebar instead of the top icon row, a wider column, and the article's actions

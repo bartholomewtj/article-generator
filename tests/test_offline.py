@@ -2916,13 +2916,18 @@ def test_first_visit_does_not_dead_end() -> None:
     check("the version badge is gone", "SyncFix" not in page and "v2.3" not in page)
 
     # drafts/ is already public. Generating on the hosted backend is now also
-    # free (host-paid Luna). The finished-work band still sits above the
-    # setup card so a first impression is not "paste a credential".
+    # free (host-paid Luna). The topic input leads the page and the read-only
+    # band follows it, so the key prompt is no longer above either one: the
+    # setup card is hidden in the markup and only a keyless local server sees
+    # it, which is what keeps a first impression from being "paste a
+    # credential".
     readme = open(os.path.join(root, "README.md"), encoding="utf-8").read()
     check("the landing view offers a read-only path",
           'class="demo-band"' in page and 'href="drafts/"' in page)
-    check("and it sits above the key prompt",
-          page.index('class="demo-band"') < page.index('id="setupCard"'))
+    check("the key prompt is hidden until the backend needs it",
+          'id="setupCard" style="display:none;"' in page)
+    check("and the topic input is above it either way",
+          page.index('id="themeInput"') < page.index('class="demo-band"'))
     check("it says outright that no key is needed", "no key, no" in page)
     check("README points at it too",
           "Read a finished article" in readme and "no account needed" in readme)
