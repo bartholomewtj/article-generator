@@ -44,7 +44,8 @@ On a window wider than 1100px the page switches to a desktop layout: a left
 sidebar instead of the top icon row, and the article fills the remaining
 window rather than sitting in a boxed column. The article's actions sit in a
 toolbar above it rather than a bar along the bottom of the screen. Narrower
-than that, you get the phone layout.
+than that, you get the phone layout. Browser Back from an article returns to
+the landing page. A home button next to ArticleGen does the same.
 
 The public site writes with **GPT-5.6 Luna**. It is free to you; the host pays, and an hourly cap applies to everyone together. The web app does not take a visitor key. The CLI below also supports Anthropic and a Claude subscription. Local `articlegen web` needs `OPENROUTER_API_KEY` in the environment.
 
