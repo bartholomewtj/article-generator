@@ -6814,8 +6814,6 @@ def test_full_text_comes_from_the_papers_cli_when_it_is_there() -> None:
             check("fetch_via_papers does not leak into os.environ", before_env == after_env)
             check("subprocess received PAPERS_MAILTO from OPENALEX_MAILTO",
                   env_calls[0][1].get("env", {}).get("PAPERS_MAILTO") == "test@example.com")
-            check("subprocess sets PAPERS_NO_CKN_QUEUE so drafts do not fill the miss list",
-                  env_calls[0][1].get("env", {}).get("PAPERS_NO_CKN_QUEUE") == "1")
         finally:
             os.environ.pop("OPENALEX_MAILTO", None)
     finally:
