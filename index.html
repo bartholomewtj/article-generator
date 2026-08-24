@@ -424,7 +424,14 @@
     display: block;
   }
 
-  .sticky-action-bar {
+  /* One set of reader actions, two layouts: a bar pinned to the bottom of the
+     screen on a phone, a toolbar above the article on a desktop. This used to
+     be two separate button sets — a header row and a bottom bar — which is
+     most of how the reader ended up five share buttons wide.
+     It lives inside #readerView, so the view's own display:none hides it (a
+     position:fixed element inside a display:none ancestor is still hidden).
+     Nothing has to remember to toggle it. */
+  .reader-actions {
     position: fixed;
     bottom: 0;
     left: 0;
@@ -452,6 +459,77 @@
     border-radius: 8px;
   }
   .action-btn svg { width: 20px; height: 20px; color: var(--accent); }
+  .reader-bar { flex-wrap: wrap; gap: 0.5rem; }
+  /* margin-right:auto keeps the status text beside the back button and pushes
+     the actions to the far end, instead of stranding it mid-row. */
+  .reader-meta { font-size: 0.8rem; color: var(--muted); margin-right: auto; }
+
+  /* ---- desktop shell ------------------------------------------------------
+     Under 1100px nothing changes: the top icon row and the bottom action bar
+     are what a phone wants. Above it the same views get a desktop frame — a
+     persistent left nav instead of the icon row, a wider column, and the
+     reader's actions as an ordinary toolbar above the article. */
+  .shell { display: flex; flex: 1; min-height: 0; }
+  .shell-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .sidebar { display: none; }
+  .sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    width: 100%;
+    padding: 0.55rem 0.7rem;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    color: var(--ink);
+    font: 500 0.88rem/1.2 var(--font-ui);
+    text-align: left;
+    cursor: pointer;
+  }
+  .sidebar-item:hover { background: var(--nav-hover); }
+  .sidebar-item svg { width: 17px; height: 17px; flex-shrink: 0; color: var(--accent); }
+  .sidebar-spacer { flex: 1; }
+
+  @media (min-width: 1100px) {
+    header.app-header { display: none; }
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      width: 218px;
+      flex-shrink: 0;
+      padding: 1.15rem 0.75rem;
+      background: var(--nav);
+      border-right: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      height: 100vh;
+    }
+    .sidebar .logo { padding: 0 0.7rem; margin-bottom: 1.15rem; }
+    main.container { max-width: 780px; padding: 2rem 2rem 3rem; }
+    main.container:has(#readerView.active) { max-width: min(92vw, 1120px); }
+    iframe.article-iframe { height: calc(100vh - 210px); }
+
+    .reader-actions {
+      position: static;
+      background: none;
+      border-top: none;
+      padding: 0;
+      gap: 0.4rem;
+      justify-content: flex-end;
+      z-index: auto;
+    }
+    .action-btn {
+      flex-direction: row;
+      gap: 0.45rem;
+      font-size: 0.82rem;
+      padding: 0.42rem 0.8rem;
+      border: 1px solid var(--line);
+      background: var(--card);
+    }
+    .action-btn:hover { background: var(--nav-hover); }
+    .action-btn svg { width: 16px; height: 16px; }
+  }
 
   .modal-overlay {
     position: fixed;
@@ -593,14 +671,31 @@
 </head>
 <body>
 
+<div class="shell">
+
+<!-- Desktop navigation. Hidden under 1100px, where the header icon row below
+     does the same job in the space a phone actually has. Same handlers, so
+     the two never drift apart. -->
+<aside class="sidebar">
+  <a href="#" class="logo" onclick="showView('themeView'); return false;">ArticleGen</a>
+  <button class="sidebar-item" onclick="showView('themeView')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>New briefing</button>
+  <button class="sidebar-item" onclick="showView('libraryView'); loadLibrary();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h7"/></svg>Your articles</button>
+  <button class="sidebar-item" onclick="showView('publicListView'); loadPublicList();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>Gallery</button>
+  <div class="sidebar-spacer"></div>
+  <button class="sidebar-item" onclick="cycleTheme()" title="Theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg><span class="theme-icon">Sys</span></button>
+  <button class="sidebar-item" onclick="openModal('settingsModal')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Settings</button>
+</aside>
+
+<div class="shell-main">
+
 <header class="app-header">
-  <a href="https://bartholomewtj.github.io/article-generator/" class="logo">ArticleGen</a>
+  <a href="#" class="logo" onclick="showView('themeView'); return false;">ArticleGen</a>
   <div class="header-actions">
-    <button class="icon-btn" onclick="window.location.href='https://bartholomewtj.github.io/article-generator/'" title="Home">
+    <button class="icon-btn" onclick="showView('themeView')" title="Home">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
     </button>
     <button class="icon-btn" id="themeToggleBtn" onclick="cycleTheme()" title="Theme">
-      <span id="themeToggleIcon">Sys</span>
+      <span class="theme-icon">Sys</span>
     </button>
     <button class="icon-btn" onclick="showView('publicListView'); loadPublicList();" title="Briefings from visitors">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
@@ -755,16 +850,30 @@
 
   <!-- VIEW 4: Article Reader & Mobile Share -->
   <div id="readerView" class="view">
-    <div class="section-header" style="flex-wrap:wrap; gap:0.5rem;">
+    <div class="section-header reader-bar">
       <button class="pill" onclick="showView('ideasView')">← Back to Ideas</button>
-      <div style="display:flex; align-items:center; gap:0.5rem;">
-        <!-- Every generated article is already saved. Starring is what tells the
-             library to keep it past the rolling limit — which is all the old
-             "Save to Published Library" button did, via a second storage key
-             holding a second copy of the same HTML. -->
-        <button class="pill" id="starCurrentBtn" onclick="starCurrentArticle()" title="Keep this article in your library">Keep</button>
-        <button class="pill" id="shareGalleryBtn" onclick="shareToGallery()" title="Put this briefing on the public list" style="display:none;">Share to gallery</button>
-        <span style="font-size:0.8rem; color:var(--muted);" id="articleMeta">Ready</span>
+      <span class="reader-meta" id="articleMeta">Ready</span>
+
+      <!-- The whole reader action set. Three buttons, two of them sharing:
+           one link anyone can open, and the opt-in public gallery. What was
+           here before was Share / Copy link / Publish public link / QR code /
+           Share to gallery — five ways to hand someone the same article, three
+           of which uploaded it to a third party without that being obvious.
+           Every generated article is already saved; Keep is what tells the
+           library to hold it past the rolling limit. -->
+      <div class="reader-actions">
+        <button class="action-btn" id="starCurrentBtn" onclick="starCurrentArticle()" title="Keep this article in your library">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+          <span id="starCurrentText">Keep</span>
+        </button>
+        <button class="action-btn" onclick="copyShareableLink()" title="Uploads the article and copies a short link. Anyone with the link can read it.">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          Shareable link
+        </button>
+        <button class="action-btn" id="shareGalleryBtn" onclick="shareToGallery()" title="Put this briefing on the public list" style="display:none;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          Add to gallery
+        </button>
       </div>
     </div>
 
@@ -777,8 +886,8 @@
            OpenRouter key (issue #100).
            allow-same-origin is kept deliberately, and it does NOT re-enable
            scripts. It is what lets this page still reach contentDocument to
-           sync the theme, toggle edit mode, and read the article back out when
-           saving it. Dropping it would break those three for no extra safety.
+           sync the theme and read the article back out when saving it.
+           Dropping it would break both for no extra safety.
            Articles rendered for the app carry no scripts anyway; the hideArticleToolbar
            call below covers older draft files on disk that still do. -->
       <iframe id="articleIframe" class="article-iframe" title="Generated Article"
@@ -829,30 +938,6 @@
   </div>
 
 </main>
-
-<!-- Sticky Mobile Action Bar for Reader -->
-<div id="stickyBar" class="sticky-action-bar" style="display:none;">
-  <button class="action-btn" id="editToggleBtn" onclick="toggleInPlaceEdit()">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-    <span id="editToggleText">Edit Text</span>
-  </button>
-  <button class="action-btn" onclick="shareCurrentArticle()">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
-    Share
-  </button>
-  <button class="action-btn" onclick="copyCurrentLink()" title="Copies a link with the article inside it. Nothing is uploaded.">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-    Copy Link
-  </button>
-  <button class="action-btn" onclick="copyPublicLink()" title="Uploads the article to a public pastebin and copies a short link. Anyone with the link can read it.">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-    Publish public link
-  </button>
-  <button class="action-btn" onclick="showQrModal()" title="Needs a public link, so this uploads the article too.">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-    QR Code
-  </button>
-</div>
 
 <!-- Settings Modal -->
 <div id="settingsModal" class="modal-overlay" onclick="closeModal('settingsModal')">
@@ -923,18 +1008,6 @@
   </div>
 </div>
 
-<!-- QR Code Modal -->
-<div id="qrModal" class="modal-overlay" onclick="closeModal('qrModal')">
-  <div class="modal-card" style="text-align:center;" onclick="event.stopPropagation()">
-    <div class="modal-header">
-      <h3 class="modal-title">Scan on Mobile</h3>
-      <button class="icon-btn" onclick="closeModal('qrModal')">✕</button>
-    </div>
-    <div id="qrCanvasWrapper" style="margin: 1.5rem 0; display:flex; justify-content:center;"></div>
-    <p style="font-size:0.85rem; color:var(--muted);">Scan this QR Code to open this article link on your smartphone or desktop.</p>
-  </div>
-</div>
-
 <div id="toast" class="toast">Action completed!</div>
 
 <!-- Which build you are actually looking at.
@@ -948,6 +1021,9 @@
      SHA by the Pages workflow; if you can still read the placeholder, you are
      looking at a local file that was never deployed. -->
 <p class="build-stamp" id="buildStamp">build <code>__BUILD_COMMIT__</code></p>
+
+</div><!-- /shell-main -->
+</div><!-- /shell -->
 
 <script>
   (function () {
@@ -1131,7 +1207,6 @@
   }
 
   let currentArticleUrl = '';
-  let currentMarkdownUrl = '';
   let currentTitle = '';
   // Which library entry the reader is showing, so the Keep button knows what it
   // is starring. Empty for anything not from the library — a locally-served
@@ -1164,21 +1239,20 @@
     }
   }
 
+  // Two theme buttons exist — one in the phone header row, one in the desktop
+  // sidebar — and only one is on screen at a time. Both carry .theme-icon so
+  // neither can show a stale label after the other was clicked.
   function updateThemeIcon() {
-    const iconEl = document.getElementById('themeToggleIcon');
-    const btnEl = document.getElementById('themeToggleBtn');
-    if (!iconEl) return;
-
-    if (currentThemeSetting === 'light') {
-      iconEl.textContent = 'Light';
-      if (btnEl) btnEl.title = 'Theme: Light (click for Dark)';
-    } else if (currentThemeSetting === 'dark') {
-      iconEl.textContent = 'Dark';
-      if (btnEl) btnEl.title = 'Theme: Dark (click for System)';
-    } else {
-      iconEl.textContent = 'Sys';
-      if (btnEl) btnEl.title = 'Theme: System (click for Light)';
-    }
+    const labels = {
+      light: ['Light', 'Theme: Light (click for Dark)'],
+      dark: ['Dark', 'Theme: Dark (click for System)'],
+      system: ['Sys', 'Theme: System (click for Light)']
+    };
+    const [text, title] = labels[currentThemeSetting] || labels.system;
+    document.querySelectorAll('.theme-icon').forEach(el => {
+      el.textContent = text;
+      if (el.parentElement) el.parentElement.title = title;
+    });
   }
 
   function syncThemeToIframe() {
@@ -1208,35 +1282,6 @@
       const doc = iframe.contentDocument || iframe.contentWindow.document;
       doc?.querySelectorAll('.toolbar').forEach(el => { el.style.display = 'none'; });
     } catch (e) {}
-  }
-
-  let isEditingInPlace = false;
-
-  function toggleInPlaceEdit() {
-    const iframe = document.getElementById('articleIframe');
-    if (!iframe) return;
-    try {
-      const doc = iframe.contentDocument || iframe.contentWindow.document;
-      if (!doc || !doc.body) return;
-
-      isEditingInPlace = !isEditingInPlace;
-      doc.body.contentEditable = isEditingInPlace ? "true" : "false";
-
-      const btnText = document.getElementById('editToggleText');
-      if (btnText) btnText.innerText = isEditingInPlace ? "Done Editing" : "Edit Text";
-
-      if (isEditingInPlace) {
-        showToast("✏️ Direct edit mode enabled — click any text in article to edit!");
-      } else {
-        showToast("✓ Text edits saved to local article preview.");
-        const htmlContent = doc.documentElement.outerHTML;
-        saveToLibrary(currentTitle || 'Edited Article', htmlContent);
-        const hash = encodeArticleToHash(htmlContent);
-        if (hash) window.location.hash = hash;
-      }
-    } catch(e) {
-      showToast('Could not save the edit: ' + e.message);
-    }
   }
 
   if (window.matchMedia) {
@@ -1270,12 +1315,6 @@
   function showView(viewId) {
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     document.getElementById(viewId).classList.add('active');
-    const sticky = document.getElementById('stickyBar');
-    if (viewId === 'readerView') {
-      sticky.style.display = 'flex';
-    } else {
-      sticky.style.display = 'none';
-    }
   }
 
 
@@ -1677,7 +1716,6 @@
         iframe.srcdoc = data.html;
         saveToLibrary(data.title || title, data.html);
         cachedShareUrl = '';
-        currentMarkdownUrl = '';
         const hash = encodeArticleToHash(data.html);
         if (hash) {
           window.location.hash = hash;
@@ -1688,7 +1726,6 @@
         iframe.removeAttribute('srcdoc');
         iframe.src = apiUrl(data.html_url);
         currentArticleUrl = data.html_url;
-        currentMarkdownUrl = data.md_url || '';
         // Written to drafts/ by the local server; it is not a library entry.
         currentArticleId = '';
         updateStarButton();
@@ -1728,17 +1765,6 @@
   // action, named for what it does, and it asks first.
 
   /** Self-contained link. Never uploads; never leaves this browser. */
-  function getLocalShareUrl() {
-    if (currentArticleUrl && !currentArticleUrl.includes('#read=') && !currentArticleUrl.includes('#p=')) {
-      return window.location.origin + currentArticleUrl;
-    }
-    const html = document.getElementById('articleIframe').srcdoc || '';
-    if (!html) return window.location.origin + window.location.pathname;
-    const hash = encodeArticleToHash(html);
-    return hash ? window.location.origin + window.location.pathname + hash
-                : window.location.origin + window.location.pathname;
-  }
-
   /** Upload to the public pastebin and return a short link. Asks first. */
   async function publishPublicLink() {
     if (cachedShareUrl) return cachedShareUrl;
@@ -1750,11 +1776,11 @@
     }
 
     const ok = confirm(
-      'Publish a public link?\n\n' +
+      'Create a shareable link?\n\n' +
       'This uploads the full article to dpaste.com, a public pastebin. ' +
       'Anyone with the link will be able to read it, and it stays there for 30 days. ' +
       'It is not private and cannot be deleted from here.\n\n' +
-      'To share without uploading anything, cancel and use "Copy Link" instead.'
+      'Cancel if you would rather not upload it.'
     );
     if (!ok) return null;
 
@@ -1783,69 +1809,35 @@
     }
   }
 
-  async function shareCurrentArticle() {
-    const shareUrl = getLocalShareUrl();
-    if (navigator.share) {
-      navigator.share({
-        title: currentTitle || document.title,
-        text: currentTitle,
-        url: shareUrl
-      }).catch(() => {});
-    } else {
-      copyCurrentLink();
-    }
-  }
-
-  async function copyCurrentLink() {
-    const shareUrl = getLocalShareUrl();
-    navigator.clipboard.writeText(shareUrl).then(() => {
-      // Worth saying out loud: this link carries the article inside it, which
-      // is why it's long — and why it hasn't been uploaded anywhere.
-      showToast(shareUrl.length > 2000
-        ? 'Copied. The article travels inside this link, so it is long — nothing was uploaded.'
-        : 'Article link copied to clipboard!');
-    }).catch(() => {});
-  }
-
-  async function copyPublicLink() {
+  /**
+   * The one share action: upload the article, copy a short link.
+   *
+   * This replaced four buttons that all handed someone the same article by a
+   * different route — a native share sheet, a #read= link with the whole
+   * article encoded into the URL, this, and a QR code. The inline #read= link
+   * is still *read* (old links keep working); it is no longer offered, because
+   * a multi-hundred-kilobyte URL is not a link anyone can use.
+   */
+  async function copyShareableLink() {
     const url = await publishPublicLink();
     if (!url) return;
+
+    // Keep the library honest: the list marks an article as published, and
+    // this is now the only thing that publishes one.
+    if (currentArticleId) {
+      const list = readLibrary();
+      const item = list.find(it => it.id === currentArticleId);
+      if (item && item.publicUrl !== url) {
+        item.publicUrl = url;
+        writeLibrary(list);
+      }
+    }
+
     navigator.clipboard.writeText(url).then(() => {
-      showToast('Public link copied. Anyone with it can read the article.');
-    }).catch(() => {});
-  }
-
-  function openRawMarkdown() {
-    if (currentMarkdownUrl) {
-      window.open(currentMarkdownUrl, '_blank');
-    }
-  }
-
-  async function showQrModal() {
-    const wrapper = document.getElementById('qrCanvasWrapper');
-
-    // A QR code can't carry a whole article, so this needs the short public
-    // link — which means uploading. And the code itself is rendered by
-    // api.qrserver.com, so whatever URL we pass goes to a third party too.
-    // Both are fine once the article is deliberately public; neither should
-    // happen to a private one, which is why publishPublicLink() asks first.
-    const shareUrl = await publishPublicLink();
-    if (!shareUrl) return;
-
-    wrapper.innerHTML = '<p style="color:var(--muted); font-size:0.9rem;">Generating QR code…</p>';
-    openModal('qrModal');
-
-    try {
-      const displayUrl = shareUrl.length > 90 ? (shareUrl.substring(0, 80) + '…') : shareUrl;
-      wrapper.innerHTML = `
-        <div style="display:flex; flex-direction:column; align-items:center;">
-          <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(shareUrl)}" alt="QR Code" width="200" height="200" style="border-radius:8px; border:1px solid var(--card-border);">
-          <p style="font-size:0.75rem; color:var(--muted); margin-top:0.6rem; word-break:break-all; max-width:260px;">${escapeHtml(displayUrl)}</p>
-        </div>
-      `;
-    } catch (e) {
-      wrapper.innerHTML = '<p style="color:var(--danger); font-size:0.85rem;">Failed to generate QR code.</p>';
-    }
+      showToast('Link copied. Anyone with it can read the article.');
+    }).catch(() => {
+      showToast('Published, but copying failed. The link is: ' + url);
+    });
   }
 
   // ---------------------------------------------------------------- public gallery
@@ -1934,7 +1926,6 @@
     const iframe = document.getElementById('articleIframe');
     currentArticleId = '';
     cachedShareUrl = '';
-    currentMarkdownUrl = '';
     currentTitle = item.title || 'Shared briefing';
     document.getElementById('articleMeta').innerText = currentTitle;
     updateStarButton();
@@ -2119,7 +2110,8 @@
     if (!btn) return;
     const item = readLibrary().find(it => it.id === currentArticleId);
     const on = !!(item && item.starred);
-    btn.innerText = on ? 'Kept' : 'Keep';
+    const label = document.getElementById('starCurrentText');
+    if (label) label.innerText = on ? 'Kept' : 'Keep';
     btn.classList.toggle('starred', on);
   }
 
@@ -2204,10 +2196,9 @@
       const card = document.createElement('div');
       card.className = 'gallery-item';
       card.style.gap = '0.5rem';
-      const publish = d.publicUrl
-        ? `<button type="button" class="pill" style="font-size:0.75rem; padding:0.2rem 0.6rem;" onclick="copyLinkDirect('${escapeHtml(d.publicUrl)}')">Link</button>
-           <button type="button" class="pill" style="font-size:0.75rem; padding:0.2rem 0.6rem;" onclick="showQrForUrl('${escapeHtml(d.publicUrl)}')">QR</button>`
-        : `<button type="button" class="pill" style="font-size:0.75rem; padding:0.2rem 0.6rem; white-space:nowrap;" onclick="publishLibraryItem('${d.id}')">Publish</button>`;
+      // Sharing is done from the reader, not from every row. Four buttons per
+      // row (star, Link/QR or Publish, Read, Delete) made the list unreadable
+      // and duplicated what the article's own toolbar already does.
       card.innerHTML = `
         <button type="button" class="pill${d.starred ? ' starred' : ''}" style="font-size:0.75rem; padding:0.2rem 0.55rem;" onclick="toggleStar('${d.id}')" title="${d.starred ? 'Stop keeping this' : 'Keep this article'}">
           ${d.starred ? 'Kept' : 'Keep'}
@@ -2217,7 +2208,6 @@
           <div class="gallery-meta">${new Date(d.date).toLocaleDateString()}${d.publicUrl ? ' · published' : ''}</div>
         </div>
         <div style="display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap; justify-content:flex-end;">
-          ${publish}
           <a class="gallery-action" href="#" onclick="openLibraryItem('${d.id}'); return false;">Read →</a>
           <button type="button" class="pill warn" style="font-size:0.75rem; padding:0.2rem 0.55rem;" onclick="deleteLibraryItem('${d.id}')" title="Delete">Delete</button>
         </div>
@@ -2239,7 +2229,6 @@
     iframe.src = apiUrl(htmlUrl);
     currentTitle = title || '';
     currentArticleUrl = htmlUrl;
-    currentMarkdownUrl = htmlUrl.replace(/\.html$/, '.md');
     currentArticleId = '';
     cachedShareUrl = '';
     document.getElementById('articleMeta').innerText = title || 'Draft';
@@ -2287,46 +2276,6 @@
     updateStarButton();
     showToast('Library cleared.');
     loadLibrary();
-  }
-
-  /** Publish a saved article to the public pastebin, on explicit request. */
-  async function publishLibraryItem(id) {
-    const list = readLibrary();
-    const item = list.find(it => it.id === id);
-    if (!item || !item.content) {
-      showToast('Nothing to publish for this entry.');
-      return;
-    }
-    const previous = cachedShareUrl;
-    cachedShareUrl = '';
-    document.getElementById('articleIframe').srcdoc = item.content;
-    const url = await publishPublicLink();
-    cachedShareUrl = url || previous;
-    if (!url) return;
-
-    item.publicUrl = url;
-    writeLibrary(list);
-    loadLibrary();
-    showToast('Published. Anyone with the link can read it.');
-  }
-
-  function copyLinkDirect(url) {
-    if (!url) return;
-    navigator.clipboard.writeText(url).then(() => {
-      showToast('Public article link copied to clipboard!');
-    }).catch(() => {});
-  }
-
-  function showQrForUrl(url) {
-    if (!url) return;
-    const wrapper = document.getElementById('qrCanvasWrapper');
-    openModal('qrModal');
-    wrapper.innerHTML = `
-      <div style="display:flex; flex-direction:column; align-items:center;">
-        <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}" alt="QR Code" width="200" height="200" style="border-radius:8px; border:1px solid var(--card-border);">
-        <p style="font-size:0.75rem; color:var(--muted); margin-top:0.6rem; word-break:break-all; max-width:260px;">${escapeHtml(url)}</p>
-      </div>
-    `;
   }
 
   function escapeHtml(str) {
