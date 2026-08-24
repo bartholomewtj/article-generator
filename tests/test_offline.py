@@ -5652,10 +5652,54 @@ def test_demo_and_index() -> None:
           demo.SAMPLE_ARTICLE["sections"][0]["heading"] == "Introduction"
           and demo.SAMPLE_ARTICLE["sections"][-1]["heading"].startswith("Conclusions"))
     with tempfile.TemporaryDirectory() as d:
-        with open(os.path.join(d, "2026-01-01-x.html"), "w", encoding="utf-8") as f:
+        path = os.path.join(d, "2026-01-01-x.html")
+        with open(path, "w", encoding="utf-8") as f:
             f.write(h)
         idx = build_index(d)
         check("index builds", os.path.exists(idx))
+        idx_html = open(idx, encoding="utf-8").read()
+        import datetime as _dt
+        mtime = _dt.datetime.fromtimestamp(os.path.getmtime(path))
+        check("drafts index uses day-month-year",
+              mtime.strftime("%d %b %Y").lstrip("0") in idx_html)
+        check("drafts index is not month-first American",
+              mtime.strftime("%b %d, %Y") not in idx_html)
+
+
+def test_dates_are_australian() -> None:
+    """Every printed date is day-month-year. American month-first was the
+    drafts-index format (`Aug 24, 2026`) and the browser default on this
+    machine (`toLocaleDateString()` with no locale).
+    """
+    import datetime as _dt
+    import inspect
+    from articlegen import pipeline, render, writer
+
+    check("article dates are day month year",
+          render._au_date(_dt.date(2026, 8, 4)) == "4 August 2026")
+    check("datetime dates are day month year",
+          render._au_datetime(_dt.datetime(2026, 8, 24, 18, 2))
+          == "24 Aug 2026 18:02")
+    check("pipeline Methods date uses the same helper",
+          "_au_date()" in inspect.getsource(pipeline))
+
+    check("date rule in briefing system prompt",
+          writer._DATE_RULE in writer._BRIEFING_SYSTEM)
+    check("date rule in writer system prompt",
+          writer._DATE_RULE in writer._WRITER_SYSTEM)
+    check("date rule survives in full-text briefing prompt",
+          writer._DATE_RULE in writer._BRIEFING_SYSTEM_FULLTEXT)
+    check("date rule survives in full-text writer prompt",
+          writer._DATE_RULE in writer._WRITER_SYSTEM_FULLTEXT)
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    page = open(os.path.join(root, "index.html"), encoding="utf-8").read()
+    check("gallery dates pin Australian locale",
+          "toLocaleDateString('en-AU'" in page)
+    check("gallery dates go through formatAuDate",
+          "formatAuDate(" in page)
+    check("bare toLocaleDateString() is gone",
+          "toLocaleDateString()" not in page)
 
 
 def test_visitor_gallery() -> None:
