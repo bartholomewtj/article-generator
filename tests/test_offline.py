@@ -2908,13 +2908,12 @@ def test_first_visit_does_not_dead_end() -> None:
     check("the version badge is gone", "SyncFix" not in page and "v2.3" not in page)
 
     readme = open(os.path.join(root, "README.md"), encoding="utf-8").read()
-    check("the landing view offers a read-only path",
-          'class="demo-band"' in page and 'href="drafts/"' in page)
-    check("and the topic input is above it",
-          page.index('id="themeInput"') < page.index('class="demo-band"'))
-    check("it says outright that no key is needed", "no key, no" in page)
-    check("README points at it too",
-          "Read a finished article" in readme and "no account needed" in readme)
+    check("the landing view does not link the drafts index",
+          'href="drafts/"' not in page)
+    check("and the topic input is above the visitor gallery",
+          page.index('id="themeInput"') < page.index('id="publicBand"'))
+    check("README says no key is needed",
+          "No key and no account needed" in readme)
     check("README says the public site generates for free",
           "free on the public site" in readme)
 
@@ -2946,20 +2945,21 @@ def test_the_landing_page_leads_with_the_input() -> None:
     #152 and #111 put finished reviews above the key prompt, on the theory that
     a stranger should see output before being asked for anything. Generating is
     free on the hosted backend now, so the ask is the input, not a key — the
-    input leads and the two browse bands (drafts/ and the shared list) follow
-    it. The hardcoded per-file review cards are gone; drafts/ is the one link.
+    input leads and the shared-visitor list follows it. The drafts/ index is
+    the local CLI review surface, not a public browse link.
     """
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     page = open(os.path.join(root, "index.html"), encoding="utf-8").read()
 
-    check("the topic input comes before the browse bands",
-          page.index('id="themeInput"') < page.index('class="demo-band" href="drafts/"'))
-    check("and before the shared-visitor list",
+    check("the topic input comes before the shared-visitor list",
           page.index('id="themeInput"') < page.index('id="publicBand"'))
-    check("the drafts index is still linked",
-          'class="demo-band" href="drafts/"' in page)
-    check("the drafts index exists on disk",
+    check("the published-briefings band is gone",
+          'href="drafts/"' not in page and "All published briefings" not in page)
+    check("the drafts index still exists on disk",
           os.path.exists(os.path.join(root, "drafts", "index.html")))
+    wf = open(os.path.join(root, ".github", "workflows", "deploy-pages.yml"), encoding="utf-8").read()
+    check("Pages deploy excludes drafts/",
+          "exclude 'drafts'" in wf and "path: '_site'" in wf)
     check("the removed per-draft cards are not left behind",
           "Recent evidence briefings" not in page)
     check("the head frames the output as a briefing, not an article generator",
