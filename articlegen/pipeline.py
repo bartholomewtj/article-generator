@@ -13,7 +13,6 @@ Callers differ only in what they do with the result: the CLI writes files into
 
 from __future__ import annotations
 
-import datetime
 import os
 import threading
 import time
@@ -30,6 +29,7 @@ from .sources import (DATABASE_NAMES, DEFAULT_MAX_PAPERS, NAMED_SOURCE_LIMIT,
 from .style import (SUBSTANCE_RULES, check_style, errors as style_errors,
                     format_report as format_style, revision_brief)
 from .verify import check_statistics, revision_brief as statistics_brief
+from .render import _au_date
 from .writer import (cite_target, clean_search_terms, curate_sources,
                      is_briefing, plan_queries, revise_prose,
                      revise_statistics, write_article, write_briefing)
@@ -769,7 +769,7 @@ def generate_draft(
         "core_entity": core_entity,
         "databases": databases,
         "model": resolve_provider(model, api_key)[1],
-        "date": datetime.date.today().strftime("%d %B %Y").lstrip("0"),
+        "date": _au_date(),
         # Which sources (1-based indices) the writer saw full text for. The
         # Methods section is written from this — like `databases`, it records
         # what actually happened, never what was intended.

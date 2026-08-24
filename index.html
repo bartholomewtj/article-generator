@@ -941,6 +941,16 @@
     return API_BASE + path;
   }
 
+  // Day-month-year, pinned. An unlocalised toLocaleDateString follows the
+  // browser locale, which is often US English even on an Australian machine.
+  function formatAuDate(value) {
+    const when = value instanceof Date ? value : new Date(value);
+    if (!when || isNaN(when.getTime())) return '';
+    return when.toLocaleDateString('en-AU', {
+      day: 'numeric', month: 'short', year: 'numeric'
+    });
+  }
+
   // Public visitor gallery. Same gist id as articlegen.gallery.GALLERY_INDEX_GIST.
   const GALLERY_INDEX_GIST = '3b864ca05620472d2644c3e9c1fd6a03';
   const GALLERY_INDEX_FILE = 'articlegen-gallery-index.json';
@@ -1639,8 +1649,7 @@
     title.textContent = item.title || 'Untitled briefing';
     const meta = document.createElement('span');
     meta.className = 'featured-take';
-    const when = item.date ? new Date(item.date) : null;
-    meta.textContent = when && !isNaN(when) ? when.toLocaleDateString() : 'Shared briefing';
+    meta.textContent = formatAuDate(item.date) || 'Shared briefing';
     card.appendChild(title);
     card.appendChild(meta);
     return card;
@@ -1976,7 +1985,7 @@
             item.innerHTML = `
               <div>
                 <div class="gallery-title">${escapeHtml(d.title)}</div>
-                <div class="gallery-meta">${new Date(d.date).toLocaleDateString()}</div>
+                <div class="gallery-meta">${formatAuDate(d.date)}</div>
               </div>
               <a class="gallery-action" href="#" onclick="openDraftFromGallery('${d.html_url}', '${escapeHtml(d.title).replace(/'/g, "\\'")}'); return false;">Read →</a>
             `;
@@ -2014,7 +2023,7 @@
         </button>
         <div style="flex:1; min-width:0;">
           <div class="gallery-title" style="line-height:1.35; margin-bottom:0.25rem;">${escapeHtml(d.title)}</div>
-          <div class="gallery-meta">${new Date(d.date).toLocaleDateString()}${d.publicUrl ? ' · published' : ''}</div>
+          <div class="gallery-meta">${formatAuDate(d.date)}${d.publicUrl ? ' · published' : ''}</div>
         </div>
         <div style="display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap; justify-content:flex-end;">
           <a class="gallery-action" href="#" onclick="openLibraryItem('${d.id}'); return false;">Read →</a>

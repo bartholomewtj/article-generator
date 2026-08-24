@@ -38,6 +38,16 @@ _TITLE_RE = re.compile(r"<title>(.*?)</title>", re.DOTALL)
 RELEVANCE_LABELS = {"direct": "Direct", "related": "Related", "tangential": "Background"}
 
 
+def _au_date(d: datetime.date | None = None) -> str:
+    """Day month year, no leading zero: '24 August 2026'."""
+    return (d or datetime.date.today()).strftime("%d %B %Y").lstrip("0")
+
+
+def _au_datetime(dt: datetime.datetime) -> str:
+    """Day month year with 24-hour time: '24 Aug 2026 18:02'."""
+    return dt.strftime("%d %b %Y %H:%M").lstrip("0")
+
+
 # --------------------------------------------------------------------------
 # citation plumbing
 # --------------------------------------------------------------------------
@@ -884,7 +894,7 @@ def _methods_paragraphs(
     provenance = provenance or {}
     queries = [q for q in (provenance.get("queries") or []) if q]
     databases = [d for d in (provenance.get("databases") or []) if d]
-    date = provenance.get("date") or datetime.date.today().strftime("%d %B %Y").lstrip("0")
+    date = provenance.get("date") or _au_date()
     model = provenance.get("model")
 
     search = f"Candidate records were retrieved on {esc(date)}"
@@ -1513,7 +1523,7 @@ def render_article(
 
     span = _year_range(cited)
     meta_bits = [
-        f"Generated {datetime.date.today().strftime('%d %B %Y').lstrip('0')}",
+        f"Generated {_au_date()}",
         f"{len(cited)} sources cited" + (f", {span}" if span else ""),
         _synthesis_label(cited),
         "Not peer reviewed",
@@ -1924,7 +1934,7 @@ def render_markdown(
     cited, cite_map = _citation_map(article, papers)
     labels = _display_relevance(cite_map, curation)
     counts = _relevance_counts(cite_map, curation)
-    today = datetime.date.today().strftime("%d %B %Y").lstrip("0")
+    today = _au_date()
     span = _year_range(cited)
 
     flags = _figure_flags(verification)
@@ -2286,7 +2296,7 @@ def build_index(drafts_dir: str) -> str:
         )
         items.append(
             f'<li><a href="{html.escape(name, quote=True)}">{title}</a>'
-            f'<div class="meta">{mtime:%b %d, %Y %H:%M} · '
+            f'<div class="meta">{_au_datetime(mtime)} · '
             f'<a href="{html.escape(name, quote=True)}">open</a>{md_link}</div></li>'
         )
 

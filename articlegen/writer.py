@@ -401,6 +401,13 @@ asked, that is what `answer` and `unknowns` — or, in a Review, the Introductio
 and Conclusions — are for. Never rewrite the question into one the sources \
 answer better."""
 
+# Display dates and prose dates are the same convention. American month-first
+# ("August 24, 2026", "8/24/2026") is the model default; this is the override.
+_DATE_RULE = """\
+- DATES. Day-month-year, Australian: "24 August 2026" or "24 Aug 2026". Never \
+month-first ("August 24, 2026", "8/24/2026"). Month and year alone \
+("March 2025") is unchanged."""
+
 _WRITER_SYSTEM = """\
 You write Review articles for a leading scientific journal — the register of a \
 Nature Reviews or Science Review piece: precise, hedged, impersonal, and readable \
@@ -447,6 +454,7 @@ cited, how many are direct, related or background, and the year range are comput
 and printed for you. Every count you write is one that can contradict them.
 """ + _WORKING_SET_RULE + """
 """ + _TOPIC_FIDELITY_RULE + """
+""" + _DATE_RULE + """
 - featured_study: summarize the single most relevant study's method and results \
 FROM ITS ABSTRACT ONLY. Prefer the most-relevant source you were given. It is \
 printed as a boxed display item, so it must stand alone.
@@ -633,6 +641,7 @@ FOUND. "The evidence suggests these strategies may be effective" is not a findin
 design and the population in the prose.
 """ + _WORKING_SET_RULE + """
 """ + _TOPIC_FIDELITY_RULE + """
+""" + _DATE_RULE + """
 - Hedge to the evidence in front of you, and vary how: "in a single small trial", \
 "consistently across three cohorts", "no controlled study has tested".
 
