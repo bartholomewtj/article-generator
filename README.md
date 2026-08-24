@@ -22,16 +22,21 @@ kept for later, not deleted.
 Luna, host-paid, rate-limited). Pasting your own OpenRouter key is optional.
 Briefings other people chose to share are listed on the landing page under
 **From other visitors**. Generating does not put yours there — tap
-**Share to gallery** after you have read it.
+**Add to gallery** after you have read it.
 
 ---
 
-## Use it from your phone (recommended)
+## Use it from your phone or desktop
 
 1. **Open the site:** [https://bartholomewtj.github.io/article-generator/](https://bartholomewtj.github.io/article-generator/) (or run `articlegen web --open` locally).
 2. **Type a theme:** Enter your topic (e.g. `renewable energy storage`) and optional audience/style notes. On the public site you do not need a key.
 3. **Choose a draft:** Tap any generated **Draft Idea Card** to launch the evidence-grounded research pipeline.
-4. **Read & Share:** View the rendered article and tap **Share**, **Copy Link**, or **QR Code**. **Share to gallery** puts it on the public list for other visitors.
+4. **Read & Share:** View the rendered article and tap **Shareable link** for a short link anyone can open. **Add to gallery** puts it on the public list for other visitors.
+
+On a window wider than 1100px the page switches to a desktop layout: a left
+sidebar instead of the top icon row, a wider column, and the article's actions
+in a toolbar above it rather than a bar along the bottom of the screen. Narrower
+than that, you get the phone layout.
 
 The public site writes with **GPT-5.6 Luna**. It is free to you; the host pays, and an hourly cap applies to everyone together. Settings still accepts an [OpenRouter API key](https://openrouter.ai/keys) if you want to use your own credit instead of the shared cap. A remembered key stays in the browser — see [Where your key is kept](#where-your-key-is-kept). The web app offers OpenRouter only; the CLI below also supports Anthropic and a Claude subscription.
 
@@ -40,7 +45,7 @@ the same Python that the CLI runs, on a small backend the page calls. There is
 no second implementation: an article generated from your phone goes through the
 same relevance gate, prose-style enforcement and statistic verification as one
 generated from the terminal. The hosted backend keeps no articles on disk: it
-renders, returns, and forgets. A briefing someone taps **Share to gallery** on
+renders, returns, and forgets. A briefing someone taps **Add to gallery** on
 is stored in a public GitHub gist and listed on the landing page; generating
 does not do that. Public generation uses a host-held OpenRouter key for Luna
 only; a visitor key is sent per request and never stored. Your private copies
