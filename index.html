@@ -156,6 +156,27 @@
     text-decoration: none;
     letter-spacing: 0.01em;
   }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .home-btn {
+    background: none;
+    border: none;
+    color: var(--accent);
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border-radius: 10px;
+    flex-shrink: 0;
+  }
+  .home-btn:hover { background: var(--nav-hover); }
+  .home-btn svg { width: 18px; height: 18px; }
   .header-actions { display: flex; gap: 0.4rem; }
   .icon-btn {
     background: var(--card);
@@ -503,7 +524,7 @@
       top: 0;
       height: 100vh;
     }
-    .sidebar .logo { padding: 0 0.7rem; margin-bottom: 1.15rem; }
+    .sidebar .brand { padding: 0 0.35rem 0 0.15rem; margin-bottom: 1.15rem; }
     main.container { max-width: 780px; padding: 2rem 2rem 3rem; }
     body:has(#readerView.active) { height: 100vh; overflow: hidden; }
     main.container:has(#readerView.active) {
@@ -648,7 +669,12 @@
      does the same job in the space a phone actually has. Same handlers, so
      the two never drift apart. -->
 <aside class="sidebar">
-  <a href="#" class="logo" onclick="showView('themeView'); return false;">ArticleGen</a>
+  <div class="brand">
+    <button type="button" class="home-btn" onclick="goHome()" title="Home" aria-label="Home">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+    </button>
+    <a href="#" class="logo" onclick="goHome(); return false;">ArticleGen</a>
+  </div>
   <button class="sidebar-item" onclick="showView('themeView')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>New briefing</button>
   <button class="sidebar-item" onclick="showView('libraryView'); loadLibrary();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h7"/></svg>Your articles</button>
   <button class="sidebar-item" onclick="showView('publicListView'); loadPublicList();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>Gallery</button>
@@ -659,11 +685,13 @@
 <div class="shell-main">
 
 <header class="app-header">
-  <a href="#" class="logo" onclick="showView('themeView'); return false;">ArticleGen</a>
-  <div class="header-actions">
-    <button class="icon-btn" onclick="showView('themeView')" title="Home">
+  <div class="brand">
+    <button type="button" class="home-btn" onclick="goHome()" title="Home" aria-label="Home">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
     </button>
+    <a href="#" class="logo" onclick="goHome(); return false;">ArticleGen</a>
+  </div>
+  <div class="header-actions">
     <button class="icon-btn" id="themeToggleBtn" onclick="cycleTheme()" title="Theme">
       <span class="theme-icon">Sys</span>
     </button>
@@ -850,7 +878,7 @@
   <div id="publicListView" class="view">
     <div class="section-header" style="flex-wrap:wrap; gap:0.5rem;">
       <h2 class="section-title">From other visitors</h2>
-      <button class="pill" onclick="showView('themeView')">← Home</button>
+      <button class="pill" onclick="goHome()">← Home</button>
     </div>
     <p style="font-size:0.85rem; color:var(--muted); margin-top:-0.5rem; margin-bottom:1rem;">
       These are briefings someone tapped Share to gallery on. Generating does
@@ -1136,6 +1164,40 @@
     document.getElementById(viewId).classList.add('active');
   }
 
+  // Opening an article writes #read= / #g= / #p= so the URL can be shared and
+  // so the browser Back button has somewhere to go. Nothing used to listen
+  // for the hash disappearing, so Back cleared the URL and left the article
+  // on screen. lastHandledHash skips the reload when we set the hash after
+  // already putting the article in the iframe.
+  let lastHandledHash = window.location.hash || '';
+
+  function goHome() {
+    showView('themeView');
+    lastHandledHash = '';
+    if (window.location.hash) {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }
+
+  function setArticleHash(hash) {
+    const next = !hash ? '' : (hash.charAt(0) === '#' ? hash : '#' + hash);
+    lastHandledHash = next;
+    if (window.location.hash !== next) {
+      window.location.hash = next;
+    }
+  }
+
+  window.addEventListener('hashchange', function () {
+    const hash = window.location.hash || '';
+    if (hash === lastHandledHash) return;
+    lastHandledHash = hash;
+    if (hash.startsWith('#read=') || hash.startsWith('#p=') || hash.startsWith('#g=')) {
+      checkUrlHashForArticle();
+    } else {
+      showView('themeView');
+    }
+  });
+
   function showToast(msg) {
     const t = document.getElementById('toast');
     if (!t) return;
@@ -1414,7 +1476,7 @@
         cachedShareUrl = '';
         const hash = encodeArticleToHash(data.html);
         if (hash) {
-          window.location.hash = hash;
+          setArticleHash(hash);
           currentArticleUrl = window.location.pathname + hash;
         }
       } else if (data.html_url) {
@@ -1634,7 +1696,7 @@
       iframe.removeAttribute('src');
       iframe.srcdoc = html;
       currentArticleUrl = window.location.pathname + '#g=' + item.id;
-      window.location.hash = 'g=' + item.id;
+      setArticleHash('g=' + item.id);
       refreshShareGalleryButton();
     } catch (e) {
       showToast('Could not open that briefing.');
@@ -1722,7 +1784,7 @@
       const data = await resp.json();
       const id = data.item && data.item.id;
       if (id) {
-        window.location.hash = 'g=' + id;
+        setArticleHash('g=' + id);
         currentArticleUrl = window.location.pathname + '#g=' + id;
       }
       showToast('On the public gallery. Anyone on the site can read it.');
@@ -1993,7 +2055,7 @@
     document.getElementById('articleIframe').srcdoc = item.content;
     const hash = encodeArticleToHash(item.content);
     if (hash) {
-      window.location.hash = hash;
+      setArticleHash(hash);
       currentArticleUrl = window.location.pathname + hash;
     }
     updateStarButton();

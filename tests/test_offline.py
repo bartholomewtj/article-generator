@@ -3133,6 +3133,40 @@ def test_desktop_article_uses_the_full_window() -> None:
           "body:has(#readerView.active) .build-stamp" in page)
 
 
+def test_browser_back_from_an_article_returns_home() -> None:
+    """Opening an article writes a hash; Back used to leave the reader on screen.
+
+    The page is one HTML file with views toggled in JS. Opening an article sets
+    #read= / #g= / #p=, which is a history entry, but nothing listened for
+    hashchange — so the browser Back button cleared the hash and the article
+    stayed on screen. Home next to the wordmark is the in-page equivalent.
+    """
+    page = open(
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "index.html"),
+        encoding="utf-8",
+    ).read()
+
+    home = page[page.index("function goHome("):]
+    home = home[:home.index("\n  }\n")]
+    check("goHome shows the landing view", "showView('themeView')" in home)
+    check("and strips the article hash without adding history",
+          "history.replaceState" in home)
+
+    check("hashchange sends an empty hash back to the landing view",
+          "addEventListener('hashchange'" in page
+          and "showView('themeView')" in page[page.index("addEventListener('hashchange'"):])
+    check("opening an article goes through setArticleHash",
+          "function setArticleHash(" in page
+          and "window.location.hash = hash" not in page)
+
+    check("a home control sits next to the wordmark",
+          'class="brand"' in page and 'class="home-btn"' in page
+          and 'onclick="goHome()"' in page)
+    check("both the phone header and the desktop sidebar have it",
+          page.count('class="brand"') == 2
+          and page.count('class="home-btn"') == 2)
+
+
 def test_health_reports_which_build_is_running() -> None:
     """The deployment must be able to say what it is running, and from where.
 
@@ -8309,6 +8343,8 @@ def main(argv: list[str] | None = None) -> int:
         test_the_front_end_has_one_article_list,
         test_visitor_gallery,
         test_article_in_the_web_app_cannot_run_scripts,
+        test_desktop_article_uses_the_full_window,
+        test_browser_back_from_an_article_returns_home,
         test_health_reports_which_build_is_running,
         test_openalex_reaches_for_recent_work_as_well,
         test_claude_cli_provider,
