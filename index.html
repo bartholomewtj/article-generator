@@ -17,31 +17,31 @@
   })();
 </script>
 <style>
-  /* recipe: software (tokens.md). Type: Tool. Signature: you on .theme-box. */
+  /* recipe: general (tokens.md). Type: Tool. Signature: you on .theme-box. */
   :root, html[data-theme="dark"] {
-    --paper: #121624;
-    --ink: #f1f3fa;
-    --muted: #939ebd;
-    --accent: #38bdf8;
-    --you: #38bdf8;
-    --accent-soft: #19344a;
-    --you-soft: #19344a;
-    --you-fill: #225c7d;
-    --warn: #f87171;
-    --warn-soft: #3b2632;
-    --ok: #34d399;
-    --ok-soft: #183839;
-    --ok-fill: #206555;
-    --navy: #a78bfa;
-    --navy-soft: #2d2b4b;
-    --navy-fill: #51477e;
-    --card: #1b2035;
-    --cage: #151a2b;
-    --line: #3a3e4b;
-    --boxline: #4c5369;
-    --nav: #0f131f;
-    --nav-hover: #20273f;
-    --on-accent: #121624;
+    --paper: #12171f;
+    --ink: #e6edf3;
+    --muted: #8b9aab;
+    --accent: #6ec4bb;
+    --you: #6ec4bb;
+    --accent-soft: #1f2f35;
+    --you-soft: #1f2f35;
+    --you-fill: #396061;
+    --warn: #d0806c;
+    --warn-soft: #2d262a;
+    --ok: #6fb891;
+    --ok-soft: #1f2e2f;
+    --ok-fill: #395b4f;
+    --navy: #7e9cc8;
+    --navy-soft: #212a37;
+    --navy-fill: #3f4f66;
+    --card: #1b232f;
+    --cage: #10141b;
+    --line: #383e45;
+    --boxline: #4d535a;
+    --nav: #0f141a;
+    --nav-hover: #212a39;
+    --chip-ink: #ffffff;
     --bg: var(--paper);
     --card-bg: var(--card);
     --card-border: var(--line);
@@ -52,34 +52,31 @@
     --font-utility: Consolas, "Courier New", monospace;
     color-scheme: dark;
   }
-  /* Light is the software recipe with paper/ink swapped. Accent stays
-     you-fill so labels still read on the light paper; the bright accent is
-     you-fill's partner, not a fifth hue. Washes are paper mixed into the hue. */
   @media (prefers-color-scheme: light) {
     :root:not([data-theme="dark"]) {
-      --paper: #f1f3fa;
-      --ink: #121624;
-      --muted: #4c5369;
-      --accent: #225c7d;
-      --you: #225c7d;
-      --accent-soft: #cfe9fa;
-      --you-soft: #cfe9fa;
-      --you-fill: #38bdf8;
-      --warn: #f87171;
-      --warn-soft: #f3d4d4;
-      --ok: #206555;
-      --ok-soft: #d4efe3;
-      --ok-fill: #34d399;
-      --navy: #51477e;
-      --navy-soft: #ddd7f0;
-      --navy-fill: #a78bfa;
-      --card: #ffffff;
-      --cage: #e8ebf4;
-      --line: #3a3e4b;
-      --boxline: #4c5369;
-      --nav: #e4e8f4;
-      --nav-hover: #d5dae8;
-      --on-accent: #121624;
+      --paper: #f3f5f7;
+      --ink: #1c2430;
+      --muted: #5a6a7b;
+      --accent: #2b6e67;
+      --you: #2b6e67;
+      --accent-soft: #dfe8e9;
+      --you-soft: #dfe8e9;
+      --you-fill: #2b6e67;
+      --warn: #95422d;
+      --warn-soft: #eae3e3;
+      --ok: #31724f;
+      --ok-soft: #e0e8e6;
+      --ok-fill: #31724f;
+      --navy: #36588c;
+      --navy-soft: #e0e5ec;
+      --navy-fill: #36588c;
+      --card: #fcfcfd;
+      --cage: #e9ecee;
+      --line: #d1d4d7;
+      --boxline: #bbbfc3;
+      --nav: #e9ecee;
+      --nav-hover: #e0e2e5;
+      --chip-ink: #ffffff;
       --bg: var(--paper);
       --card-bg: var(--card);
       --card-border: var(--line);
@@ -89,29 +86,29 @@
     }
   }
   html[data-theme="light"] {
-    --paper: #f1f3fa;
-    --ink: #121624;
-    --muted: #4c5369;
-    --accent: #225c7d;
-    --you: #225c7d;
-    --accent-soft: #cfe9fa;
-    --you-soft: #cfe9fa;
-    --you-fill: #38bdf8;
-    --warn: #f87171;
-    --warn-soft: #f3d4d4;
-    --ok: #206555;
-    --ok-soft: #d4efe3;
-    --ok-fill: #34d399;
-    --navy: #51477e;
-    --navy-soft: #ddd7f0;
-    --navy-fill: #a78bfa;
-    --card: #ffffff;
-    --cage: #e8ebf4;
-    --line: #3a3e4b;
-    --boxline: #4c5369;
-    --nav: #e4e8f4;
-    --nav-hover: #d5dae8;
-    --on-accent: #121624;
+    --paper: #f3f5f7;
+    --ink: #1c2430;
+    --muted: #5a6a7b;
+    --accent: #2b6e67;
+    --you: #2b6e67;
+    --accent-soft: #dfe8e9;
+    --you-soft: #dfe8e9;
+    --you-fill: #2b6e67;
+    --warn: #95422d;
+    --warn-soft: #eae3e3;
+    --ok: #31724f;
+    --ok-soft: #e0e8e6;
+    --ok-fill: #31724f;
+    --navy: #36588c;
+    --navy-soft: #e0e5ec;
+    --navy-fill: #36588c;
+    --card: #fcfcfd;
+    --cage: #e9ecee;
+    --line: #d1d4d7;
+    --boxline: #bbbfc3;
+    --nav: #e9ecee;
+    --nav-hover: #e0e2e5;
+    --chip-ink: #ffffff;
     --bg: var(--paper);
     --card-bg: var(--card);
     --card-border: var(--line);
@@ -291,7 +288,7 @@
     width: 100%;
     margin-top: 1.25rem;
     background: var(--you-fill);
-    color: var(--ink);
+    color: var(--chip-ink);
     border: 2px solid var(--you);
     padding: 0.95rem;
     border-radius: 12px;
@@ -658,7 +655,7 @@
   .error-body { font-size: 0.87rem; line-height: 1.55; margin: 0 0 0.9rem; }
   .error-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 
-  .starred { background: var(--you-fill); color: var(--ink); border-color: var(--you); }
+  .starred { background: var(--you-fill); color: var(--chip-ink); border-color: var(--you); }
 </style>
 </head>
 <body>
