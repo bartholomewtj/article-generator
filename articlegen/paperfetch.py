@@ -107,6 +107,10 @@ def fetch_via_papers_with_status(
             env["PAPERS_MAILTO"] = mailto
         else:
             env.pop("PAPERS_MAILTO", None)
+        # Private paperfetch writes a CKN miss-list line on `queued_ckn`.
+        # A draft must not fill that pickup list. Public paperfetch-oa
+        # ignores the variable.
+        env["PAPERS_NO_CKN_QUEUE"] = "1"
 
         try:
             proc = subprocess.run(
