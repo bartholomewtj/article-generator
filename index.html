@@ -2064,6 +2064,7 @@
       setArticleHash(hash);
       currentArticleUrl = window.location.pathname + hash;
     }
+    document.getElementById('articleMeta').innerText = item.title || 'Draft';
     updateStarButton();
     refreshShareGalleryButton();
     showView('readerView');
