@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test Title</title>
+<script>
+  (function() {
+    var saved = localStorage.getItem('articlegen_theme') || 'system';
+    if (saved === 'dark' || saved === 'light') {
+      document.documentElement.setAttribute('data-theme', saved);
+    }
+  })();
+</script>
+<style>
+  :root, html[data-theme="light"] {
+    --bg: #ffffff;
+    --surface: #f7f7f5;
+    --ink: #14171a;
+    --ink-2: #3c4249;
+    --muted: #6a7178;
+    --accent: #17457f;
+    --link: #1b5aa8;
+    --rule: #dfdfda;
+    --rule-strong: #b9bab5;
+    --seg-direct: #184f95;
+    --seg-related: #2a78d6;
+    --seg-tangential: #86b6ef;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14150f;
+      --surface: #1e1f1c;
+      --ink: #f2f1ea;
+      --ink-2: #cfcec5;
+      --muted: #9d9d94;
+      --accent: #9dc4f5;
+      --link: #86b6ef;
+      --rule: #33342f;
+      --rule-strong: #4c4d47;
+      --seg-direct: #86b6ef;
+      --seg-related: #3987e5;
+      --seg-tangential: #184f95;
+      color-scheme: dark;
+    }
+  }
+  html[data-theme="dark"] {
+    --bg: #14150f;
+    --surface: #1e1f1c;
+    --ink: #f2f1ea;
+    --ink-2: #cfcec5;
+    --muted: #9d9d94;
+    --accent: #9dc4f5;
+    --link: #86b6ef;
+    --rule: #33342f;
+    --rule-strong: #4c4d47;
+    --seg-direct: #86b6ef;
+    --seg-related: #3987e5;
+    --seg-tangential: #184f95;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Iowan Old Style", "Charter", Georgia, "Times New Roman", serif;
+    font-size: 1.02rem;
+    line-height: 1.62;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Phone: padded viewport. Desktop: the page uses the window, not a boxed
+     column — side padding only. */
+  main { max-width: none; width: 100%; margin: 0; padding: 2rem 1.25rem 4rem; }
+  @media (min-width: 1100px) {
+    main { padding: 2.5rem 4.5rem 4rem; }
+  }
+  .sans, .meta-line, .subject-line, .keywords, .di-caption, .fig-legend, .key-points,
+  .refs ol, .toolbar, .colophon, table, .meta-label {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+
+  /* ---- masthead ---------------------------------------------------- */
+  header.masthead { border-top: 3px solid var(--ink); padding-top: 0.9rem; margin-bottom: 2rem; }
+  .article-type {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 0.9rem;
+  }
+  h1 {
+    font-size: clamp(1.7rem, 4.2vw, 2.3rem);
+    line-height: 1.22; font-weight: 700; letter-spacing: -0.005em;
+    margin: 0 0 0.9rem;
+  }
+  /* Full contrast, body-text size, above the fold. The point of issue #91 is
+     that a disclosure in muted 0.78rem type is not a disclosure. */
+  .ai-disclosure {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.92rem; font-weight: 600; line-height: 1.45; color: var(--ink);
+    margin: 0 0 0.9rem; padding: 0.6rem 0.8rem;
+    background: var(--surface); border-left: 3px solid var(--ink);
+  }
+  .meta-line {
+    font-size: 0.78rem; color: var(--muted); margin: 0 0 0.35rem;
+    padding-bottom: 0.9rem; border-bottom: 1px solid var(--rule);
+  }
+  .subject-line { font-size: 0.78rem; color: var(--muted); margin: 0 0 0.9rem; }
+  .meta-label {
+    font-size: 0.68rem; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted); margin-right: 0.4rem;
+  }
+
+  /* ---- abstract & key points --------------------------------------- */
+  .abstract { margin: 0 0 1.2rem; }
+  .abstract p { margin: 0; font-size: 1.06rem; line-height: 1.6; color: var(--ink-2); }
+  .abstract .run-in-head, .question .run-in-head {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink); margin-right: 0.5rem;
+  }
+  .question { margin: 0 0 1rem; font-size: 1.06rem; line-height: 1.6; color: var(--ink-2); }
+  .keywords { font-size: 0.8rem; color: var(--muted); margin: 0 0 2rem; }
+  aside.key-points {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    padding: 1.1rem 1.3rem 1.2rem; margin: 0 0 2.2rem; border-radius: 3px;
+  }
+  aside.key-points h2 {
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 0.7rem;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  aside.key-points ul { margin: 0; padding-left: 1.1rem; }
+  .key-points-note { color: var(--muted); font-size: 0.78rem !important;
+                     font-style: italic; margin: 0 0 0.7rem 0 !important; }
+  sup.flag { font-size: 0.72em; line-height: 0; vertical-align: super; }
+  sup.flag a { color: var(--muted); text-decoration: none; font-weight: 700; }
+  aside.key-points li { margin-bottom: 0.5rem; font-size: 0.95rem; line-height: 1.55; }
+  aside.key-points li:last-child { margin-bottom: 0; }
+
+  /* ---- body -------------------------------------------------------- */
+  h2 {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 1.02rem; font-weight: 700; letter-spacing: 0.01em;
+    margin: 2.2rem 0 0.7rem; color: var(--ink);
+  }
+  p { margin: 0 0 1rem; }
+  .body-section p + p { text-indent: 1.2em; }
+  .run-in { font-weight: 700; font-style: italic; }
+  a { color: var(--link); }
+  sup.cite { font-size: 0.68em; line-height: 0; font-weight: 600; letter-spacing: 0.02em; }
+  sup.cite a { color: var(--link); text-decoration: none; padding: 0 0.02em; }
+  sup.cite a:hover { text-decoration: underline; }
+
+  /* ---- display items ----------------------------------------------- */
+  .display { margin: 1.8rem 0 2rem; }
+  .di-caption {
+    font-size: 0.8rem; line-height: 1.5; color: var(--muted); margin: 0.7rem 0 0;
+  }
+  .di-label { font-weight: 700; color: var(--ink); }
+  aside.box {
+    background: var(--surface); border: 1px solid var(--rule-strong);
+    padding: 1.1rem 1.3rem 1.2rem; border-radius: 3px;
+  }
+  aside.box .di-caption { margin: 0 0 0.7rem; font-size: 0.92rem; color: var(--ink); }
+  aside.box p { font-size: 0.95rem; line-height: 1.55; margin: 0 0 0.6rem; }
+  aside.box p:last-child { margin-bottom: 0; }
+  .box-cite { color: var(--muted); font-size: 0.85rem !important; }
+  .box-note { color: var(--muted); font-size: 0.78rem !important; font-style: italic;
+              margin-top: 0.75rem !important; }
+  figure.figure { margin: 1.8rem 0 2rem; padding: 1rem 0 0; border-top: 1px solid var(--rule); }
+  .fig-svg { width: 100%; height: auto; display: block; }
+  .fig-grid { stroke: var(--rule); stroke-width: 1; }
+  .fig-axis { stroke: var(--rule-strong); stroke-width: 1; }
+  .fig-tick { fill: var(--muted); font-size: 11px;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .fig-value { fill: var(--ink-2); font-size: 11px; font-weight: 600;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .fig-axis-title { fill: var(--muted); font-size: 11px; letter-spacing: 0.04em;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .seg-direct { fill: var(--seg-direct); }
+  .seg-related { fill: var(--seg-related); }
+  .seg-tangential { fill: var(--seg-tangential); }
+  .seg-cited { fill: var(--seg-related); }
+  .fig-legend {
+    display: flex; flex-wrap: wrap; gap: 0.3rem 1.1rem; list-style: none;
+    margin: 0.6rem 0 0; padding: 0; font-size: 0.78rem; color: var(--muted);
+  }
+  .fig-legend li { display: flex; align-items: center; gap: 0.4rem; }
+  .swatch {
+    display: inline-block; width: 0.68rem; height: 0.68rem; border-radius: 2px;
+    margin-right: 0.35rem; vertical-align: -0.05rem;
+  }
+  .swatch-direct { background: var(--seg-direct); }
+  .swatch-related { background: var(--seg-related); }
+  .swatch-tangential { background: var(--seg-tangential); }
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; min-width: 32rem; border-collapse: collapse; font-size: 0.82rem; }
+  tbody td:nth-child(5) { white-space: nowrap; }
+  thead th {
+    text-align: left; font-weight: 700; color: var(--ink);
+    border-top: 1px solid var(--rule-strong); border-bottom: 1px solid var(--rule-strong);
+    padding: 0.45rem 0.5rem; white-space: nowrap;
+  }
+  tbody td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--rule); color: var(--ink-2); }
+  tbody tr:last-child td { border-bottom: 1px solid var(--rule-strong); }
+  .t-num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .t-venue { color: var(--muted); }
+
+  /* ---- back matter -------------------------------------------------- */
+  .back-section { margin-top: 2.2rem; }
+  .back-section > h2:first-child, .refs h2 { margin-top: 0; }
+  .back-section p { font-size: 0.92rem; line-height: 1.58; color: var(--ink-2); }
+  .glossary dl { margin: 0; }
+  .gloss-row { display: flex; gap: 0.75rem; padding: 0.4rem 0; border-bottom: 1px solid var(--rule); }
+  .gloss-row dt { flex: 0 0 9.5rem; font-weight: 700; font-size: 0.92rem; }
+  .gloss-row dd { margin: 0; font-size: 0.92rem; color: var(--ink-2); }
+  .gloss-row:last-child { border-bottom: none; }
+  .refs { margin-top: 2.4rem; border-top: 2px solid var(--ink); padding-top: 1.1rem; }
+  .refs ol { margin: 0; padding-left: 1.5rem; font-size: 0.82rem; line-height: 1.5; }
+  .refs li { margin-bottom: 0.55rem; color: var(--ink-2); }
+  .refs li:target { background: var(--surface); border-radius: 2px; }
+  .refs a { color: var(--link); text-decoration: none; }
+  .refs a:hover { text-decoration: underline; }
+  .ref-authors { color: var(--ink); }
+  .ref-cites { color: var(--muted); }
+  footer.colophon {
+    margin-top: 2.4rem; padding-top: 1rem; border-top: 1px solid var(--rule);
+    font-size: 0.78rem; line-height: 1.55; color: var(--muted);
+  }
+
+  /* ---- toolbar ------------------------------------------------------ */
+  .toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0 2rem; }
+  .tool-btn {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    background: transparent; color: var(--ink-2);
+    border: 1px solid var(--rule-strong); border-radius: 2px;
+    padding: 0.35rem 0.7rem; font-size: 0.78rem; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+  }
+  .tool-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .share-toast { font-size: 0.78rem; color: var(--accent); align-self: center; display: none; }
+
+  @media (max-width: 34rem) {
+    .gloss-row { display: block; }
+    .gloss-row dt { margin-bottom: 0.15rem; }
+    .body-section p + p { text-indent: 0; }
+  }
+  @media print {
+    body { font-size: 10.5pt; background: #fff; color: #000; }
+    .toolbar { display: none; }
+    a, sup.cite a { color: #000; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <article>
+  <header class="masthead">
+    <p class="article-type">Evidence briefing</p>
+    <h1>Test Title</h1>
+    <p class="ai-disclosure">Written by a language model from the cited research, from their abstracts alone. No human author wrote or checked this text. Not peer reviewed.</p>
+    <p class="meta-line">Generated 24 August 2026 &middot; 0 sources cited &middot; Abstract-derived synthesis &middot; Not peer reviewed</p>
+    <p class="subject-line"><span class="meta-label">Subject</span>test topic</p>
+
+    <div class="toolbar">
+      <button class="tool-btn" onclick="shareArticle()">Share</button>
+      <button class="tool-btn" onclick="copyArticleLink()">Copy link</button>
+      <button class="tool-btn" onclick="toggleArticleTheme()"><span id="themeIcon">&#9789;</span> Theme</button>
+      <span id="shareToast" class="share-toast">Link copied</span>
+    </div>
+
+    <p class="question"><span class="run-in-head">Question</span>What is the evidence on seclusion?</p>
+    <div class="abstract">
+      <p><span class="run-in-head">Answer</span>Answer here.</p>
+    </div>
+    <p class="keywords"><span class="meta-label">Keywords</span> seclusion</p>
+  </header>
+
+  <aside class="key-points">
+<h2>What the evidence shows</h2>
+<ul>
+<li>Finding one.</li>
+</ul>
+</aside>
+
+<aside class="key-points">
+<h2>What remains open</h2>
+<ul>
+<li>Unknown one.</li>
+</ul>
+</aside>
+
+  <section class="back-section">
+<h2>Methods</h2>
+<p><span class="run-in">Search strategy.</span> Candidate records were retrieved on 24 August 2026, using the search strings ‘query 1’. The databases searched were not recorded for this draft. Records without a retrievable abstract were discarded, leaving 1 for screening. Each remaining record was assessed for how directly it addresses test topic and labelled direct, related or background; 0 were cited here and are listed in Table 1.</p>
+<p><span class="run-in">Evidence handling.</span> Only titles and abstracts were read; full texts were not retrieved, so no claim in this review rests on data reported beyond an abstract. Decimals, percentages, effect estimates and quantities carrying a clinical unit were checked automatically, each against the abstracts of the sources its own sentence cites. A figure that could not be located, or that appears only in a source other than the one cited, is flagged under Limitations.</p>
+<p><span class="run-in">Generation.</span> Search planning, source curation and drafting were performed by a large language model (openai/gpt-5.6-luna). Source retrieval, relevance tabulation, citation numbering, Table 1, Fig. 1 and the statistical check are deterministic and were not model-generated.</p>
+</section>
+
+  <section class="back-section">
+<h2>Evidence assessment</h2>
+<p>This review cites 0 sources. The composition of the evidence base is shown in Fig. 1.</p>
+<p id="limitations"><span class="run-in">Limitations.</span> This synthesis was prepared from abstracts alone. Effect estimates, methodological detail, and the limitations that authors report only in a full text were unavailable, so the strength of individual studies could not be appraised here.</p>
+</section>
+
+  
+
+  
+
+  <section class="refs">
+    <h2>References</h2>
+    <ol>
+      
+    </ol>
+  </section>
+
+  <section class="back-section">
+<h2>Additional information</h2>
+<p><span class="run-in">Data availability.</span> No new data were generated. All evidence cited is published and openly indexed; 0 of the 0 cited records resolve through the links in the reference list.</p>
+<p><span class="run-in">Author contributions.</span> Search planning, source curation and drafting were carried out by an automated pipeline (articlegen, openai/gpt-5.6-luna). No human author wrote or verified the text before publication of this draft.</p>
+<p><span class="run-in">Competing interests.</span> None declared.</p>
+<p><span class="run-in">Peer review.</span> This article has not been peer reviewed and is not a publication of record.</p>
+</section>
+
+  <footer class="colophon">
+    Machine-generated evidence review of the journal articles listed in the references, written from their abstracts, not their full texts. Follow the source links before relying on any specific claim.
+  </footer>
+  </article>
+</main>
+<script>
+function shareArticle() {
+  if (navigator.share) {
+    navigator.share({ title: document.title, url: window.location.href }).catch(function() {});
+  } else {
+    copyArticleLink();
+  }
+}
+function copyArticleLink() {
+  navigator.clipboard.writeText(window.location.href).then(function() {
+    var t = document.getElementById('shareToast');
+    if (t) {
+      t.style.display = 'inline';
+      setTimeout(function() { t.style.display = 'none'; }, 2500);
+    }
+  }).catch(function() {});
+}
+function toggleArticleTheme() {
+  var cur = document.documentElement.getAttribute('data-theme');
+  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var effective = cur || (isSysDark ? 'dark' : 'light');
+  var next = effective === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('articlegen_theme', next);
+  updateArticleThemeIcon();
+}
+function updateArticleThemeIcon() {
+  var icon = document.getElementById('themeIcon');
+  if (!icon) return;
+  var cur = document.documentElement.getAttribute('data-theme');
+  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var effective = cur || (isSysDark ? 'dark' : 'light');
+  icon.innerHTML = effective === 'dark' ? '&#9789;' : '&#9788;';
+}
+document.addEventListener('DOMContentLoaded', updateArticleThemeIcon);
+</script>
+</body>
+</html>
