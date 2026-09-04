@@ -6632,6 +6632,10 @@ def test_full_text_grounding() -> None:
     check("the paper's own citation brackets are stripped",
           "[ 3 ]" not in text and "[2, 5]" not in text)
     check("statistics survive the stripping", "OR 0.66" in text)
+    check("recognised JATS sections get paperfetch marker lines",
+          "## Methods" in text and "## Results" in text)
+    check("the marker precedes the section body",
+          text.index("## Methods") < text.index("enrolled"))
 
     # -- fetch gating and cache --------------------------------------------
     calls = []
@@ -6788,6 +6792,124 @@ def test_full_text_grounding() -> None:
                                      curation={1: "direct"}, provenance={})
     check("abstracts-only article still says so",
           "abstracts alone" in html_abs and "Abstract-derived synthesis" in html_abs)
+
+
+def test_section_aware_excerpts() -> None:
+    """Results and discussion are shown even when they sit past a head-slice.
+
+    The first 12,000 characters of a paper are the title, intro and methods.
+    A figure that only appears in Results used to be unseen by the writer and
+    unverifiable. With paperfetch-style ``## Results`` markers, the excerpt
+    spends its budget on abstract, results, discussion/conclusions, methods,
+    introduction — so that figure verifies. References never enter, so a
+    volume number in the list cannot falsely verify a figure.
+    """
+    from articlegen import sources, verify
+    from articlegen.sources import Paper, full_text_excerpts
+
+    figure = "41.7%"
+    intro = "Background on seclusion. " * 500
+    check("the intro padding does not itself contain the figure",
+          figure not in intro)
+
+    marked = (
+        "## Abstract\n\n"
+        "A cluster trial of seclusion reduction.\n\n"
+        "## Introduction\n\n"
+        f"{intro}\n\n"
+        "## Methods\n\n"
+        "We randomised 12 wards.\n\n"
+        "## Results\n\n"
+        f"Seclusion episodes fell {figure} in the intervention wards.\n\n"
+        "## Discussion\n\n"
+        "The reduction held at six months.\n\n"
+        "References\n\n"
+        "Smith J. J Hosp 2020;12:99.9.\n"
+    )
+    check("the results figure sits past a head-slice",
+          figure not in marked[:sources.FULLTEXT_PER_PAPER_CHARS])
+
+    paper = Paper(title="Seclusion reduction trial",
+                  abstract="A cluster trial of seclusion reduction.",
+                  full_text=marked)
+    shown = full_text_excerpts([paper])[1]
+    check("the excerpt contains the results figure", figure in shown)
+    check("sections appear in excerpt-priority order, not document order",
+          shown.index("## Abstract") < shown.index("## Results")
+          < shown.index("## Discussion") < shown.index("## Methods"))
+    check("the long introduction is not taken first",
+          shown.index("## Results") < (shown.find("## Introduction")
+                                       if "## Introduction" in shown else len(shown)))
+    check("references stay out of the excerpt",
+          "99.9" not in shown and "Smith J" not in shown)
+    check("marked text still fills the per-paper cap",
+          len(shown) == sources.FULLTEXT_PER_PAPER_CHARS)
+
+    art = {"abstract": f"Seclusion fell {figure} [1].", "sections": [],
+           "key_points": [], "references": []}
+    result = verify.check_statistics(art, [paper])
+    check("a results-section figure verifies where a head-slice would miss it",
+          figure not in result["unverified"])
+
+    head = Paper(title=paper.title, abstract=paper.abstract,
+                 full_text=marked[:sources.FULLTEXT_PER_PAPER_CHARS])
+    head_result = verify.check_statistics(art, [head])
+    check("the same figure is unverified against a head-slice of the same text",
+          figure in head_result["unverified"])
+
+    # Europe PMC JATS is mapped the same way as paperfetch: markers, no
+    # reference list, heading not repeated in the body.
+    jats = (
+        "<article>"
+        "<front><article-meta><abstract><p>A cluster trial of seclusion "
+        "reduction.</p></abstract></article-meta></front>"
+        "<body>"
+        f"<sec><title>Introduction</title><p>{intro}</p></sec>"
+        "<sec><title>Materials and Methods</title><p>We randomised 12 wards.</p></sec>"
+        f"<sec><title>Results</title><p>Seclusion episodes fell {figure} "
+        "in the intervention wards.</p></sec>"
+        "<sec><title>Discussion</title><p>The reduction held at six months.</p></sec>"
+        "<sec><title>References</title><p>Smith J. J Hosp 2020;12:99.9.</p></sec>"
+        "</body></article>"
+    )
+    parsed = sources._parse_fulltext_xml(jats)
+    check("JATS parse emits Results and Methods markers",
+          "## Results" in parsed and "## Methods" in parsed)
+    check("JATS Materials and Methods maps to ## Methods",
+          "## Methods" in parsed and "Materials and Methods" not in parsed)
+    check("JATS parse drops the reference list", "99.9" not in parsed)
+    check("JATS abstract is marked", "## Abstract" in parsed)
+    jats_shown = full_text_excerpts([
+        Paper(title="t", abstract="a", full_text=parsed)])[1]
+    check("JATS results figure reaches the excerpt", figure in jats_shown)
+
+    both = (
+        "## Discussion\n\nThe finding held.\n\n"
+        "## Conclusions\n\nWe conclude nothing new.\n"
+    )
+    either = full_text_excerpts([
+        Paper(title="t", abstract="a", full_text=both)])[1]
+    check("discussion wins the discussion-or-conclusions slot",
+          "## Discussion" in either and "## Conclusions" not in either)
+
+    conclusions_only = (
+        "## Methods\n\nWe did a thing.\n\n"
+        "## Conclusions\n\nThe rate was 8.8%.\n"
+    )
+    conc = full_text_excerpts([
+        Paper(title="t", abstract="a", full_text=conclusions_only)])[1]
+    check("conclusions fill the slot when there is no discussion",
+          "## Conclusions" in conc and "8.8%" in conc)
+
+    unmarked = (
+        "Intro text. Results: seclusion fell 41.7%.\n"
+        "References\n"
+        "Smith J. J Hosp 2020;12:99.9.\n"
+    )
+    plain = full_text_excerpts([
+        Paper(title="t", abstract="a", full_text=unmarked)])[1]
+    check("unmarked text still drops the reference list", "99.9" not in plain)
+    check("unmarked text keeps the results figure", "41.7%" in plain)
 
 
 def test_pipeline_fetches_full_text() -> None:
@@ -8655,7 +8777,8 @@ def main(argv: list[str] | None = None) -> int:
         test_arxiv_rate_limit_is_honoured,
         test_ungrounded_citations_leave_no_trace,
         test_second_hand_figures_are_a_last_resort,
-        test_full_text_grounding, test_pipeline_fetches_full_text,
+        test_full_text_grounding, test_section_aware_excerpts,
+        test_pipeline_fetches_full_text,
         test_unlabelled_sources_stop_the_run,
         test_full_text_comes_from_the_papers_cli_when_it_is_there,
         test_queued_ckn_counts_as_no_open_access,
