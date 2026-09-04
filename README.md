@@ -243,10 +243,16 @@ Markdown, for easy editing), and refreshes `index.html` (your review queue).
   both. A clinical topic getting nothing from arXiv is normal. Papers found only
   on arXiv are preprints — the reference list labels them "arXiv preprint", and
   a preprint has not been peer reviewed.
-- Search results are cached for 24 hours, so re-running the same topic is
-  instant and costs nothing against those shared limits. This matters more than
-  it sounds: the free tiers refuse often enough that a second attempt at the
-  same query is likelier to fail than to find anything new.
+- Search results, full texts and DOI lookups are cached for 24 hours in one
+  file, `~/.articlegen/cache.json`, so re-running the same topic (in the CLI
+  or the web app) makes no search requests and costs nothing against those
+  shared limits. This matters more than it sounds: the free tiers refuse often
+  enough that a second attempt at the same query is likelier to fail than to
+  find anything new. A refusal is remembered for 2 minutes only. To put the
+  file somewhere else set `ARTICLEGEN_CACHE_DIR=/some/folder`; to switch
+  caching off entirely (memory and file) set `ARTICLEGEN_SEARCH_CACHE_TTL=0`.
+  Delete the file to force a fresh search. It holds paper metadata and open
+  access text, never an API key.
 - The article is AI-written from **abstracts, plus the open-access full texts**
   of the most relevant sources when an open-access copy can be retrieved. The
   Methods section and Table 1's Read column state exactly how deeply each

@@ -19,6 +19,14 @@ import traceback
 # Ensure the repo root is importable when run as `python tests/test_offline.py`.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# The search cache is written to disk (~/.articlegen/cache.json by default).
+# Every test that searches would otherwise leave its fake papers in the real
+# file, so the whole run points the cache at a fresh temp folder. Set before
+# articlegen is imported, and read by sources at first use, never at import.
+import tempfile
+
+os.environ["ARTICLEGEN_CACHE_DIR"] = tempfile.mkdtemp(prefix="articlegen-test-cache-")
+
 FAILURES: list[str] = []
 
 
@@ -1569,6 +1577,145 @@ def test_search_cache() -> None:
         sources.clear_search_cache()
         (sources.search_semantic_scholar, sources.search_openalex,
          sources.search_europe_pmc, sources.search_arxiv) = real
+
+
+def test_search_cache_survives_a_new_process() -> None:
+    """A second CLI run on the same topic makes no search request at all.
+
+    Every `articlegen draft` is a fresh process, so an in-memory cache only
+    ever helped the web server and the README's "re-running is instant" was
+    false for the CLI. The three caches now round-trip through one JSON file
+    under ARTICLEGEN_CACHE_DIR. A new process is simulated the honest way: the
+    dicts are emptied and the loaded flag reset, so the only place the second
+    run can get its answer from is the file.
+    """
+    import shutil
+    import tempfile
+    import time
+
+    from articlegen import sources
+
+    def forget_process() -> None:
+        # What a fresh interpreter starts with: empty dicts, nothing loaded.
+        sources._search_cache.clear()
+        sources._fulltext_cache.clear()
+        sources._pmcid_cache.clear()
+        sources._cache_loaded = False
+
+    real = (sources.search_semantic_scholar, sources.search_openalex,
+            sources.search_europe_pmc, sources.search_arxiv)
+    real_ttl = sources._CACHE_TTL
+    saved_dir = os.environ.get("ARTICLEGEN_CACHE_DIR")
+    folder = tempfile.mkdtemp(prefix="articlegen-cache-test-")
+    os.environ["ARTICLEGEN_CACHE_DIR"] = folder
+    calls = {"n": 0}
+    try:
+        sources.clear_search_cache()
+        cache_file = os.path.join(folder, "cache.json")
+        check("the cache file lives under ARTICLEGEN_CACHE_DIR",
+              str(sources._cache_file()) == cache_file)
+
+        def counting(q, limit=15):
+            calls["n"] += 1
+            return [sources.Paper(
+                title=f"{q} paper", abstract="a", year=2024, doi="10.1000/x1",
+                authors=["A", "B"], venue="V", citation_count=3, url="https://x",
+                source="semantic_scholar", pmcid="PMC1", is_open_access=True,
+                publication_types=("journal article", "review"))]
+
+        sources.search_semantic_scholar = counting
+        sources.search_openalex = counting
+        sources.search_europe_pmc = counting
+        sources.search_arxiv = counting
+
+        first: list[dict] = []
+        got_first = sources.gather_evidence(["topic a"], outcomes=first)
+        check("the first run searches every source", calls["n"] == 4)
+        check("the first run writes the file", os.path.isfile(cache_file))
+        with open(cache_file, encoding="utf-8") as fh:
+            on_disk = json.load(fh)
+        check("the file holds the search entries",
+              {e["source"] for e in on_disk["search"]}
+              == {"semantic_scholar", "openalex", "europe_pmc", "arxiv"})
+        check("the file names the query and limit",
+              on_disk["search"][0]["query"] == "topic a"
+              and isinstance(on_disk["search"][0]["limit"], int))
+
+        # Second "process": nothing in memory, and the file is the only memory.
+        forget_process()
+        second: list[dict] = []
+        got_second = sources.gather_evidence(["topic a"], outcomes=second)
+        check("the second process makes no search request", calls["n"] == 4)
+        check("every outcome in the second process is cached",
+              second and all(o["cached"] for o in second))
+        check("the papers round-trip unchanged", got_second == got_first)
+        check("tuple fields come back as tuples",
+              got_second and got_second[0].publication_types == ("journal article", "review"))
+
+        # The other two caches ride in the same file, with the same shape rule.
+        with sources._cache_open():
+            sources._fulltext_cache["PMC1"] = (time.time() + 60, "body text", "")
+            sources._fulltext_cache["papers:10.1000/x1"] = (time.time() + 60, "", "queued_ckn")
+            sources._pmcid_cache["10.1000/x1"] = (time.time() + 60, "PMC1", True)
+            sources._save_cache_locked()
+        forget_process()
+        with sources._cache_open():
+            check("full text round-trips",
+                  sources._fulltext_cache.get("PMC1", ("", ""))[1] == "body text")
+            check("the papers CLI status round-trips",
+                  sources._fulltext_cache.get("papers:10.1000/x1", ("", "", ""))[2] == "queued_ckn")
+            check("the PMCID lookup round-trips",
+                  sources._pmcid_cache.get("10.1000/x1") == sources._pmcid_cache["10.1000/x1"]
+                  and sources._pmcid_cache["10.1000/x1"][1:] == ("PMC1", True))
+
+        # An expired entry is not loaded, so yesterday's refusal cannot answer.
+        with sources._cache_open():
+            sources._search_cache[("openalex", "stale", 15)] = (time.time() - 1, [], "HTTP 429")
+            sources._save_cache_locked()
+        forget_process()
+        with sources._cache_open():
+            check("an expired entry is dropped on load",
+                  ("openalex", "stale", 15) not in sources._search_cache)
+
+        # The file never carries a key: nothing from the environment goes in.
+        with open(cache_file, encoding="utf-8") as fh:
+            text = fh.read()
+        check("the file carries no API key", "sk-" not in text and "API_KEY" not in text)
+
+        # clear_search_cache() empties the file too, so a fresh process after a
+        # clear has to search again.
+        sources.clear_search_cache()
+        check("clearing removes the file", not os.path.exists(cache_file))
+        forget_process()
+        sources.gather_evidence(["topic a"], outcomes=[])
+        check("after a clear the next process searches again", calls["n"] == 8)
+
+        # A corrupt file is one stderr line and an empty start, never a failure.
+        with open(cache_file, "w", encoding="utf-8") as fh:
+            fh.write("{not json")
+        forget_process()
+        sources.gather_evidence(["topic a"], outcomes=[])
+        check("a corrupt file is ignored and the search runs", calls["n"] == 12)
+        with open(cache_file, encoding="utf-8") as fh:
+            check("the corrupt file is replaced by a valid one",
+                  isinstance(json.load(fh), dict))
+
+        # TTL 0 disables the file along with everything else.
+        sources.clear_search_cache()
+        sources._CACHE_TTL = 0
+        forget_process()
+        sources.gather_evidence(["topic a"], outcomes=[])
+        check("TTL 0 writes no file", not os.path.exists(cache_file))
+    finally:
+        sources._CACHE_TTL = real_ttl
+        sources.clear_search_cache()
+        (sources.search_semantic_scholar, sources.search_openalex,
+         sources.search_europe_pmc, sources.search_arxiv) = real
+        if saved_dir is None:
+            os.environ.pop("ARTICLEGEN_CACHE_DIR", None)
+        else:
+            os.environ["ARTICLEGEN_CACHE_DIR"] = saved_dir
+        shutil.rmtree(folder, ignore_errors=True)
 
 
 def test_first_semantic_scholar_refusal_buys_one_patient_round() -> None:
@@ -8392,7 +8539,8 @@ def main(argv: list[str] | None = None) -> int:
         test_keepalive_connection_reuse, test_substance_checks,
         test_source_failures_are_distinguishable,
         test_first_semantic_scholar_refusal_buys_one_patient_round,
-        test_search_cache, test_front_end_models_match_the_allowlist,
+        test_search_cache, test_search_cache_survives_a_new_process,
+        test_front_end_models_match_the_allowlist,
         test_public_generation_forces_luna_on_the_hosted_key,
         test_polite_pool_identification, test_europe_pmc_parsing,
         test_arxiv_parsing, test_titles_arrive_without_markup,
