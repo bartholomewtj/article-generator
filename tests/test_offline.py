@@ -7112,6 +7112,8 @@ def test_full_text_comes_from_the_papers_cli_when_it_is_there() -> None:
         paperfetch._AVAILABLE = None
         paperfetch._ARGV = []
         paperfetch._WARNED = False
+        paperfetch._BATCH_OK = None
+        paperfetch._BATCH_CACHE = {}
         sources.clear_search_cache()
 
     try:
@@ -7242,6 +7244,9 @@ def test_full_text_comes_from_the_papers_cli_when_it_is_there() -> None:
             # With papers available:
             logs_with = []
             paperfetch.shutil.which = lambda cmd: "papers"
+            paperfetch.subprocess.run = lambda argv, **kw: FakeProc(
+                stdout=json.dumps({"mailto_set": True, "s2_key_set": True}),
+                returncode=0)
             def fake_fetch_ft_papers(p, **kw):
                 p.full_text_via = "papers"
                 return "text from papers"
@@ -7327,6 +7332,8 @@ def test_queued_ckn_counts_as_no_open_access() -> None:
         paperfetch._AVAILABLE = None
         paperfetch._ARGV = []
         paperfetch._WARNED = False
+        paperfetch._BATCH_OK = None
+        paperfetch._BATCH_CACHE = {}
         sources.clear_search_cache()
 
     def draft_logs(papers, runner):
@@ -7471,6 +7478,179 @@ def test_queued_ckn_counts_as_no_open_access() -> None:
         paperfetch.subprocess.run = real_run
         paperfetch.shutil.which = real_which
         reset_paperfetch()
+
+
+def test_one_papers_process_per_run() -> None:
+    """18 eligible DOIs make one `papers get` process, and a missing mailto
+    is named once before that get.
+
+    Per-DOI `papers get` was up to 18 processes, each with a 120s timeout,
+    so paperfetch's Semantic Scholar 429 memo died with every process. Batch
+    mode (paperfetch PR #36) takes the ordered list on stdin (`papers get -`)
+    and prints one JSON line per DOI. An older CLI that treats `-` as a query
+    still falls back to one process per DOI.
+    """
+    import json
+    import tempfile
+    from dataclasses import dataclass
+    from articlegen import paperfetch, pipeline, sources
+    from articlegen.sources import Paper
+
+    @dataclass
+    class FakeProc:
+        stdout: str = ""
+        stderr: str = ""
+        returncode: int = 0
+
+    real_run = paperfetch.subprocess.run
+    real_which = paperfetch.shutil.which
+    saved_env = {k: os.environ.get(k) for k in
+                 ("PAPERS_MAILTO", "OPENALEX_MAILTO", "UNPAYWALL_EMAIL",
+                  "SEMANTIC_SCHOLAR_API_KEY", "ARTICLEGEN_PAPERS_CMD")}
+
+    def reset_paperfetch():
+        paperfetch._AVAILABLE = None
+        paperfetch._ARGV = []
+        paperfetch._WARNED = False
+        paperfetch._BATCH_OK = None
+        paperfetch._BATCH_CACHE = {}
+        sources.clear_search_cache()
+
+    def argv_cmd(argv):
+        argv = list(argv)
+        if "status" in argv:
+            return "status"
+        if "get" in argv and argv[-1] == "-":
+            return "get-batch"
+        if "get" in argv:
+            return "get-one"
+        return "other"
+
+    n = pipeline.MAX_FULLTEXT_REQUESTS
+    dois = [f"10.9999/batch-{i}" for i in range(1, n + 1)]
+    papers = [Paper(title=f"p{i}", abstract="a", doi=doi)
+              for i, doi in enumerate(dois, start=1)]
+    order = list(range(1, n + 1))
+    text_path = ""
+
+    try:
+        for key in saved_env:
+            os.environ.pop(key, None)
+        paperfetch.shutil.which = lambda cmd: "papers" if cmd == "papers" else None
+
+        with tempfile.NamedTemporaryFile(
+                "w", encoding="utf-8", delete=False, suffix=".txt") as tf:
+            tf.write("Batch full text body.")
+            text_path = tf.name
+
+        def run_retrieve(runner):
+            reset_paperfetch()
+            paperfetch.subprocess.run = runner
+            lines = []
+            fetched, eligible, no_oa, failed, spent, stopped = (
+                pipeline._retrieve_full_texts(papers, order, lines.append))
+            return fetched, eligible, no_oa, failed, spent, stopped, lines
+
+        # 1. Batch CLI: one status, one get -, 18 stdin lines, target of 5 kept.
+        calls = []
+
+        def batch_runner(argv, **kw):
+            calls.append((list(argv), kw.get("input") or "", argv_cmd(argv)))
+            kind = argv_cmd(argv)
+            if kind == "status":
+                return FakeProc(stdout=json.dumps({
+                    "mailto_set": False, "s2_key_set": False,
+                }))
+            if kind == "get-batch":
+                stdin_dois = [ln.strip() for ln in (kw.get("input") or "").splitlines()
+                              if ln.strip()]
+                lines = [json.dumps({
+                    "status": "ok", "doi": d, "read": text_path,
+                }) for d in stdin_dois]
+                return FakeProc(stdout="\n".join(lines) + "\n", returncode=0)
+            doi = argv[-1]
+            return FakeProc(stdout=json.dumps({
+                "status": "ok", "doi": doi, "read": text_path,
+            }))
+
+        fetched, eligible, no_oa, failed, spent, stopped, logs = run_retrieve(batch_runner)
+        kinds = [c[2] for c in calls]
+        batch_calls = [c for c in calls if c[2] == "get-batch"]
+        one_calls = [c for c in calls if c[2] == "get-one"]
+        status_calls = [c for c in calls if c[2] == "status"]
+        stdin_dois = [ln.strip() for ln in batch_calls[0][1].splitlines() if ln.strip()] if batch_calls else []
+        log_text = "\n".join(logs)
+
+        check("18 eligible DOIs make one papers get process",
+              kinds.count("get-batch") == 1 and kinds.count("get-one") == 0)
+        check("the batch process is papers get -",
+              batch_calls[0][0][-2:] == ["get", "-"])
+        check("stdin carries every eligible DOI, in order", stdin_dois == dois)
+        check("papers status ran once", len(status_calls) == 1)
+        check("status ran before the get",
+              kinds.index("status") < kinds.index("get-batch"))
+        check("a run with no mailto says so in one line",
+              sum(1 for ln in logs if "mailto_set" in ln) == 1)
+        check("the missing line names mailto_set and s2_key_set",
+              "papers: missing mailto_set, s2_key_set" in log_text)
+        check("preflight log is the first papers line",
+              next(ln for ln in logs if "papers:" in ln).startswith("  papers: missing"))
+        check("the loop still stops at FULLTEXT_TARGET",
+              len(fetched) == pipeline.FULLTEXT_TARGET
+              and stopped == f"target of {pipeline.FULLTEXT_TARGET} reached")
+        check("the first FULLTEXT_TARGET papers were attached",
+              fetched == list(range(1, pipeline.FULLTEXT_TARGET + 1)))
+        check("attached text came from the batch read path",
+              all(papers[i - 1].full_text == "Batch full text body." for i in fetched))
+
+        # 2. Older CLI: one JSON object for `get -` (treats `-` as the query).
+        for paper in papers:
+            paper.full_text = ""
+            paper.full_text_via = ""
+            paper.full_text_not_oa = False
+        calls.clear()
+
+        def old_cli_runner(argv, **kw):
+            calls.append((list(argv), kw.get("input") or "", argv_cmd(argv)))
+            kind = argv_cmd(argv)
+            if kind == "status":
+                return FakeProc(stdout=json.dumps({
+                    "mailto_set": True, "s2_key_set": True,
+                }))
+            if kind == "get-batch":
+                return FakeProc(stdout=json.dumps({
+                    "status": "no_doi", "agent_next": "notify_human",
+                }), returncode=1)
+            doi = argv[-1]
+            return FakeProc(stdout=json.dumps({
+                "status": "ok", "doi": doi, "read": text_path,
+            }))
+
+        fetched_old, *_rest, logs_old = run_retrieve(old_cli_runner)
+        kinds_old = [c[2] for c in calls]
+        check("older papers falls back to one process per DOI",
+              kinds_old.count("get-batch") == 1
+              and kinds_old.count("get-one") == n)
+        check("the fallback log names batch/stdin",
+              any("no batch/stdin" in ln for ln in logs_old))
+        check("fallback still fills FULLTEXT_TARGET",
+              len(fetched_old) == pipeline.FULLTEXT_TARGET)
+        check("a configured mailto is not reported as missing",
+              not any("mailto_set" in ln for ln in logs_old))
+    finally:
+        paperfetch.subprocess.run = real_run
+        paperfetch.shutil.which = real_which
+        reset_paperfetch()
+        for key, value in saved_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        if os.path.exists(text_path):
+            try:
+                os.remove(text_path)
+            except OSError:
+                pass
 
 
 def test_full_text_order_favours_reviews_and_trials() -> None:
@@ -8782,6 +8962,7 @@ def main(argv: list[str] | None = None) -> int:
         test_unlabelled_sources_stop_the_run,
         test_full_text_comes_from_the_papers_cli_when_it_is_there,
         test_queued_ckn_counts_as_no_open_access,
+        test_one_papers_process_per_run,
         test_full_text_order_favours_reviews_and_trials,
         test_pmcid_is_resolved_by_doi,
         test_unpaywall_fallback_in_resolve_pmcid,

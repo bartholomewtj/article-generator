@@ -307,6 +307,11 @@ topics and arXiv papers stop being abstract-only.
 - **CKN miss list:** Local drafts set `PAPERS_NO_CKN_QUEUE=1` on the
   `papers` subprocess, so a paywalled cite is not added to the CKN pickup
   list. `papers get` on its own still queues as usual.
+- **One process per run:** Cited DOIs go to `papers get -` on stdin (one
+  per line) so Semantic Scholar's 429 skip lives for the whole list. An
+  older `papers` that rejects batch/stdin still gets one process per DOI.
+  Before the first fetch, `papers status` runs once and the log names any
+  missing `mailto_set` or `s2_key_set`.
 - **Optional:** Without `papers`, articlegen behaves exactly as before,
   retrieving full text from Europe PMC only.
 - **Hosted deployment:** The Render backend installs the public
