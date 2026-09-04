@@ -339,6 +339,9 @@ class Paper:
     # from the public `paperfetch-oa` package, #173). The pipeline tallies
     # that as no-open-access, not as "OA but returned no text" (#191).
     full_text_not_oa: bool = False
+    # Resolvers `papers` listed as tried when the status was not-OA. Passed
+    # through to `papers queue --tried` so the pickup row is not blank.
+    oa_tried: str = ""
     is_preprint: bool = False
     # Document type as the API reported it, lowercased, e.g. ("journal article",
     # "randomized controlled trial"). Fed to `paper_design` for the full-text
@@ -1558,6 +1561,7 @@ def fetch_full_text(paper: Paper, use_cache: bool = True, log=lambda msg: None) 
         text = _strip_citation_brackets(text)
         if status in paperfetch.NOT_OA_STATUSES:
             paper.full_text_not_oa = True
+            paper.oa_tried = paperfetch.tried_for(doi)
         if _CACHE_TTL > 0:
             ttl = _CACHE_TTL if text else _CACHE_FAILURE_TTL
             with _cache_open():

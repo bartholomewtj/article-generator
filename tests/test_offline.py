@@ -4988,7 +4988,7 @@ def test_failed_style_gate_is_visible_in_the_article() -> None:
     # The pipeline must actually hand it over, or none of this is reachable.
     import inspect
     from articlegen import cli, web
-    for name, src in (("cli", inspect.getsource(cli.cmd_draft)),
+    for name, src in (("cli", inspect.getsource(cli.cmd_draft) + inspect.getsource(cli._write_draft_files)),
                       ("web", inspect.getsource(web.ArticleGenHandler._handle_draft))):
         check(f"{name} passes the style report to the renderer",
               "draft.style_report" in src)
@@ -7474,10 +7474,176 @@ def test_queued_ckn_counts_as_no_open_access() -> None:
               "1 were open access but returned no text" in timed)
         check("timeout does not increment no-open-access",
               "0 had no open-access copy" in timed)
+
+        check("paywalled cited sources are listed under one heading",
+              "Paywalled cited sources (one CKN download away):" in queued)
+        check("the paywalled DOI is on the list",
+              "10.9999/paywalled" in queued)
     finally:
         paperfetch.subprocess.run = real_run
         paperfetch.shutil.which = real_which
         reset_paperfetch()
+
+
+def test_ckn_loop() -> None:
+    """draft --queue-ckn uses `papers queue`; rerun skips search and sees ingest."""
+    import inspect
+    import tempfile
+    from articlegen import cli, paperfetch, pipeline, sources, web
+    from articlegen.pipeline import Draft
+    from articlegen.sources import Paper
+
+    class FakeProc:
+        def __init__(self, stdout="", returncode=0):
+            self.stdout = stdout
+            self.stderr = ""
+            self.returncode = returncode
+
+    real_run = paperfetch.subprocess.run
+    real_which = paperfetch.shutil.which
+
+    def reset():
+        paperfetch._AVAILABLE = None
+        paperfetch._ARGV = []
+        paperfetch._WARNED = False
+        paperfetch._BATCH_OK = None
+        paperfetch._BATCH_CACHE = {}
+        paperfetch._TRIED = {}
+        sources.clear_search_cache()
+
+    check("cmd_draft does not call papers queue itself",
+          "queue_paywalled" not in inspect.getsource(cli.cmd_draft))
+    check("cmd_draft still goes through generate_draft",
+          "generate_draft(" in inspect.getsource(cli.cmd_draft))
+    check("the hosted app never queues for CKN",
+          "queue-ckn" not in inspect.getsource(web)
+          and "queue_paywalled" not in inspect.getsource(web))
+    check("rerun skips search",
+          "gather_evidence(" not in inspect.getsource(pipeline.rerun_draft))
+    check("rerun skips curation",
+          "curate_sources(" not in inspect.getsource(pipeline.rerun_draft))
+    check("rerun skips plan_queries",
+          "plan_queries(" not in inspect.getsource(pipeline.rerun_draft))
+    check("get still sets PAPERS_NO_CKN_QUEUE",
+          'env["PAPERS_NO_CKN_QUEUE"] = "1"' in inspect.getsource(paperfetch._child_env))
+
+    paywalled = Paper(
+        title="Closed landmark", abstract="a", doi="10.9999/paywalled",
+        venue="JAMA", year=2018, full_text_not_oa=True, oa_tried="europepmc,unpaywall",
+    )
+    article = {"title": "t", "abstract": "x", "keywords": [], "sections": [],
+               "key_points": [], "glossary": [], "references": [1],
+               "findings": ["a finding [1]"]}
+    original = Draft(
+        topic="topic",
+        article=article,
+        papers=[paywalled],
+        curation={"relevance": {1: "direct"}, "counts": {"direct": 1}},
+        provenance={"queries": ["q"], "databases": ["OpenAlex"],
+                    "full_text_sources": [], "date": "1 September 2026"},
+    )
+
+    try:
+        reset()
+        paperfetch.shutil.which = lambda cmd: "papers" if cmd == "papers" else None
+        queue_calls = []
+
+        def queue_runner(argv, **kw):
+            queue_calls.append(list(argv))
+            return FakeProc(stdout=json.dumps({"status": "queued", "doi": "10.9999/paywalled"}))
+
+        paperfetch.subprocess.run = queue_runner
+        n = paperfetch.queue_paywalled(original.paywalled_cited())
+        check("queue_paywalled queues one DOI", n == 1)
+        check("queue_paywalled uses papers queue, not get",
+              "queue" in queue_calls[0] and "get" not in queue_calls[0])
+        check("queue_paywalled passes title", "--title" in queue_calls[0])
+        check("queue_paywalled passes tried from the first run",
+              "europepmc,unpaywall" in queue_calls[0])
+
+        saved_generate = cli.generate_draft
+        cli.generate_draft = lambda *a, **kw: original
+        with tempfile.TemporaryDirectory() as d:
+            saved_cwd = os.getcwd()
+            os.chdir(d)
+            try:
+                queue_calls.clear()
+                check("draft without the flag does not queue",
+                      cli.main(["draft", "topic", "--name", "x"]) == 0)
+                check("no papers queue process on a default draft", queue_calls == [])
+                queue_calls.clear()
+                check("draft --queue-ckn exits 0",
+                      cli.main(["draft", "topic", "--name", "y", "--queue-ckn"]) == 0)
+                check("draft --queue-ckn called papers queue",
+                      any("queue" in c for c in queue_calls))
+            finally:
+                os.chdir(saved_cwd)
+        cli.generate_draft = saved_generate
+
+        # rerun: first-run paper was paywalled; ingest now returns full text.
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, suffix=".txt") as tf:
+            tf.write("Ingested full text: 41.7% responded.")
+            tf_path = tf.name
+        reset()
+        paperfetch.shutil.which = lambda cmd: "papers" if cmd == "papers" else None
+
+        def ingest_runner(argv, **kw):
+            argv = list(argv)
+            if "status" in argv:
+                return FakeProc(stdout=json.dumps({"mailto_set": True, "s2_key_set": True}))
+            return FakeProc(stdout=json.dumps({
+                "status": "ok", "doi": "10.9999/paywalled", "read": tf_path,
+            }))
+
+        paperfetch.subprocess.run = ingest_runner
+        saved = (
+            pipeline.write_briefing, pipeline.write_article,
+            pipeline.enforce_style, pipeline.enforce_statistics,
+        )
+        rewritten = []
+
+        def fake_compose(topic, papers, **kw):
+            rewritten.append([p.full_text for p in papers])
+            out = dict(article)
+            out["findings"] = ["41.7% responded [1]"]
+            return out
+
+        pipeline.write_briefing = fake_compose
+        pipeline.write_article = fake_compose
+        pipeline.enforce_style = lambda a, **kw: (a, {"issues": [], "stats": {}})
+        pipeline.enforce_statistics = lambda a, papers, **kw: (a, {"unverified": []}, kw.get("style_report") or {})
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                saved_cwd = os.getcwd()
+                os.chdir(d)
+                try:
+                    os.makedirs("drafts")
+                    man = os.path.join("drafts", "first.json")
+                    with open(man, "w", encoding="utf-8") as f:
+                        json.dump(original.to_dict(), f)
+                    check("rerun exits 0", cli.main(["rerun", man]) == 0)
+                    rerun_path = os.path.join("drafts", "first-rerun.json")
+                    check("rerun writes a new manifest", os.path.isfile(rerun_path))
+                    with open(rerun_path, encoding="utf-8") as f:
+                        second = Draft.from_dict(json.load(f))
+                    check("rerun attached ingested full text",
+                          "41.7%" in (second.papers[0].full_text or ""))
+                    check("Methods records the second run's full-text sources",
+                          second.provenance.get("full_text_sources") == [1])
+                    check("the writer saw the ingested text",
+                          rewritten and "41.7%" in (rewritten[0][0] or ""))
+                    check("rerun kept the first run's queries",
+                          second.provenance.get("queries") == ["q"])
+                finally:
+                    os.chdir(saved_cwd)
+        finally:
+            (pipeline.write_briefing, pipeline.write_article,
+             pipeline.enforce_style, pipeline.enforce_statistics) = saved
+            os.unlink(tf_path)
+    finally:
+        paperfetch.subprocess.run = real_run
+        paperfetch.shutil.which = real_which
+        reset()
 
 
 def test_one_papers_process_per_run() -> None:
@@ -8962,6 +9128,7 @@ def main(argv: list[str] | None = None) -> int:
         test_unlabelled_sources_stop_the_run,
         test_full_text_comes_from_the_papers_cli_when_it_is_there,
         test_queued_ckn_counts_as_no_open_access,
+        test_ckn_loop,
         test_one_papers_process_per_run,
         test_full_text_order_favours_reviews_and_trials,
         test_pmcid_is_resolved_by_doi,

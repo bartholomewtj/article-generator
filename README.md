@@ -247,6 +247,28 @@ want the index refreshed.
 Each manifest carries `"manifest_version": 1`; `render` refuses a version it
 does not know. The web server never writes one — it stays stateless.
 
+### CKN pickup and `rerun`
+
+A draft never fills the CKN list by itself (`PAPERS_NO_CKN_QUEUE=1` on every
+`papers get`). After the full-text pass it logs cited sources that were
+paywalled, with their DOIs, under one heading. To add exactly those DOIs to
+the pickup list:
+
+```bash
+python -m articlegen draft "the question" --queue-ckn
+```
+
+Then `papers miss`, download, `papers ingest <doi> path\to\file.pdf`, and
+rerun from the manifest. Search and labelling are skipped; full text is
+fetched again (so the ingest is visible); the briefing is rewritten; a new
+manifest is written next to the first as `<stem>-rerun.json`.
+
+```bash
+python -m articlegen rerun drafts/2026-09-05-seclusion.json
+```
+
+The hosted app has no queue flag.
+
 ### Commands & options
 
 | Command | Key options |

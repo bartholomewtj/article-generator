@@ -45,9 +45,12 @@ STATUS_FLAGS = ("mailto_set", "s2_key_set")
 # fetch failures: those are not a confirmed absence of OA.
 NOT_OA_STATUSES = frozenset({"queued_ckn", "no_oa"})
 
+# Filled from the last not-OA `papers` record per DOI (`tried` field).
+_TRIED: dict[str, str] = {}
+
 # Tests reset process state by setting paperfetch._AVAILABLE = None,
 # paperfetch._ARGV = [], paperfetch._WARNED = False, paperfetch._BATCH_OK = None,
-# paperfetch._BATCH_CACHE = {}.
+# paperfetch._BATCH_CACHE = {}, paperfetch._TRIED = {}.
 
 
 def _command() -> list[str]:
@@ -154,12 +157,19 @@ def fetch_via_papers(
     return fetch_via_papers_with_status(doi, timeout=timeout, log=log)[0]
 
 
+def tried_for(doi: str) -> str:
+    """Resolvers listed on the last not-OA record for this DOI, or ""."""
+    return _TRIED.get(doi, "")
+
+
 def _text_from_record(
     record: dict,
     doi: str,
     log: Callable[[str], None] | None,
 ) -> tuple[str, str]:
     status = record.get("status") or ""
+    if status in NOT_OA_STATUSES:
+        _TRIED[doi] = str(record.get("tried") or "")
     if status != "ok":
         if callable(log):
             log(f"  papers: {status} for {doi}")
@@ -321,3 +331,55 @@ def fetch_via_papers_with_status(
         if callable(log):
             log(f"  papers fetch unexpected error for {doi}: {exc}")
         return "", ""
+
+
+def queue_paywalled(
+    papers: list,
+    log: Callable[[str], None] | None = None,
+) -> int:
+    """Add paywalled papers to the CKN list via `papers queue`. Returns how many.
+
+    Uses `papers queue`, not `papers get`. `PAPERS_NO_CKN_QUEUE` on get is
+    unchanged: a draft still cannot fill the list unless the caller asked.
+    """
+    if not papers:
+        return 0
+    if not available(log):
+        if callable(log):
+            log("  papers CLI not installed; nothing queued")
+        return 0
+    cmd = _command()
+    queued = 0
+    for paper in papers:
+        doi = (getattr(paper, "doi", "") or "").removeprefix("https://doi.org/").strip()
+        if not doi:
+            continue
+        argv = cmd + ["queue", doi]
+        title = getattr(paper, "title", "") or ""
+        if title:
+            argv += ["--title", title]
+        venue = getattr(paper, "venue", "") or ""
+        if venue:
+            argv += ["--journal", venue]
+        year = getattr(paper, "year", None)
+        if year:
+            argv += ["--year", str(year)]
+        tried = getattr(paper, "oa_tried", "") or "unpaywall"
+        argv += ["--tried", tried]
+        try:
+            proc = _run(argv, timeout=STATUS_TIMEOUT)
+        except (subprocess.TimeoutExpired, OSError, ValueError) as exc:
+            if callable(log):
+                log(f"  papers queue failed for {doi}: {exc}")
+            continue
+        try:
+            row = json.loads(proc.stdout)
+        except (json.JSONDecodeError, TypeError):
+            if callable(log):
+                log(f"  papers queue returned invalid JSON for {doi}")
+            continue
+        status = (row or {}).get("status") or ""
+        if callable(log):
+            log(f"  queued {doi} ({status})")
+        queued += 1
+    return queued
