@@ -70,8 +70,8 @@ services:
       - key: ARTICLEGEN_PUBLIC_OPENROUTER_KEY
         sync: false
 
-      # Opt-in public gallery (gist scope only — not repo contents).
-      # Set in the Render dashboard. Absent: Share to gallery is hidden.
+      # Public gallery (gist scope only — not repo contents).
+      # Set in the Render dashboard. Absent: generated briefings are not listed.
       - key: ARTICLEGEN_GALLERY_TOKEN
         sync: false
 

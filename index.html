@@ -737,14 +737,14 @@
       </button>
     </div>
 
-    <!-- Visitor-shared briefings. Not drafts/ (those stay in the project
+    <!-- Visitor-generated briefings. Not drafts/ (those stay in the project
          folder as the CLI review surface, not on this site) and not the
          personal library (that stays in this browser). Loaded from the
          public gist so a cold Render does not hide the list. -->
     <section class="featured" id="publicBand">
       <h2 class="featured-label">From other visitors</h2>
-      <p class="public-band-note">Briefings someone chose to share. Generating
-        one does not put yours here.</p>
+      <p class="public-band-note">Briefings appear here when they finish
+        generating.</p>
       <div id="publicPreview"></div>
       <button type="button" class="demo-band-go" id="publicSeeAll" onclick="showView('publicListView'); loadPublicList();" style="background:none; border:none; padding:0; cursor:pointer; font: inherit; text-align:left;">Browse shared briefings →</button>
     </section>
@@ -797,13 +797,10 @@
     <div class="section-header reader-bar">
       <span class="reader-meta" id="articleMeta">Ready</span>
 
-      <!-- The whole reader action set. Three buttons, two of them sharing:
-           one link anyone can open, and the opt-in public gallery. What was
-           here before was Share / Copy link / Publish public link / QR code /
-           Share to gallery — five ways to hand someone the same article, three
-           of which uploaded it to a third party without that being obvious.
-           Every generated article is already saved; Keep is what tells the
-           library to hold it past the rolling limit. -->
+      <!-- Keep / shareable link / download. Generated briefings are listed on
+           the public gallery by the server as soon as they finish; there is
+           no extra tap. Keep is what tells this browser to hold the article
+           past the rolling library limit. -->
       <div class="reader-actions">
         <button class="action-btn" id="starCurrentBtn" onclick="starCurrentArticle()" title="Keep this article in your library">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
@@ -812,10 +809,6 @@
         <button class="action-btn" onclick="copyShareableLink()" title="Uploads the article and copies a short link. Anyone with the link can read it.">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
           Shareable link
-        </button>
-        <button class="action-btn" id="shareGalleryBtn" onclick="shareToGallery()" title="Put this briefing on the public list" style="display:none;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-          Add to public gallery
         </button>
         <button class="action-btn" onclick="downloadArticle()" title="Save this briefing to your device as an HTML file">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -871,15 +864,14 @@
     </div>
   </div>
 
-  <!-- VIEW 6: Briefings other visitors chose to share. -->
+  <!-- VIEW 6: Briefings other visitors generated. -->
   <div id="publicListView" class="view">
     <div class="section-header" style="flex-wrap:wrap; gap:0.5rem;">
       <h2 class="section-title">From other visitors</h2>
       <button class="pill" onclick="goHome()">← Home</button>
     </div>
     <p style="font-size:0.85rem; color:var(--muted); margin-top:-0.5rem; margin-bottom:1rem;">
-      These are briefings someone tapped Share to gallery on. Generating does
-      not add yours. You cannot delete someone else's.
+      Briefings generated on this site. You cannot delete someone else's.
     </p>
     <div id="publicList"></div>
   </div>
@@ -954,7 +946,6 @@
 
   // Hosted Pages can list without waiting for Render. Local `articlegen web`
   // has no gist token, so it asks the same-origin API instead.
-  let galleryEnabled = false;
 
   // ---- cold-start handling (#95) ----------------------------------------
   //
@@ -968,12 +959,6 @@
   function warmBackend() {
     fetch(apiUrl('/api/health'), { method: 'GET' })
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (info) {
-        if (info && typeof info.gallery === 'boolean') {
-          galleryEnabled = info.gallery;
-          refreshShareGalleryButton();
-        }
-      })
       .catch(function () {});
   }
 
@@ -1498,10 +1483,15 @@
         throw new Error('The backend returned no article.');
       }
 
+      if (data.gallery && data.gallery.id) {
+        setArticleHash('g=' + data.gallery.id);
+        currentArticleUrl = window.location.pathname + '#g=' + data.gallery.id;
+      }
+      loadPublicPreview();
+
       currentTitle = data.title || title;
       document.getElementById('articleMeta').innerText =
         (data.sources_count || 0) + ' Sources Cited';
-      refreshShareGalleryButton();
       showView('readerView');
     } catch (err) {
       // Stay on the progress card and put the failure in it, with a Try again
@@ -1607,9 +1597,9 @@
 
   // ---------------------------------------------------------------- public gallery
   //
-  // Briefings someone tapped Share to gallery on. Not the personal library
-  // (this browser) and not drafts/ (curated CLI pieces). Hosted listing
-  // reads the public gist directly so a sleeping Render does not hide it.
+  // Briefings generated on this site. Not the personal library (this browser)
+  // and not drafts/ (curated CLI pieces). Hosted listing reads the public gist
+  // directly so a sleeping Render does not hide it.
 
   async function fetchPublicItems() {
     if (!API_BASE) {
@@ -1660,7 +1650,7 @@
       const items = await fetchPublicItems();
       box.innerHTML = '';
       if (!items.length) {
-        box.innerHTML = '<p class="public-band-note">None shared yet. After you generate one, Share to gallery puts it here.</p>';
+        box.innerHTML = '<p class="public-band-note">None yet. Generated briefings appear here when they finish.</p>';
         return;
       }
       items.slice(0, 5).forEach(function (item) { box.appendChild(publicCard(item)); });
@@ -1693,7 +1683,6 @@
     currentTitle = item.title || 'Shared briefing';
     document.getElementById('articleMeta').innerText = currentTitle;
     updateStarButton();
-    refreshShareGalleryButton();
     showView('readerView');
     try {
       const resp = await fetch(item.html_url);
@@ -1703,7 +1692,6 @@
       iframe.srcdoc = html;
       currentArticleUrl = window.location.pathname + '#g=' + item.id;
       setArticleHash('g=' + item.id);
-      refreshShareGalleryButton();
     } catch (e) {
       showToast('Could not open that briefing.');
     }
@@ -1758,46 +1746,6 @@
     a.click();
     a.remove();
     showToast('Saved ' + filename);
-  }
-
-  function refreshShareGalleryButton() {
-    const btn = document.getElementById('shareGalleryBtn');
-    if (!btn) return;
-    const html = document.getElementById('articleIframe')?.srcdoc || '';
-    btn.style.display = (galleryEnabled && html) ? '' : 'none';
-  }
-
-  async function shareToGallery() {
-    const html = document.getElementById('articleIframe')?.srcdoc || '';
-    if (!html) {
-      showToast('Generate a briefing first.');
-      return;
-    }
-    const ok = confirm(
-      'Share this briefing to the public gallery?\n\n' +
-      'Anyone who opens the site will be able to read it. It is stored in a ' +
-      'public GitHub gist and you cannot take it down from here.\n\n' +
-      'Generating did not share it. Cancel if you do not want it listed.'
-    );
-    if (!ok) return;
-    try {
-      const resp = await fetch(apiUrl('/api/gallery'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: currentTitle || '', html: html })
-      });
-      if (!resp.ok) throw new Error(await apiError(resp));
-      const data = await resp.json();
-      const id = data.item && data.item.id;
-      if (id) {
-        setArticleHash('g=' + id);
-        currentArticleUrl = window.location.pathname + '#g=' + id;
-      }
-      showToast('On the public gallery. Anyone on the site can read it.');
-      loadPublicPreview();
-    } catch (e) {
-      showToast('Could not share to the gallery: ' + e.message);
-    }
   }
 
   // ---------------------------------------------------------------- library
@@ -2048,7 +1996,6 @@
     cachedShareUrl = '';
     document.getElementById('articleMeta').innerText = title || 'Draft';
     updateStarButton();
-    refreshShareGalleryButton();
     showView('readerView');
   }
 
@@ -2066,7 +2013,6 @@
     }
     document.getElementById('articleMeta').innerText = item.title || 'Draft';
     updateStarButton();
-    refreshShareGalleryButton();
     showView('readerView');
   }
 

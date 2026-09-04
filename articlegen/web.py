@@ -2,8 +2,8 @@
 
 Endpoints:
 - GET  /api/drafts: list drafts on disk (local mode only; empty when shared)
-- GET  /api/gallery: list briefings someone shared to the public gallery
-- POST /api/gallery: opt-in publish to that gallery (not called by generate)
+- GET  /api/gallery: list briefings on the public gallery
+- POST /api/gallery: publish one briefing (generate already does this)
 - POST /api/ideas:  generate briefing questions from a theme
 - POST /api/draft:  run the full evidence-grounded research & draft pipeline
 
@@ -13,11 +13,11 @@ Runs in two modes, because a laptop and a shared host want opposite things:
 review queue, matching what the CLI does. This is the default.
 
 **Shared** (`ARTICLEGEN_STATELESS=1`, what the public deployment sets) — renders
-the article and returns it in the response, persisting nothing. On a shared host
-a common `drafts/` directory would make every visitor's article readable by
-every other visitor at a guessable URL, and list their topics in the queue index.
-Someone researching something they'd rather not broadcast would have no way to
-know. The browser keeps its own copies in localStorage either way.
+the article, lists it on the public gallery, and returns it in the response.
+Nothing is written to `drafts/` on the host. A common `drafts/` directory would
+make every visitor's article readable at a guessable URL. The gallery copy is a
+public GitHub gist; generating puts it there. The browser also keeps its own
+copies in localStorage.
 
 The web app does not take a visitor key. A shared host holds
 `ARTICLEGEN_PUBLIC_OPENROUTER_KEY` (or `OPENROUTER_API_KEY`) and always writes
@@ -538,7 +538,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
         })
 
     def _handle_publish_gallery(self, payload: dict) -> None:
-        """Opt-in publish. Generating does not call this."""
+        """Publish one briefing. Generate already lists it; this is the retry path."""
         self._note_run(backend=gallery._backend())
         html = payload.get("html")
         if not isinstance(html, str):
@@ -720,6 +720,10 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
             build_index(DRAFTS_DIR)
             response["html_url"] = f"/drafts/{html_name}"
             response["md_url"] = f"/drafts/{md_name}"
+
+        item = gallery.try_publish(response["title"], article_html)
+        if item:
+            response["gallery"] = item
 
         self._send_json(response)
 
