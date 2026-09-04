@@ -1116,6 +1116,112 @@ def test_draft_summary() -> None:
     check("ignores out-of-range references", out_of_range.summary().startswith("1 of 5 screened sources cited"))
 
 
+def test_run_manifest_round_trips() -> None:
+    """A draft survives the trip to JSON and back, and renders the same page.
+
+    `articlegen draft` used to write HTML and Markdown and nothing else, so
+    the paper pool, labels, excerpts and verification were gone when the
+    process ended. The manifest keeps them; this pins that nothing is lost on
+    the way through JSON (int keys, tuples, full text) and that `render`
+    rebuilds the exact page the run wrote.
+    """
+    import copy
+    import inspect
+    import tempfile
+    from articlegen import cli, demo, pipeline, render, style, verify, web
+    from articlegen.pipeline import Draft
+    from articlegen.sources import full_text_excerpts
+
+    papers = copy.deepcopy(demo.SAMPLE_PAPERS)
+    papers[0].full_text = "Replay was seen in 61% of trials. " * 600
+    papers[0].full_text_via = "papers"
+    papers[1].publication_types = ("journal article", "review")
+    article = copy.deepcopy(demo.SAMPLE_BRIEFING)
+    article["findings"] = list(article["findings"]) + ["Replay was seen in 61% of trials, and 23% elsewhere [1]."]
+    original = Draft(
+        topic="the functions of sleep in the brain",
+        article=article,
+        papers=papers,
+        curation=copy.deepcopy(demo.SAMPLE_CURATION),
+        verification=verify.check_statistics(article, papers),
+        provenance=dict(demo.SAMPLE_PROVENANCE, date="1 September 2026",
+                        full_text_sources=[1], full_text_via={"papers": 1, "europe_pmc": 0}),
+        style_report=style.check_style(article, direct_sources=3),
+        excerpts=full_text_excerpts(papers),
+    )
+    check("the fixture has an excerpt to carry", original.excerpts.get(1, "").startswith("Replay"))
+    check("the fixture has a flagged figure to carry", "23%" in original.verification["unverified"])
+
+    manifest = original.to_dict()
+    check("manifest carries its version", manifest.get("manifest_version") == pipeline.MANIFEST_VERSION)
+    check("manifest has the expected top-level keys",
+          set(manifest) == {"manifest_version", "topic", "article", "papers", "curation",
+                            "verification", "provenance", "style_report", "excerpts"})
+    text = json.dumps(manifest, ensure_ascii=False, indent=2)
+    restored = Draft.from_dict(json.loads(text))
+    check("from_dict(to_dict(d)) == d", restored == original)
+    check("relevance keys come back as ints",
+          all(isinstance(k, int) for k in restored.curation["relevance"]))
+    check("excerpt keys come back as ints", list(restored.excerpts) == [1])
+    check("publication types come back as a tuple",
+          restored.papers[1].publication_types == ("journal article", "review"))
+    check("full text and its route survive",
+          restored.papers[0].full_text == papers[0].full_text
+          and restored.papers[0].full_text_via == "papers")
+
+    def render_args(d):
+        return (d.article, d.papers, d.topic, d.curation, d.verification, d.provenance, d.style_report)
+
+    html_a, html_b = render.render_article(*render_args(original)), render.render_article(*render_args(restored))
+    md_a, md_b = render.render_markdown(*render_args(original)), render.render_markdown(*render_args(restored))
+    check("restored draft renders identical HTML", html_a == html_b)
+    check("restored draft renders identical Markdown", md_a == md_b)
+    check("the page is stamped with the run's date, not today's", "Generated 1 September 2026" in html_a)
+    check("re-verifying against the stored excerpts reproduces the result",
+          verify.check_statistics(restored.article, restored.papers) == original.verification)
+
+    # The CLI writes the manifest beside the HTML, and `render` rebuilds the
+    # same bytes from it with no pipeline call.
+    check("render never runs the pipeline", "generate_draft(" not in inspect.getsource(cli.cmd_render))
+    check("the web server never writes a manifest", "to_dict(" not in inspect.getsource(web))
+    saved_generate, saved_cwd = cli.generate_draft, os.getcwd()
+    try:
+        cli.generate_draft = lambda *a, **kw: original
+        with tempfile.TemporaryDirectory() as d:
+            os.chdir(d)
+            check("draft exits 0", cli.main(["draft", original.topic, "--name", "x"]) == 0)
+            html_path, json_path = os.path.join("drafts", "x.html"), os.path.join("drafts", "x.json")
+            check("draft still writes HTML and Markdown",
+                  os.path.isfile(html_path) and os.path.isfile(os.path.join("drafts", "x.md")))
+            check("draft writes the manifest beside them", os.path.isfile(json_path))
+            with open(json_path, encoding="utf-8") as f:
+                on_disk = json.load(f)
+            check("the manifest on disk is version 1", on_disk.get("manifest_version") == 1)
+            run_html = open(html_path, encoding="utf-8").read()
+            run_md = open(os.path.join("drafts", "x.md"), encoding="utf-8").read()
+            os.remove(html_path)
+            os.remove(os.path.join("drafts", "x.md"))
+            check("render exits 0", cli.main(["render", json_path]) == 0)
+            check("render rebuilds the same HTML",
+                  open(html_path, encoding="utf-8").read() == run_html)
+            check("render rebuilds the same Markdown",
+                  open(os.path.join("drafts", "x.md"), encoding="utf-8").read() == run_md)
+
+            on_disk["manifest_version"] = 99
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump(on_disk, f)
+            check("an unsupported manifest version is refused", cli.main(["render", json_path]) == 1)
+            os.chdir(saved_cwd)
+    finally:
+        cli.generate_draft = saved_generate
+        os.chdir(saved_cwd)
+
+    # The pipeline captures the excerpt map itself, once the papers are final.
+    src = inspect.getsource(pipeline.generate_draft)
+    check("the pipeline records the excerpts it showed", "excerpts=excerpts" in src
+          and src.index("full_text_excerpts(papers)") < src.index("enforce_style("))
+
+
 def test_rate_limit() -> None:
     from articlegen import web
 
@@ -8535,7 +8641,7 @@ def main(argv: list[str] | None = None) -> int:
         test_idea_search_terms_reach_the_draft,
         test_paraphrase_terms_buy_a_distinct_query,
         test_dead_sources_fail_before_the_caller_is_billed,
-        test_draft_summary, test_rate_limit,
+        test_draft_summary, test_run_manifest_round_trips, test_rate_limit,
         test_keepalive_connection_reuse, test_substance_checks,
         test_source_failures_are_distinguishable,
         test_first_semantic_scholar_refusal_buys_one_patient_round,
