@@ -25,7 +25,7 @@ import os
 import re
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 
 import requests
 
@@ -256,6 +256,24 @@ class Paper:
             doi = self.doi.removeprefix("https://doi.org/")
             return f"https://doi.org/{doi}"
         return self.url
+
+    def to_dict(self) -> dict:
+        """Plain JSON-ready dict of every field, for the run manifest."""
+        out = asdict(self)
+        out["publication_types"] = list(self.publication_types)
+        return out
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Paper":
+        """Rebuild a Paper from `to_dict` output.
+
+        Unknown keys are ignored so a manifest written by a later version still
+        loads; a missing key falls back to the field default.
+        """
+        known = {f.name for f in fields(cls)}
+        kwargs = {k: v for k, v in data.items() if k in known}
+        kwargs["publication_types"] = tuple(kwargs.get("publication_types") or ())
+        return cls(**kwargs)
 
 
 class SearchFailure(Exception):

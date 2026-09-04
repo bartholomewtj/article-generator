@@ -3,6 +3,7 @@
     articlegen ideas  "<theme>"        # 1. briefing questions to pick from
     articlegen draft  "<title>"        # 2. research + briefing, into drafts/
     articlegen queue                   # (re)build / open the drafts index
+    articlegen render drafts/x.json    # rebuild HTML + Markdown from a run manifest
 
 Stages 1 and 2 are the two human gates: you choose a question, then you review the briefing.
 `draft --long` writes the parked journal-style Review instead.
@@ -12,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import json
 import os
 import re
 import sys
@@ -20,7 +22,7 @@ import webbrowser
 from . import demo
 from .ideas import format_ideas_console, generate_ideas, ideas_to_markdown
 from .llm import resolve_provider
-from .pipeline import NoPapersFound, generate_draft
+from .pipeline import Draft, NoPapersFound, generate_draft
 from .render import build_index, render_article, render_markdown
 from .sources import DEFAULT_MAX_PAPERS
 
@@ -107,26 +109,63 @@ def cmd_draft(args) -> int:
     stem = args.name or f"{date}-{_slugify(args.topic)}"
     html_path = os.path.join(DRAFTS_DIR, f"{stem}.html")
     md_path = os.path.join(DRAFTS_DIR, f"{stem}.md")
+    manifest_path = os.path.join(DRAFTS_DIR, f"{stem}.json")
 
     render_args = (
         draft.article, draft.papers, draft.topic,
         draft.curation, draft.verification, draft.provenance,
         draft.style_report,
     )
-    with open(html_path, "w", encoding="utf-8") as f:
-        f.write(render_article(*render_args))
-    with open(md_path, "w", encoding="utf-8") as f:
-        f.write(render_markdown(*render_args))
+    _write_rendered(render_args, html_path, md_path)
+    # The run manifest: everything the run knew, so the briefing can be
+    # rendered again (`articlegen render`) or reused without another search.
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(draft.to_dict(), f, ensure_ascii=False, indent=2)
 
     index_path = build_index(DRAFTS_DIR)
     _log(f"Draft ready ({len(draft.article['references'])} sources cited):")
     _log(f"  HTML:     {html_path}")
     _log(f"  Markdown: {md_path}")
+    _log(f"  Manifest: {manifest_path}")
     _log(f"  Queue:    {index_path}")
 
     # One-line, greppable summary for the GitHub workflow to surface in its comment.
     print(f"EVIDENCE_SUMMARY: {draft.summary()}")
 
+    if args.open:
+        _open_in_browser(html_path)
+    return 0
+
+
+def _write_rendered(render_args: tuple, html_path: str, md_path: str) -> None:
+    """Write the HTML and Markdown for one draft, through the shared renderers."""
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write(render_article(*render_args))
+    with open(md_path, "w", encoding="utf-8") as f:
+        f.write(render_markdown(*render_args))
+
+
+def cmd_render(args) -> int:
+    """Rebuild the HTML and Markdown from a run manifest, next to it."""
+    manifest_path = args.manifest
+    try:
+        with open(manifest_path, encoding="utf-8") as f:
+            draft = Draft.from_dict(json.load(f))
+    except (OSError, ValueError, KeyError) as exc:
+        _log(f"Could not read the manifest {manifest_path}: {exc}")
+        return 1
+
+    stem, _ = os.path.splitext(manifest_path)
+    html_path, md_path = f"{stem}.html", f"{stem}.md"
+    render_args = (
+        draft.article, draft.papers, draft.topic,
+        draft.curation, draft.verification, draft.provenance,
+        draft.style_report,
+    )
+    _write_rendered(render_args, html_path, md_path)
+    _log(f"Rendered from {manifest_path}:")
+    _log(f"  HTML:     {html_path}")
+    _log(f"  Markdown: {md_path}")
     if args.open:
         _open_in_browser(html_path)
     return 0
@@ -214,6 +253,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_draft.add_argument("--open", action="store_true", help="Open the draft in your browser when done")
     p_draft.set_defaults(func=cmd_draft)
+
+    p_render = sub.add_parser(
+        "render",
+        help="Rebuild the HTML and Markdown from a run manifest (drafts/<stem>.json), no API calls",
+    )
+    p_render.add_argument("manifest", help="Path to the .json manifest a draft run wrote")
+    p_render.add_argument("--open", action="store_true", help="Open the rendered HTML in your browser")
+    p_render.set_defaults(func=cmd_render)
 
     p_queue = sub.add_parser("queue", help="(Re)build and optionally open the drafts review index")
     p_queue.add_argument("--open", action="store_true", help="Open the queue in your browser")
