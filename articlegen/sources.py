@@ -20,12 +20,16 @@ as long as one source returns results the pipeline keeps going.
 
 from __future__ import annotations
 
+import contextlib
 import datetime
+import json
 import os
 import re
+import sys
 import threading
 import time
 from dataclasses import asdict, dataclass, field, fields
+from pathlib import Path
 
 import requests
 
@@ -106,6 +110,118 @@ _cache_lock = threading.Lock()
 # (source, query, limit) -> (expires_at, papers, error). A non-empty error means
 # the entry records a refusal rather than a result.
 _search_cache: dict[tuple[str, str, int], tuple[float, list["Paper"], str]] = {}
+
+# The three caches (search, full text, PMCID) also live in one JSON file so a
+# CLI run — a fresh process every time — gets the same 24 hours of memory the
+# web server always had. The dicts stay the front layer: a read never touches
+# the disk after the first load, and a write goes to the dicts and then to the
+# file. Default location `~/.articlegen/cache.json`; `ARTICLEGEN_CACHE_DIR`
+# moves the folder (the tests point it at a temp dir so they never touch the
+# real one). `ARTICLEGEN_SEARCH_CACHE_TTL=0` switches the file off with the
+# rest. The file holds search results, full texts and DOI->PMCID lookups —
+# never an API key, which the cache keys do not carry either.
+_CACHE_FILE_NAME = "cache.json"
+_cache_loaded = False
+
+
+def _cache_file() -> Path:
+    folder = os.environ.get("ARTICLEGEN_CACHE_DIR") or Path.home() / ".articlegen"
+    return Path(folder) / _CACHE_FILE_NAME
+
+
+def _paper_to_json(paper: "Paper") -> dict:
+    record = asdict(paper)
+    # Full text has its own cache and is not part of what a search returned;
+    # a Paper the pipeline has since filled in would otherwise be written back
+    # under the search entry, and the file would carry every text twice.
+    record["full_text"] = ""
+    record["full_text_via"] = ""
+    record["full_text_not_oa"] = False
+    record["publication_types"] = list(paper.publication_types)
+    return record
+
+
+def _paper_from_json(record: dict) -> "Paper":
+    record = dict(record)
+    record["publication_types"] = tuple(record.get("publication_types") or ())
+    return Paper(**record)
+
+
+def _load_cache_locked() -> None:
+    """Fill the dicts from the file once per process. Caller holds the lock."""
+    global _cache_loaded
+    if _cache_loaded or _CACHE_TTL <= 0:
+        return
+    _cache_loaded = True
+    path = _cache_file()
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        now = time.time()
+        for item in raw.get("search", []):
+            if item["expires"] > now:
+                key = (item["source"], item["query"], int(item["limit"]))
+                papers = [_paper_from_json(p) for p in item["papers"]]
+                _search_cache[key] = (item["expires"], papers, item.get("error", ""))
+        for key, item in raw.get("full_text", {}).items():
+            if item["expires"] > now:
+                _fulltext_cache[key] = (item["expires"], item["text"], item.get("status", ""))
+        for doi, item in raw.get("pmcid", {}).items():
+            if item["expires"] > now:
+                _pmcid_cache[doi] = (item["expires"], item["pmcid"], bool(item["open_access"]))
+    except FileNotFoundError:
+        return
+    except Exception as exc:  # corrupt, unreadable, or an older shape
+        # One line, then start empty: a broken cache must never fail a run.
+        _search_cache.clear()
+        _fulltext_cache.clear()
+        _pmcid_cache.clear()
+        print(f"articlegen: ignoring unreadable cache {path}: {exc}", file=sys.stderr)
+
+
+def _save_cache_locked() -> None:
+    """Write the dicts to the file. Caller holds the lock.
+
+    Expired entries are dropped on the way out, so the file never holds more
+    than a day of activity. Written to a temp file then renamed, so a run
+    killed mid-write leaves the previous file rather than half of a new one.
+    """
+    if _CACHE_TTL <= 0:
+        return
+    now = time.time()
+    payload = {
+        "search": [
+            {"source": k[0], "query": k[1], "limit": k[2], "expires": exp,
+             "error": error, "papers": [_paper_to_json(p) for p in papers]}
+            for k, (exp, papers, error) in _search_cache.items() if exp > now
+        ],
+        "full_text": {
+            key: {"expires": entry[0], "text": entry[1],
+                  "status": entry[2] if len(entry) > 2 else ""}
+            for key, entry in _fulltext_cache.items() if entry[0] > now
+        },
+        "pmcid": {
+            doi: {"expires": exp, "pmcid": pmcid, "open_access": oa}
+            for doi, (exp, pmcid, oa) in _pmcid_cache.items() if exp > now
+        },
+    }
+    path = _cache_file()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(payload), encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError as exc:
+        # A read-only home or a full disk costs the next process its memory,
+        # not this run its result.
+        print(f"articlegen: could not write cache {path}: {exc}", file=sys.stderr)
+
+
+@contextlib.contextmanager
+def _cache_open():
+    """Hold the cache lock with the file loaded. Every dict access goes here."""
+    with _cache_lock:
+        _load_cache_locked()
+        yield
 
 _SS_FIELDS = "title,abstract,year,authors,venue,citationCount,externalIds,url,publicationTypes"
 _OA_FIELDS = (
@@ -795,11 +911,24 @@ def _rank_score(paper: Paper, terms: set[str], now: int | None = None) -> tuple:
 
 
 def clear_search_cache() -> None:
-    """Forget every cached search. For tests, and for forcing a fresh look."""
+    """Forget every cached search, in memory and on disk.
+
+    For tests, and for forcing a fresh look. Marks the file as loaded so the
+    next access does not read the entries back from disk.
+    """
+    global _cache_loaded
     with _cache_lock:
         _search_cache.clear()
         _fulltext_cache.clear()
         _pmcid_cache.clear()
+        _cache_loaded = True
+        try:
+            _cache_file().unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            print(f"articlegen: could not remove cache {_cache_file()}: {exc}",
+                  file=sys.stderr)
 
 
 # ---------------------------------------------------------------- full text
@@ -813,10 +942,12 @@ _FULLTEXT_SKIP_TITLES = re.compile(
     r"|conflict|competing|availability|ethics|consent|orcid|appendix"
 )
 
-# pmcid -> (expiry, text). Same lifecycle as the search cache: full text does
-# not change hour to hour, and each fetch is a real request against the one
-# scholarly API that reliably answers — do not spend it twice.
-_fulltext_cache: dict[str, tuple[float, str]] = {}
+# pmcid or "papers:<doi>" -> (expiry, text, status). Same lifecycle as the
+# search cache: full text does not change hour to hour, and each fetch is a
+# real request against the one scholarly API that reliably answers — do not
+# spend it twice. `status` is the papers CLI's outcome and "" on the Europe
+# PMC route.
+_fulltext_cache: dict[str, tuple[float, str, str]] = {}
 
 # doi -> (expiry, pmcid, is_open_access). See `resolve_pmcid`.
 _pmcid_cache: dict[str, tuple[float, str, bool]] = {}
@@ -886,7 +1017,7 @@ def resolve_pmcid(paper: Paper, use_cache: bool = True, log=lambda msg: None) ->
 
     now = time.time()
     if use_cache and _CACHE_TTL > 0:
-        with _cache_lock:
+        with _cache_open():
             entry = _pmcid_cache.get(doi)
         if entry and entry[0] > now:
             paper.pmcid, paper.is_open_access = entry[1], entry[2]
@@ -954,8 +1085,9 @@ def resolve_pmcid(paper: Paper, use_cache: bool = True, log=lambda msg: None) ->
 
     if _CACHE_TTL > 0:
         ttl = _CACHE_TTL if (pmcid or open_access) else _CACHE_FAILURE_TTL
-        with _cache_lock:
+        with _cache_open():
             _pmcid_cache[doi] = (now + ttl, pmcid, open_access)
+            _save_cache_locked()
 
     paper.pmcid, paper.is_open_access = pmcid, open_access
     return bool(pmcid and open_access)
@@ -1216,7 +1348,7 @@ def fetch_full_text(paper: Paper, use_cache: bool = True, log=lambda msg: None) 
     if doi and paperfetch.available(log):
         key = f"papers:{doi}"
         if use_cache and _CACHE_TTL > 0:
-            with _cache_lock:
+            with _cache_open():
                 entry = _fulltext_cache.get(key)
                 if entry and entry[0] > now:
                     cached_text = entry[1]
@@ -1232,8 +1364,9 @@ def fetch_full_text(paper: Paper, use_cache: bool = True, log=lambda msg: None) 
             paper.full_text_not_oa = True
         if _CACHE_TTL > 0:
             ttl = _CACHE_TTL if text else _CACHE_FAILURE_TTL
-            with _cache_lock:
+            with _cache_open():
                 _fulltext_cache[key] = (now + ttl, text, status)
+                _save_cache_locked()
         if text:
             paper.full_text_via = "papers"
             paper.full_text_not_oa = False
@@ -1242,7 +1375,7 @@ def fetch_full_text(paper: Paper, use_cache: bool = True, log=lambda msg: None) 
     if not (paper.pmcid and paper.is_open_access):
         return ""
     if use_cache and _CACHE_TTL > 0:
-        with _cache_lock:
+        with _cache_open():
             entry = _fulltext_cache.get(paper.pmcid)
             if entry and entry[0] > now:
                 if entry[1]:
@@ -1257,8 +1390,9 @@ def fetch_full_text(paper: Paper, use_cache: bool = True, log=lambda msg: None) 
         text = ""
     if _CACHE_TTL > 0:
         ttl = _CACHE_TTL if text else _CACHE_FAILURE_TTL
-        with _cache_lock:
-            _fulltext_cache[paper.pmcid] = (now + ttl, text)
+        with _cache_open():
+            _fulltext_cache[paper.pmcid] = (now + ttl, text, "")
+            _save_cache_locked()
     if text:
         paper.full_text_via = "europe_pmc"
         paper.full_text_not_oa = False
@@ -1270,7 +1404,7 @@ def _cache_get(key: tuple[str, str, int]) -> tuple[list[Paper], str] | None:
     if _CACHE_TTL <= 0:
         return None
     now = time.time()
-    with _cache_lock:
+    with _cache_open():
         entry = _search_cache.get(key)
         if entry is None:
             return None
@@ -1287,16 +1421,16 @@ def _cache_put(key: tuple[str, str, int], papers: list[Paper], error: str) -> No
     if _CACHE_TTL <= 0:
         return
     ttl = _CACHE_FAILURE_TTL if error else _CACHE_TTL
-    with _cache_lock:
+    with _cache_open():
         _search_cache[key] = (time.time() + ttl, list(papers), error)
-        if len(_search_cache) <= _CACHE_MAX_ENTRIES:
-            return
-        now = time.time()
-        for stale in [k for k, (exp, _, _) in _search_cache.items() if exp <= now]:
-            del _search_cache[stale]
-        while len(_search_cache) > _CACHE_MAX_ENTRIES:
-            soonest = min(_search_cache, key=lambda k: _search_cache[k][0])
-            del _search_cache[soonest]
+        if len(_search_cache) > _CACHE_MAX_ENTRIES:
+            now = time.time()
+            for stale in [k for k, (exp, _, _) in _search_cache.items() if exp <= now]:
+                del _search_cache[stale]
+            while len(_search_cache) > _CACHE_MAX_ENTRIES:
+                soonest = min(_search_cache, key=lambda k: _search_cache[k][0])
+                del _search_cache[soonest]
+        _save_cache_locked()
 
 
 def _search_once(name: str, search, query: str, limit: int) -> tuple[list[Paper], str, bool]:
