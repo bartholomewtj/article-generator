@@ -5707,11 +5707,11 @@ def test_dates_are_australian() -> None:
 
 
 def test_visitor_gallery() -> None:
-    """Shared briefings are opt-in, capped, and not the personal library.
+    """Shared briefings are auto-published, capped, and not the personal library.
 
-    Generating must not publish. The hosted backend has no disk, so the
-    durable copy is a public gist — listed from the front end without
-    waiting on Render. A gist-scoped token cannot rewrite the generator.
+    Generating publishes. The hosted backend has no disk, so the durable
+    copy is a public gist — listed from the front end without waiting on
+    Render. A gist-scoped token cannot rewrite the generator.
     """
     import inspect
     import json as json_mod
@@ -5762,6 +5762,21 @@ def test_visitor_gallery() -> None:
               not os.path.exists(os.path.join(tmp, os.path.basename(first["html_url"]))))
         check("local html_url is a gallery path",
               second["html_url"].startswith("/gallery/"))
+
+        os.environ["ARTICLEGEN_STATELESS"] = "1"
+        os.environ.pop("ARTICLEGEN_GALLERY_TOKEN", None)
+        check("try_publish is a no-op when the gallery is off",
+              gallery.try_publish("T", "<h1>T</h1><p>a</p>") is None)
+        os.environ["ARTICLEGEN_GALLERY_TOKEN"] = "ghp_test"
+        with patch.object(gallery, "publish", return_value={"id": "x"}):
+            check("try_publish returns the item when the gallery is on",
+                  gallery.try_publish("T", "<h1>T</h1><p>a</p>")["id"] == "x")
+        with patch.object(gallery, "publish", side_effect=gallery.GalleryError("no")):
+            check("try_publish swallows GalleryError",
+                  gallery.try_publish("T", "<h1>T</h1><p>a</p>") is None)
+        with patch.object(gallery, "publish", side_effect=RuntimeError("boom")):
+            check("try_publish swallows unexpected errors",
+                  gallery.try_publish("T", "<h1>T</h1><p>a</p>") is None)
     finally:
         gallery.GALLERY_DIR = original_dir
         gallery.GALLERY_MAX = original_max
@@ -5843,17 +5858,18 @@ def test_visitor_gallery() -> None:
           f"GALLERY_INDEX_FILE = '{gallery.GALLERY_INDEX_FILE}'" in page)
 
     draft_src = inspect.getsource(web.ArticleGenHandler._handle_draft)
-    check("generating does not publish to the gallery",
-          "gallery.publish" not in draft_src and "_handle_publish_gallery" not in draft_src)
-    share = page[page.index("async function shareToGallery"):]
-    share = share[:share.index("\n  }\n")]
-    check("Share to gallery asks first", "confirm(" in share)
-    check("and posts to /api/gallery, not /api/draft",
-          "/api/gallery" in share and "/api/draft" not in share)
+    check("generating publishes to the gallery",
+          "gallery.try_publish" in draft_src)
+    check("generate does not go through the manual gallery POST",
+          "_handle_publish_gallery" not in draft_src)
+    check("the share-to-gallery button is gone",
+          "shareGalleryBtn" not in page and "shareToGallery" not in page)
     select = page[page.index("async function selectDraft"):]
     select = select[:select.index("\n  }\n")]
-    check("choosing an idea does not share to the gallery",
-          "shareToGallery" not in select)
+    check("a finished draft refreshes the public list",
+          "loadPublicPreview" in select)
+    check("the page does not POST /api/gallery from generate",
+          "/api/gallery" not in select)
 
     health = inspect.getsource(web.ArticleGenHandler.do_GET)
     check("health reports whether the gallery is on",
@@ -6092,7 +6108,9 @@ def test_every_endpoint_logs_one_run_line() -> None:
             summary=lambda: "1 of 1 screened sources cited",
         )
         handler, sent, buf = make_handler("POST", "/api/draft", {"topic": "seclusion"})
-        with patch.object(sys, "stderr", buf), patch.object(web, "generate_draft", return_value=fake_draft):
+        with patch.object(sys, "stderr", buf), \
+             patch.object(web, "generate_draft", return_value=fake_draft), \
+             patch.object(gallery, "try_publish", return_value={"id": "g1", "title": "Test Title", "html_url": "u"}):
             handler.do_POST()
         lines = [json_mod.loads(l) for l in buf.getvalue().splitlines() if l.startswith("{")]
         check("draft success emits 1 run line", len(lines) == 1)
@@ -6100,6 +6118,16 @@ def test_every_endpoint_logs_one_run_line() -> None:
         check("draft endpoint == '/api/draft'", lines[0]["endpoint"] == "/api/draft")
         check("draft screened == 1", lines[0]["screened"] == 1)
         check("draft topic not in json", "seclusion" not in json_mod.dumps(lines[0]))
+        check("draft response includes the gallery item",
+              sent[0]["data"].get("gallery", {}).get("id") == "g1")
+
+        handler, sent, buf = make_handler("POST", "/api/draft", {"topic": "seclusion"})
+        with patch.object(sys, "stderr", buf), \
+             patch.object(web, "generate_draft", return_value=fake_draft), \
+             patch.object(gallery, "try_publish", return_value=None):
+            handler.do_POST()
+        check("gallery miss does not fail the draft", sent[0]["status"] == 200)
+        check("gallery miss omits the gallery key", "gallery" not in sent[0]["data"])
 
         # 5. draft raising NoPapersFound (422)
         handler, sent, buf = make_handler("POST", "/api/draft", {"topic": "seclusion"})

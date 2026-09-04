@@ -18,9 +18,8 @@ kept for later, not deleted.
 🔗 **[Open the site](https://bartholomewtj.github.io/article-generator/)**
 
 Generating is free on the public site (GPT-5.6 Luna, host-paid, rate-limited).
-No key and no account needed. Briefings other people chose to share are listed
-on the landing page under **From other visitors**. Generating does not put
-yours there — tap **Add to public gallery** after you have read it.
+No key and no account needed. A finished briefing is listed on the landing
+page under **From other visitors** as soon as it is generated.
 
 ---
 
@@ -29,14 +28,13 @@ yours there — tap **Add to public gallery** after you have read it.
 1. **Open the site:** [https://bartholomewtj.github.io/article-generator/](https://bartholomewtj.github.io/article-generator/) (or run `articlegen web --open` locally).
 2. **Type a theme:** Enter your topic (e.g. `renewable energy storage`) and optional audience/style notes. The box is the first thing on the page.
 3. **Choose a draft:** Tap any generated **Draft Idea Card** to launch the evidence-grounded research pipeline.
-4. **Read, save & share:** View the rendered article. **Keep** holds it in your
-   library past the rolling limit. **Download** saves it as a single HTML file you
-   can open offline or print to PDF. **Shareable link** gives you a short link
-   anyone can open. **Add to public gallery** puts it on the public list for
-   other visitors.
+4. **Read, save & share:** View the rendered article. It is already on the
+   public list. **Keep** holds it in your library past the rolling limit.
+   **Download** saves it as a single HTML file you can open offline or print
+   to PDF. **Shareable link** gives you a short link anyone can open.
 
 Below the topic box the landing page lists **From other visitors**
-(briefings someone chose to share). Your own saved briefings are under
+(briefings generated on the site). Your own saved briefings are under
 **Your articles**. CLI drafts stay in `drafts/` on this machine; they are
 not on the public site.
 
@@ -54,11 +52,10 @@ the same Python that the CLI runs, on a small backend the page calls. There is
 no second implementation: an article generated from your phone goes through the
 same relevance gate, prose-style enforcement and statistic verification as one
 generated from the terminal. The hosted backend keeps no articles on disk: it
-renders, returns, and forgets. A briefing someone taps **Add to public gallery** on
-is stored in a public GitHub gist and listed on the landing page; generating
-does not do that. Public generation uses a host-held OpenRouter key for Luna
-only. Your private copies live in your own browser. See [`render.yaml`](render.yaml)
-to host the backend yourself.
+renders, lists the briefing on the public gallery, returns it, and forgets the
+rest. The gallery copy is a public GitHub gist. Public generation uses a
+host-held OpenRouter key for Luna only. Your private copies live in your own
+browser. See [`render.yaml`](render.yaml) to host the backend yourself.
 
 **Provider key setup (CLI):**
 
@@ -294,7 +291,7 @@ articlegen/
   cli.py        subcommands (ideas / draft / queue / demo / web)
   pipeline.py   the draft pipeline — every caller, CLI and web, runs this one
   web.py        HTTP server + JSON API behind the web front end
-  gallery.py    opt-in public visitor gallery (local disk or a GitHub gist)
+  gallery.py    public visitor gallery (local disk or a GitHub gist)
   llm.py        provider layer: OpenRouter or Claude, auto-detected from keys
   ideas.py      LLM call: theme -> shortlist of briefing questions
   writer.py     LLM calls: plan queries, write the briefing (write_article is --long)

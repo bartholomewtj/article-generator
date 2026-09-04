@@ -1,9 +1,9 @@
-"""Public visitor gallery — opt-in persist of generated briefings.
+"""Public visitor gallery — persist of generated briefings.
 
-Generating does not publish. A visitor has to tap Share to gallery. The
-hosted backend is stateless and has no disk, so the durable copy is a
-public GitHub gist. The token for that needs `gist` scope only — a leak
-cannot rewrite the generator.
+A finished briefing is published as soon as generate returns. The hosted
+backend is stateless and has no disk, so the durable copy is a public
+GitHub gist. The token for that needs `gist` scope only — a leak cannot
+rewrite the generator.
 
 The index gist id is a public fact. The front end fetches it with no key,
 so listing shared briefings does not wait on Render.
@@ -49,7 +49,7 @@ class GalleryError(Exception):
 
 
 def gallery_enabled() -> bool:
-    """True when this host can accept a Share to gallery request."""
+    """True when this host can list a generated briefing on the gallery."""
     return _backend() != "off"
 
 
@@ -155,6 +155,19 @@ def publish(title: str, html: str) -> dict:
         if backend == "gist":
             return _gist_publish(item_title, html)
         return _local_publish(item_title, html)
+
+
+def try_publish(title: str, html: str) -> dict | None:
+    """Publish a generated briefing. None if the gallery is off or the write fails.
+
+    Generation already succeeded; listing must not fail the request.
+    """
+    if not gallery_enabled():
+        return None
+    try:
+        return publish(title, html)
+    except Exception:
+        return None
 
 
 def _new_local_id(title: str) -> str:
