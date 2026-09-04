@@ -2,6 +2,13 @@
 
 Optional. When `papers` is not installed, `available()` is False and the
 pipeline behaves exactly as it did before this module existed.
+
+A draft sends the ordered DOI list to `papers get -` in one process (one JSON
+line back per DOI, in input order) so per-process memos such as Semantic
+Scholar's 429 skip survive the whole list. An older `papers` that rejects
+batch/stdin falls back to one process per DOI. `papers status` runs once per
+run, before the first get, and the log names any missing `mailto_set` /
+`s2_key_set`.
 """
 
 from __future__ import annotations
@@ -19,8 +26,15 @@ _AVAILABLE: bool | None = None
 _ARGV: list[str] = []
 # The "not installed" line is worth saying once per process, not per paper.
 _WARNED = False
+# None = not tried this process. True/False after the first N>1 batch attempt.
+_BATCH_OK: bool | None = None
+# Filled by fetch_many_via_papers; fetch_via_papers_with_status reads it so
+# the pipeline loop does not start a second process per DOI.
+_BATCH_CACHE: dict[str, tuple[str, str]] = {}
 
 DEFAULT_TIMEOUT = 120.0
+STATUS_TIMEOUT = 15.0
+STATUS_FLAGS = ("mailto_set", "s2_key_set")
 
 # papers statuses that mean "no open-access copy", not "OA but empty".
 # `queued_ckn` is Unpaywall (and the rest of the ladder) saying the paper is
@@ -32,7 +46,8 @@ DEFAULT_TIMEOUT = 120.0
 NOT_OA_STATUSES = frozenset({"queued_ckn", "no_oa"})
 
 # Tests reset process state by setting paperfetch._AVAILABLE = None,
-# paperfetch._ARGV = [], paperfetch._WARNED = False.
+# paperfetch._ARGV = [], paperfetch._WARNED = False, paperfetch._BATCH_OK = None,
+# paperfetch._BATCH_CACHE = {}.
 
 
 def _command() -> list[str]:
@@ -61,6 +76,70 @@ def available(log: Callable[[str], None] | None = None) -> bool:
     return _AVAILABLE
 
 
+def _child_env() -> dict[str, str]:
+    env = dict(os.environ)
+    mailto = (
+        env.get("PAPERS_MAILTO")
+        or env.get("OPENALEX_MAILTO")
+        or env.get("UNPAYWALL_EMAIL")
+        or ""
+    )
+    if mailto:
+        env["PAPERS_MAILTO"] = mailto
+    else:
+        env.pop("PAPERS_MAILTO", None)
+    # Private paperfetch writes a CKN miss-list line on `queued_ckn`.
+    # A draft must not fill that pickup list. Public paperfetch-oa
+    # ignores the variable.
+    env["PAPERS_NO_CKN_QUEUE"] = "1"
+    return env
+
+
+def _run(
+    argv: list[str],
+    *,
+    timeout: float,
+    stdin: str | None = None,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        argv,
+        input=stdin,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=timeout,
+        env=_child_env(),
+    )
+
+
+def preflight(log: Callable[[str], None] | None = None) -> dict:
+    """Run `papers status` once and log any missing mailto_set / s2_key_set.
+
+    Local only; does not fetch. Returns the status object, or {} if status
+    could not be read. Missing keys that are not booleans on the object are
+    ignored, so a mocked `get` response is not reported as a config gap.
+    """
+    if not available(log):
+        return {}
+    cmd = _command()
+    if not cmd:
+        return {}
+    try:
+        proc = _run(cmd + ["status"], timeout=STATUS_TIMEOUT)
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return {}
+    try:
+        record = json.loads(proc.stdout)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    if not isinstance(record, dict):
+        return {}
+    missing = [flag for flag in STATUS_FLAGS if record.get(flag) is False]
+    if missing and callable(log):
+        log("  papers: missing " + ", ".join(missing))
+    return record
+
+
 def fetch_via_papers(
     doi: str,
     timeout: float = DEFAULT_TIMEOUT,
@@ -73,6 +152,124 @@ def fetch_via_papers(
     file, returns "" so callers can fall back gracefully.
     """
     return fetch_via_papers_with_status(doi, timeout=timeout, log=log)[0]
+
+
+def _text_from_record(
+    record: dict,
+    doi: str,
+    log: Callable[[str], None] | None,
+) -> tuple[str, str]:
+    status = record.get("status") or ""
+    if status != "ok":
+        if callable(log):
+            log(f"  papers: {status} for {doi}")
+        return "", str(status)
+
+    path = record.get("read")
+    if not path:
+        return "", status
+
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            return f.read(), status
+    except OSError as exc:
+        if callable(log):
+            log(f"  papers could not read file {path}: {exc}")
+        return "", status
+
+
+def _parse_ndjson(stdout: str | None) -> list[dict] | None:
+    lines = [ln for ln in (stdout or "").splitlines() if ln.strip()]
+    if not lines:
+        return None
+    out: list[dict] = []
+    for line in lines:
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(record, dict):
+            return None
+        out.append(record)
+    return out
+
+
+def _try_batch(
+    dois: list[str],
+    timeout: float,
+    log: Callable[[str], None] | None,
+) -> list[tuple[str, str]] | None:
+    """One `papers get -` with the DOI list on stdin. None means try per-DOI."""
+    cmd = _command()
+    if not cmd:
+        return None
+    argv = cmd + ["get", "-"]
+    stdin = "".join(doi + "\n" for doi in dois)
+    try:
+        proc = _run(argv, timeout=timeout, stdin=stdin)
+    except subprocess.TimeoutExpired as exc:
+        if callable(log):
+            log(f"  papers batch timed out: {exc}")
+        return [("", "")] * len(dois)
+    except (OSError, ValueError) as exc:
+        if callable(log):
+            log(f"  papers batch failed: {exc}")
+        return None
+
+    records = _parse_ndjson(proc.stdout)
+    if records is None:
+        return None
+    if len(records) == len(dois):
+        return [_text_from_record(record, doi, log)
+                for doi, record in zip(dois, records)]
+    # New papers prints one config_error JSON line for the whole batch
+    # (missing mailto, empty stdin) and exits 1. That is not an old CLI.
+    if (len(records) == 1
+            and records[0].get("status") == "config_error"):
+        status = "config_error"
+        if callable(log):
+            reason = records[0].get("reason") or status
+            log(f"  papers: {reason}")
+        return [("", status)] * len(dois)
+    return None
+
+
+def fetch_many_via_papers(
+    dois: list[str],
+    timeout: float = DEFAULT_TIMEOUT,
+    log: Callable[[str], None] | None = None,
+) -> list[tuple[str, str]]:
+    """Fetch many DOIs, one `papers get -` process when the CLI supports it.
+
+    Returns one `(text, status)` pair per input DOI, in input order. A single
+    DOI uses the per-DOI path (old `papers get -` treats `-` as the query).
+    An older `papers` that returns one JSON object for many stdin lines, or
+    a usage error, falls back to one process per DOI for the rest of the
+    process.
+    """
+    global _BATCH_OK, _BATCH_CACHE
+    _BATCH_CACHE = {}
+    if not dois or not available(log):
+        return [("", "")] * len(dois)
+
+    results: list[tuple[str, str]] | None = None
+    if _BATCH_OK is not False and len(dois) > 1:
+        results = _try_batch(dois, timeout * len(dois), log)
+        if results is not None:
+            _BATCH_OK = True
+        else:
+            _BATCH_OK = False
+            if callable(log):
+                log("  papers: older CLI (no batch/stdin); fetching one DOI at a time")
+
+    if results is None:
+        results = [
+            fetch_via_papers_with_status(doi, timeout=timeout, log=log)
+            for doi in dois
+        ]
+
+    _BATCH_CACHE = {doi: pair for doi, pair in zip(dois, results)}
+    return results
 
 
 def fetch_via_papers_with_status(
@@ -89,6 +286,9 @@ def fetch_via_papers_with_status(
     """
     if not doi or not available(log):
         return "", ""
+    cached = _BATCH_CACHE.get(doi)
+    if cached is not None:
+        return cached
 
     try:
         cmd = _command()
@@ -96,31 +296,8 @@ def fetch_via_papers_with_status(
             return "", ""
         argv = cmd + ["get", doi]
 
-        env = dict(os.environ)
-        mailto = (
-            env.get("PAPERS_MAILTO")
-            or env.get("OPENALEX_MAILTO")
-            or env.get("UNPAYWALL_EMAIL")
-            or ""
-        )
-        if mailto:
-            env["PAPERS_MAILTO"] = mailto
-        else:
-            env.pop("PAPERS_MAILTO", None)
-        # Private paperfetch writes a CKN miss-list line on `queued_ckn`.
-        # A draft must not fill that pickup list. Public paperfetch-oa
-        # ignores the variable.
-        env["PAPERS_NO_CKN_QUEUE"] = "1"
-
         try:
-            proc = subprocess.run(
-                argv,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                timeout=timeout,
-                env=env,
-            )
+            proc = _run(argv, timeout=timeout)
         except (subprocess.TimeoutExpired, OSError, ValueError) as exc:
             if callable(log):
                 log(f"  papers fetch failed for {doi}: {exc}")
@@ -139,23 +316,7 @@ def fetch_via_papers_with_status(
                 log(f"  papers returned non-dict JSON for {doi}")
             return "", ""
 
-        status = record.get("status") or ""
-        if status != "ok":
-            if callable(log):
-                log(f"  papers: {status} for {doi}")
-            return "", str(status)
-
-        path = record.get("read")
-        if not path:
-            return "", status
-
-        try:
-            with open(path, "r", encoding="utf-8", errors="ignore") as f:
-                return f.read(), status
-        except OSError as exc:
-            if callable(log):
-                log(f"  papers could not read file {path}: {exc}")
-            return "", status
+        return _text_from_record(record, doi, log)
     except Exception as exc:
         if callable(log):
             log(f"  papers fetch unexpected error for {doi}: {exc}")

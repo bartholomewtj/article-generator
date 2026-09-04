@@ -176,12 +176,28 @@ def _retrieve_full_texts(
     Returns (fetched 1-based indices, eligible tried, no-open-access,
     fetch-failed, requests spent, stop reason). Same bounds as the pre-cite
     loop this replaced: FULLTEXT_TARGET and MAX_FULLTEXT_REQUESTS.
+
+    When the papers CLI is available, the DOI list is sent once on stdin
+    (`papers get -`) up to the request cap, then this loop applies results
+    and stops at FULLTEXT_TARGET. `papers status` runs first so a missing
+    mailto or S2 key is named before any get.
     """
     fetched: list[int] = []
     requests_spent = 0
     via_papers = paperfetch.available(log)
     eligible = no_open_access = fetch_failed = 0
     stopped = "ran out of eligible sources"
+    if via_papers:
+        dois: list[str] = []
+        for index in order:
+            if len(dois) >= MAX_FULLTEXT_REQUESTS:
+                break
+            doi = _normalize_doi(papers[index - 1].doi)
+            if doi:
+                dois.append(doi)
+        if dois:
+            paperfetch.preflight(log)
+            paperfetch.fetch_many_via_papers(dois, log=log)
     for index in order:
         paper = papers[index - 1]
         if len(fetched) >= FULLTEXT_TARGET:
