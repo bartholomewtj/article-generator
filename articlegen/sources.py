@@ -936,10 +936,82 @@ def clear_search_cache() -> None:
 EUROPE_PMC_FULLTEXT_URL = "https://www.ebi.ac.uk/europepmc/webservices/rest/{pmcid}/fullTextXML"
 
 # Back-matter sections that cost tokens and ground nothing. Matched against the
-# lowercased section title; anything else is kept in document order.
+# lowercased section title; anything else is kept in document order. Same list
+# as paperfetch (PR #37): a volume or page number in a citation must not sit
+# in the verification haystack.
 _FULLTEXT_SKIP_TITLES = re.compile(
-    r"acknowledg|funding|reference|supplementar|abbreviation|author contribution"
-    r"|conflict|competing|availability|ethics|consent|orcid|appendix"
+    r"acknowledg|funding|reference|bibliograph|literature cited|supplementar"
+    r"|supporting info|abbreviation|author contribution|conflict|competing"
+    r"|availability|ethics|consent|orcid|appendix"
+)
+
+# Canonical section names. paperfetch writes a "## Results" marker line
+# (title case, blank line after) before each one it finds; meta.json lists
+# them lowercase under "sections". Unrecognised headings stay in the body
+# under the nearest marker. Match that contract even while PR #37 is open.
+SECTION_NAMES = (
+    "abstract", "introduction", "methods", "results", "discussion", "conclusions",
+)
+_SECTION_MARKER = re.compile(
+    r"^## (" + "|".join(n.title() for n in SECTION_NAMES) + r")\s*$",
+    re.MULTILINE,
+)
+
+# Excerpt picker spends the per-paper budget in this order. "discussion or
+# conclusions" is one slot: discussion if the paper has it, otherwise
+# conclusions. References are never a slot.
+_EXCERPT_SECTION_GROUPS = (
+    ("abstract",),
+    ("results",),
+    ("discussion", "conclusions"),
+    ("methods",),
+    ("introduction",),
+)
+
+# Heading text -> canonical name. Same patterns as paperfetch, matched
+# against the whole heading after numbering ("2.", "III", "2 |") and
+# trailing punctuation are stripped.
+_HEADING_PREFIX = re.compile(
+    r"^\s*(?:(?:\d+(?:\.\d+)*|[ivx]+)[.):|\s]+)?", re.IGNORECASE)
+_CANONICAL = [
+    ("abstract", re.compile(r"(structured )?abstract")),
+    ("introduction", re.compile(r"introduction|background( and (objectives?|aims?))?")),
+    (
+        "methods",
+        re.compile(
+            r"((materials?|patients?|subjects?|participants?|study design|experimental|"
+            r"design)( and | & |, ))?(methods?|methodology|procedures?)( and materials?)?"
+            r"|experimental (procedures?|section)|study design and methods?"
+        ),
+    ),
+    ("results", re.compile(r"results?( and discussion)?|findings|main results")),
+    ("discussion", re.compile(r"discussion")),
+    ("conclusions", re.compile(r"(summary and )?conclusions?|concluding remarks")),
+    (
+        "references",
+        re.compile(
+            r"references?( and notes| list| cited)?|bibliography|literature cited|works cited"
+        ),
+    ),
+]
+_JATS_SEC_TYPES = {
+    "intro": "introduction",
+    "introduction": "introduction",
+    "materials": "methods",
+    "methods": "methods",
+    "materials|methods": "methods",
+    "results": "results",
+    "discussion": "discussion",
+    "conclusions": "conclusions",
+    "conclusion": "conclusions",
+}
+
+# A whole-line references heading, with or without a leftover "## " marker
+# or numbering. Used to cut the list out of unmarked PDF dumps.
+_REFERENCES_HEADING = re.compile(
+    r"(?im)^(?:##\s+)?(?:(?:\d+(?:\.\d+)*|[ivx]+)[.):|\s]+)?"
+    r"(?:references?(?: and notes| list| cited)?|bibliography|"
+    r"literature cited|works cited)\s*$"
 )
 
 # pmcid or "papers:<doi>" -> (expiry, text, status). Same lifecycle as the
@@ -1097,6 +1169,45 @@ def _jats_text(node) -> str:
     return re.sub(r"\s+", " ", " ".join(node.itertext())).strip()
 
 
+def _jats_body_text(sec, title_node) -> str:
+    """Section text without its own title (the marker line carries that)."""
+    if title_node is None:
+        return _jats_text(sec)
+    pieces = [title_node.tail or ""]
+    for child in sec:
+        if child is title_node:
+            continue
+        pieces.append(" ".join(child.itertext()))
+        pieces.append(child.tail or "")
+    text = (sec.text or "") + " ".join(pieces)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _canonical_section(title: str) -> str | None:
+    """'2. MATERIALS AND METHODS' -> 'methods'; None when not a standard heading."""
+    t = _HEADING_PREFIX.sub("", (title or "").strip().lower())
+    t = re.sub(r"\s+", " ", t).strip(" .:;-")
+    if not t:
+        return None
+    for name, pattern in _CANONICAL:
+        if pattern.fullmatch(t):
+            return name
+    return None
+
+
+def _assemble_sections(segments: list[tuple[str | None, str]]) -> str:
+    """[(canonical name or None, body text)] -> text with paperfetch marker lines."""
+    parts: list[str] = []
+    for name, body in segments:
+        body = body.strip()
+        if name is None:
+            if body:
+                parts.append(body)
+            continue
+        parts.append(f"## {name.title()}\n\n{body}" if body else f"## {name.title()}\n")
+    return "\n\n".join(parts).strip() + ("\n" if parts else "")
+
+
 _CITATION_BRACKETS_RE = re.compile(r"\[\s*\d+(?:\s*[,–—-]\s*\d+)*\s*\]")
 
 
@@ -1113,12 +1224,13 @@ def _strip_citation_brackets(text: str) -> str:
 
 
 def _parse_fulltext_xml(xml_text: str) -> str:
-    """JATS XML -> plain text of the body, section by section.
+    """JATS XML -> plain text with paperfetch-style section markers.
 
-    Titles are kept ("Methods. ...") so the writer can attribute what it reads,
-    and back matter is dropped. Falls back to the whole body text when the
-    article has no <sec> structure. Markup is flattened for the same reason
-    `_strip_markup` exists: verification is a substring check over this text.
+    Recognised sections get a ``## Results`` marker line (title case), a blank
+    line, then the body without the heading. Back matter and the reference
+    list are dropped. Falls back to unmarked body text when the article has
+    no recognised <sec> structure. Markup is flattened because verification
+    is a substring check over this text.
     """
     import xml.etree.ElementTree as ET
 
@@ -1130,21 +1242,97 @@ def _parse_fulltext_xml(xml_text: str) -> str:
     if body is None:
         return ""
 
-    chunks: list[str] = []
+    segments: list[tuple[str | None, str]] = []
+    seen: set[str] = set()
+    abstract = root.find(".//front//abstract")
+    if abstract is not None:
+        text = _jats_text(abstract)
+        text = re.sub(r"^abstract\s*", "", text, flags=re.IGNORECASE)
+        if text:
+            segments.append(("abstract", text))
+            seen.add("abstract")
     for sec in body.findall("sec"):
         title_node = sec.find("title")
         title = _jats_text(title_node) if title_node is not None else ""
         if title and _FULLTEXT_SKIP_TITLES.search(title.lower()):
             continue
-        text = _jats_text(sec)
+        name = (_canonical_section(title)
+                or _JATS_SEC_TYPES.get((sec.get("sec-type") or "").lower()))
+        if name == "references":
+            continue
+        if name and name not in seen:
+            seen.add(name)
+            text = _jats_body_text(sec, title_node)
+        else:
+            name = None
+            text = _jats_text(sec)
         if text:
-            chunks.append(text)
-    text = "\n\n".join(chunks) if chunks else _jats_text(body)
+            segments.append((name, text))
+    if not any(name for name, _ in segments):
+        plain = "\n\n".join(body for _, body in segments)
+        text = plain if plain else _jats_text(body)
+    else:
+        text = _assemble_sections(segments)
     # The paper's own bracketed citation numbers ("[ 1 ]", "[2, 5]", "[3-7]")
     # collide with the pipeline's [N] SOURCE-index scheme: a writer reading
     # "improves outcomes [ 4 ]" mid-paragraph may echo that number as if it
     # were one of OUR sources. Strip them; the prose keeps its meaning.
     return _strip_citation_brackets(text)
+
+
+def _drop_references(text: str) -> str:
+    """Cut the reference list from unmarked (or leftover) full text."""
+    m = _REFERENCES_HEADING.search(text)
+    if not m:
+        return text
+    return text[:m.start()].rstrip()
+
+
+def _split_marked_sections(text: str) -> dict[str, str] | None:
+    """Parse paperfetch-style ``## Results`` markers. None if none found."""
+    matches = list(_SECTION_MARKER.finditer(text))
+    if not matches:
+        return None
+    found: dict[str, str] = {}
+    for i, m in enumerate(matches):
+        name = m.group(1).lower()
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        body = text[start:end].strip()
+        if name not in found:
+            found[name] = body
+    return found
+
+
+def _excerpt_from_full_text(text: str, budget: int) -> str:
+    """Spend `budget` characters on the sections a briefing actually needs."""
+    if not text or budget <= 0:
+        return ""
+    text = _drop_references(text)
+    sections = _split_marked_sections(text)
+    if sections is None:
+        return text[:budget]
+    parts: list[str] = []
+    used = 0
+    for group in _EXCERPT_SECTION_GROUPS:
+        name = next((n for n in group if sections.get(n)), None)
+        if name is None:
+            continue
+        body = sections[name]
+        chunk = f"## {name.title()}\n\n{body}"
+        extra = 2 if parts else 0
+        room = budget - used - extra
+        if room <= 0:
+            break
+        if len(chunk) > room:
+            chunk = chunk[:room]
+            if not chunk.strip():
+                break
+        parts.append(chunk)
+        used += extra + len(chunk)
+        if used >= budget:
+            break
+    return "\n\n".join(parts)
 
 
 # Prompt policy for full text, and simultaneously the verification contract:
@@ -1160,8 +1348,13 @@ FULLTEXT_TOTAL_CHARS = 60000
 def full_text_excerpts(papers: list[Paper]) -> dict[int, str]:
     """{1-based index: the full-text excerpt shown to the writer}.
 
-    Papers arrive ranked, so when the total budget runs out it is the least
-    relevant full texts that are left as abstract-only.
+    When the text carries section markers (``## Results``), sections are
+    picked in this order: abstract, results, discussion or conclusions,
+    methods, introduction, until FULLTEXT_PER_PAPER_CHARS is spent.
+    Unmarked text (older paperfetch, no headings) is still a head-slice.
+    References never enter. Papers arrive ranked, so when the total budget
+    runs out it is the least relevant full texts that are left as
+    abstract-only.
     """
     out: dict[int, str] = {}
     used = 0
@@ -1171,7 +1364,10 @@ def full_text_excerpts(papers: list[Paper]) -> dict[int, str]:
         room = FULLTEXT_TOTAL_CHARS - used
         if room <= 0:
             break
-        excerpt = p.full_text[:min(FULLTEXT_PER_PAPER_CHARS, room)]
+        excerpt = _excerpt_from_full_text(
+            p.full_text, min(FULLTEXT_PER_PAPER_CHARS, room))
+        if not excerpt:
+            continue
         out[i] = excerpt
         used += len(excerpt)
     return out
