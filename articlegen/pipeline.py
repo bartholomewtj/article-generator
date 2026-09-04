@@ -24,7 +24,8 @@ from .llm import resolve_provider
 from .sources import (DATABASE_NAMES, DEFAULT_MAX_PAPERS, NAMED_SOURCE_LIMIT,
                       NAMED_SOURCE_PER_QUERY, NAMED_SOURCE_SCAN, Paper,
                       _normalize_doi, fetch_full_text, filter_named_matches,
-                      full_text_order, gather_evidence, merge_candidates,
+                      full_text_excerpts, full_text_order, gather_evidence,
+                      merge_candidates,
                       named_matches, named_references, resolve_pmcid)
 from .style import (SUBSTANCE_RULES, check_style, errors as style_errors,
                     format_report as format_style, revision_brief)
@@ -239,6 +240,20 @@ class CurationFailed(NoPapersFound):
     """
 
 
+# Bumped when `Draft.to_dict` changes shape in a way `from_dict` cannot read.
+MANIFEST_VERSION = 1
+
+
+def _int_keys(mapping: dict | None) -> dict:
+    """JSON turns int keys into strings; turn the all-digit ones back."""
+    out = {}
+    for key, value in (mapping or {}).items():
+        if isinstance(key, str) and key.isdigit():
+            key = int(key)
+        out[key] = value
+    return out
+
+
 @dataclass
 class Draft:
     """Everything the renderers need, plus the provenance of how it was made."""
@@ -250,6 +265,48 @@ class Draft:
     verification: dict = field(default_factory=dict)
     provenance: dict = field(default_factory=dict)
     style_report: dict = field(default_factory=dict)
+    # {1-based paper index: the full-text excerpt the writer and verifier saw},
+    # captured by `generate_draft` once the papers are final. Stored so the
+    # verification haystack can be rebuilt from the manifest without refetching,
+    # and so a later change to the excerpt budget cannot rewrite history.
+    excerpts: dict[int, str] = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        """The run manifest: plain JSON, nothing that needs pickle."""
+        return {
+            "manifest_version": MANIFEST_VERSION,
+            "topic": self.topic,
+            "article": self.article,
+            "papers": [p.to_dict() for p in self.papers],
+            "curation": self.curation,
+            "verification": self.verification,
+            "provenance": self.provenance,
+            "style_report": self.style_report,
+            "excerpts": {str(i): text for i, text in self.excerpts.items()},
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Draft":
+        """Rebuild a Draft from a manifest written by `to_dict`."""
+        version = data.get("manifest_version", MANIFEST_VERSION)
+        if version != MANIFEST_VERSION:
+            raise ValueError(
+                f"manifest_version {version} is not supported "
+                f"(this build reads version {MANIFEST_VERSION})"
+            )
+        curation = dict(data.get("curation") or {})
+        if curation.get("relevance"):
+            curation["relevance"] = _int_keys(curation["relevance"])
+        return cls(
+            topic=data["topic"],
+            article=data["article"],
+            papers=[Paper.from_dict(p) for p in data.get("papers") or []],
+            curation=curation,
+            verification=data.get("verification") or {},
+            provenance=data.get("provenance") or {},
+            style_report=data.get("style_report") or {},
+            excerpts=_int_keys(data.get("excerpts")),
+        )
 
     @property
     def cited_refs(self) -> set[int]:
@@ -743,6 +800,12 @@ def generate_draft(
             fetched = []
             n_papers_via = n_epmc_via = 0
 
+    # The papers are final from here on. This is the excerpt map the writer
+    # was shown and the one `check_statistics` searches, so it is captured
+    # now, once, rather than recomputed later against a budget that may have
+    # changed.
+    excerpts = full_text_excerpts(papers)
+
     article, style_report = enforce_style(
         article, model=model, api_key=api_key, log=log, papers=papers, curation=curation
     )
@@ -787,4 +850,5 @@ def generate_draft(
         verification=verification,
         provenance=provenance,
         style_report=style_report,
+        excerpts=excerpts,
     )

@@ -1522,8 +1522,10 @@ def render_article(
         )
 
     span = _year_range(cited)
+    # The run's date, when the manifest carries one, so a page rendered again
+    # later still says when it was generated; Methods uses the same rule.
     meta_bits = [
-        f"Generated {_au_date()}",
+        f"Generated {(provenance or {}).get('date') or _au_date()}",
         f"{len(cited)} sources cited" + (f", {span}" if span else ""),
         _synthesis_label(cited),
         "Not peer reviewed",
@@ -1934,7 +1936,7 @@ def render_markdown(
     cited, cite_map = _citation_map(article, papers)
     labels = _display_relevance(cite_map, curation)
     counts = _relevance_counts(cite_map, curation)
-    today = _au_date()
+    today = (provenance or {}).get("date") or _au_date()
     span = _year_range(cited)
 
     flags = _figure_flags(verification)

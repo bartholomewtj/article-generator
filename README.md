@@ -217,9 +217,35 @@ python -m articlegen demo --open
 
 Or, after `pip install -e .`, drop the `python -m`: `articlegen ideas "..."`.
 
-Each `draft` run writes three things into `drafts/`:
+Each `draft` run writes four things into `drafts/`:
 `<date>-<slug>.html` (the styled article), `<date>-<slug>.md` (same content as
-Markdown, for easy editing), and refreshes `index.html` (your review queue).
+Markdown, for easy editing), `<date>-<slug>.json` (the run manifest, below),
+and refreshes `index.html` (your review queue).
+
+### The run manifest and `render`
+
+The manifest is everything a run knew, saved as plain JSON beside the HTML:
+the topic, the article, every paper screened (with its abstract, any
+open-access full text and how it was fetched), the relevance labels, the
+figure-verification result, the provenance that Methods is written from,
+the prose-style report, and the exact full-text excerpts the writer and the
+verifier were shown. Without it a briefing could not be rebuilt once the
+process ended.
+
+Rebuild the HTML and Markdown from a manifest, with no search and no model
+call:
+
+```bash
+python -m articlegen render drafts/2026-09-05-seclusion.json        # writes the .html and .md beside it
+python -m articlegen render drafts/2026-09-05-seclusion.json --open
+```
+
+The rebuilt page is the same as the one the run wrote, including the run's
+date. `render` does not touch the review queue; run `articlegen queue` if you
+want the index refreshed.
+
+Each manifest carries `"manifest_version": 1`; `render` refuses a version it
+does not know. The web server never writes one — it stays stateless.
 
 ### Commands & options
 
@@ -227,6 +253,7 @@ Markdown, for easy editing), and refreshes `index.html` (your review queue).
 |---------|-------------|
 | `ideas <theme>` | `-n` (how many, default 6), `-o` (output .md path) |
 | `draft <title>` | `--open`, `--style "<audience/tone>"`, `--max-papers N` (default 40), `--name <stem>` |
+| `render <manifest.json>` | `--open` |
 | `queue` | `--open` |
 | `demo` | `--open`, `-o` |
 
@@ -288,7 +315,7 @@ topics and arXiv papers stop being abstract-only.
 
 ```
 articlegen/
-  cli.py        subcommands (ideas / draft / queue / demo / web)
+  cli.py        subcommands (ideas / draft / render / queue / demo / web)
   pipeline.py   the draft pipeline — every caller, CLI and web, runs this one
   web.py        HTTP server + JSON API behind the web front end
   gallery.py    public visitor gallery (local disk or a GitHub gist)
