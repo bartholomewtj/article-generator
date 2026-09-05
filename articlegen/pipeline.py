@@ -56,6 +56,11 @@ FULLTEXT_TARGET = 5
 # come back with nothing, against the one scholarly API that reliably answers.
 MAX_FULLTEXT_REQUESTS = 18
 
+# How many new records one `refresh` will label. The refresh pays for exactly
+# one `curate_sources` call, so this bounds its cost; the ranking in
+# `gather_evidence` has already put the best candidates first.
+REFRESH_LIMIT = 10
+
 
 def _fulltext_prefetch_limit() -> int:
     """How many DOIs `papers get -` is sent before the apply loop.
@@ -1168,4 +1173,203 @@ def rerun_draft(
         provenance=provenance,
         style_report=style_report,
         excerpts=excerpts,
+    )
+
+
+@dataclass
+class RefreshReport:
+    """What one `refresh` found. `draft` is None unless a rewrite was asked for
+    AND there was something new to rewrite with."""
+
+    topic: str
+    date: str                      # the manifest's run date, verbatim
+    queries: list[str]
+    screened: int                  # new records after dedupe (labelled)
+    new_direct: list[Paper] = field(default_factory=list)
+    new_related: list[Paper] = field(default_factory=list)
+    curation_error: str = ""       # non-empty when labelling came back empty
+    draft: Draft | None = None
+
+    def summary(self) -> str:
+        """One greppable line, same idea as `Draft.summary()`."""
+        return (
+            f"{len(self.new_direct)} new direct record(s) since {self.date}; "
+            f"{self.screened} new record(s) screened; "
+            + ("rewritten" if self.draft is not None else "not rewritten")
+        )
+
+
+def refresh_draft(
+    draft: Draft,
+    *,
+    model: str | None = None,
+    api_key: str | None = None,
+    log: Logger = _silent,
+    rewrite: bool = False,
+    long: bool = False,
+    max_papers: int = DEFAULT_MAX_PAPERS,
+) -> RefreshReport:
+    """Re-run the manifest's queries, report records new since that run, and
+    rewrite only when asked.
+
+    No `plan_queries` — the queries are the manifest's, so a refresh compares
+    like with like rather than against a freshly planned search.
+    """
+    queries = [q for q in (draft.provenance.get("queries") or []) if q]
+    if not queries:
+        raise NoPapersFound(
+            "This manifest records no search queries, so there is nothing to "
+            "re-run. It was written before provenance carried them — draft "
+            "the topic again instead."
+        )
+
+    core_entity = draft.provenance.get("core_entity") or ""
+    manifest_date = draft.provenance.get("date") or "an unknown date"
+    log(f"Re-running {len(queries)} query(ies) from {manifest_date}: " + "; ".join(queries))
+
+    outcomes: list[dict] = []
+    records = gather_evidence(
+        queries, max_papers=max_papers, topic=draft.topic,
+        core_entity=core_entity, log=log, outcomes=outcomes,
+    )
+    if not records:
+        failures = [o for o in outcomes if o["error"]]
+        if outcomes and len(failures) == len(outcomes):
+            reasons = sorted({f"{o['source']}: {o['error']}" for o in failures})
+            raise NoPapersFound(
+                "The scholarly APIs did not respond, so this refresh could not "
+                "check for anything new. " + "; ".join(reasons),
+                sources_failed=True,
+            )
+
+    pool = list(draft.papers)          # copy the list: never append to the manifest's
+    new_papers = merge_candidates(pool, records, limit=REFRESH_LIMIT)
+
+    if not new_papers:
+        log(f"  nothing new since {manifest_date} ({len(records)} record(s) "
+            "returned, all already screened)")
+        return RefreshReport(
+            topic=draft.topic, date=manifest_date, queries=queries, screened=0,
+        )
+
+    new_curation = curate_sources(draft.topic, new_papers, model=model, api_key=api_key)
+    new_rel = new_curation.get("relevance") or {}
+    if not new_rel:
+        reason = new_curation.get("error") or "no reason was reported"
+        log(f"  WARNING: curation of the new records failed ({reason}); "
+            "reporting nothing as new since labelling could not run.")
+        return RefreshReport(
+            topic=draft.topic, date=manifest_date, queries=queries,
+            screened=len(new_papers), curation_error=reason,
+        )
+
+    new_direct = [new_papers[i - 1] for i, label in sorted(new_rel.items()) if label == "direct"]
+    new_related = [new_papers[i - 1] for i, label in sorted(new_rel.items()) if label == "related"]
+    log(f"  relevance (new records): {len(new_direct)} direct / "
+        f"{len(new_related)} related / "
+        f"{sum(1 for v in new_rel.values() if v == 'tangential')} tangential")
+
+    if not rewrite or not new_direct:
+        if rewrite and not new_direct:
+            log("  --rewrite: no new direct record, so the briefing is unchanged")
+        return RefreshReport(
+            topic=draft.topic, date=manifest_date, queries=queries,
+            screened=len(new_papers), new_direct=new_direct, new_related=new_related,
+        )
+
+    # Rewrite path: at least one new direct record, and the operator asked for it.
+    papers = pool  # old records then new, in that order — existing indices never move
+    curation = dict(draft.curation)
+    relevance = dict(curation.get("relevance") or {})
+    old_len = len(draft.papers)
+    for local_idx, label in new_rel.items():
+        relevance[old_len + local_idx] = label
+    curation["relevance"] = relevance
+    curation["counts"] = {
+        level: sum(1 for v in relevance.values() if v == level)
+        for level in ("direct", "related", "tangential")
+    }
+
+    compose = write_article if long else write_briefing
+    log("Writing the review (this can take a few minutes)..." if long
+        else "Writing the briefing (this can take a few minutes)...")
+    article = compose(
+        draft.topic, papers, model=model, style_note="", curation=curation, api_key=api_key,
+    )
+
+    cited_set = set(_cited_indices(article, len(papers)))
+    order = [i for i in full_text_order(papers, relevance) if i in cited_set]
+
+    log("Fetching open-access full texts of cited sources...")
+    fetched, eligible, no_open_access, fetch_failed, requests_spent, stopped = (
+        _retrieve_full_texts(papers, order, log))
+
+    n_papers_via = sum(1 for i in fetched if papers[i - 1].full_text_via == "papers")
+    n_epmc_via = sum(1 for i in fetched if papers[i - 1].full_text_via == "europe_pmc")
+    breakdown = ""
+    if n_papers_via > 0 and n_epmc_via > 0:
+        breakdown = f" ({n_papers_via} via papers, {n_epmc_via} via Europe PMC)"
+    elif n_papers_via > 0:
+        breakdown = f" ({n_papers_via} via papers)"
+
+    log(f"  full text retrieved for {len(fetched)} cited source(s)"
+        + (f": {fetched}" if fetched else " (none)")
+        + f" in {requests_spent} request(s){breakdown}")
+    log(f"  stopped because: {stopped}. Of {eligible} eligible cited source(s), "
+        f"{no_open_access} had no open-access copy and {fetch_failed} were "
+        "open access but returned no text.")
+    log("  " + _read_subset_skew(papers, fetched))
+    _log_paywalled_cited(papers, cited_set, log)
+
+    if fetched:
+        log("Rewriting with cited full text...")
+        try:
+            article = compose(
+                draft.topic, papers, model=model, style_note="",
+                curation=curation, api_key=api_key,
+            )
+        except Exception as exc:
+            log(f"  rewrite failed ({exc}); keeping the abstract-only draft")
+            for paper in papers:
+                paper.full_text = ""
+                paper.full_text_via = ""
+            fetched = []
+            n_papers_via = n_epmc_via = 0
+
+    excerpts = full_text_excerpts(papers)
+    article, style_report = enforce_style(
+        article, model=model, api_key=api_key, log=log, papers=papers, curation=curation
+    )
+    article, verification, style_report = enforce_statistics(
+        article, papers, model=model, api_key=api_key, log=log,
+        style_report=style_report,
+        direct_sources=((curation or {}).get("counts") or {}).get("direct"),
+    )
+
+    provenance = dict(draft.provenance)
+    provenance["date"] = _au_date()
+    provenance["queries"] = queries
+    provenance["full_text_sources"] = sorted(
+        i for i, p in enumerate(papers, start=1) if p.full_text)
+    provenance["full_text_via"] = {"papers": n_papers_via, "europe_pmc": n_epmc_via}
+    provenance["refreshed_from"] = {
+        "date": manifest_date, "added": len(new_papers), "direct": len(new_direct)}
+    if model is not None or api_key is not None:
+        provenance["model"] = resolve_provider(model, api_key)[1]
+
+    new_draft = Draft(
+        topic=draft.topic,
+        article=article,
+        papers=papers,
+        curation=curation,
+        verification=verification,
+        provenance=provenance,
+        style_report=style_report,
+        excerpts=excerpts,
+    )
+
+    return RefreshReport(
+        topic=draft.topic, date=manifest_date, queries=queries,
+        screened=len(new_papers), new_direct=new_direct, new_related=new_related,
+        draft=new_draft,
     )

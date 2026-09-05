@@ -4,6 +4,7 @@
     articlegen draft  "<title>"        # 2. research + briefing, into drafts/
     articlegen queue                   # (re)build / open the drafts index
     articlegen render drafts/x.json    # rebuild HTML + Markdown from a run manifest
+    articlegen refresh drafts/x.json   # re-run the queries; list what is new
 
 Stages 1 and 2 are the two human gates: you choose a question, then you review the briefing.
 `draft --long` writes the parked journal-style Review instead.
@@ -23,7 +24,8 @@ from . import demo
 from .ideas import format_ideas_console, generate_ideas, ideas_to_markdown
 from .llm import resolve_provider
 from . import paperfetch
-from .pipeline import Draft, NoPapersFound, generate_draft, rerun_draft
+from .pipeline import (Draft, NoPapersFound, RefreshReport, generate_draft,
+                       refresh_draft, rerun_draft)
 from .render import build_index, render_article, render_markdown
 from .sources import DEFAULT_MAX_PAPERS
 
@@ -224,6 +226,62 @@ def cmd_rerun(args) -> int:
     )
 
 
+def cmd_refresh(args) -> int:
+    """Re-run a manifest's queries and list new direct records; rewrite only with --rewrite."""
+    manifest_path = args.manifest
+    try:
+        with open(manifest_path, encoding="utf-8") as f:
+            draft = Draft.from_dict(json.load(f))
+    except (OSError, ValueError, KeyError) as exc:
+        _log(f"Could not read the manifest {manifest_path}: {exc}")
+        return 1
+
+    try:
+        report = refresh_draft(
+            draft, model=args.model, log=_log,
+            rewrite=args.rewrite, long=getattr(args, "long", False),
+        )
+    except NoPapersFound as exc:
+        _log(str(exc))
+        return 1
+    except Exception as exc:
+        return _api_error(exc, args.model)
+
+    if report.curation_error:
+        _log(f"Could not label the new records ({report.curation_error}); "
+             "nothing is reported as new.")
+        return 1
+
+    if report.new_direct:
+        print(f"New direct records since {report.date} "
+              f"({len(report.queries)} queries re-run, {report.screened} new record(s) screened):")
+        for i, paper in enumerate(report.new_direct, start=1):
+            print(f"  {i}. {paper.title} ({paper.year}, {paper.venue})")
+            if paper.link:
+                print(f"     {paper.link}")
+        if report.new_related:
+            print(f"({len(report.new_related)} new related record(s) also found)")
+    else:
+        print(f"No new direct records since {report.date}.")
+
+    print(f"REFRESH_SUMMARY: {report.summary()}")
+
+    if report.draft is None:
+        if report.new_direct:
+            _log("Nothing was written. Add --rewrite to rewrite the briefing with these records.")
+        return 0
+
+    out_dir = os.path.dirname(os.path.abspath(manifest_path)) or DRAFTS_DIR
+    stem, _ = os.path.splitext(os.path.basename(manifest_path))
+    if not stem.endswith("-refresh"):
+        stem = f"{stem}-refresh"
+    return _write_draft_files(
+        report.draft, out_dir, stem,
+        open_html=args.open,
+        queue_ckn=getattr(args, "queue_ckn", False),
+    )
+
+
 def cmd_queue(args) -> int:
     if not os.path.isdir(DRAFTS_DIR):
         _log(f"No {DRAFTS_DIR}/ folder yet — run `articlegen draft \"<title>\"` first.")
@@ -334,6 +392,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Add remaining paywalled cited DOIs to the CKN pickup list",
     )
     p_rerun.set_defaults(func=cmd_rerun)
+
+    p_refresh = sub.add_parser(
+        "refresh",
+        help="Re-run a manifest's queries and list new direct records; rewrites only with --rewrite",
+    )
+    p_refresh.add_argument("manifest", help="Path to the .json manifest a draft run wrote")
+    p_refresh.add_argument("--rewrite", action="store_true",
+                           help="Rewrite the briefing with the new records, into <stem>-refresh.json")
+    p_refresh.add_argument("--long", action="store_true",
+                           help="With --rewrite, write the journal-style Review instead of the briefing")
+    p_refresh.add_argument("--open", action="store_true",
+                           help="With --rewrite, open the new draft in your browser")
+    p_refresh.add_argument("--queue-ckn", action="store_true",
+                           help="With --rewrite, add paywalled cited DOIs to the CKN pickup list")
+    p_refresh.set_defaults(func=cmd_refresh)
 
     p_queue = sub.add_parser("queue", help="(Re)build and optionally open the drafts review index")
     p_queue.add_argument("--open", action="store_true", help="Open the queue in your browser")
