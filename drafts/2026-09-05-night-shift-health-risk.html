@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Night shift work and health risk in working adults</title>
+<script>
+  (function() {
+    var saved = localStorage.getItem('articlegen_theme') || 'system';
+    if (saved === 'dark' || saved === 'light') {
+      document.documentElement.setAttribute('data-theme', saved);
+    }
+  })();
+</script>
+<style>
+  :root, html[data-theme="light"] {
+    --bg: #ffffff;
+    --surface: #f7f7f5;
+    --ink: #14171a;
+    --ink-2: #3c4249;
+    --muted: #6a7178;
+    --accent: #17457f;
+    --link: #1b5aa8;
+    --rule: #dfdfda;
+    --rule-strong: #b9bab5;
+    --seg-direct: #184f95;
+    --seg-related: #2a78d6;
+    --seg-tangential: #86b6ef;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14150f;
+      --surface: #1e1f1c;
+      --ink: #f2f1ea;
+      --ink-2: #cfcec5;
+      --muted: #9d9d94;
+      --accent: #9dc4f5;
+      --link: #86b6ef;
+      --rule: #33342f;
+      --rule-strong: #4c4d47;
+      --seg-direct: #86b6ef;
+      --seg-related: #3987e5;
+      --seg-tangential: #184f95;
+      color-scheme: dark;
+    }
+  }
+  html[data-theme="dark"] {
+    --bg: #14150f;
+    --surface: #1e1f1c;
+    --ink: #f2f1ea;
+    --ink-2: #cfcec5;
+    --muted: #9d9d94;
+    --accent: #9dc4f5;
+    --link: #86b6ef;
+    --rule: #33342f;
+    --rule-strong: #4c4d47;
+    --seg-direct: #86b6ef;
+    --seg-related: #3987e5;
+    --seg-tangential: #184f95;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Iowan Old Style", "Charter", Georgia, "Times New Roman", serif;
+    font-size: 1.02rem;
+    line-height: 1.62;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Phone: padded viewport. Desktop: the page uses the window, not a boxed
+     column — side padding only. */
+  main { max-width: none; width: 100%; margin: 0; padding: 2rem 1.25rem 4rem; }
+  @media (min-width: 1100px) {
+    main { padding: 2.5rem 4.5rem 4rem; }
+  }
+  .sans, .meta-line, .subject-line, .keywords, .di-caption, .fig-legend, .key-points,
+  .refs ol, .toolbar, .colophon, table, .meta-label {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+
+  /* ---- masthead ---------------------------------------------------- */
+  header.masthead { border-top: 3px solid var(--ink); padding-top: 0.9rem; margin-bottom: 2rem; }
+  .article-type {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 0.9rem;
+  }
+  h1 {
+    font-size: clamp(1.7rem, 4.2vw, 2.3rem);
+    line-height: 1.22; font-weight: 700; letter-spacing: -0.005em;
+    margin: 0 0 0.9rem;
+  }
+  /* Full contrast, body-text size, above the fold. The point of issue #91 is
+     that a disclosure in muted 0.78rem type is not a disclosure. */
+  .ai-disclosure {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.92rem; font-weight: 600; line-height: 1.45; color: var(--ink);
+    margin: 0 0 0.9rem; padding: 0.6rem 0.8rem;
+    background: var(--surface); border-left: 3px solid var(--ink);
+  }
+  .meta-line {
+    font-size: 0.78rem; color: var(--muted); margin: 0 0 0.35rem;
+    padding-bottom: 0.9rem; border-bottom: 1px solid var(--rule);
+  }
+  .subject-line { font-size: 0.78rem; color: var(--muted); margin: 0 0 0.9rem; }
+  .meta-label {
+    font-size: 0.68rem; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted); margin-right: 0.4rem;
+  }
+
+  /* ---- abstract & key points --------------------------------------- */
+  .abstract { margin: 0 0 1.2rem; }
+  .abstract p { margin: 0; font-size: 1.06rem; line-height: 1.6; color: var(--ink-2); }
+  .abstract .run-in-head, .question .run-in-head {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink); margin-right: 0.5rem;
+  }
+  .question { margin: 0 0 1rem; font-size: 1.06rem; line-height: 1.6; color: var(--ink-2); }
+  .keywords { font-size: 0.8rem; color: var(--muted); margin: 0 0 2rem; }
+  aside.key-points {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    padding: 1.1rem 1.3rem 1.2rem; margin: 0 0 2.2rem; border-radius: 3px;
+  }
+  aside.key-points h2 {
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 0.7rem;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  aside.key-points ul { margin: 0; padding-left: 1.1rem; }
+  .key-points-note { color: var(--muted); font-size: 0.78rem !important;
+                     font-style: italic; margin: 0 0 0.7rem 0 !important; }
+  sup.flag { font-size: 0.72em; line-height: 0; vertical-align: super; }
+  sup.flag a { color: var(--muted); text-decoration: none; font-weight: 700; }
+  aside.key-points li { margin-bottom: 0.5rem; font-size: 0.95rem; line-height: 1.55; }
+  aside.key-points li:last-child { margin-bottom: 0; }
+
+  /* ---- body -------------------------------------------------------- */
+  h2 {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 1.02rem; font-weight: 700; letter-spacing: 0.01em;
+    margin: 2.2rem 0 0.7rem; color: var(--ink);
+  }
+  p { margin: 0 0 1rem; }
+  .body-section p + p { text-indent: 1.2em; }
+  .run-in { font-weight: 700; font-style: italic; }
+  a { color: var(--link); }
+  sup.cite { font-size: 0.68em; line-height: 0; font-weight: 600; letter-spacing: 0.02em; }
+  sup.cite a { color: var(--link); text-decoration: none; padding: 0 0.02em; }
+  sup.cite a:hover { text-decoration: underline; }
+
+  /* ---- display items ----------------------------------------------- */
+  .display { margin: 1.8rem 0 2rem; }
+  .di-caption {
+    font-size: 0.8rem; line-height: 1.5; color: var(--muted); margin: 0.7rem 0 0;
+  }
+  .di-label { font-weight: 700; color: var(--ink); }
+  aside.box {
+    background: var(--surface); border: 1px solid var(--rule-strong);
+    padding: 1.1rem 1.3rem 1.2rem; border-radius: 3px;
+  }
+  aside.box .di-caption { margin: 0 0 0.7rem; font-size: 0.92rem; color: var(--ink); }
+  aside.box p { font-size: 0.95rem; line-height: 1.55; margin: 0 0 0.6rem; }
+  aside.box p:last-child { margin-bottom: 0; }
+  .box-cite { color: var(--muted); font-size: 0.85rem !important; }
+  .box-note { color: var(--muted); font-size: 0.78rem !important; font-style: italic;
+              margin-top: 0.75rem !important; }
+  figure.figure { margin: 1.8rem 0 2rem; padding: 1rem 0 0; border-top: 1px solid var(--rule); }
+  .fig-svg { width: 100%; height: auto; display: block; }
+  .fig-grid { stroke: var(--rule); stroke-width: 1; }
+  .fig-axis { stroke: var(--rule-strong); stroke-width: 1; }
+  .fig-tick { fill: var(--muted); font-size: 11px;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .fig-value { fill: var(--ink-2); font-size: 11px; font-weight: 600;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .fig-axis-title { fill: var(--muted); font-size: 11px; letter-spacing: 0.04em;
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .seg-direct { fill: var(--seg-direct); }
+  .seg-related { fill: var(--seg-related); }
+  .seg-tangential { fill: var(--seg-tangential); }
+  .seg-cited { fill: var(--seg-related); }
+  .fig-legend {
+    display: flex; flex-wrap: wrap; gap: 0.3rem 1.1rem; list-style: none;
+    margin: 0.6rem 0 0; padding: 0; font-size: 0.78rem; color: var(--muted);
+  }
+  .fig-legend li { display: flex; align-items: center; gap: 0.4rem; }
+  .swatch {
+    display: inline-block; width: 0.68rem; height: 0.68rem; border-radius: 2px;
+    margin-right: 0.35rem; vertical-align: -0.05rem;
+  }
+  .swatch-direct { background: var(--seg-direct); }
+  .swatch-related { background: var(--seg-related); }
+  .swatch-tangential { background: var(--seg-tangential); }
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; min-width: 32rem; border-collapse: collapse; font-size: 0.82rem; }
+  tbody td:nth-child(5) { white-space: nowrap; }
+  thead th {
+    text-align: left; font-weight: 700; color: var(--ink);
+    border-top: 1px solid var(--rule-strong); border-bottom: 1px solid var(--rule-strong);
+    padding: 0.45rem 0.5rem; white-space: nowrap;
+  }
+  tbody td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--rule); color: var(--ink-2); }
+  tbody tr:last-child td { border-bottom: 1px solid var(--rule-strong); }
+  .t-num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .t-venue { color: var(--muted); }
+
+  /* ---- back matter -------------------------------------------------- */
+  .back-section { margin-top: 2.2rem; }
+  .back-section > h2:first-child, .refs h2 { margin-top: 0; }
+  .back-section p { font-size: 0.92rem; line-height: 1.58; color: var(--ink-2); }
+  .glossary dl { margin: 0; }
+  .gloss-row { display: flex; gap: 0.75rem; padding: 0.4rem 0; border-bottom: 1px solid var(--rule); }
+  .gloss-row dt { flex: 0 0 9.5rem; font-weight: 700; font-size: 0.92rem; }
+  .gloss-row dd { margin: 0; font-size: 0.92rem; color: var(--ink-2); }
+  .gloss-row:last-child { border-bottom: none; }
+  .refs { margin-top: 2.4rem; border-top: 2px solid var(--ink); padding-top: 1.1rem; }
+  .refs ol { margin: 0; padding-left: 1.5rem; font-size: 0.82rem; line-height: 1.5; }
+  .refs li { margin-bottom: 0.55rem; color: var(--ink-2); }
+  .refs li:target { background: var(--surface); border-radius: 2px; }
+  .refs a { color: var(--link); text-decoration: none; }
+  .refs a:hover { text-decoration: underline; }
+  .ref-authors { color: var(--ink); }
+  .ref-cites { color: var(--muted); }
+  footer.colophon {
+    margin-top: 2.4rem; padding-top: 1rem; border-top: 1px solid var(--rule);
+    font-size: 0.78rem; line-height: 1.55; color: var(--muted);
+  }
+
+  /* ---- toolbar ------------------------------------------------------ */
+  .toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0 2rem; }
+  .tool-btn {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    background: transparent; color: var(--ink-2);
+    border: 1px solid var(--rule-strong); border-radius: 2px;
+    padding: 0.35rem 0.7rem; font-size: 0.78rem; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+  }
+  .tool-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .share-toast { font-size: 0.78rem; color: var(--accent); align-self: center; display: none; }
+
+  @media (max-width: 34rem) {
+    .gloss-row { display: block; }
+    .gloss-row dt { margin-bottom: 0.15rem; }
+    .body-section p + p { text-indent: 0; }
+  }
+  @media print {
+    body { font-size: 10.5pt; background: #fff; color: #000; }
+    .toolbar { display: none; }
+    a, sup.cite a { color: #000; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <article>
+  <header class="masthead">
+    <p class="article-type">Evidence briefing</p>
+    <h1>Night shift work and health risk in working adults</h1>
+    <p class="ai-disclosure">Written by a language model from the cited research, from 5 full texts and the abstracts of the other 8. No human author wrote or checked this text. Not peer reviewed.</p>
+    <p class="meta-line">Generated 5 September 2026 &middot; 13 sources cited, 2001–2026 &middot; Full text read for 5 of 13 sources &middot; Not peer reviewed</p>
+    <p class="subject-line"><span class="meta-label">Subject</span>night shift health risk</p>
+
+    <div class="toolbar">
+      <button class="tool-btn" onclick="shareArticle()">Share</button>
+      <button class="tool-btn" onclick="copyArticleLink()">Copy link</button>
+      <button class="tool-btn" onclick="toggleArticleTheme()"><span id="themeIcon">&#9789;</span> Theme</button>
+      <span id="shareToast" class="share-toast">Link copied</span>
+    </div>
+
+    <p class="question"><span class="run-in-head">Question</span>What health risks are associated with night shift work in working adults, and how strong is the evidence across sleep, cardiometabolic, cancer and mental health outcomes?</p>
+    <div class="abstract">
+      <p><span class="run-in-head">Answer</span>Night shift work appears consistently associated with disturbed sleep and with modest increases in cardiometabolic disease, though the size and causal status of these associations seem to vary sharply by outcome. Meta-analyses and large cohorts report higher odds of sleep disturbance, roughly a fifth to a quarter higher risk of cardiovascular disease and atrial fibrillation, higher risk of type 2 diabetes and metabolic syndrome, and more depressive symptoms, apparently more so in women. Cancer evidence is the weakest and openly contested: early nurse cohorts found excess breast and colorectal cancer with long exposure, whereas an updated meta-analysis of 57 studies found no overall association. Because nearly all of this evidence is observational, and exposure is usually self-reported, residual confounding by socioeconomic and lifestyle factors probably remains unresolved. No randomised trial has tested whether altering schedules changes disease incidence, so the estimates above are best read as associations rather than causal effects.</p>
+    </div>
+    <p class="keywords"><span class="meta-label">Keywords</span> night shift work; circadian misalignment; shift work sleep disturbance; cardiovascular disease risk; type 2 diabetes; breast cancer; occupational health</p>
+  </header>
+
+  <aside class="key-points">
+<h2>What the evidence shows</h2>
+<p class="key-points-note">Every figure in this review was located in the material read for the cited sources — their abstracts, and the open-access full text where one was retrieved.</p>
+<ul>
+<li>A meta-analysis of 22 cross-sectional studies (21,677 participants, eight countries) reported shift work associated with higher odds of sleep disturbance (OR 1.42, 95% CI 1.24–1.62), with rotating schedules (OR 1.48) and healthcare professionals (OR 1.56) showing the largest estimates; the cross-sectional design leaves the direction of the association uncertain.<sup class="cite"><a href="#ref-1">1</a></sup></li>
+<li>In 131,844 UK Biobank workers followed a median of 13.78 years, usual or permanent night shifts were associated with incident cardiovascular disease (HR 1.24, 95% CI 1.18–1.31), all-cause mortality (HR 1.23), atrial fibrillation (HR 1.31) and myocardial infarction (HR 1.29). Life&#x27;s Essential 8 lifestyle score was estimated to mediate about 39% of the cardiovascular association, a figure that depends on the modelling assumptions used.<sup class="cite"><a href="#ref-2">2</a></sup></li>
+<li>A separate large UK Biobank analysis reported a graded increase in atrial fibrillation risk across night shift categories (usual/permanent nights HR 1.16, 95% CI 1.02–1.32) and higher coronary heart disease risk with ≥10 years of night work (HR 1.37), which appeared unmodified by genetic predisposition.<sup class="cite"><a href="#ref-3">3</a></sup></li>
+<li>Among 143,410 female nurses followed 22–24 years, each five-year increment of rotating night shift work carried a type 2 diabetes hazard ratio of 1.31 (95% CI 1.19–1.44), with a significant additive interaction with unhealthy lifestyle.<sup class="cite"><a href="#ref-4">4</a></sup> UK Biobank cross-sectional data suggested higher diabetes odds with more night shifts per month (&gt;8/month OR 1.36), though temporal ordering cannot be established from that design.<sup class="cite"><a href="#ref-5">5</a></sup></li>
+<li>Cancer findings conflict. In the Nurses&#x27; Health Study, ≥30 years of rotating nights was associated with breast cancer risk (RR 1.36, 95% CI 1.04–1.78) and ≥15 years with colorectal cancer risk (RR 1.35, 95% CI 1.03–1.77).<sup class="cite"><a href="#ref-6">6</a>,<a href="#ref-7">7</a></sup> By contrast, an updated meta-analysis of 57 studies pooling several million participants found no association of ever night shift work with breast, prostate, ovarian, colorectal or stomach cancer.<sup class="cite"><a href="#ref-8">8</a></sup></li>
+<li>A meta-analysis restricted to healthcare workers (12 studies, 12,132 breast cancer cases) found no excess for ever exposure (RR 1.05) and a modest excess at ≥20 years (RR 1.25, 95% CI 1.01–1.55).<sup class="cite"><a href="#ref-9">9</a></sup> That longer-duration estimate lost significance in influence analysis and approached unity after correction for publication bias, and 60% of studies were rated high risk of bias for exposure assessment, so it may be fragile.<sup class="cite"><a href="#ref-9">9</a></sup></li>
+<li>A meta-analysis of seven longitudinal studies reported shift work associated with adverse mental health outcomes (effect size 1.28, 95% CI 1.02–1.62) and depressive symptoms (1.33), with female shift workers apparently at higher odds of depressive symptoms (OR 1.73, 95% CI 1.39–2.14).<sup class="cite"><a href="#ref-10">10</a></sup></li>
+<li>A consensus discussion paper by 15 shift work researchers judged the evidence sufficient to propose schedule limits — no more than three consecutive night shifts, shift intervals of at least 11 hours, and night shifts no longer than nine hours — while conceding that the underlying literature is limited.<sup class="cite"><a href="#ref-11">11</a></sup></li>
+</ul>
+</aside>
+
+<aside class="key-points">
+<h2>What remains open</h2>
+<ul>
+<li>Whether night shift work causes cancer remains unresolved: long-duration nurse cohorts and the pooled healthcare-worker analysis point weakly upward, while the largest updated meta-analysis reports null associations and no apparent dose-response with cumulative exposure.<sup class="cite"><a href="#ref-6">6</a>,<a href="#ref-8">8</a>,<a href="#ref-9">9</a></sup></li>
+<li>No randomised or controlled intervention appears to have tested whether changing shift schedules alters incidence of cardiovascular disease, diabetes or cancer; scheduling recommendations seem to rest largely on short-term physiological and observational evidence.<sup class="cite"><a href="#ref-11">11</a></sup></li>
+<li>Exposure measurement is a persistent weakness — most cohorts rely on self-reported or baseline-only night work histories, and payroll-based data in a Danish healthcare cohort with low night work exposure showed no consistent exposure-response relation for coronary heart disease, though that cohort&#x27;s limited exposure range may explain the null result.<sup class="cite"><a href="#ref-9">9</a>,<a href="#ref-12">12</a></sup></li>
+<li>How much of the excess risk might be modifiable through lifestyle rather than intrinsic to circadian misalignment has been estimated only by mediation and counterfactual modelling within a single cohort, and does not appear to have been tested prospectively.<sup class="cite"><a href="#ref-2">2</a></sup></li>
+</ul>
+</aside>
+
+<aside class="key-points open-these">
+<h2>Three papers to open</h2>
+<ul>
+<li><sup class="cite"><a href="#ref-13">13</a></sup> Kecklund &amp; Axelsson (2016). <a href="https://doi.org/10.1136/bmj.i5210">Health consequences of shift work and insufficient sleep.</a></li> <li><sup class="cite"><a href="#ref-2">2</a></sup> Huang et al. (2026). <a href="https://doi.org/10.7189/jogh.16.04198">Role of Life&#x27;s Essential 8 in the association of night shift work with cardiovascular disease and mortality: a prospective cohort study of UK Biobank participants.</a></li> <li><sup class="cite"><a href="#ref-8">8</a></sup> Dun et al. (2020). <a href="https://doi.org/10.3389/fonc.2020.01006">Association Between Night-Shift Work and Cancer Risk: Updated Systematic Review and Meta-Analysis.</a></li>
+</ul>
+</aside>
+
+  <section class="back-section">
+<h2>Methods</h2>
+<p><span class="run-in">Search strategy.</span> Candidate records were retrieved on 5 September 2026 from OpenAlex, Europe PMC and arXiv, using the search strings ‘night shift work health risks’; ‘shift work circadian disruption cardiovascular disease risk’; ‘night shift workers cancer risk cohort study’; ‘rotating night shift nurses metabolic outcomes’. Records without a retrievable abstract were discarded, leaving 48 for screening. Each remaining record was assessed for how directly it addresses night shift health risk and labelled direct, related or background; 13 were cited here and are listed in Table 1. Citations were then followed one step through OpenAlex, through the reference lists of 3 syntheses (‘Chronotype differences in the risk of cancers, diabetes mellitus, and poor mental health among shift workers: a meta-analysis.’; ‘Shift work and risk of sleep disturbances in occupational populations: a systematic review and meta-analysis.’; ‘Impact of nursing shift patterns on work-related gastrointestinal disorders: a systematic review and meta-analysis.’), which added 8 further records to the pool.</p>
+<p><span class="run-in">Evidence handling.</span> Titles and abstracts were read for every record, and the open-access full texts of 5 sources were retrieved from their open-access copies and read alongside them (marked in Table 1); claims resting on the remaining sources draw on no data beyond an abstract. Decimals, percentages, effect estimates and quantities carrying a clinical unit were then checked automatically, each against the sources its own sentence cites, within exactly the material shown to the model — the abstracts plus those full-text excerpts. A figure that could not be located, or that appears only in a source other than the one cited, is flagged under Limitations.</p>
+<p><span class="run-in">Generation.</span> Search planning, source curation and drafting were performed by a large language model (anthropic/claude-opus-5). Source retrieval, relevance tabulation, citation numbering, Table 1, Fig. 1 and the statistical check are deterministic and were not model-generated.</p>
+</section>
+
+  <section class="back-section">
+<h2>Evidence assessment</h2>
+<p>Of the 13 sources cited, 13 address the review question directly, 0 are related and 0 provide background only; they were published in 2001–2026. The composition of the evidence base is shown in Fig. 1.</p>
+<p id="limitations"><span class="run-in">Limitations.</span> This synthesis was prepared from the open-access full texts of 5 cited sources and the abstracts of the remaining 8. Where only an abstract was available, effect estimates, methodological detail, and the limitations that authors report only in a full text were unavailable, so the strength of those studies could not be appraised here.</p>
+</section>
+
+  <div class="display table-wrap" aria-labelledby="table-1">
+<p class="di-caption" id="table-1"><span class="di-label">Table 1 |</span> Characteristics of the cited evidence. Design is inferred from each record's title, journal and index metadata and reads Other where no design could be inferred; no quality appraisal was performed. Relevance is the curation label for how directly each source addresses the review question. Read records whether the model saw the source's open-access full text or its abstract only. n is the largest sample size stated in the abstract, read from “n = …” or from a count next to a word like participants; a dash means the abstract states none. Registered is a trial registration number found in the abstract or in the Europe PMC record. Funding reads Grant listed where Europe PMC lists a grant for that record; a dash means none was listed there, not that the work was unfunded. All three are read as text, not checked, and none of them is a quality assessment.</p>
+<div class="table-scroll"><table>
+<thead><tr><th>Ref.</th><th>Study</th><th>Year</th><th>Source</th><th>Design</th><th>n</th><th>Registered</th><th>Funding</th><th>Relevance</th><th>Read</th></tr></thead>
+<tbody><tr><td class="t-num"><a href="#ref-1">1</a></td><td>Wang et al.</td><td class="t-num">2026</td><td class="t-venue">BMC public health</td><td>Reviews</td><td class="t-num">21,677</td><td class="t-num">—</td><td>—</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Full text</td></tr><tr><td class="t-num"><a href="#ref-2">2</a></td><td>Huang et al.</td><td class="t-num">2026</td><td class="t-venue">Journal of global health</td><td>Observational</td><td class="t-num">131,844</td><td class="t-num">—</td><td>—</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Full text</td></tr><tr><td class="t-num"><a href="#ref-3">3</a></td><td>Wang et al.</td><td class="t-num">2021</td><td class="t-venue">European Heart Journal</td><td>Other</td><td class="t-num">283,657</td><td class="t-num">—</td><td>—</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td></tr><tr><td class="t-num"><a href="#ref-4">4</a></td><td>Shan et al.</td><td class="t-num">2018</td><td class="t-venue">BMJ</td><td>Other</td><td class="t-num">143,410</td><td class="t-num">—</td><td>—</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td></tr><tr><td class="t-num"><a href="#ref-5">5</a></td><td>Vetter et al.</td><td class="t-num">2018</td><td class="t-venue">Diabetes Care</td><td>Other</td><td class="t-num">272,214</td><td class="t-num">—</td><td>—</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td></tr><tr><td class="t-num"><a href="#ref-6">6</a></td><td>Schernhammer et al.</td><td class="t-num">2001</td><td class="t-venue">JNCI Journal of the National Cancer Institute</td><td>Other</td><td class="t-num">78,562</td><td class="t-num">—</td><td>—</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td></tr><tr><td class="t-num"><a href="#ref-7">7</a></td><td>Schernhammer et al.</td><td class="t-num">2003</td><td class="t-venue">JNCI Journal of the National Cancer Institute</td><td>Other</td><td class="t-num">78,586</td><td class="t-num">—</td><td>—</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td></tr><tr><td class="t-num"><a href="#ref-8">8</a></td><td>Dun et al.</td><td class="t-num">2020</td><td class="t-venue">Frontiers in Oncology</td><td>Reviews</td><td class="t-num">8,477,849</td><td class="t-num">—</td><td>—</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Full text</td></tr><tr><td class="t-num"><a href="#ref-9">9</a></td><td>Esposito et al.</td><td class="t-num">2025</td><td class="t-venue">Occupational medicine (Oxford, England)</td><td>Reviews</td><td class="t-num">12,132</td><td class="t-num">—</td><td>Grant listed</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Full text</td></tr><tr><td class="t-num"><a href="#ref-10">10</a></td><td>Torquati et al.</td><td class="t-num">2019</td><td class="t-venue">American Journal of Public Health</td><td>Reviews</td><td class="t-num">28,431</td><td class="t-num">—</td><td>—</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Full text</td></tr><tr><td class="t-num"><a href="#ref-11">11</a></td><td>Garde et al.</td><td class="t-num">2020</td><td class="t-venue">Scandinavian Journal of Work Environment &amp; Health</td><td>Other</td><td class="t-num">—</td><td class="t-num">—</td><td>—</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td></tr><tr><td class="t-num"><a href="#ref-12">12</a></td><td>Vestergaard et al.</td><td class="t-num">2023</td><td class="t-venue">International Journal of Epidemiology</td><td>Observational</td><td class="t-num">—</td><td class="t-num">—</td><td>—</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td></tr><tr><td class="t-num"><a href="#ref-13">13</a></td><td>Kecklund &amp; Axelsson</td><td class="t-num">2016</td><td class="t-venue">BMJ</td><td>Other</td><td class="t-num">—</td><td class="t-num">—</td><td>—</td><td><span class="swatch swatch-direct"></span>Direct</td><td>Abstract</td></tr></tbody>
+</table></div>
+</div>
+
+  <section class="back-section glossary">
+<h2>Glossary</h2>
+<dl><div class="gloss-row"><dt>Circadian misalignment</dt><dd>A mismatch between the body&#x27;s internal 24-hour clock and the timing of sleep, light exposure and meals imposed by the work schedule.</dd></div><div class="gloss-row"><dt>Hazard ratio</dt><dd>The ratio of the rate at which an event occurs in an exposed group compared with an unexposed group over follow-up time.</dd></div><div class="gloss-row"><dt>Mediation analysis</dt><dd>A statistical method estimating how much of an exposure&#x27;s effect on an outcome operates through an intermediate factor, such as lifestyle.</dd></div><div class="gloss-row"><dt>Life&#x27;s Essential 8</dt><dd>An American Heart Association composite score of cardiovascular health covering diet, activity, nicotine, sleep, weight, blood pressure, lipids and glucose.</dd></div><div class="gloss-row"><dt>Publication bias</dt><dd>The tendency for studies with positive or striking results to be published more often, which can inflate pooled estimates in a meta-analysis.</dd></div></dl>
+</section>
+
+  <section class="refs">
+    <h2>References</h2>
+    <ol>
+      <li id="ref-1"><span class="ref-authors">Wang, Y. et al.</span> <a href="https://doi.org/10.1186/s12889-026-27636-2">Shift work and risk of sleep disturbances in occupational populations: a systematic review and meta-analysis.</a> <em>BMC public health</em> (2026). <span class="ref-cites">Cited by 1</span></li>
+<li id="ref-2"><span class="ref-authors">Huang, Y. et al.</span> <a href="https://doi.org/10.7189/jogh.16.04198">Role of Life&#x27;s Essential 8 in the association of night shift work with cardiovascular disease and mortality: a prospective cohort study of UK Biobank participants.</a> <em>Journal of global health</em> (2026).</li>
+<li id="ref-3"><span class="ref-authors">Wang, N. et al.</span> <a href="https://doi.org/10.1093/eurheartj/ehab505">Long-term night shift work is associated with the risk of atrial fibrillation and coronary heart disease.</a> <em>European Heart Journal</em> (2021). <span class="ref-cites">Cited by 224</span></li>
+<li id="ref-4"><span class="ref-authors">Shan, Z. et al.</span> <a href="https://doi.org/10.1136/bmj.k4641">Rotating night shift work and adherence to unhealthy lifestyle in predicting risk of type 2 diabetes: results from two large US cohorts of female nurses.</a> <em>BMJ</em> (2018). <span class="ref-cites">Cited by 306</span></li>
+<li id="ref-5"><span class="ref-authors">Vetter, C. et al.</span> <a href="https://doi.org/10.2337/dc17-1933">Night Shift Work, Genetic Risk, and Type 2 Diabetes in the UK Biobank.</a> <em>Diabetes Care</em> (2018). <span class="ref-cites">Cited by 385</span></li>
+<li id="ref-6"><span class="ref-authors">Schernhammer, E. et al.</span> <a href="https://doi.org/10.1093/jnci/93.20.1563">Rotating Night Shifts and Risk of Breast Cancer in Women Participating in the Nurses&#x27; Health Study.</a> <em>JNCI Journal of the National Cancer Institute</em> (2001). <span class="ref-cites">Cited by 1,148</span></li>
+<li id="ref-7"><span class="ref-authors">Schernhammer, E. et al.</span> <a href="https://doi.org/10.1093/jnci/95.11.825">Night-Shift Work and Risk of Colorectal Cancer in the Nurses&#x27; Health Study.</a> <em>JNCI Journal of the National Cancer Institute</em> (2003). <span class="ref-cites">Cited by 850</span></li>
+<li id="ref-8"><span class="ref-authors">Dun, A. et al.</span> <a href="https://doi.org/10.3389/fonc.2020.01006">Association Between Night-Shift Work and Cancer Risk: Updated Systematic Review and Meta-Analysis.</a> <em>Frontiers in Oncology</em> (2020). <span class="ref-cites">Cited by 95</span></li>
+<li id="ref-9"><span class="ref-authors">Esposito, G. et al.</span> <a href="https://doi.org/10.1093/occmed/kqaf040">Night shift work and breast cancer risk in healthcare workers: a systematic review and meta-analysis.</a> <em>Occupational medicine (Oxford, England)</em> (2025). <span class="ref-cites">Cited by 1</span></li>
+<li id="ref-10"><span class="ref-authors">Torquati, L. et al.</span> <a href="https://doi.org/10.2105/ajph.2019.305278">Shift Work and Poor Mental Health: A Meta-Analysis of Longitudinal Studies.</a> <em>American Journal of Public Health</em> (2019). <span class="ref-cites">Cited by 404</span></li>
+<li id="ref-11"><span class="ref-authors">Garde, A. H. et al.</span> <a href="https://doi.org/10.5271/sjweh.3920">How to schedule night shift work in order to reduce health and safety risks.</a> <em>Scandinavian Journal of Work Environment &amp; Health</em> (2020). <span class="ref-cites">Cited by 122</span></li>
+<li id="ref-12"><span class="ref-authors">Vestergaard, J. M. et al.</span> <a href="https://doi.org/10.1093/ije/dyad126">Night shift work characteristics and risk of incident coronary heart disease among health care workers: national cohort study.</a> <em>International Journal of Epidemiology</em> (2023). <span class="ref-cites">Cited by 19</span></li>
+<li id="ref-13"><span class="ref-authors">Kecklund, G. &amp; Axelsson, J.</span> <a href="https://doi.org/10.1136/bmj.i5210">Health consequences of shift work and insufficient sleep.</a> <em>BMJ</em> (2016). <span class="ref-cites">Cited by 1,196</span></li>
+    </ol>
+  </section>
+
+  <section class="back-section">
+<h2>Additional information</h2>
+<p><span class="run-in">Data availability.</span> No new data were generated. All evidence cited is published and openly indexed; 13 of the 13 cited records resolve through the links in the reference list.</p>
+<p><span class="run-in">Author contributions.</span> Search planning, source curation and drafting were carried out by an automated pipeline (articlegen, anthropic/claude-opus-5). No human author wrote or verified the text before publication of this draft.</p>
+<p><span class="run-in">Competing interests.</span> None declared.</p>
+<p><span class="run-in">Peer review.</span> This article has not been peer reviewed and is not a publication of record.</p>
+</section>
+
+  <footer class="colophon">
+    <strong>Not medical or clinical advice.</strong> This is a machine-generated summary of the cited journal articles, 5 of 13 read in full, the rest from their abstracts, for background only. It is not a substitute for professional judgement, primary sources, or clinical guidelines. Verify every claim, figure, and dose against the cited papers before acting on it.
+  </footer>
+  </article>
+</main>
+<script>
+function shareArticle() {
+  if (navigator.share) {
+    navigator.share({ title: document.title, url: window.location.href }).catch(function() {});
+  } else {
+    copyArticleLink();
+  }
+}
+function copyArticleLink() {
+  navigator.clipboard.writeText(window.location.href).then(function() {
+    var t = document.getElementById('shareToast');
+    if (t) {
+      t.style.display = 'inline';
+      setTimeout(function() { t.style.display = 'none'; }, 2500);
+    }
+  }).catch(function() {});
+}
+function toggleArticleTheme() {
+  var cur = document.documentElement.getAttribute('data-theme');
+  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var effective = cur || (isSysDark ? 'dark' : 'light');
+  var next = effective === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('articlegen_theme', next);
+  updateArticleThemeIcon();
+}
+function updateArticleThemeIcon() {
+  var icon = document.getElementById('themeIcon');
+  if (!icon) return;
+  var cur = document.documentElement.getAttribute('data-theme');
+  var isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var effective = cur || (isSysDark ? 'dark' : 'light');
+  icon.innerHTML = effective === 'dark' ? '&#9789;' : '&#9788;';
+}
+document.addEventListener('DOMContentLoaded', updateArticleThemeIcon);
+</script>
+</body>
+</html>
