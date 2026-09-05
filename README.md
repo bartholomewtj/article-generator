@@ -427,3 +427,21 @@ two ways it used to lie:
   wraps the whole suite as one case.
 
 If you add a check helper or a new suite here, make it fail under both runners.
+
+## Tools
+
+Small opt-in scripts in `tools/`, not part of the pipeline and not run by CI:
+
+- `compare_models.py` — runs (or replays) two models on the same topic/inputs
+  and prints their countable metrics side by side.
+- `compare_curation.py` — compares curation (relevance labelling) output
+  across models on the same paper pool.
+- `claim_probe.py` — a probe, not a gate. It shows a cheap second model one
+  cited sentence at a time, plus the exact excerpt the deterministic verifier
+  already checks it against, and asks whether the sentence overreaches —
+  something `verify.py` cannot see, since it only checks numbers. Running it
+  costs real OpenRouter credit. It reports agreement with a reading done by
+  hand (`python tools/claim_probe.py --score`); see
+  `app_docs/46b0fb70_claim-support-probe.md` for the current numbers. It is a
+  probe and not a gate — `verify.py` is still the only thing that ever flags
+  an article, and nothing here revises one.

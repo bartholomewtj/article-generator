@@ -1,0 +1,106 @@
+{
+  "model": "openai/gpt-5.6-luna",
+  "date": "2026-09-05",
+  "manifest": "C:\\claudeOS\\Projects\\articlegenerator\\tests\\replays\\2026-09-05-night-shift-health-risk.json",
+  "max_chars": 14000,
+  "tokens_in": 34806,
+  "tokens_out": 1885,
+  "results": [
+    {
+      "id": 1,
+      "verdict": "supported",
+      "quote": "Twenty-two cross-sectional studies involving 21,677 participants from eight countries contributed 24 estimates.",
+      "note": "The excerpt reports all stated study details, odds ratios, subgroup estimates, and explicitly identifies the studies as cross-sectional, supporting uncertainty about direction.",
+      "truncated": true,
+      "excerpt_chars": 14529
+    },
+    {
+      "id": 2,
+      "verdict": "overreach",
+      "quote": "LE8 explained 39.2% (95% CI\u2009=\u200929.3\u201350.0) of the association for usual or permanent night shift work.",
+      "note": "The 39.2% mediation estimate is supported, but the excerpt does not state that it depends on modelling assumptions.",
+      "truncated": true,
+      "excerpt_chars": 14341
+    },
+    {
+      "id": 3,
+      "verdict": "supported",
+      "quote": "From 'day workers'... to 'usual/permanent night shifts', there was a significant increasing trend in the risk of incident AF",
+      "note": "The excerpt reports the graded AF trend, the cited HRs, higher CHD risk after \u226510 years, and no modification by genetic predisposition.",
+      "truncated": false,
+      "excerpt_chars": 2445
+    },
+    {
+      "id": 4,
+      "verdict": "supported",
+      "quote": "During 22-24 years of follow-up... The multivariable adjusted hazard ratios for type 2 diabetes were 1.31 (95% confidence interval 1.19 to 1.44) per five year increment",
+      "note": "The excerpt reports 143,410 women, 22\u201324 years of follow-up, the stated hazard ratio and CI, and significant additive interaction.",
+      "truncated": false,
+      "excerpt_chars": 2706
+    },
+    {
+      "id": 5,
+      "verdict": "supported",
+      "quote": "working more night shifts per month was associated with higher type 2 diabetes odds (<3/month: OR 1.24; 3\u20138/month: OR 1.11; and >8/month: OR 1.36)",
+      "note": "The excerpt reports the stated association and OR for >8 monthly shifts; the cross-sectional limitation and lack of temporal ordering are consistent with the study design.",
+      "truncated": false,
+      "excerpt_chars": 1994
+    },
+    {
+      "id": 6,
+      "verdict": "supported",
+      "quote": "Included in the meta-analyses were 57 eligible studies with 8,477,849 participants",
+      "note": "The excerpt reports no overall association between ever-exposure to night-shift work and each listed cancer.",
+      "truncated": true,
+      "excerpt_chars": 14353
+    },
+    {
+      "id": 7,
+      "verdict": "supported",
+      "quote": "Compared to never exposure, pooled RRs were 1.05 ... for ever, and ... 1.25 ... for \u226520 years",
+      "note": "The excerpt reports the same 12-study HCW meta-analysis, case count, pooled RRs, and confidence interval; \u201cexcess\u201d describes the elevated RR, not causation.",
+      "truncated": false,
+      "excerpt_chars": 13617
+    },
+    {
+      "id": 8,
+      "verdict": "supported",
+      "quote": "The RR for \u226520 years of exposure lost statistical significance in influence analysis and approached unity after correction for possible publication bias.",
+      "note": "The excerpt also reports that 60% had high risk of bias in exposure characterization, supporting the cautious conclusion that the estimate may be fragile.",
+      "truncated": false,
+      "excerpt_chars": 13617
+    },
+    {
+      "id": 9,
+      "verdict": "supported",
+      "quote": "Shift work was associated with increased overall risk of adverse mental health outcomes combined (ES = 1.28; 95% confidence interval [CI] = 1.02, 1.62)",
+      "note": "The excerpt reports seven longitudinal studies and the stated pooled estimates, including depressive symptoms and higher odds among female shift workers.",
+      "truncated": true,
+      "excerpt_chars": 14680
+    },
+    {
+      "id": 10,
+      "verdict": "supported",
+      "quote": "15 experienced shift work researchers participated in a workshop",
+      "note": "The excerpt describes a consensus paper by 15 researchers, gives the three schedule limits, and explicitly bases them on limited existing literature.",
+      "truncated": false,
+      "excerpt_chars": 1840
+    },
+    {
+      "id": 11,
+      "verdict": "overreach",
+      "quote": "Based on the limited, existing literature",
+      "note": "The excerpt does not establish that no randomized or controlled interventions tested disease incidence, nor that evidence was observational.",
+      "truncated": false,
+      "excerpt_chars": 1840
+    },
+    {
+      "id": 12,
+      "verdict": "supported",
+      "quote": "We used Cox models to estimate associations and counterfactual mediation analysis to quantify the proportion mediated by LE8.",
+      "note": "The study estimates modifiable contributions through mediation and counterfactual modelling, while calling for future intervention studies rather than reporting prospective testing.",
+      "truncated": true,
+      "excerpt_chars": 14341
+    }
+  ]
+}
