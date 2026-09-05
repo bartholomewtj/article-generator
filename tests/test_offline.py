@@ -8947,6 +8947,249 @@ def test_named_sources_merge_without_renumbering() -> None:
     check("existing indices never move", pool[0] is original_p1 and pool[1] is new1 and pool[2] is new2)
 
 
+def test_referenced_works_fetch_asks_openalex_correctly() -> None:
+    """The one-hop citation fetches (issue #243) ask OpenAlex exactly what they claim to.
+
+    Pins the request shape for openalex_work, openalex_records and
+    openalex_citing_works: filters, select fields, and the no-request early exits.
+    """
+    from articlegen import sources
+    from articlegen.sources import Paper
+
+    check("referenced_works is selected on every OpenAlex record",
+          "referenced_works" in sources._OA_FIELDS)
+
+    calls: list[tuple[str, dict]] = []
+
+    class FakeResp:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def json(self):
+            return self._payload
+
+    real_get = sources._get_with_retry
+    try:
+        # openalex_work: a paper with a DOI sends filter=doi:<doi> and returns
+        # the work id plus reference-list ids.
+        def fake_get_work(url, params, headers):
+            calls.append((url, dict(params)))
+            return FakeResp({"results": [{"id": "https://openalex.org/W100",
+                                           "referenced_works": ["https://openalex.org/W1",
+                                                                 "https://openalex.org/W2"]}]})
+
+        sources._get_with_retry = fake_get_work
+        work_id, ref_ids = sources.openalex_work(Paper(title="A review", abstract="a", doi="10.1/review"))
+        check("openalex_work sends filter=doi:<doi>",
+              "filter=doi:10.1/review" in calls[-1][1].get("filter", "") or
+              calls[-1][1].get("filter") == "filter=doi:10.1/review" or
+              calls[-1][1].get("filter") == "doi:10.1/review")
+        check("openalex_work returns the work id", work_id == "https://openalex.org/W100")
+        check("openalex_work returns the reference-list ids",
+              ref_ids == ["https://openalex.org/W1", "https://openalex.org/W2"])
+
+        calls.clear()
+        no_doi_id, no_doi_refs = sources.openalex_work(Paper(title="No DOI", abstract="a", doi=""))
+        check("a paper with no DOI makes no request", calls == [])
+        check("no DOI returns empty id and empty list", no_doi_id == "" and no_doi_refs == [])
+
+        # openalex_records: batched request, filter with OR-joined ids and has_abstract.
+        calls.clear()
+
+        def fake_get_records(url, params, headers):
+            calls.append((url, dict(params)))
+            return FakeResp({"results": [
+                {"id": "https://openalex.org/W1", "title": "Referenced paper",
+                 "abstract_inverted_index": {"Some": [0], "abstract": [1]}},
+            ]})
+
+        sources._get_with_retry = fake_get_records
+        recs = sources.openalex_records(["W1", "W2"])
+        check("openalex_records makes exactly one request", len(calls) == 1)
+        check("openalex_records filter contains openalex_id:W1|W2",
+              "openalex_id:W1|W2" in calls[-1][1]["filter"])
+        check("openalex_records filter contains has_abstract:true",
+              "has_abstract:true" in calls[-1][1]["filter"])
+        check("openalex_records returns one paper", len(recs) == 1)
+
+        calls.clear()
+        empty_recs = sources.openalex_records([])
+        check("an empty id list makes no request", calls == [])
+        check("an empty id list returns no papers", empty_recs == [])
+
+        calls.clear()
+        many_ids = [f"W{i}" for i in range(sources.REFERENCED_ID_LIMIT + 20)]
+        sources.openalex_records(many_ids)
+        sent_filter = calls[-1][1]["filter"]
+        sent_ids = sent_filter.split(",")[0].split(":", 1)[1].split("|")
+        check("more than REFERENCED_ID_LIMIT ids are trimmed to that many",
+              len(sent_ids) == sources.REFERENCED_ID_LIMIT)
+
+        # openalex_citing_works: cites: filter, sorted by citation count.
+        calls.clear()
+
+        def fake_get_citing(url, params, headers):
+            calls.append((url, dict(params)))
+            return FakeResp({"results": []})
+
+        sources._get_with_retry = fake_get_citing
+        sources.openalex_citing_works("W9")
+        check("openalex_citing_works sends filter=cites:W9",
+              "cites:W9" in calls[-1][1]["filter"])
+        check("openalex_citing_works sorts by cited_by_count:desc",
+              calls[-1][1].get("sort") == "cited_by_count:desc")
+
+        calls.clear()
+        empty_citing = sources.openalex_citing_works("")
+        check("an empty work id makes no request", calls == [])
+        check("an empty work id returns no papers", empty_citing == [])
+    finally:
+        sources._get_with_retry = real_get
+
+
+def test_referenced_works_merge_without_renumbering() -> None:
+    """One-hop citation follow-up (issue #243) merges without renumbering, capped, shared exhausted.
+
+    Pinned by the "Done means" of issue #243: a referenced work merges into the
+    pool without moving any existing record, only the new records are
+    re-curated, and the pass shares the run's exhausted set.
+    """
+    from articlegen import pipeline, sources
+    from articlegen.sources import Paper
+
+    p1 = Paper(title="A systematic review and meta-analysis of seclusion reduction",
+               abstract="review abstract", year=2023, doi="10.1000/synthesis1",
+               publication_types=["systematic review"])
+    p2 = Paper(title="A randomised controlled trial of seclusion reduction",
+               abstract="trial abstract", year=2022, doi="10.1000/trial1",
+               publication_types=["randomized controlled trial"])
+    p3 = Paper(title="Related background paper", abstract="related", year=2021, doi="10.1000/related1")
+    p4 = Paper(title="Direct but neither design", abstract="direct other", year=2020, doi="10.1000/other1")
+    p5 = Paper(title="Tangential paper", abstract="tangential", year=2019, doi="10.1000/tangential1")
+    papers = [p1, p2, p3, p4, p5]
+
+    curation = {
+        "relevance": {1: "direct", 2: "direct", 3: "related", 4: "direct", 5: "tangential"},
+        "most_relevant_index": 1,
+        "counts": {"direct": 3, "related": 1, "tangential": 1},
+    }
+
+    work_calls: list[Paper] = []
+    citing_calls: list[str] = []
+    curate_calls: list[list[Paper]] = []
+
+    known_referenced = Paper(title="A known referenced record", abstract="ref abstract",
+                              year=2010, doi="10.1000/known-referenced", citation_count=500)
+    new_papers_offered = [known_referenced] + [
+        Paper(title=f"New referenced record {i}", abstract="a", doi=f"10.1000/new{i}", citation_count=i)
+        for i in range(11)
+    ]
+    check("twelve distinct new papers are offered", len(new_papers_offered) == 12)
+
+    saved = (pipeline.openalex_work, pipeline.openalex_records,
+             pipeline.openalex_citing_works, pipeline.curate_sources)
+    try:
+        def fake_openalex_work(paper):
+            work_calls.append(paper)
+            return (f"W-{paper.doi}", [f"ref-{paper.doi}-{i}" for i in range(3)])
+
+        def fake_openalex_records(ids):
+            return list(new_papers_offered)
+
+        def fake_openalex_citing_works(work_id, limit=sources.REFERENCED_CITED_LIMIT):
+            citing_calls.append(work_id)
+            return []
+
+        def fake_curate_sources(topic, new_papers, **kw):
+            curate_calls.append(list(new_papers))
+            return {"relevance": {i + 1: "direct" for i in range(len(new_papers))},
+                    "counts": {"direct": len(new_papers)}}
+
+        pipeline.openalex_work = fake_openalex_work
+        pipeline.openalex_records = fake_openalex_records
+        pipeline.openalex_citing_works = fake_openalex_citing_works
+        pipeline.curate_sources = fake_curate_sources
+
+        exhausted: set[str] = set()
+        result = pipeline._referenced_source_pass(
+            "seclusion", papers, curation, exhausted, log=lambda m: None,
+        )
+
+        check("existing pool entries keep their positions and titles",
+              papers[0] is p1 and papers[1] is p2 and papers[2] is p3
+              and papers[3] is p4 and papers[4] is p5)
+        check("existing relevance labels unchanged",
+              all(curation["relevance"][i] == {1: "direct", 2: "direct", 3: "related",
+                                                4: "direct", 5: "tangential"}[i]
+                  for i in range(1, 6)))
+        check("a known referenced record is present in the pool after the call",
+              any(p.doi == "10.1000/known-referenced" for p in papers))
+        check("twelve offered, eight kept",
+              len(papers) == 5 + sources.NAMED_SOURCE_LIMIT)
+        check("curate_sources called exactly once with only the new records",
+              len(curate_calls) == 1 and len(curate_calls[0]) == sources.NAMED_SOURCE_LIMIT
+              and all(p not in (p1, p2, p3, p4, p5) for p in curate_calls[0]))
+        check("new relevance keys start at 6",
+              min(k for k in curation["relevance"] if k > 5) == 6)
+        merged_rel = curation["relevance"]
+        expected_counts = {
+            level: sum(1 for v in merged_rel.values() if v == level)
+            for level in ("direct", "related", "tangential")
+        }
+        check("curation counts match the merged relevance map",
+              curation["counts"] == expected_counts)
+        check("only direct syntheses become seeds (tangential paper never a seed)",
+              p5 not in work_calls)
+        check("only direct syntheses become seeds (related paper never a seed)",
+              p3 not in work_calls)
+        check("at most REFERENCED_SEEDS syntheses are seeds",
+              sum(1 for p in work_calls if p is p1) <= sources.REFERENCED_SEEDS)
+        check("the direct trial is followed forward via citing works", citing_calls == [f"W-{p2.doi}"])
+        check("result reports added count", result["added"] == sources.NAMED_SOURCE_LIMIT)
+
+        # Shared exhausted set: already-exhausted skips every call.
+        work_calls.clear()
+        citing_calls.clear()
+        curate_calls.clear()
+        papers2 = [Paper(title=p.title, abstract=p.abstract, year=p.year, doi=p.doi,
+                          publication_types=list(p.publication_types)) for p in papers[:5]]
+        curation2 = {
+            "relevance": {1: "direct", 2: "direct", 3: "related", 4: "direct", 5: "tangential"},
+            "most_relevant_index": 1,
+            "counts": {"direct": 3, "related": 1, "tangential": 1},
+        }
+        pre_exhausted = {"openalex"}
+        result2 = pipeline._referenced_source_pass(
+            "seclusion", papers2, curation2, pre_exhausted, log=lambda m: None,
+        )
+        check("already-exhausted openalex makes no calls",
+              work_calls == [] and citing_calls == [] and curate_calls == [])
+        check("already-exhausted openalex returns added == 0", result2["added"] == 0)
+
+        # A SearchFailure from openalex_work is swallowed and marks exhausted.
+        papers3 = [Paper(title=p.title, abstract=p.abstract, year=p.year, doi=p.doi,
+                          publication_types=list(p.publication_types)) for p in papers[:5]]
+        curation3 = {
+            "relevance": {1: "direct", 2: "direct", 3: "related", 4: "direct", 5: "tangential"},
+            "most_relevant_index": 1,
+            "counts": {"direct": 3, "related": 1, "tangential": 1},
+        }
+        exhausted3: set[str] = set()
+
+        def raising_openalex_work(paper):
+            raise sources.SearchFailure("OpenAlex refused")
+
+        pipeline.openalex_work = raising_openalex_work
+        result3 = pipeline._referenced_source_pass(
+            "seclusion", papers3, curation3, exhausted3, log=lambda m: None,
+        )
+        check("a SearchFailure does not raise (call returned)", result3 is not None)
+        check("a SearchFailure marks openalex exhausted", "openalex" in exhausted3)
+    finally:
+        (pipeline.openalex_work, pipeline.openalex_records,
+         pipeline.openalex_citing_works, pipeline.curate_sources) = saved
+
+
 def test_methods_names_the_named_source_pass() -> None:
     """Methods describes the targeted named-source pass when present, and omits it otherwise."""
     from articlegen import render
@@ -9002,6 +9245,65 @@ def test_methods_names_the_named_source_pass() -> None:
           "second, targeted search" not in html_none)
     check("absent named_sources leaves Markdown methods unchanged",
           "second, targeted search" not in md_none)
+
+
+def test_methods_names_the_referenced_works_pass() -> None:
+    """Methods describes the one-hop citation follow-up pass (issue #243) when present."""
+    from articlegen import render
+
+    prov_with_referenced = {
+        "queries": ["main query"],
+        "databases": ["Europe PMC"],
+        "date": "21 August 2026",
+        "model": "claude-opus-5",
+        "referenced_sources": {
+            "seeds": ["A systematic review of seclusion <trial>"],
+            "cited_seed": "The landmark trial",
+            "added": 2,
+        },
+    }
+
+    html_out = render._methods_html(prov_with_referenced, screened=10, n_cited=3, topic="seclusion")
+    md_out = "\n".join(render._methods_markdown(prov_with_referenced, screened=10, n_cited=3, topic="seclusion"))
+
+    check("html contains the citation follow-up sentence",
+          "Citations were then followed one step through OpenAlex" in html_out)
+    check("html contains the added count",
+          "which added 2 further records to the pool." in html_out)
+    check("html escapes special characters in seed titles",
+          "seclusion &lt;trial&gt;" in html_out)
+
+    check("markdown contains the citation follow-up sentence",
+          "Citations were then followed one step through OpenAlex" in md_out)
+    check("markdown contains the added count",
+          "which added 2 further records to the pool." in md_out)
+
+    prov_zero_added = {
+        "queries": ["main query"],
+        "databases": ["Europe PMC"],
+        "date": "21 August 2026",
+        "referenced_sources": {
+            "seeds": [],
+            "cited_seed": "The landmark trial",
+            "added": 0,
+        },
+    }
+    html_zero = render._methods_html(prov_zero_added, screened=10, n_cited=3, topic="seclusion")
+    check("zero added reports 'no further records to the pool.'",
+          "which added no further records to the pool." in html_zero)
+
+    prov_none = {
+        "queries": ["main query"],
+        "databases": ["Europe PMC"],
+        "date": "21 August 2026",
+    }
+    html_none = render._methods_html(prov_none, screened=10, n_cited=3, topic="seclusion")
+    md_none = "\n".join(render._methods_markdown(prov_none, screened=10, n_cited=3, topic="seclusion"))
+
+    check("absent referenced_sources leaves HTML methods unchanged",
+          "Citations were then followed" not in html_none)
+    check("absent referenced_sources leaves Markdown methods unchanged",
+          "Citations were then followed" not in md_none)
 
 
 def _validate(instance, schema: dict, path: str = "") -> list[str]:
@@ -9582,7 +9884,10 @@ def main(argv: list[str] | None = None) -> int:
         test_named_references_reads_names_not_noise,
         test_generic_named_lookups_are_skipped,
         test_named_sources_merge_without_renumbering,
+        test_referenced_works_fetch_asks_openalex_correctly,
+        test_referenced_works_merge_without_renumbering,
         test_methods_names_the_named_source_pass,
+        test_methods_names_the_referenced_works_pass,
         test_methods_names_only_sources_that_answered,
         test_citation_renumbering, test_journal_citation_style, test_reference_formatting,
         test_prose_style_check, test_rules_do_not_reject_real_journal_prose,

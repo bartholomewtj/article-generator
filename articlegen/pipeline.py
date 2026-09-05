@@ -22,11 +22,15 @@ from typing import Callable
 from . import paperfetch
 from .llm import resolve_provider
 from .sources import (DATABASE_NAMES, DEFAULT_MAX_PAPERS, NAMED_SOURCE_LIMIT,
-                      NAMED_SOURCE_PER_QUERY, NAMED_SOURCE_SCAN, Paper,
+                      NAMED_SOURCE_PER_QUERY, NAMED_SOURCE_SCAN,
+                      REFERENCED_CITED_LIMIT, REFERENCED_ID_LIMIT,
+                      REFERENCED_SEEDS, Paper, SearchFailure,
                       _normalize_doi, fetch_full_text, filter_named_matches,
                       full_text_excerpts, full_text_order, gather_evidence,
                       merge_candidates,
-                      named_matches, named_references, resolve_pmcid)
+                      named_matches, named_references, openalex_citing_works,
+                      openalex_records, openalex_work, paper_design,
+                      resolve_pmcid)
 from .style import (SUBSTANCE_RULES, check_style, errors as style_errors,
                     format_report as format_style, revision_brief)
 from .verify import check_statistics, revision_brief as statistics_brief
@@ -576,6 +580,134 @@ def enforce_statistics(
     return article, verification, style_report or {}
 
 
+def _referenced_source_pass(
+    topic: str,
+    papers: list[Paper],
+    curation: dict,
+    exhausted: set[str],
+    model: str | None = None,
+    api_key: str | None = None,
+    log: Logger = _silent,
+    core_entity: str = "",
+) -> dict:
+    """One-hop citation follow-up (issue #243).
+
+    Reads the reference lists of up to REFERENCED_SEEDS direct syntheses, and
+    the papers citing the top direct trial, resolves them via OpenAlex, merges
+    via merge_candidates without renumbering (capped at NAMED_SOURCE_LIMIT new
+    records), and re-curates only the new records. Shares the run's exhausted
+    set with gather_evidence and _named_source_pass; never raises.
+    """
+    empty = {"seeds": [], "cited_seed": "", "added": 0}
+
+    if "openalex" in exhausted:
+        log("  citation follow-up skipped: OpenAlex already failed this run")
+        return empty
+
+    relevance = curation.get("relevance") or {}
+    direct = [i for i in full_text_order(papers, relevance) if relevance.get(i) == "direct"]
+
+    synthesis_indices = [i for i in direct if paper_design(papers[i - 1]) == "synthesis"][:REFERENCED_SEEDS]
+    trial_indices = [i for i in direct if paper_design(papers[i - 1]) == "trial"]
+    trial_idx = trial_indices[0] if trial_indices else None
+
+    if not synthesis_indices and trial_idx is None:
+        log("  citation follow-up skipped: no direct synthesis or trial to follow")
+        return empty
+
+    seed_titles = [papers[i - 1].title for i in synthesis_indices]
+    trial_title = papers[trial_idx - 1].title if trial_idx is not None else ""
+    if seed_titles:
+        log(f"  citation follow-up: reading reference lists of {len(seed_titles)} "
+            "synthes" + ("es" if len(seed_titles) != 1 else "is") + ": "
+            + "; ".join(f"{t!r}" for t in seed_titles))
+    if trial_title:
+        log(f"  citation follow-up: following citations of {trial_title!r}")
+
+    per_seed_ids: list[list[str]] = []
+    try:
+        for i in synthesis_indices:
+            _, ref_ids = openalex_work(papers[i - 1])
+            if ref_ids:
+                per_seed_ids.append(ref_ids)
+    except SearchFailure as exc:
+        exhausted.add("openalex")
+        log(f"  citation follow-up: OpenAlex refused ({exc}); continuing")
+        per_seed_ids = per_seed_ids or []
+
+    # Round-robin interleave so one long reference list cannot crowd out others.
+    ids: list[str] = []
+    seen_ids: set[str] = set()
+    if "openalex" not in exhausted:
+        cursors = [0] * len(per_seed_ids)
+        while len(ids) < REFERENCED_ID_LIMIT and any(
+            cursors[j] < len(per_seed_ids[j]) for j in range(len(per_seed_ids))
+        ):
+            for j in range(len(per_seed_ids)):
+                if len(ids) >= REFERENCED_ID_LIMIT:
+                    break
+                if cursors[j] < len(per_seed_ids[j]):
+                    candidate = per_seed_ids[j][cursors[j]]
+                    cursors[j] += 1
+                    if candidate not in seen_ids:
+                        seen_ids.add(candidate)
+                        ids.append(candidate)
+
+    referenced_records: list[Paper] = []
+    if ids and "openalex" not in exhausted:
+        try:
+            referenced_records = openalex_records(ids)
+            referenced_records.sort(key=lambda p: p.citation_count, reverse=True)
+        except SearchFailure as exc:
+            exhausted.add("openalex")
+            log(f"  citation follow-up: OpenAlex refused ({exc}); continuing")
+
+    citing_records: list[Paper] = []
+    cited_seed = ""
+    if trial_idx is not None and "openalex" not in exhausted:
+        try:
+            work_id, _ = openalex_work(papers[trial_idx - 1])
+            if work_id:
+                citing_records = openalex_citing_works(work_id)
+                cited_seed = trial_title
+        except SearchFailure as exc:
+            exhausted.add("openalex")
+            log(f"  citation follow-up: OpenAlex refused ({exc}); continuing")
+
+    candidates = referenced_records + citing_records
+    if not candidates:
+        return {"seeds": seed_titles, "cited_seed": cited_seed, "added": 0}
+
+    old_len = len(papers)
+    new_papers = merge_candidates(papers, candidates, limit=NAMED_SOURCE_LIMIT)
+    log(f"  citation follow-up: {len(ids)} referenced id(s) resolved to "
+        f"{len(referenced_records)} record(s), {len(citing_records)} citing record(s), "
+        f"{len(new_papers)} new after dedupe")
+
+    if new_papers:
+        new_curation = curate_sources(topic, new_papers, model=model, api_key=api_key)
+        new_rel = new_curation.get("relevance") or {}
+        if new_rel:
+            for local_idx, label in new_rel.items():
+                curation.setdefault("relevance", {})[old_len + local_idx] = label
+            merged_rel = curation["relevance"]
+            curation["counts"] = {
+                level: sum(1 for v in merged_rel.values() if v == level)
+                for level in ("direct", "related", "tangential")
+            }
+            new_counts = {
+                level: sum(1 for v in new_rel.values() if v == level)
+                for level in ("direct", "related", "tangential")
+            }
+            log(f"  relevance (new records): {new_counts.get('direct', 0)} direct / "
+                f"{new_counts.get('related', 0)} related / {new_counts.get('tangential', 0)} tangential")
+        else:
+            log("  WARNING: curation of referenced sources returned no usable labels. "
+                "The new records are unlabelled and will not be fetched in full text.")
+
+    return {"seeds": seed_titles, "cited_seed": cited_seed, "added": len(new_papers)}
+
+
 def _named_source_pass(
     topic: str,
     papers: list[Paper],
@@ -765,6 +897,15 @@ def generate_draft(
             "draft on a different model."
         )
 
+    # One-hop citation follow-up (issue #243): reference lists of the top direct
+    # syntheses, and papers citing the top direct trial. Runs before the
+    # named-source pass so a paper found here can also be scanned for names, and
+    # before the full-text loop so it can be deep-read.
+    referenced = _referenced_source_pass(
+        topic, papers, curation, exhausted, model=model, api_key=api_key,
+        log=log, core_entity=core_entity,
+    )
+
     # Named-source pass (issue #165): look up landmark papers/trials named in
     # the top abstracts, merge into the candidate pool, and re-curate only the
     # new records. Runs BEFORE the full-text loop so new landmark papers can be
@@ -893,6 +1034,12 @@ def generate_draft(
     }
     if named.get("queries"):
         provenance["named_sources"] = {"queries": named["queries"], "added": named["added"]}
+    if referenced.get("seeds") or referenced.get("cited_seed"):
+        provenance["referenced_sources"] = {
+            "seeds": referenced["seeds"],
+            "cited_seed": referenced["cited_seed"],
+            "added": referenced["added"],
+        }
 
     return Draft(
         topic=topic,
