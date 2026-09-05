@@ -52,6 +52,21 @@ FULLTEXT_TARGET = 5
 # come back with nothing, against the one scholarly API that reliably answers.
 MAX_FULLTEXT_REQUESTS = 18
 
+
+def _fulltext_prefetch_limit() -> int:
+    """How many DOIs `papers get -` is sent before the apply loop.
+
+    The loop only keeps FULLTEXT_TARGET. Local CLI still prefetches the
+    request cap so a paywalled leading cite leaves later OA ones in the
+    batch. The hosted path sits behind a ~100s proxy, so it sends the
+    target and lets Europe PMC fill gaps.
+    """
+    if os.environ.get("ARTICLEGEN_STATELESS", "").strip().lower() in (
+            "1", "true", "yes"):
+        return FULLTEXT_TARGET
+    return MAX_FULLTEXT_REQUESTS
+
+
 # Fail before billing the caller, when the sources are the problem.
 #
 # `plan_queries` is a paid LLM call and it runs before anything touches a
@@ -100,7 +115,8 @@ def _preflight_sources(topic: str, log: Logger) -> None:
     outcomes: list[dict] = []
     log("Checking the scholarly APIs are answering...")
     papers = gather_evidence([topic], max_papers=1, per_query=1, topic=topic,
-                             log=_silent, outcomes=outcomes, patient=False)
+                             log=_silent, outcomes=outcomes, patient=False,
+                             stop_when_any=True)
     failures = [o for o in outcomes if o["error"]]
     if outcomes and len(failures) == len(outcomes):
         reasons = "; ".join(sorted({f"{o['source']}: {o['error']}" for o in failures}))
@@ -179,9 +195,9 @@ def _retrieve_full_texts(
     loop this replaced: FULLTEXT_TARGET and MAX_FULLTEXT_REQUESTS.
 
     When the papers CLI is available, the DOI list is sent once on stdin
-    (`papers get -`) up to the request cap, then this loop applies results
-    and stops at FULLTEXT_TARGET. `papers status` runs first so a missing
-    mailto or S2 key is named before any get.
+    (`papers get -`) up to `_fulltext_prefetch_limit()`, then this loop
+    applies results and stops at FULLTEXT_TARGET. `papers status` runs first
+    so a missing mailto or S2 key is named before any get.
     """
     fetched: list[int] = []
     requests_spent = 0
@@ -190,15 +206,19 @@ def _retrieve_full_texts(
     stopped = "ran out of eligible sources"
     if via_papers:
         dois: list[str] = []
+        prefetch = _fulltext_prefetch_limit()
         for index in order:
-            if len(dois) >= MAX_FULLTEXT_REQUESTS:
+            if len(dois) >= prefetch:
                 break
             doi = _normalize_doi(papers[index - 1].doi)
             if doi:
                 dois.append(doi)
         if dois:
             paperfetch.preflight(log)
-            paperfetch.fetch_many_via_papers(dois, log=log)
+            batch_timeout = paperfetch.DEFAULT_TIMEOUT
+            if prefetch <= FULLTEXT_TARGET:
+                batch_timeout = min(batch_timeout, 5.0)
+            paperfetch.fetch_many_via_papers(dois, timeout=batch_timeout, log=log)
     for index in order:
         paper = papers[index - 1]
         if len(fetched) >= FULLTEXT_TARGET:
@@ -688,9 +708,14 @@ def generate_draft(
     log("Fetching journal articles...")
     outcomes: list[dict] = []
     exhausted: set[str] = set()
+    # Hosted has no Semantic Scholar key; the 30s patient wait never recovers
+    # it from Render's shared IP and spends a third of the proxy window.
+    hosted = os.environ.get("ARTICLEGEN_STATELESS", "").strip().lower() in (
+        "1", "true", "yes")
     papers = gather_evidence(
         queries, max_papers=max_papers, topic=topic, core_entity=core_entity,
         log=log, outcomes=outcomes, exhausted=exhausted,
+        patient=not hosted,
     )
     if not papers:
         failures = [o for o in outcomes if o["error"]]
