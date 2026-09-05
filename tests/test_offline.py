@@ -1919,6 +1919,103 @@ def test_first_semantic_scholar_refusal_buys_one_patient_round() -> None:
         sources._s2_patient_round_spent = False
 
 
+def test_read_timeout_does_not_retry() -> None:
+    """A socket timeout already spent the backoff cap; do not retry twice more.
+
+    /api/diag on 5 September 2026 spent 85s, almost all of it arXiv
+    ReadTimeout 30s × 3. Cloudflare in front of Render drops the request
+    around 100s, so a live draft then looks like the backend is down.
+    """
+    from articlegen import sources
+
+    calls: list = []
+    real_get = sources.requests.get
+    real_sleep = sources.time.sleep
+    saved_hosted = os.environ.get("ARTICLEGEN_STATELESS")
+    try:
+        os.environ.pop("ARTICLEGEN_STATELESS", None)
+
+        def boom(*a, **kw):
+            calls.append(kw.get("timeout"))
+            raise sources.requests.ReadTimeout("read timed out")
+
+        sources.requests.get = boom
+        sources.time.sleep = lambda s: calls.append(("sleep", s))
+        raised = None
+        try:
+            sources._get_with_retry("http://example.test", {}, {})
+        except sources.SearchFailure as exc:
+            raised = exc
+        check("a socket timeout is a SearchFailure", raised is not None)
+        check("and is not retried", calls == [30.0])
+        check("retry_later is False so S2 does not buy a patient wait",
+              raised is not None and getattr(raised, "retry_later", True) is False)
+
+        os.environ["ARTICLEGEN_STATELESS"] = "1"
+        calls.clear()
+        try:
+            sources._get_with_retry("http://example.test", {}, {})
+        except sources.SearchFailure:
+            pass
+        check("hosted search timeout is 10s, still not retried", calls == [10.0])
+    finally:
+        sources.requests.get = real_get
+        sources.time.sleep = real_sleep
+        if saved_hosted is None:
+            os.environ.pop("ARTICLEGEN_STATELESS", None)
+        else:
+            os.environ["ARTICLEGEN_STATELESS"] = saved_hosted
+
+
+def test_preflight_stops_when_a_source_answers() -> None:
+    """Pre-flight only needs to know someone is home.
+
+    Waiting out arXiv after OpenAlex already answered is how a hosted draft
+    burned the proxy window before the first paid call.
+    """
+    from articlegen import pipeline, sources
+
+    called: list[str] = []
+    reals = (sources.search_semantic_scholar, sources.search_openalex,
+             sources.search_europe_pmc, sources.search_arxiv)
+    saved_ok, saved_fail = pipeline._sources_last_ok, pipeline._sources_last_fail
+    try:
+        sources.clear_search_cache()
+
+        def s2(q, limit=15):
+            called.append("s2")
+            raise sources.SearchFailure("HTTP 429")
+
+        def oa(q, limit=15):
+            called.append("oa")
+            return [sources.Paper(title="P", abstract="enough abstract text")]
+
+        def epmc(q, limit=15):
+            called.append("epmc")
+            return []
+
+        def arx(q, limit=15):
+            called.append("arxiv")
+            return []
+
+        sources.search_semantic_scholar = s2
+        sources.search_openalex = oa
+        sources.search_europe_pmc = epmc
+        sources.search_arxiv = arx
+        pipeline._sources_last_ok = 0.0
+        pipeline._sources_last_fail = (0.0, "")
+        pipeline._preflight_sources("topic", lambda m: None)
+        check("preflight called S2 then OpenAlex", called == ["s2", "oa"])
+        check("and did not wait for Europe PMC or arXiv after a source answered",
+              "epmc" not in called and "arxiv" not in called)
+    finally:
+        sources.clear_search_cache()
+        (sources.search_semantic_scholar, sources.search_openalex,
+         sources.search_europe_pmc, sources.search_arxiv) = reals
+        pipeline._sources_last_ok = saved_ok
+        pipeline._sources_last_fail = saved_fail
+
+
 def test_polite_pool_identification() -> None:
     """We must identify ourselves, and respect a cool-off the server asks for.
 
@@ -3154,6 +3251,8 @@ def test_first_visit_does_not_dead_end() -> None:
           'id="progressError"' in page and "showProgressError(" in page)
     check("and offer a retry that repeats the same action",
           "retryLastAction()" in page and "lastAction = function ()" in page)
+    check("a long dropped request does not claim the backend is down",
+          "Search was still running" in page)
 
     # 4. No setup card, no settings, no version badge.
     check("there is no first-run key card", 'id="setupCard"' not in page)
@@ -7819,6 +7918,77 @@ def test_one_papers_process_per_run() -> None:
                 pass
 
 
+def test_hosted_fulltext_prefetch_is_the_target() -> None:
+    """Hosted drafts send FULLTEXT_TARGET DOIs to papers, not the request cap."""
+    from articlegen import pipeline
+
+    saved = os.environ.get("ARTICLEGEN_STATELESS")
+    try:
+        os.environ.pop("ARTICLEGEN_STATELESS", None)
+        check("local prefetch is the request cap",
+              pipeline._fulltext_prefetch_limit() == pipeline.MAX_FULLTEXT_REQUESTS)
+        os.environ["ARTICLEGEN_STATELESS"] = "1"
+        check("hosted prefetch is the target",
+              pipeline._fulltext_prefetch_limit() == pipeline.FULLTEXT_TARGET)
+    finally:
+        if saved is None:
+            os.environ.pop("ARTICLEGEN_STATELESS", None)
+        else:
+            os.environ["ARTICLEGEN_STATELESS"] = saved
+
+
+def test_papers_batch_keeps_partial_results_on_timeout() -> None:
+    """A killed `papers get -` still yields the JSON lines it already printed."""
+    import subprocess
+    import tempfile
+
+    from articlegen import paperfetch
+
+    real_run = paperfetch.subprocess.run
+    real_which = paperfetch.shutil.which
+    paperfetch._AVAILABLE = True
+    paperfetch._ARGV = ["papers"]
+    paperfetch._BATCH_OK = None
+    paperfetch._BATCH_CACHE = {}
+    text_path = ""
+    try:
+        paperfetch.shutil.which = (
+            lambda cmd: "papers" if cmd == "papers" else None)
+        with tempfile.NamedTemporaryFile(
+                "w", encoding="utf-8", delete=False, suffix=".txt") as tf:
+            tf.write("Kept from the timed-out batch.")
+            text_path = tf.name
+
+        def runner(argv, **kw):
+            raise subprocess.TimeoutExpired(
+                cmd=argv, timeout=1,
+                output=(json.dumps({
+                    "status": "ok", "doi": "10.1/a", "read": text_path,
+                }) + "\n{\"status\": \"ok\", \"doi\": \"10.1/b\", \"read\": \""),
+            )
+
+        paperfetch.subprocess.run = runner
+        results = paperfetch.fetch_many_via_papers(
+            ["10.1/a", "10.1/b", "10.1/c"], timeout=1)
+        check("completed JSON line is kept",
+              results[0][0] == "Kept from the timed-out batch.")
+        check("truncated and unreached DOIs are empty, not a fallback to per-DOI",
+              results[1] == ("", "") and results[2] == ("", "")
+              and len(results) == 3)
+    finally:
+        paperfetch.subprocess.run = real_run
+        paperfetch.shutil.which = real_which
+        paperfetch._AVAILABLE = None
+        paperfetch._ARGV = []
+        paperfetch._BATCH_OK = None
+        paperfetch._BATCH_CACHE = {}
+        if text_path and os.path.exists(text_path):
+            try:
+                os.remove(text_path)
+            except OSError:
+                pass
+
+
 def test_full_text_order_favours_reviews_and_trials() -> None:
     """Deep reads go to direct systematic reviews and trials first, not the newest papers.
 
@@ -9113,6 +9283,8 @@ def main(argv: list[str] | None = None) -> int:
         test_keepalive_connection_reuse, test_substance_checks,
         test_source_failures_are_distinguishable,
         test_first_semantic_scholar_refusal_buys_one_patient_round,
+        test_read_timeout_does_not_retry,
+        test_preflight_stops_when_a_source_answers,
         test_search_cache, test_search_cache_survives_a_new_process,
         test_front_end_models_match_the_allowlist,
         test_public_generation_forces_luna_on_the_hosted_key,
@@ -9130,6 +9302,8 @@ def main(argv: list[str] | None = None) -> int:
         test_queued_ckn_counts_as_no_open_access,
         test_ckn_loop,
         test_one_papers_process_per_run,
+        test_hosted_fulltext_prefetch_is_the_target,
+        test_papers_batch_keeps_partial_results_on_timeout,
         test_full_text_order_favours_reviews_and_trials,
         test_pmcid_is_resolved_by_doi,
         test_unpaywall_fallback_in_resolve_pmcid,

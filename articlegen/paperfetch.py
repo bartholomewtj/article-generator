@@ -188,7 +188,7 @@ def _text_from_record(
         return "", status
 
 
-def _parse_ndjson(stdout: str | None) -> list[dict] | None:
+def _parse_ndjson(stdout: str | None, *, skip_bad_tail: bool = False) -> list[dict] | None:
     lines = [ln for ln in (stdout or "").splitlines() if ln.strip()]
     if not lines:
         return None
@@ -197,9 +197,9 @@ def _parse_ndjson(stdout: str | None) -> list[dict] | None:
         try:
             record = json.loads(line)
         except json.JSONDecodeError:
-            return None
+            return out if skip_bad_tail and out else None
         if not isinstance(record, dict):
-            return None
+            return out if skip_bad_tail and out else None
         out.append(record)
     return out
 
@@ -218,6 +218,17 @@ def _try_batch(
     try:
         proc = _run(argv, timeout=timeout, stdin=stdin)
     except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout or ""
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode("utf-8", "ignore")
+        records = _parse_ndjson(stdout, skip_bad_tail=True)
+        if records:
+            if callable(log):
+                log(f"  papers batch timed out after {len(records)}/{len(dois)}")
+            pairs = [_text_from_record(record, doi, log)
+                     for doi, record in zip(dois, records)]
+            pairs.extend([("", "")] * (len(dois) - len(pairs)))
+            return pairs
         if callable(log):
             log(f"  papers batch timed out: {exc}")
         return [("", "")] * len(dois)

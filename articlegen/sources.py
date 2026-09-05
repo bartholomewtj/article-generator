@@ -435,14 +435,37 @@ def _retry_delay(resp: requests.Response | None, fallback: float) -> float | Non
     return max(wanted, fallback)
 
 
+def _on_shared_host() -> bool:
+    """True on the public deployment (`ARTICLEGEN_STATELESS=1`).
+
+    That path sits behind a ~100s proxy read timeout. A 30s socket wait that
+    then retries twice is 90s of one source, which is how a live draft looks
+    like the backend is down.
+    """
+    return os.environ.get("ARTICLEGEN_STATELESS", "").strip().lower() in ("1", "true", "yes")
+
+
+def _search_timeout() -> float:
+    return 10.0 if _on_shared_host() else 30.0
+
+
 def _get_with_retry(url: str, params: dict, headers: dict, tries: int = 3) -> requests.Response:
     """Return a 200 response, or raise SearchFailure explaining why not."""
     headers = {"User-Agent": _user_agent(), **headers}
     delay = 2.0
     last = ""
+    timeout = _search_timeout()
     for attempt in range(tries):
         try:
-            resp = requests.get(url, params=params, headers=headers, timeout=30)
+            resp = requests.get(url, params=params, headers=headers, timeout=timeout)
+        except requests.Timeout as exc:
+            # A timeout already spent the backoff budget (or the hosted 10s
+            # slice of it). Two more 30s waits is how arXiv made /api/diag
+            # take 85s and /api/draft miss Cloudflare's ~100s window.
+            last = f"{type(exc).__name__}: {exc}"
+            fail = SearchFailure(f"{last} (no retry; socket wait is the backoff cap)")
+            fail.retry_later = False
+            raise fail
         except requests.RequestException as exc:
             last = f"{type(exc).__name__}: {exc}"
             resp = None
@@ -1995,6 +2018,7 @@ def gather_evidence(
     use_cache: bool = True,
     patient: bool = True,
     exhausted: set[str] | None = None,
+    stop_when_any: bool = False,
 ) -> list[Paper]:
     """Run every query against every source, dedupe, and return the best candidates,
     ranked by a blend of topic relevance, citations, and recency.
@@ -2011,6 +2035,11 @@ def gather_evidence(
 
     `patient=False` starts the run with the patient retry round already spent
     (used by pre-flight probes to fail fast without adding 30s).
+
+    `stop_when_any=True` returns as soon as one source has produced papers.
+    Pre-flight only needs to know someone is home; waiting out arXiv after
+    OpenAlex already answered is how a hosted draft burns the proxy window
+    before the first paid call.
     """
     global _recency_query_refused, _s2_patient_round_spent
     _recency_query_refused = False
@@ -2100,6 +2129,12 @@ def gather_evidence(
                 if doi_key:
                     by_doi[doi_key] = paper
                 collected.append(paper)
+
+            if stop_when_any and collected:
+                break
+        else:
+            continue
+        break
 
     # Build a keyword set from the topic + core entity for a relevance signal.
     raw = f"{topic} {core_entity}".lower()

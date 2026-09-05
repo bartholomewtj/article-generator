@@ -1005,8 +1005,16 @@
   }
 
   /** Turn a fetch/HTTP failure into something a non-developer can act on. */
-  async function apiError(resp, netErr) {
+  async function apiError(resp, netErr, waitedMs) {
     if (netErr || !resp) {
+      // Cloudflare in front of Render drops the request around 100s and the
+      // error page has no CORS headers, so fetch() throws a network error.
+      // That is not a sleeping host: the pipeline was still running.
+      if (waitedMs && waitedMs > 20000) {
+        return 'The host closed the connection before the briefing finished. ' +
+               'Search was still running — this is not the backend going down. ' +
+               'Wait a minute and try again; repeating the same topic is usually faster.';
+      }
       return 'Could not reach the article generator backend. The free host puts ' +
              'it to sleep when idle and takes up to a minute to wake it — wait, ' +
              'then try again. If it keeps failing, the backend may be down.';
@@ -1439,6 +1447,7 @@
 
     const settled = whileWaking(function (msg) { stepText.innerText = msg; });
 
+    const draftStarted = Date.now();
     try {
       let resp;
       try {
@@ -1452,7 +1461,7 @@
           })
         });
       } catch (netErr) {
-        throw new Error(await apiError(null, netErr));
+        throw new Error(await apiError(null, netErr, Date.now() - draftStarted));
       }
       if (!resp.ok) throw new Error(await apiError(resp));
 
