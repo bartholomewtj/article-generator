@@ -2310,6 +2310,161 @@ def test_europe_pmc_parsing() -> None:
           '"europe_pmc"' in inspect.getsource(sources.gather_evidence))
 
 
+def test_table_one_reports_sample_size_registration_and_funding() -> None:
+    """Table 1 prints three facts read off metadata and abstracts, not a grade (#244).
+
+    Sample size, trial registration and funding-statement presence are text
+    reads, never a model call and never an appraisal — the pipeline still
+    grades nothing.
+    """
+    from articlegen import render, sources
+    from articlegen.sources import Paper
+
+    # 1. Derivation lives in __post_init__, so every source inherits it with
+    # nothing passed in explicitly.
+    p = Paper(title="A trial", abstract="We enrolled n = 240 adults. Registered NCT01234567.")
+    check("sample_size derived from the abstract", p.sample_size == 240)
+    check("registration derived from the abstract", p.registration == "NCT01234567")
+
+    # 2. Europe PMC parser reads grantsList and (title+abstract+keywords) for a
+    # registration id.
+    payload = {"resultList": {"result": [
+        {
+            "id": "39000001", "source": "MED",
+            "title": "A funded trial",
+            "abstractText": "We randomised 120 patients.",
+            "pubYear": "2024",
+            "grantsList": {"grant": [{"grantId": "G1", "agency": "NHMRC"}]},
+            "keywordList": {"keyword": ["NCT02222222", "depression"]},
+        },
+        {
+            "id": "39000002", "source": "MED",
+            "title": "An unfunded record",
+            "abstractText": "We randomised 80 patients.",
+            "pubYear": "2024",
+        },
+    ]}}
+
+    class FakeResp:
+        def json(self):
+            return payload
+
+    real = sources._get_with_retry
+    try:
+        sources._get_with_retry = lambda url, params, headers: FakeResp()
+        funded, unfunded = sources.search_europe_pmc("depression", limit=2)
+    finally:
+        sources._get_with_retry = real
+
+    check("grantsList presence sets has_funding_statement",
+          funded.has_funding_statement is True)
+    check("registration id picked up from keywordList",
+          funded.registration == "NCT02222222")
+    check("no grantsList means no funding statement",
+          unfunded.has_funding_statement is False)
+
+    # 3. Round-trip through to_dict/from_dict.
+    rt = Paper.from_dict(p.to_dict())
+    check("sample_size round-trips", rt.sample_size == p.sample_size)
+    check("registration round-trips", rt.registration == p.registration)
+    check("has_funding_statement round-trips",
+          rt.has_funding_statement == p.has_funding_statement)
+
+    # 4. _merge_duplicate: enrichment, not overwrite.
+    kept = Paper(title="Same study", abstract="No numbers here.", sample_size=999)
+    dup = Paper(title="Same study", abstract="No numbers here.",
+                sample_size=50, registration="NCT03333333", has_funding_statement=True)
+    sources._merge_duplicate(kept, dup)
+    check("a kept sample_size is never overwritten by a duplicate's", kept.sample_size == 999)
+    check("registration fills in from the duplicate when the kept copy has none",
+          kept.registration == "NCT03333333")
+    check("funding is OR'd across the merge", kept.has_funding_statement is True)
+
+    kept2 = Paper(title="Other study", abstract="No numbers here.")
+    dup2 = Paper(title="Other study", abstract="No numbers here.", sample_size=42)
+    sources._merge_duplicate(kept2, dup2)
+    check("a kept copy with no sample_size takes the duplicate's",
+          kept2.sample_size == 42)
+
+    # 5. Rendered output.
+    paper = Paper(
+        title="A randomised controlled trial of X",
+        abstract="We randomised 364 patients. Registered NCT04655638.",
+        year=2024, authors=["A Smith"], venue="BMJ",
+        has_funding_statement=True,
+    )
+    html = render._table_html([paper], {})
+    check("HTML header gains n", "<th>n</th>" in html)
+    check("HTML header gains Registered", "<th>Registered</th>" in html)
+    check("HTML header gains Funding", "<th>Funding</th>" in html)
+    check("formatted sample size printed", "364" in html)
+    check("registration id printed", "NCT04655638" in html)
+    check("funding cell printed", "Grant listed" in html)
+    check("no empty cell anywhere", "<td></td>" not in html)
+
+    md = render._table_markdown([paper], {})
+    header_cols = md.splitlines()[2].count("|")
+    sep_cols = md.splitlines()[3].count("|")
+    check("markdown separator matches header column count", header_cols == sep_cols)
+    check("markdown carries the same three facts",
+          "364" in md and "NCT04655638" in md and "Grant listed" in md)
+
+    for banned in ("GRADE", "risk of bias", "quality score"):
+        check(f"HTML never says {banned!r}", banned not in html)
+        check(f"Markdown never says {banned!r}", banned not in md)
+
+
+def test_sample_size_never_reads_a_year_or_a_page_number() -> None:
+    """A sample size is read as a fact, and a year or page number is never one (#244)."""
+    import json
+
+    from articlegen import sources
+
+    for text in (
+        "Data were collected from 2015 to 2019 in primary care.",
+        "Reported in J Emerg Med 2019;21(4):123-130.",
+        "With 1 in 5 people doing shift work...",
+        "Scores on the 21-item Hamilton scale improved.",
+        "Remission was reached by 36.8% of patients in the first step.",
+        "Adults aged 65 years or older were eligible.",
+    ):
+        check(f"never a false positive: {text!r}", sources.sample_size(text) is None)
+
+    for text, expected in (
+        ("n = 1,204", 1204),
+        ("28 431 unique participants", 28431),
+        ("randomised 364 patients", 364),
+        ("Of the 17 subjects treated", 17),
+    ):
+        check(f"reads the count in {text!r}", sources.sample_size(text) == expected)
+
+    check("NCT id found", sources.registration_id("see NCT04655638") == "NCT04655638")
+    check("ACTRN id found",
+          sources.registration_id("see ACTRN12613000710729") == "ACTRN12613000710729")
+    check("ISRCTN id found", sources.registration_id("see ISRCTN91737921") == "ISRCTN91737921")
+    check("short NCT id rejected", sources.registration_id("see NCT123") == "")
+    check("bare ISRCTN rejected", sources.registration_id("see ISRCTN alone") == "")
+    check("lowercase id comes back uppercased",
+          sources.registration_id("see nct04655638") == "NCT04655638")
+
+    path = os.path.join(os.path.dirname(__file__), "real_abstracts.json")
+    corpus = json.load(open(path, encoding="utf-8"))
+    mismatches = []
+    for entry in corpus:
+        got_n = sources.sample_size(entry["abstract"])
+        if got_n != entry.get("expect_n"):
+            mismatches.append((entry["title"][:50], "n", got_n, entry.get("expect_n")))
+        got_reg = sources.registration_id(entry["abstract"])
+        if got_reg != entry.get("expect_registration", ""):
+            mismatches.append(
+                (entry["title"][:50], "registration", got_reg, entry.get("expect_registration", "")))
+    if mismatches:
+        for title, field, got, expected in mismatches:
+            print(f"      {title}: {field} got {got!r}, expected {expected!r}")
+    check(f"sample size and registration match expectations on {len(corpus)} real abstracts",
+          not mismatches)
+
+
 def test_arxiv_parsing() -> None:
     """arXiv Atom entries parse into Papers, and an error entry is not one.
 
@@ -8884,13 +9039,13 @@ def test_named_references_reads_names_not_noise() -> None:
     check("rejects PRISMA guideline mention", named_references("reported using PRISMA") == [])
     check("rejects sentence-initial 'The trial'", named_references("The trial was registered") == [])
 
-    # Sweep all 14 abstracts in tests/real_abstracts.json
+    # Sweep all 16 abstracts in tests/real_abstracts.json
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     real_abstracts_path = os.path.join(root, "tests", "real_abstracts.json")
     with open(real_abstracts_path, encoding="utf-8") as f:
         real_abstracts = json.load(f)
 
-    check("real_abstracts has 14 entries", len(real_abstracts) == 14)
+    check("real_abstracts has 16 entries", len(real_abstracts) == 16)
     for i, entry in enumerate(real_abstracts, start=1):
         refs = named_references(entry.get("abstract", ""))
         check(f"real abstract {i} extraction stays within NAMED_SOURCE_LIMIT",
@@ -10018,6 +10173,8 @@ def main(argv: list[str] | None = None) -> int:
         test_front_end_models_match_the_allowlist,
         test_public_generation_forces_luna_on_the_hosted_key,
         test_polite_pool_identification, test_europe_pmc_parsing,
+        test_table_one_reports_sample_size_registration_and_funding,
+        test_sample_size_never_reads_a_year_or_a_page_number,
         test_arxiv_parsing, test_titles_arrive_without_markup,
         test_candidate_papers_dedupe_by_doi,
         test_preprints_are_marked_as_preprints,

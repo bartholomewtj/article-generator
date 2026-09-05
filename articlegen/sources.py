@@ -346,6 +346,131 @@ def _clean_types(raw) -> tuple[str, ...]:
     return tuple(out)
 
 
+# ---------------------------------------------------------------- table facts
+#
+# Three deterministic reads off an abstract or a source's own metadata, never
+# an appraisal (#244): sample size, trial registration, and (Europe PMC only)
+# whether a funding statement was declared. No model call, no GRADE, no risk
+# of bias, no quality score — these are text, read as text.
+
+# Journals group thousands with a comma *and* with a space — a plain space,
+# a no-break space (U+00A0), a thin space (U+2009), or a narrow no-break
+# space (U+202F) — "28 431 unique participants" is a real abstract in the
+# corpus.
+_COUNT = r"\d{1,3}(?:[,    ]\d{3})+|\d+"
+
+# People, and the events that stand for them, as reported in ED/clinical
+# research. Plural only — that is how a sample size is stated. "records" is
+# deliberately absent: a systematic review's "7732 non-duplicate records
+# identified through literature search" is a search-hit count, not a sample
+# size, and that exact phrasing is in the corpus (#244).
+_PARTICIPANT_NOUNS = (
+    "participants|patients|outpatients|inpatients|subjects|adults|children|"
+    "adolescents|infants|neonates|women|men|individuals|people|persons|"
+    "respondents|volunteers|veterans|students|nurses|clinicians|physicians|"
+    "caregivers|families|cases|admissions|presentations|attendances|visits|"
+    "encounters|episodes"
+)
+
+# Candidate A: "n = 123" / "N=3,671". The `n` must not be preceded by a letter
+# or digit, so "ES = 1.28" and "HRSD(17)>or=14" cannot match.
+_SAMPLE_EQ_RE = re.compile(rf"(?<![A-Za-z0-9])[Nn]\s*=\s*({_COUNT})")
+
+# Candidate B: "123 participants" / "28 431 unique participants". Up to two
+# plain word tokens (no digits, no commas) between the count and the noun, so
+# "7 longitudinal studies, with 28 431 unique participants" cannot bind the
+# `7` to `participants`.
+_SAMPLE_NOUN_RE = re.compile(
+    rf"({_COUNT})(?:\s+[A-Za-z][A-Za-z-]*){{0,2}}\s+(?:{_PARTICIPANT_NOUNS})\b",
+    re.IGNORECASE,
+)
+
+_MONTHS = (
+    "january|february|march|april|may|june|july|august|september|october|"
+    "november|december"
+)
+_DATE_LEAD_RE = re.compile(
+    rf"(?:in|during|since|from|until|through|by|after|before|between|and|to|"
+    rf"{_MONTHS})\s*$",
+    re.IGNORECASE,
+)
+_RATE_LEAD_RE = re.compile(r"\d+\s+in\s*$", re.IGNORECASE)
+_PAGE_LEAD_RE = re.compile(r"(?:pp?\.|pages?)\s*$", re.IGNORECASE)
+
+
+def _strip_grouping(text: str) -> int:
+    return int(re.sub(r"[,    ]", "", text))
+
+
+def sample_size(abstract: str) -> int | None:
+    """The largest number in `abstract` stated as a sample size, or None.
+
+    Candidates come from "n = 123" and "123 participants" (and similar
+    nouns); each is rejected by name before being counted (issue #244) —
+    never a grade, just a deterministic text read. Rejections, each a real
+    string from the corpus:
+
+    1. A `%` follows immediately — "36.8%" is a rate, not a count.
+    2. A `.` plus digit follows — the "1" of "1.46" (an effect size).
+    3. Preceded by "<number> in " — "1 in 5 people" is a rate.
+    4. Sits in a numeric range or page span — "0.91-2.01", "123-130",
+       "200-300 mmHg" — a `-`/`–` with a digit on either side.
+    5. Preceded by "p." / "pp." / "page(s)" — a page number.
+    6. Looks like a year (1500-2100) preceded by a date word or month name —
+       "up to August 2018", "from 2015 to 2019". Only applied to the "n = …"
+       pattern: a count bound to a participant noun ("1500 participants") is
+       already disambiguated by that noun, so a real trial's "up to 1500
+       participants" is not rejected as a year (#244, the PENFUP trap).
+    7. Value < 1 or > 10,000,000 — outside any real sample size.
+    """
+    if not abstract:
+        return None
+    candidates: list[tuple[int, int, str, bool]] = []  # (start, end, raw, noun_bound)
+    for rx, noun_bound in ((_SAMPLE_EQ_RE, False), (_SAMPLE_NOUN_RE, True)):
+        for m in rx.finditer(abstract):
+            candidates.append((m.start(1), m.end(1), m.group(1), noun_bound))
+
+    survivors: list[int] = []
+    for start, end, raw, noun_bound in candidates:
+        before = abstract[:start]
+        after = abstract[end:]
+        if after[:1] == "%":
+            continue
+        if re.match(r"\.\d", after):
+            continue
+        if _RATE_LEAD_RE.search(before):
+            continue
+        if re.match(r"\s*[-–]\s*\d", after) or re.search(r"\d\s*[-–]\s*$", before):
+            continue
+        if _PAGE_LEAD_RE.search(before):
+            continue
+        try:
+            value = _strip_grouping(raw)
+        except ValueError:
+            continue
+        if not noun_bound and 1500 <= value <= 2100 and _DATE_LEAD_RE.search(before):
+            continue
+        if value < 1 or value > 10_000_000:
+            continue
+        survivors.append(value)
+
+    return max(survivors) if survivors else None
+
+
+# Bounded digit counts on purpose: an unbounded `ISRCTN\d+` would swallow a
+# run-on number, and a bounded pattern that misses one record is cheaper than
+# a printed id that is wrong.
+_REGISTRATION_RE = re.compile(r"\b(NCT\d{8}|ACTRN\d{14}|ISRCTN\d{6,8})\b", re.IGNORECASE)
+
+
+def registration_id(text: str) -> str:
+    """The first trial registration id in `text`, uppercased, or ""."""
+    if not text:
+        return ""
+    m = _REGISTRATION_RE.search(text)
+    return m.group(1).upper() if m else ""
+
+
 @dataclass
 class Paper:
     title: str
@@ -389,6 +514,17 @@ class Paper:
     # "Expression of concern"), or "" for the usual case. A note on the
     # reference list entry, never a reason to exclude anything.
     correction_note: str = ""
+    # Three facts read off the abstract or the source's own metadata, never
+    # judged (#244). They are printed in Table 1 as facts, not as a grade —
+    # there is no appraisal anywhere in this pipeline and these do not add one.
+    # Largest sample size stated in the abstract, or None when it states none.
+    sample_size: int | None = None
+    # Trial registration id as printed ("NCT02565745"), or "".
+    registration: str = ""
+    # True only when Europe PMC's record carries a non-empty grantsList.
+    # False means "no grant listed there", never "unfunded" — every other
+    # source leaves it False because no other source reports funding at all.
+    has_funding_statement: bool = False
 
     def __post_init__(self) -> None:
         # The one place a title is cleaned. Four search functions build Papers
@@ -401,6 +537,14 @@ class Paper:
         # before construction, and this never clears it.
         if not self.is_preprint:
             self.is_preprint = _looks_like_preprint(self.doi, self.url)
+        # Same choke point: a fifth search source inherits the sample-size and
+        # registration reads without anyone remembering to call them (#244).
+        # Only fill what is still empty, so a parser that already knows more
+        # (Europe PMC's registration read, below) wins.
+        if self.sample_size is None:
+            self.sample_size = sample_size(self.abstract)
+        if not self.registration:
+            self.registration = registration_id(f"{self.title} {self.abstract}")
 
     @property
     def author_line(self) -> str:
@@ -771,9 +915,19 @@ def search_europe_pmc(query: str, limit: int = 15) -> list[Paper]:
         raw_types = (item.get("pubTypeList") or {}).get("pubType") or item.get("pubType")
         cleaned_types = _clean_types(raw_types)
         src, ext_id = item.get("source") or "", item.get("id") or ""
+        title = _strip_markup(item.get("title") or "")
+        # Measured against the live API on 5 September 2026 with
+        # resultType=core: grantsList is present, and is a
+        # {"grant": [{"grantId": ..., "agency": ...}]} object, only on records
+        # that carry a grant — it is absent (not empty) otherwise, so presence
+        # is the whole test. There is no registry-id field in the core search
+        # response; keywordList is the only extra place an id turns up, which
+        # is why the registration read below is title + abstract + keywords
+        # rather than a dedicated field.
+        keywords_text = " ".join((item.get("keywordList") or {}).get("keyword") or [])
         papers.append(
             Paper(
-                title=_strip_markup(item.get("title") or ""),
+                title=title,
                 abstract=abstract,
                 year=year,
                 authors=authors,
@@ -788,6 +942,8 @@ def search_europe_pmc(query: str, limit: int = 15) -> list[Paper]:
                 is_open_access=(item.get("isOpenAccess") == "Y" and item.get("inEPMC") == "Y"),
                 is_preprint=(src == "PPR" or "preprint" in " ".join(cleaned_types)),
                 publication_types=cleaned_types,
+                has_funding_statement=bool((item.get("grantsList") or {}).get("grant")),
+                registration=registration_id(" ".join([title, abstract, keywords_text])),
             )
         )
     return papers
@@ -1859,6 +2015,14 @@ def _merge_duplicate(kept: Paper, dup: Paper) -> None:
     kept.is_retracted = kept.is_retracted or dup.is_retracted
     if dup.correction_note and not kept.correction_note:
         kept.correction_note = dup.correction_note
+    if dup.sample_size is not None and kept.sample_size is None:
+        kept.sample_size = dup.sample_size
+    if dup.registration and not kept.registration:
+        kept.registration = dup.registration
+    # OR'd across the merge, for the same reason `is_retracted` is: a grant is
+    # a fact about the one work both records describe, and only the Europe PMC
+    # copy can ever carry it.
+    kept.has_funding_statement = kept.has_funding_statement or dup.has_funding_statement
 
 
 # Constants for the named-source pass (issue #165, #190). Read by pipeline.py.

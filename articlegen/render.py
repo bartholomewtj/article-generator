@@ -533,6 +533,9 @@ def _table_rows(cited: list[Paper], labels: dict[int, str]) -> list[dict]:
             "preprint": bool(paper.is_preprint),
             "retracted": bool(paper.is_retracted),
             "design": design_str,
+            "sample": f"{paper.sample_size:,}" if paper.sample_size else "—",
+            "registered": paper.registration or "—",
+            "funding": "Grant listed" if paper.has_funding_statement else "—",
             "label": label if label in RELEVANCE_LABELS else "",
             "relevance": RELEVANCE_LABELS.get(label, "—") if label else "—",
             "read": "Full text" if paper.full_text else "Abstract",
@@ -678,6 +681,9 @@ def _table_html(cited: list[Paper], labels: dict[int, str]) -> str:
             f'<td class="t-num">{row["year"]}</td>'
             f'<td class="t-venue">{html.escape(row["venue"])}</td>'
             f"<td>{html.escape(row['design'])}</td>"
+            f'<td class="t-num">{html.escape(row["sample"])}</td>'
+            f'<td class="t-num">{html.escape(row["registered"])}</td>'
+            f"<td>{html.escape(row['funding'])}</td>"
             f"<td>{relevance}</td>"
             f'<td>{row["read"]}</td></tr>'
         )
@@ -686,7 +692,14 @@ def _table_html(cited: list[Paper], labels: dict[int, str]) -> str:
         "title, journal and index metadata and reads Other where no design could be "
         "inferred; no quality appraisal was performed. Relevance is the curation label "
         "for how directly each source addresses the review question. Read records whether "
-        "the model saw the source's open-access full text or its abstract only."
+        "the model saw the source's open-access full text or its abstract only. n is the "
+        "largest sample size stated in the abstract, read from “n = …” or from a "
+        "count next to a word like participants; a dash means the abstract states none. "
+        "Registered is a trial registration number found in the abstract or in the "
+        "Europe PMC record. Funding reads Grant listed where Europe PMC lists a "
+        "grant for that record; a dash means none was listed there, not that the work "
+        "was unfunded. All three are read as text, not checked, and none of them is a "
+        "quality assessment."
     )
     return (
         '<div class="display table-wrap" aria-labelledby="table-1">\n'
@@ -694,7 +707,8 @@ def _table_html(cited: list[Paper], labels: dict[int, str]) -> str:
         f"{caption}</p>\n"
         '<div class="table-scroll"><table>\n'
         "<thead><tr><th>Ref.</th><th>Study</th><th>Year</th><th>Source</th>"
-        "<th>Design</th><th>Relevance</th><th>Read</th></tr></thead>\n"
+        "<th>Design</th><th>n</th><th>Registered</th><th>Funding</th>"
+        "<th>Relevance</th><th>Read</th></tr></thead>\n"
         "<tbody>" + "".join(rows) + "</tbody>\n</table></div>\n</div>"
     )
 
@@ -2154,13 +2168,14 @@ def _table_markdown(cited: list[Paper], labels: dict[int, str]) -> str:
     rows = [
         "**Table 1 | Characteristics of the cited evidence.**",
         "",
-        "| Ref. | Study | Year | Source | Design | Relevance | Read |",
-        "| --- | --- | --- | --- | --- | --- | --- |",
+        "| Ref. | Study | Year | Source | Design | n | Registered | Funding | Relevance | Read |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for row in _table_rows(cited, labels):
         rows.append(
             f"| {row['n']} | {row['study']} | {row['year']} | "
-            f"{row['venue']} | {row['design']} | {row['relevance']} | {row['read']} |"
+            f"{row['venue']} | {row['design']} | {row['sample']} | {row['registered']} | "
+            f"{row['funding']} | {row['relevance']} | {row['read']} |"
         )
     return "\n".join(rows)
 
