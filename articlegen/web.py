@@ -77,6 +77,7 @@ RUN_FIELDS = frozenset({
     # /api/draft
     "screened", "cited", "cited_direct", "direct", "related", "tangential",
     "full_text", "full_text_via", "named_added", "named_queries",
+    "referenced_added",
     "style_errors", "style_rules", "figures", "unverified", "misattributed",
     "working_draft",
     # /api/gallery
@@ -288,6 +289,7 @@ def draft_run_fields(draft) -> dict:
         relevance = curation.get("relevance") or {}
         provenance = getattr(draft, "provenance", None) or {}
         named_sources = provenance.get("named_sources") or {}
+        referenced_sources = provenance.get("referenced_sources") or {}
         verification = getattr(draft, "verification", None) or {}
         style_report = getattr(draft, "style_report", None)
 
@@ -304,6 +306,7 @@ def draft_run_fields(draft) -> dict:
             "full_text": len(provenance.get("full_text_sources") or []),
             "named_added": named_sources.get("added", 0),
             "named_queries": len(named_sources.get("queries") or []),
+            "referenced_added": referenced_sources.get("added", 0),
             "style_errors": len(st_errors),
             "style_rules": style_rules,
             "figures": verification.get("total", 0),

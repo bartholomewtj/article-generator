@@ -944,6 +944,26 @@ def _methods_paragraphs(
                if added else "no further records to the pool.")
         )
 
+    referenced = (provenance.get("referenced_sources") or {}) if provenance else {}
+    ref_seeds = [s for s in (referenced.get("seeds") or []) if s]
+    cited_seed = referenced.get("cited_seed") or ""
+    if ref_seeds or cited_seed:
+        ref_added = int(referenced.get("added") or 0)
+        clauses = []
+        if ref_seeds:
+            clauses.append(
+                f"the reference lists of {len(ref_seeds)} "
+                f"synthes{'es' if len(ref_seeds) != 1 else 'is'} ("
+                + "; ".join(f"‘{esc(s)}’" for s in ref_seeds) + ")")
+        if cited_seed:
+            clauses.append(f"the papers citing ‘{esc(cited_seed)}’")
+        search += (
+            " Citations were then followed one step through OpenAlex, through "
+            + _join_list(clauses) + ", which added "
+            + (f"{ref_added} further record{'s' if ref_added != 1 else ''} to the pool."
+               if ref_added else "no further records to the pool.")
+        )
+
     # `full_text_sources` records which sources the model was actually shown
     # full text for. Like `databases` above, it is never guessed: absent or
     # empty means this draft was abstracts-only and Methods says exactly that.

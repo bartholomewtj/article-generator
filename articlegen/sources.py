@@ -239,7 +239,7 @@ def _cache_open():
 _SS_FIELDS = "title,abstract,year,authors,venue,citationCount,externalIds,url,publicationTypes"
 _OA_FIELDS = (
     "id,title,publication_year,authorships,primary_location,"
-    "cited_by_count,abstract_inverted_index,doi,type,is_retracted"
+    "cited_by_count,abstract_inverted_index,doi,type,is_retracted,referenced_works"
 )
 
 # Crossref registers an update relation on the *notice*, not on the paper it
@@ -608,6 +608,32 @@ RECENCY_WINDOW_YEARS = 8
 _recency_query_refused = False
 
 
+def _oa_paper(item: dict) -> Paper | None:
+    """One OpenAlex result as a Paper, or None when it has no usable abstract."""
+    abstract = _rebuild_abstract(item.get("abstract_inverted_index"))
+    if not abstract:
+        return None
+    location = item.get("primary_location") or {}
+    source_meta = location.get("source") or {}
+    return Paper(
+        title=item.get("title") or "",
+        abstract=abstract,
+        year=item.get("publication_year"),
+        authors=[
+            (a.get("author") or {}).get("display_name", "")
+            for a in item.get("authorships") or []
+        ],
+        venue=source_meta.get("display_name") or "",
+        citation_count=item.get("cited_by_count") or 0,
+        url=location.get("landing_page_url") or item.get("id") or "",
+        doi=item.get("doi") or "",
+        source="OpenAlex",
+        is_preprint=(item.get("type") == "preprint"),
+        publication_types=_clean_types(item.get("type")),
+        is_retracted=bool(item.get("is_retracted")),
+    )
+
+
 def _openalex_page(query: str, limit: int, from_year: int | None = None) -> list[Paper]:
     """One OpenAlex request."""
     filters = ["has_abstract:true"]
@@ -625,30 +651,9 @@ def _openalex_page(query: str, limit: int, from_year: int | None = None) -> list
     resp = _get_with_retry(OPENALEX_URL, params=params, headers={})
     papers = []
     for item in resp.json().get("results") or []:
-        abstract = _rebuild_abstract(item.get("abstract_inverted_index"))
-        if not abstract:
-            continue
-        location = item.get("primary_location") or {}
-        source_meta = location.get("source") or {}
-        papers.append(
-            Paper(
-                title=item.get("title") or "",
-                abstract=abstract,
-                year=item.get("publication_year"),
-                authors=[
-                    (a.get("author") or {}).get("display_name", "")
-                    for a in item.get("authorships") or []
-                ],
-                venue=source_meta.get("display_name") or "",
-                citation_count=item.get("cited_by_count") or 0,
-                url=location.get("landing_page_url") or item.get("id") or "",
-                doi=item.get("doi") or "",
-                source="OpenAlex",
-                is_preprint=(item.get("type") == "preprint"),
-                publication_types=_clean_types(item.get("type")),
-                is_retracted=bool(item.get("is_retracted")),
-            )
-        )
+        paper = _oa_paper(item)
+        if paper is not None:
+            papers.append(paper)
     return papers
 
 
@@ -1862,6 +1867,86 @@ NAMED_SOURCE_LIMIT = 8       # lookups requested, and new records kept
 NAMED_SOURCE_PER_QUERY = 5   # page size for a lookup; we want one exact record
 NAMED_MATCH_RATE_MAX = 0.5   # share of returned records one name may match (#190)
 NAMED_MATCH_MIN_MATCHES = 5  # below this, a high share means a small return (#190)
+
+# Constants for the one-hop citation pass (issue #243). Read by pipeline.py.
+REFERENCED_SEEDS = 3        # direct syntheses whose reference lists are read
+REFERENCED_ID_LIMIT = 50    # ids resolved in one batched request (OpenAlex OR-filter cap)
+REFERENCED_CITED_LIMIT = 8  # citing records fetched for the top direct trial
+
+
+def openalex_work(paper: Paper) -> tuple[str, list[str]]:
+    """OpenAlex work id and reference-list ids for one paper. ("", []) when unknown.
+
+    One request. Looked up by DOI (`filter=doi:<doi>`), because a Paper carries
+    no OpenAlex id. Raises SearchFailure if OpenAlex refuses — the caller
+    decides what that means for the run.
+    """
+    doi = _normalize_doi(paper.doi)
+    if not doi:
+        return ("", [])
+    params = {
+        "filter": f"doi:{doi}",
+        "select": "id,referenced_works",
+        "per-page": 1,
+    }
+    mailto = os.environ.get("OPENALEX_MAILTO")
+    if mailto:
+        params["mailto"] = mailto
+    resp = _get_with_retry(OPENALEX_URL, params=params, headers={})
+    results = resp.json().get("results") or []
+    if not results:
+        return ("", [])
+    return (results[0].get("id") or "", list(results[0].get("referenced_works") or []))
+
+
+def openalex_records(ids: list[str]) -> list[Paper]:
+    """Papers for up to REFERENCED_ID_LIMIT OpenAlex work ids, in one request."""
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for i in ids:
+        if i and i not in seen:
+            seen.add(i)
+            deduped.append(i)
+    deduped = deduped[:REFERENCED_ID_LIMIT]
+    if not deduped:
+        return []
+    params = {
+        "filter": f"openalex_id:{'|'.join(deduped)},has_abstract:true",
+        "select": _OA_FIELDS,
+        "per-page": len(deduped),
+    }
+    mailto = os.environ.get("OPENALEX_MAILTO")
+    if mailto:
+        params["mailto"] = mailto
+    resp = _get_with_retry(OPENALEX_URL, params=params, headers={})
+    papers = []
+    for item in resp.json().get("results") or []:
+        paper = _oa_paper(item)
+        if paper is not None:
+            papers.append(paper)
+    return papers
+
+
+def openalex_citing_works(work_id: str, limit: int = REFERENCED_CITED_LIMIT) -> list[Paper]:
+    """The most-cited papers that cite `work_id`. One request."""
+    if not work_id:
+        return []
+    params = {
+        "filter": f"cites:{work_id},has_abstract:true",
+        "select": _OA_FIELDS,
+        "per-page": limit,
+        "sort": "cited_by_count:desc",
+    }
+    mailto = os.environ.get("OPENALEX_MAILTO")
+    if mailto:
+        params["mailto"] = mailto
+    resp = _get_with_retry(OPENALEX_URL, params=params, headers={})
+    papers = []
+    for item in resp.json().get("results") or []:
+        paper = _oa_paper(item)
+        if paper is not None:
+            papers.append(paper)
+    return papers
 
 
 # Stoplist of capitalised non-names and apparatus acronyms. The negative
