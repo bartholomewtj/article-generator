@@ -516,6 +516,12 @@ def _table_rows(cited: list[Paper], labels: dict[int, str]) -> list[dict]:
         venue = paper.venue or "—"
         if paper.is_preprint:
             venue = f"{paper.venue} (preprint)" if paper.venue else "Preprint"
+        # Should never fire: a retracted record is omitted from what the writer
+        # sees. But `_citation_map` accepts any index in range, so a model that
+        # invents a source number can still land on one — and a cited retraction
+        # printed silently is the failure this issue is about (#242).
+        if paper.is_retracted:
+            venue = f"Retracted — {paper.venue}" if paper.venue else "Retracted"
         d_label = sources.classify_design(paper)
         design_str = sources.DESIGN_LABELS[d_label]
         rows.append({
@@ -525,6 +531,7 @@ def _table_rows(cited: list[Paper], labels: dict[int, str]) -> list[dict]:
             "year": paper.year or "n.d.",
             "venue": venue,
             "preprint": bool(paper.is_preprint),
+            "retracted": bool(paper.is_retracted),
             "design": design_str,
             "label": label if label in RELEVANCE_LABELS else "",
             "relevance": RELEVANCE_LABELS.get(label, "—") if label else "—",
@@ -877,7 +884,7 @@ def _join_list(items: list[str]) -> str:
 
 def _methods_paragraphs(
     provenance: dict | None, screened: int, n_cited: int, topic: str, esc=lambda s: s,
-    n_full_cited: int | None = None,
+    n_full_cited: int | None = None, n_retracted: int = 0,
 ) -> dict[str, str]:
     """The three Methods paragraphs as sentences, before any markup.
 
@@ -909,6 +916,15 @@ def _methods_paragraphs(
         search += (
             f"Records without a retrievable abstract were discarded, leaving {screened} "
             "for screening. "
+        )
+    if n_retracted:
+        search += (
+            f"{n_retracted} of those record{'s' if n_retracted != 1 else ''} "
+            f"{'are' if n_retracted != 1 else 'is'} recorded as retracted in the "
+            "source index and "
+            f"{'were' if n_retracted != 1 else 'was'} withheld from the drafting "
+            "model, so none can be cited here; they remain in the screened count "
+            "above. "
         )
     search += (
         f"Each remaining record was assessed for how directly it addresses {esc(topic)} "
@@ -975,10 +991,11 @@ def _methods_paragraphs(
 
 def _methods_html(
     provenance: dict | None, screened: int, n_cited: int, topic: str,
-    n_full_cited: int | None = None,
+    n_full_cited: int | None = None, n_retracted: int = 0,
 ) -> str:
     parts = _methods_paragraphs(
-        provenance, screened, n_cited, topic, html.escape, n_full_cited=n_full_cited
+        provenance, screened, n_cited, topic, html.escape,
+        n_full_cited=n_full_cited, n_retracted=n_retracted,
     )
     return (
         '<section class="back-section">\n<h2>Methods</h2>\n'
@@ -999,6 +1016,11 @@ def _full_text_count(cited: list[Paper]) -> int:
     way, the same no-fallback rule as `databases`.
     """
     return sum(1 for p in cited if getattr(p, "full_text", None))
+
+
+def _retracted_count(papers: list[Paper]) -> int:
+    """How many screened records were withheld from the writer as retracted."""
+    return sum(1 for p in papers if getattr(p, "is_retracted", False))
 
 
 def _assessment_paragraphs(
@@ -1516,9 +1538,10 @@ def render_article(
             if paper.citation_count else ""
         )
         preprint = " (preprint, not peer reviewed)" if paper.is_preprint else ""
+        correction = f" ({paper.correction_note})" if paper.correction_note else ""
         refs_html.append(
             f'<li id="ref-{n}"><span class="ref-authors">{html.escape(_reference_authors(paper))}</span> '
-            f'{title_html}{venue} ({paper.year or "n.d."}).{preprint}{cites}</li>'
+            f'{title_html}{venue} ({paper.year or "n.d."}).{preprint}{correction}{cites}</li>'
         )
 
     span = _year_range(cited)
@@ -1546,7 +1569,8 @@ def render_article(
             keywords=keywords_html,
             body=body_html,
             methods=_methods_html(provenance, len(papers), len(cited), topic,
-                                  n_full_cited=_full_text_count(cited)),
+                                  n_full_cited=_full_text_count(cited),
+                                  n_retracted=_retracted_count(papers)),
             assessment=_assessment_html(cited, counts, verification, style_report),
             table=table,
             glossary=_glossary_html(article),
@@ -2037,7 +2061,8 @@ def render_markdown(
             lines += [key_points_md, ""]
 
     lines += _methods_markdown(provenance, len(papers), len(cited), topic,
-                               n_full_cited=_full_text_count(cited))
+                               n_full_cited=_full_text_count(cited),
+                               n_retracted=_retracted_count(papers))
     lines += _assessment_markdown(cited, counts, verification, style_report)
     if table_md:
         lines += [table_md, ""]
@@ -2057,9 +2082,10 @@ def render_markdown(
         link = f" <{paper.link}>" if paper.link else ""
         cites = f" Cited by {paper.citation_count:,}." if paper.citation_count else ""
         preprint = " (preprint, not peer reviewed)" if paper.is_preprint else ""
+        correction = f" ({paper.correction_note})" if paper.correction_note else ""
         lines.append(
             f"{n}. {_reference_authors(paper)} {_titled(paper.title)}{venue} "
-            f"({paper.year or 'n.d.'}).{preprint}{cites}{link}"
+            f"({paper.year or 'n.d.'}).{preprint}{correction}{cites}{link}"
         )
     lines.append("")
 
@@ -2142,10 +2168,11 @@ def _figure_markdown(cited: list[Paper], labels: dict[int, str]) -> str:
 
 def _methods_markdown(
     provenance: dict | None, screened: int, n_cited: int, topic: str,
-    n_full_cited: int | None = None,
+    n_full_cited: int | None = None, n_retracted: int = 0,
 ) -> list[str]:
     parts = _methods_paragraphs(
-        provenance, screened, n_cited, topic, n_full_cited=n_full_cited
+        provenance, screened, n_cited, topic,
+        n_full_cited=n_full_cited, n_retracted=n_retracted,
     )
     return [
         "## Methods",

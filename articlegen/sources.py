@@ -40,6 +40,7 @@ OPENALEX_URL = "https://api.openalex.org/works"
 EUROPE_PMC_URL = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
 ARXIV_URL = "https://export.arxiv.org/api/query"
 UNPAYWALL_URL = "https://api.unpaywall.org/v2/{doi}"
+CROSSREF_URL = "https://api.crossref.org/works/{doi}"
 
 # How each source is named in an article's Methods section. Keyed by the
 # `source` value gather_evidence records in its outcomes.
@@ -168,6 +169,13 @@ def _load_cache_locked() -> None:
         for doi, item in raw.get("pmcid", {}).items():
             if item["expires"] > now:
                 _pmcid_cache[doi] = (item["expires"], item["pmcid"], bool(item["open_access"]))
+        for doi, item in raw.get("status", {}).items():
+            if item.get("expires", 0) > now:
+                _status_cache[doi] = (
+                    item["expires"],
+                    bool(item.get("is_retracted")),
+                    item.get("correction_note", ""),
+                )
     except FileNotFoundError:
         return
     except Exception as exc:  # corrupt, unreadable, or an older shape
@@ -175,6 +183,7 @@ def _load_cache_locked() -> None:
         _search_cache.clear()
         _fulltext_cache.clear()
         _pmcid_cache.clear()
+        _status_cache.clear()
         print(f"articlegen: ignoring unreadable cache {path}: {exc}", file=sys.stderr)
 
 
@@ -203,6 +212,10 @@ def _save_cache_locked() -> None:
             doi: {"expires": exp, "pmcid": pmcid, "open_access": oa}
             for doi, (exp, pmcid, oa) in _pmcid_cache.items() if exp > now
         },
+        "status": {
+            doi: {"expires": exp, "is_retracted": retracted, "correction_note": note}
+            for doi, (exp, retracted, note) in _status_cache.items() if exp > now
+        },
     }
     path = _cache_file()
     try:
@@ -226,8 +239,27 @@ def _cache_open():
 _SS_FIELDS = "title,abstract,year,authors,venue,citationCount,externalIds,url,publicationTypes"
 _OA_FIELDS = (
     "id,title,publication_year,authorships,primary_location,"
-    "cited_by_count,abstract_inverted_index,doi,type"
+    "cited_by_count,abstract_inverted_index,doi,type,is_retracted"
 )
+
+# Crossref registers an update relation on the *notice*, not on the paper it
+# corrects: `update-to` on a record means "this record updates that one". The
+# `relation.is-corrected-by` key is the other direction and is the one that
+# actually fires on a corrected paper, so both are read. Either way the reader
+# is being told the record sits inside a correction relationship and is worth a
+# look — which is the whole point of the note.
+#
+# Retraction types are deliberately absent. Retraction is handled by OpenAlex's
+# `is_retracted`, which is about the paper itself; printing "Retracted" off a
+# Crossref notice record would label the wrong document.
+_CROSSREF_UPDATE_LABELS = {
+    "correction": "Corrected",
+    "corrigendum": "Corrected",
+    "erratum": "Corrected",
+    "addendum": "Corrected",
+    "clarification": "Corrected",
+    "expression_of_concern": "Expression of concern",
+}
 
 
 # Inline formatting tags the publishers' JATS leaves in a title. Named
@@ -348,6 +380,15 @@ class Paper:
     # order and nothing else — it is never printed, so a source that reports
     # nothing costs nothing. Empty for arXiv, which has no such field.
     publication_types: tuple[str, ...] = ()
+    # OpenAlex's `is_retracted`, or a DOI lookup for records from another
+    # source (#242). A retracted record is kept in the pool and in the screened
+    # count — it was screened — but `writer._writer_context` omits it from what
+    # the model sees, so it cannot be cited.
+    is_retracted: bool = False
+    # Display text for a Crossref correction relation ("Corrected",
+    # "Expression of concern"), or "" for the usual case. A note on the
+    # reference list entry, never a reason to exclude anything.
+    correction_note: str = ""
 
     def __post_init__(self) -> None:
         # The one place a title is cleaned. Four search functions build Papers
@@ -605,6 +646,7 @@ def _openalex_page(query: str, limit: int, from_year: int | None = None) -> list
                 source="OpenAlex",
                 is_preprint=(item.get("type") == "preprint"),
                 publication_types=_clean_types(item.get("type")),
+                is_retracted=bool(item.get("is_retracted")),
             )
         )
     return papers
@@ -947,6 +989,7 @@ def clear_search_cache() -> None:
         _search_cache.clear()
         _fulltext_cache.clear()
         _pmcid_cache.clear()
+        _status_cache.clear()
         _cache_loaded = True
         try:
             _cache_file().unlink()
@@ -1050,6 +1093,9 @@ _fulltext_cache: dict[str, tuple[float, str, str]] = {}
 # doi -> (expiry, pmcid, is_open_access). See `resolve_pmcid`.
 _pmcid_cache: dict[str, tuple[float, str, bool]] = {}
 
+# doi -> (expiry, is_retracted, correction_note). See `check_record_status`.
+_status_cache: dict[str, tuple[float, bool, str]] = {}
+
 
 def _unpaywall_email() -> str:
     """The contact Unpaywall requires. Never a made-up address — it blocks those."""
@@ -1092,6 +1138,79 @@ def probe_unpaywall(doi: str = "10.1371/journal.pone.0000308") -> dict:
     return result
 
 
+def check_record_status(paper: Paper, use_cache: bool = True, log=lambda msg: None) -> None:
+    """Fill `is_retracted` and `correction_note` for one paper, by DOI (#242).
+
+    Two lookups, both best-effort and both soft-failing: a source index that is
+    down must cost a note, never a draft.
+
+    * OpenAlex, only when the record came from somewhere else. An OpenAlex
+      record already carries `is_retracted` from the search, and a flag once set
+      is never cleared — a second opinion that says nothing is not a retraction
+      being lifted.
+    * Crossref, for the correction relation. Crossref is the registry the
+      notices are deposited with; OpenAlex does not expose them.
+
+    Coverage is honest rather than complete: this runs where `resolve_pmcid`
+    runs, which is the full-text loop, so a record from Semantic Scholar or
+    arXiv that is never a full-text candidate is checked only against whatever
+    its own search returned. OpenAlex is the source that supplies most of the
+    pool and it is covered for free at search time.
+    """
+    doi = _normalize_doi(paper.doi)
+    if not doi:
+        return
+
+    now = time.time()
+    if use_cache and _CACHE_TTL > 0:
+        with _cache_open():
+            entry = _status_cache.get(doi)
+        if entry and entry[0] > now:
+            paper.is_retracted = paper.is_retracted or entry[1]
+            paper.correction_note = paper.correction_note or entry[2]
+            return
+
+    retracted, note = False, ""
+
+    if paper.source != "OpenAlex" and not paper.is_retracted:
+        try:
+            params = {"filter": f"doi:{doi}", "select": "id,doi,is_retracted", "per-page": 1}
+            mailto = os.environ.get("OPENALEX_MAILTO")
+            if mailto:
+                params["mailto"] = mailto
+            resp = _get_with_retry(OPENALEX_URL, params=params, headers={})
+            results = resp.json().get("results") or []
+            if results and results[0].get("is_retracted"):
+                retracted = True
+        except SearchFailure as exc:
+            log(f"  openalex retraction lookup failed for {doi}: {exc}")
+
+    if not paper.correction_note:
+        try:
+            resp = _get_with_retry(CROSSREF_URL.format(doi=doi), params={}, headers={})
+            message = (resp.json() or {}).get("message") or {}
+            types = [str((u or {}).get("type") or "").strip().lower().replace(" ", "_")
+                     for u in (message.get("update-to") or [])]
+            if (message.get("relation") or {}).get("is-corrected-by"):
+                types.append("correction")
+            note = next((_CROSSREF_UPDATE_LABELS[t] for t in types
+                         if t in _CROSSREF_UPDATE_LABELS), "")
+        except SearchFailure as exc:
+            log(f"  crossref update lookup failed for {doi}: {exc}")
+
+    if retracted:
+        log(f"  retracted record excluded: {doi}  {paper.title}")
+
+    paper.is_retracted = paper.is_retracted or retracted
+    paper.correction_note = paper.correction_note or note
+
+    if _CACHE_TTL > 0:
+        ttl = _CACHE_TTL if (retracted or note) else _CACHE_FAILURE_TTL
+        with _cache_open():
+            _status_cache[doi] = (now + ttl, paper.is_retracted, paper.correction_note)
+            _save_cache_locked()
+
+
 def resolve_pmcid(paper: Paper, use_cache: bool = True, log=lambda msg: None) -> bool:
     """Look a paper's DOI up in Europe PMC to fill in `pmcid` / `is_open_access`.
 
@@ -1106,10 +1225,18 @@ def resolve_pmcid(paper: Paper, use_cache: bool = True, log=lambda msg: None) ->
     If Europe PMC does not yield an open-access PMCID copy, a secondary lookup
     against Unpaywall is performed.
 
-    Returns True when the paper now has a fetchable open-access full text. One
-    HTTP call per unseen DOI, so callers must bound how many they make.
+    Returns True when the paper now has a fetchable open-access full text. Up
+    to four HTTP calls per unseen DOI now (Europe PMC, Unpaywall, and the
+    retraction/correction lookups in `check_record_status`), so callers must
+    bound how many they make.
     """
     doi = (paper.doi or "").removeprefix("https://doi.org/").strip()
+    # Retraction and correction status, from the same DOI, before the early
+    # return: a paper that already has its PMCID still needs checking. The
+    # lookups live in their own function because this one's error handling is
+    # pinned by test_full_text_dependencies_fail_loudly_enough_to_diagnose.
+    if doi:
+        check_record_status(paper, use_cache=use_cache, log=log)
     if (paper.pmcid and paper.is_open_access) or not doi:
         return bool(paper.pmcid and paper.is_open_access)
 
@@ -1688,6 +1815,12 @@ def _merge_duplicate(kept: Paper, dup: Paper) -> None:
     a preprint. The flag is only updated if adopting the duplicate's identifier
     reveals the only identifier we now hold is a preprint one.
 
+    Retraction is the opposite rule. Unlike `is_preprint`, `is_retracted` IS
+    OR'd across a merge: a preprint and its published version are two
+    documents and the flag distinguishes them, but a retraction is a fact
+    about the one work both records describe, so whichever copy carries it,
+    the kept record is retracted.
+
     The abstract is filled only when the kept copy has none. `verify.py`
     checks statistics against the abstract shown to the writer, so pulling a
     different source's wording in under a record identified by the first
@@ -1718,6 +1851,9 @@ def _merge_duplicate(kept: Paper, dup: Paper) -> None:
         kept.is_preprint = kept.is_preprint or _looks_like_preprint("", kept.url)
     if dup.publication_types and not kept.publication_types:
         kept.publication_types = dup.publication_types
+    kept.is_retracted = kept.is_retracted or dup.is_retracted
+    if dup.correction_note and not kept.correction_note:
+        kept.correction_note = dup.correction_note
 
 
 # Constants for the named-source pass (issue #165, #190). Read by pipeline.py.
