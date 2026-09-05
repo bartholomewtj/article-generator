@@ -1317,17 +1317,32 @@ def _writer_context(
     excerpts = full_text_excerpts(papers)
     use_full_text = bool(excerpts)
 
-    omit = {i for i, label in relevance.items() if label == "tangential"}
+    # Retracted records are omitted for a different reason than tangential ones
+    # and it is not a relevance judgement: the model must not be able to cite a
+    # withdrawn paper (#242). They stay in `papers` — the SOURCE index is the
+    # citation scheme and is never re-packed — and stay in the screened count,
+    # which is what Methods reports.
+    retracted = {i for i, p in enumerate(papers, start=1) if p.is_retracted}
+    omit = {i for i, label in relevance.items() if label == "tangential"} | retracted
     context += (
         "Here are the candidate sources with their relevance labels. Choose the ones "
         f"that genuinely support the {kind} and write it.\n\n"
     )
+    tangential = omit - retracted
+    if tangential:
+        context += (
+            f"{len(tangential)} tangential source(s) are counted in the tally above but "
+            "are NOT reproduced below, because they are background only. "
+        )
+    if retracted:
+        context += (
+            f"{len(retracted)} record(s) reported as retracted are also NOT reproduced "
+            "below and must not be cited. "
+        )
     if omit:
         context += (
-            f"{len(omit)} tangential source(s) are counted in the tally above but are "
-            "NOT reproduced below, because they are background only. The numbering "
-            "below is unchanged and has gaps where they were. Cite only sources you "
-            "can actually see.\n\n"
+            "The numbering below is unchanged and has gaps where they were. Cite only "
+            "sources you can actually see.\n\n"
         )
     shown = len(papers) - len(omit)
     target = cite_target(counts.get("direct") if counts else None, shown)

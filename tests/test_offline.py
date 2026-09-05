@@ -2600,6 +2600,263 @@ def test_preprints_are_marked_as_preprints() -> None:
     check("published paper does not inherit preprint flag across merge when kept has DOI", kept_published.is_preprint is False)
 
 
+def test_retracted_records_never_reach_the_writer() -> None:
+    """A clinical evidence tool that cites a retracted paper without saying so
+    has a gap that matters (issue #242). OpenAlex's `is_retracted` and
+    Crossref's `update-to`/`is-corrected-by` are one field away.
+    """
+    import inspect
+
+    from articlegen import render, sources, writer
+    from articlegen.sources import Paper
+
+    # 1. The field is requested.
+    check("OpenAlex asks for is_retracted", "is_retracted" in sources._OA_FIELDS)
+
+    # 2. _openalex_page reads it.
+    oa_payload = {"results": [
+        {
+            "id": "https://openalex.org/W1", "title": "Retracted work",
+            "publication_year": 2024, "cited_by_count": 0,
+            "abstract_inverted_index": {"An": [0], "abstract.": [1]},
+            "authorships": [{"author": {"display_name": "Author A"}}],
+            "primary_location": {"source": {"display_name": ""},
+                                 "landing_page_url": "https://example.org/1"},
+            "doi": "10.1000/retracted-doi",
+            "type": "article",
+            "is_retracted": True,
+        },
+        {
+            "id": "https://openalex.org/W2", "title": "Sound work",
+            "publication_year": 2024, "cited_by_count": 0,
+            "abstract_inverted_index": {"An": [0], "abstract.": [1]},
+            "authorships": [{"author": {"display_name": "Author B"}}],
+            "primary_location": {"source": {"display_name": ""},
+                                 "landing_page_url": "https://example.org/2"},
+            "doi": "10.1000/sound-doi",
+            "type": "article",
+        },
+    ]}
+
+    class FakeOAResp:
+        def json(self):
+            return oa_payload
+
+    real_get = sources._get_with_retry
+    try:
+        sources._get_with_retry = lambda url, params, headers: FakeOAResp()
+        oa_papers = sources._openalex_page("test query", limit=2)
+        check("OpenAlex is_retracted=True is read", oa_papers[0].is_retracted is True)
+        check("absent is_retracted reads False, not None", oa_papers[1].is_retracted is False)
+    finally:
+        sources._get_with_retry = real_get
+
+    # 3. check_record_status
+    real_get = sources._get_with_retry
+    real_ttl = sources._CACHE_TTL
+    sources._CACHE_TTL = 0
+    urls_called: list[str] = []
+
+    def fake_status_get(url, params, headers):
+        urls_called.append(url)
+        if url == sources.OPENALEX_URL:
+            class R:
+                def json(self):
+                    return {"results": [{"id": "W1", "is_retracted": True}]}
+            return R()
+        if url.startswith("https://api.crossref.org"):
+            class R:
+                def json(self):
+                    return {"message": {"update-to": [{"type": "correction"}]}}
+            return R()
+        raise AssertionError(f"unexpected url {url}")
+
+    try:
+        sources._get_with_retry = fake_status_get
+        p = Paper(title="T", abstract="a", doi="10.1000/ss-doi", source="Semantic Scholar")
+        sources.check_record_status(p)
+        check("Semantic Scholar record flagged retracted", p.is_retracted is True)
+        check("Semantic Scholar record gets a correction note", p.correction_note == "Corrected")
+
+        urls_called.clear()
+        p_oa = Paper(title="T", abstract="a", doi="10.1000/oa-doi", source="OpenAlex")
+        sources.check_record_status(p_oa)
+        check("OpenAlex-sourced record makes no OpenAlex retraction call",
+              sources.OPENALEX_URL not in urls_called)
+        check("OpenAlex-sourced record still makes the Crossref call",
+              any(u.startswith("https://api.crossref.org") for u in urls_called))
+
+        def fake_is_corrected_by(url, params, headers):
+            if url == sources.OPENALEX_URL:
+                class R:
+                    def json(self):
+                        return {"results": []}
+                return R()
+            class R:
+                def json(self):
+                    return {"message": {"relation": {"is-corrected-by": [{"id": "10.1/x"}]}}}
+            return R()
+
+        sources._get_with_retry = fake_is_corrected_by
+        p2 = Paper(title="T", abstract="a", doi="10.1000/corrected-doi")
+        sources.check_record_status(p2)
+        check("is-corrected-by relation alone yields Corrected", p2.correction_note == "Corrected")
+
+        def fake_eoc(url, params, headers):
+            if url == sources.OPENALEX_URL:
+                class R:
+                    def json(self):
+                        return {"results": []}
+                return R()
+            class R:
+                def json(self):
+                    return {"message": {"update-to": [{"type": "expression_of_concern"}]}}
+            return R()
+
+        sources._get_with_retry = fake_eoc
+        p3 = Paper(title="T", abstract="a", doi="10.1000/eoc-doi")
+        sources.check_record_status(p3)
+        check("expression_of_concern update type yields the matching note",
+              p3.correction_note == "Expression of concern")
+
+        def fake_empty(url, params, headers):
+            if url == sources.OPENALEX_URL:
+                class R:
+                    def json(self):
+                        return {"results": []}
+                return R()
+            class R:
+                def json(self):
+                    return {"message": {}}
+            return R()
+
+        sources._get_with_retry = fake_empty
+        p4 = Paper(title="T", abstract="a", doi="10.1000/empty-doi")
+        sources.check_record_status(p4)
+        check("no update relation leaves correction_note empty", p4.correction_note == "")
+
+        calls = []
+        sources._get_with_retry = lambda url, params, headers: calls.append(url)
+        p5 = Paper(title="T", abstract="a", doi="")
+        sources.check_record_status(p5)
+        check("a paper with no DOI makes no calls at all", calls == [])
+
+        def fake_fails(url, params, headers):
+            raise sources.SearchFailure("boom")
+
+        sources._get_with_retry = fake_fails
+        p6 = Paper(title="T", abstract="a", doi="10.1000/fails-doi")
+        sources.check_record_status(p6)  # must not raise
+        check("a soft failure leaves the paper untouched",
+              p6.is_retracted is False and p6.correction_note == "")
+    finally:
+        sources._get_with_retry = real_get
+        sources._CACHE_TTL = real_ttl
+
+    # 4. resolve_pmcid keeps its pinned error-handling shape.
+    src = inspect.getsource(sources.resolve_pmcid)
+    check("resolve_pmcid keeps its two named failures", src.count("except SearchFailure") == 2)
+    check("resolve_pmcid keeps its two named failure log lines",
+          src.count("failed for {doi}") == 2)
+    check("resolve_pmcid calls the status check", "check_record_status(" in src)
+
+    # 5. _merge_duplicate: retraction IS OR'd, unlike is_preprint.
+    kept = Paper(title="Dup", abstract="a", doi="10.1000/kept-doi", is_retracted=False)
+    dup = Paper(title="Dup", abstract="a", doi="10.1000/dup-doi", is_retracted=True)
+    sources._merge_duplicate(kept, dup)
+    check("is_retracted IS OR'd across a merge", kept.is_retracted is True)
+
+    kept_published = Paper(title="Published Paper", abstract="Abs",
+                           doi="10.1001/jamapsychiatry.2025.1317", is_preprint=False)
+    dup_arxiv = Paper(title="Published Paper", abstract="Abs",
+                      doi="10.48550/arXiv.1", is_preprint=True)
+    sources._merge_duplicate(kept_published, dup_arxiv)
+    check("is_preprint is still not OR'd across a merge when kept already has a DOI",
+          kept_published.is_preprint is False)
+
+    # 6. The writer never sees a retracted record — the "done means".
+    papers = [
+        Paper(title="First paper", abstract="Abstract one", doi="10.1000/p1", year=2020),
+        Paper(title="Retracted paper", abstract="Abstract two", doi="10.1000/p2",
+              year=2021, is_retracted=True),
+        Paper(title="Third paper", abstract="Abstract three", doi="10.1000/p3", year=2022),
+    ]
+    curation = {
+        "relevance": {1: "direct", 2: "direct", 3: "direct"},
+        "most_relevant_index": 1,
+        "counts": {"direct": 3, "related": 0, "tangential": 0},
+    }
+    context, _ = writer._writer_context("topic", papers, "", curation, kind="briefing")
+    check("retracted paper's title is not in the writer context",
+          "Retracted paper" not in context)
+    check("SOURCE 3 numbering is not re-packed", "SOURCE 3" in context)
+    check("SOURCE 2 block is gone", "SOURCE 2\n" not in context)
+    check("the context names a retracted record as withheld",
+          "retracted" in context.lower())
+
+    format_only = writer._format_sources(papers, omit={2})
+    check("_format_sources omits by index the same way", "Retracted paper" not in format_only)
+    check("_format_sources keeps the untouched numbering", "SOURCE 3" in format_only)
+
+    # 7. Table 1 and Methods.
+    retracted_paper = Paper(title="Retracted Study", abstract="Abs", doi="10.1000/r1",
+                            year=2021, venue="Some Journal", is_retracted=True)
+    journal_paper = Paper(title="Journal Study", abstract="Abs", doi="10.1000/j1",
+                          year=2021, venue="Another Journal")
+    cited_pair = [retracted_paper, journal_paper]
+    check("Table 1 HTML prints Retracted", "Retracted" in render._table_html(cited_pair, {}))
+    check("Table 1 Markdown prints Retracted", "Retracted" in render._table_markdown(cited_pair, {}))
+
+    check("_retracted_count counts screened retracted records",
+          render._retracted_count(papers) == 1)
+
+    with_retractions = render._methods_paragraphs(None, 40, 8, "topic", n_retracted=2)["search"]
+    check("Methods names the retraction count", "2" in with_retractions)
+    check("Methods says 'retracted'", "retracted" in with_retractions.lower())
+    without_retractions = render._methods_paragraphs(None, 40, 8, "topic", n_retracted=0)["search"]
+    check("Methods says nothing about retraction when there is none",
+          "retracted" not in without_retractions.lower())
+    for word in ("GRADE", "risk of bias", "quality", "appraisal"):
+        check(f"Methods retraction sentence carries no {word!r}",
+              word.lower() not in with_retractions.lower())
+
+    # 8. The correction note reaches both renderers, and a corrected paper is
+    # never omitted.
+    corrected_paper = Paper(title="Corrected Study", abstract="Abs", doi="10.1000/c1",
+                            year=2022, venue="Journal X", correction_note="Corrected")
+    plain_paper = Paper(title="Plain Study", abstract="Abs", doi="10.1000/pl1",
+                        year=2022, venue="Journal Y")
+    correction_pair = [corrected_paper, plain_paper]
+    article_payload = {
+        "title": "A Test Review Article",
+        "abstract": "Summary with references [1] and [2].",
+        "keywords": ["testing"],
+        "evidence_note": "Evidence note [1].",
+        "featured_study": {"source_index": 1, "method": "Trial", "results": "Results"},
+        "sections": [
+            {"heading": "Introduction", "paragraphs": ["Intro referencing [1] and [2]."]},
+            {"heading": "Conclusions", "paragraphs": ["Conclusion [1]."]},
+        ],
+        "key_points": ["Key point referencing [2]."],
+        "glossary": [],
+        "references": [1, 2],
+    }
+    h_out = render.render_article(article_payload, correction_pair, "test topic", None, None, None)
+    md_out = render.render_markdown(article_payload, correction_pair, "test topic", None, None, None)
+    check("HTML render has the correction note exactly once", h_out.count("(Corrected)") == 1)
+    check("Markdown render has the correction note exactly once", md_out.count("(Corrected)") == 1)
+
+    corrected_curation = {
+        "relevance": {1: "direct", 2: "direct"},
+        "most_relevant_index": 1,
+        "counts": {"direct": 2, "related": 0, "tangential": 0},
+    }
+    corrected_context, _ = writer._writer_context(
+        "topic", correction_pair, "", corrected_curation, kind="briefing")
+    check("a corrected paper is not omitted from the writer context",
+          "Corrected Study" in corrected_context)
+
+
 def test_arxiv_rate_limit_is_honoured() -> None:
     """arXiv asks for three seconds between requests; there is no key to throttle.
 
@@ -7771,7 +8028,12 @@ def test_one_papers_process_per_run() -> None:
     real_which = paperfetch.shutil.which
     saved_env = {k: os.environ.get(k) for k in
                  ("PAPERS_MAILTO", "OPENALEX_MAILTO", "UNPAYWALL_EMAIL",
-                  "SEMANTIC_SCHOLAR_API_KEY", "ARTICLEGEN_PAPERS_CMD")}
+                  "SEMANTIC_SCHOLAR_API_KEY", "ARTICLEGEN_PAPERS_CMD",
+                  # The assertions below assume the local prefetch limit
+                  # (`MAX_FULLTEXT_REQUESTS`), not the hosted one
+                  # (`FULLTEXT_TARGET`) — this test must not depend on
+                  # whatever the ambient shell happens to have set.
+                  "ARTICLEGEN_STATELESS")}
 
     def reset_paperfetch():
         paperfetch._AVAILABLE = None
@@ -8104,6 +8366,14 @@ def test_pmcid_is_resolved_by_doi() -> None:
     calls: list[str] = []
 
     def fake_get(url, params, headers):
+        # `resolve_pmcid` now also runs `check_record_status` (#242), which
+        # calls OpenAlex and Crossref by DOI. This test is about the Europe
+        # PMC lookup specifically, so only that call is tracked in `calls`;
+        # the retraction/correction checks get an empty, harmless answer.
+        if url == sources.OPENALEX_URL:
+            return FakeResp({"results": []})
+        if url.startswith("https://api.crossref.org"):
+            return FakeResp({"message": {}})
         query = (params or {}).get("query", "")
         calls.append(query)
         doi = query.removeprefix('DOI:"').removesuffix('"')
@@ -9292,6 +9562,7 @@ def main(argv: list[str] | None = None) -> int:
         test_arxiv_parsing, test_titles_arrive_without_markup,
         test_candidate_papers_dedupe_by_doi,
         test_preprints_are_marked_as_preprints,
+        test_retracted_records_never_reach_the_writer,
         test_arxiv_rate_limit_is_honoured,
         test_ungrounded_citations_leave_no_trace,
         test_second_hand_figures_are_a_last_resort,
