@@ -323,6 +323,12 @@ intervention/mechanism, right question).
 right disorder but a different question. Useful for context, not direct evidence.
 - "tangential": only good for background or framing sentences.
 
+When the prompt names the population, intervention or exposure, comparator or \
+outcome, those named parts ARE the exact topic: a source that studies a \
+different population, or reports none of the named outcome, is "related" at \
+best. A part that is not named does not narrow anything — do not invent one and \
+do not downgrade a source for failing a criterion nobody stated.
+
 Be strict. A famous review that never studies the specific topic is "tangential" or \
 "related", not "direct". Then name the single most relevant study to feature."""
 
@@ -920,6 +926,72 @@ is and stay attached to the same claim.
 """
 
 
+# The idea card may name the question's parts. Naming them once at the ideas
+# stage is cheaper than making the planner and the curator re-derive the
+# population and the outcome from the title on every run (#247). All four are
+# optional: a card that names none of them behaves exactly as it did before.
+PICO_FIELDS = ("population", "intervention", "comparator", "outcome")
+PICO_LABELS = {
+    "population": "Population",
+    "intervention": "Intervention or exposure",
+    "comparator": "Comparator",
+    "outcome": "Outcome",
+}
+# A prompt-injection and cost bound, not a style rule: these strings are model
+# output on the CLI path and caller input on the web path.
+MAX_PICO_CHARS = 200
+
+
+def clean_pico(pico) -> dict:
+    """Keep only the four known PICO keys with a non-empty string value.
+
+    Strips whitespace, drops blanks, drops non-strings, drops unknown keys,
+    caps each value at MAX_PICO_CHARS, and returns {} for None or a non-dict.
+    Key order follows PICO_FIELDS so the prompt block is stable between runs.
+    """
+    if not isinstance(pico, dict):
+        return {}
+    cleaned: dict[str, str] = {}
+    for field in PICO_FIELDS:
+        value = pico.get(field)
+        if not isinstance(value, str):
+            continue
+        value = value.strip()
+        if not value:
+            continue
+        cleaned[field] = value[:MAX_PICO_CHARS]
+    return cleaned
+
+
+def format_pico(pico) -> str:
+    """The PICO block for a prompt, or "" when nothing usable was supplied.
+
+    Runs `clean_pico` itself, so callers can pass raw input. Shape:
+
+        The question this briefing answers, as named at the ideas stage:
+          Population: adults admitted to an acute mental health unit
+          Outcome: seclusion episodes per 1,000 bed days
+        Only the parts listed are specified; a part that is not listed does
+        not narrow the topic.
+
+    Ends with a blank line when non-empty so callers can concatenate it directly.
+    """
+    cleaned = clean_pico(pico)
+    if not cleaned:
+        return ""
+    lines = [
+        "The question this briefing answers, as named at the ideas stage:",
+    ]
+    for field in PICO_FIELDS:
+        if field in cleaned:
+            lines.append(f"  {PICO_LABELS[field]}: {cleaned[field]}")
+    lines.append(
+        "Only the parts listed are specified; a part that is not listed does "
+        "not narrow the topic."
+    )
+    return "\n".join(lines) + "\n\n"
+
+
 def clean_search_terms(terms) -> list[str]:
     """Strip, drop blanks, drop case-insensitive duplicates, keep order,
     cap the count and each term's length."""
@@ -949,15 +1021,18 @@ def plan_queries(
     api_key: str | None = None,
     *,
     search_terms: list[str] | None = None,
+    pico: dict | None = None,
     log: Callable[[str], None] = lambda msg: None,
 ) -> tuple[list[str], str]:
     """Turn the topic into scholarly queries and identify its core on-topic entity."""
     supplied = clean_search_terms(search_terms)
+    pico_block = format_pico(pico)
     if not supplied:
         result = generate_json(
             (
                 "I want journal articles to support an evidence briefing about: "
                 f"{topic!r}\n\n"
+                f"{pico_block}"
                 "Give 2-4 short keyword queries for scholarly search engines (Semantic "
                 "Scholar / OpenAlex). Use researcher terminology. IMPORTANT: make at least "
                 "one query specific enough to find work on the exact subject (include the "
@@ -976,6 +1051,7 @@ def plan_queries(
             planned_lines = "\n".join(f"  {i}. {q}" for i, q in enumerate(queries, 1))
             follow_prompt = (
                 f"I want journal articles to support an evidence briefing about: {topic!r}\n\n"
+                f"{pico_block}"
                 "These queries were planned for this question:\n"
                 f"{planned_lines}\n\n"
                 "These terms all search the same route — they re-word one another. Return "
@@ -1023,6 +1099,7 @@ def plan_queries(
         log(f"Supplied search terms are near-duplicates ({routes} route); requiring one distinct extra query")
         prompt = (
             f"I want journal articles to support an evidence briefing about: {topic!r}\n\n"
+            f"{pico_block}"
             "These scholarly search terms were already chosen for this question and will "
             "be searched as they stand:\n"
             f"{terms_lines}\n"
@@ -1039,6 +1116,7 @@ def plan_queries(
     else:
         prompt = (
             f"I want journal articles to support an evidence briefing about: {topic!r}\n\n"
+            f"{pico_block}"
             "These scholarly search terms were already chosen for this question and will "
             "be searched as they stand:\n"
             f"{terms_lines}\n"
@@ -1207,6 +1285,7 @@ CURATION_ABSTRACT_CHARS = None
 def curate_sources(
     topic: str, papers: list[Paper], model: str | None = None, api_key: str | None = None,
     abstract_chars: int | None = None,
+    *, pico: dict | None = None,
 ) -> dict:
     """Score each paper's relevance to the exact topic. Returns:
     {relevance: {index: label}, most_relevant_index: int,
@@ -1227,7 +1306,8 @@ def curate_sources(
     limit = abstract_chars if abstract_chars is not None else CURATION_ABSTRACT_CHARS
     try:
         result = generate_json(
-            f"Topic: {topic}\n\nRate each source's relevance to that exact topic.\n\n"
+            f"Topic: {topic}\n\n{format_pico(pico)}"
+            "Rate each source's relevance to that exact topic.\n\n"
             + _format_sources(papers, abstract_chars=limit),
             _CURATE_SCHEMA,
             system=_CURATE_SYSTEM,

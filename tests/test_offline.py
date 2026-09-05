@@ -821,7 +821,163 @@ def test_idea_search_terms_reach_the_draft() -> None:
     check("index.html sends search_terms in /api/draft body",
           "search_terms: terms" in index_html or "search_terms:" in index_html)
     check("index.html passes terms to selectDraft in renderDraftCards",
-          "selectDraft(idea.title, terms)" in index_html)
+          "selectDraft(idea.title, terms, pico)" in index_html)
+
+
+def test_idea_pico_reaches_the_curator() -> None:
+    """A card's population/intervention/comparator/outcome reach the planner and the curator (#247)."""
+    import inspect
+    from articlegen import ideas, pipeline, web, writer
+    from articlegen.sources import Paper
+
+    # 1-5. writer.clean_pico / format_pico
+    check("clean_pico strips, drops blanks/non-strings/unknown keys",
+          writer.clean_pico({"population": "  adults ", "outcome": "", "intervention": None,
+                              "comparator": 7, "junk": "x"}) == {"population": "adults"})
+    check("clean_pico(None) is empty", writer.clean_pico(None) == {})
+    check("clean_pico on non-dict is empty", writer.clean_pico("not a dict") == {})
+    long_value = "x" * (writer.MAX_PICO_CHARS + 50)
+    capped = writer.clean_pico({"population": long_value})
+    check("clean_pico caps a value at MAX_PICO_CHARS",
+          len(capped["population"]) == writer.MAX_PICO_CHARS)
+    check("format_pico({}) is empty string", writer.format_pico({}) == "")
+    only_pop = writer.format_pico({"population": "adults"})
+    check("format_pico contains the named field", "Population: adults" in only_pop)
+    check("format_pico omits an unnamed field", "Outcome" not in only_pop)
+    out_of_order = writer.clean_pico({"outcome": "o", "population": "p"})
+    check("clean_pico key order follows PICO_FIELDS",
+          list(out_of_order.keys()) == ["population", "outcome"])
+
+    # 6-9. curate_sources prompt
+    saved_generate_json = writer.generate_json
+    captured_prompts: list[str] = []
+    try:
+        def fake_generate(prompt, schema, **kw):
+            captured_prompts.append(prompt)
+            return {"assessments": [{"index": 1, "relevance": "direct"}], "most_relevant_index": 1}
+
+        writer.generate_json = fake_generate
+        paper = Paper(title="p1", abstract="a", pmcid="PMC1", is_open_access=True)
+
+        writer.curate_sources("topic", [paper], pico={"population": "PICO-POP", "outcome": "PICO-OUT"})
+        check("curation prompt contains the supplied population",
+              "PICO-POP" in captured_prompts[-1])
+        check("curation prompt contains the supplied outcome",
+              "PICO-OUT" in captured_prompts[-1])
+        check("curation prompt labels the population", "Population:" in captured_prompts[-1])
+        check("curation prompt labels the outcome", "Outcome:" in captured_prompts[-1])
+
+        writer.curate_sources("topic", [paper])
+        check("curation prompt with no pico has no Population label",
+              "Population:" not in captured_prompts[-1])
+        check("curation prompt with no pico has no pico opening sentence",
+              "as named at the ideas stage" not in captured_prompts[-1])
+
+        writer.curate_sources("topic", [paper], pico={"population": "PICO-POP", "outcome": "PICO-OUT"})
+        check("curation prompt with population+outcome only has no Comparator label",
+              "Comparator" not in captured_prompts[-1])
+
+        check("_CURATE_SYSTEM says an unnamed part does not narrow the topic",
+              "does not narrow" in writer._CURATE_SYSTEM)
+
+        # 10-11. planner prompt
+        captured_prompts.clear()
+        writer.plan_queries("topic", search_terms=["a"], pico={"population": "PICO-POP"})
+        check("planner prompt contains the supplied population",
+              "PICO-POP" in captured_prompts[-1])
+
+        captured_prompts.clear()
+        writer.plan_queries("topic")
+        check("planner prompt with no pico has no Population label",
+              "Population:" not in captured_prompts[-1])
+    finally:
+        writer.generate_json = saved_generate_json
+
+    # 12-13. pipeline.generate_draft forwards pico
+    captured_plan_kw: dict = {}
+    captured_curate_kw: dict = {}
+    papers = [Paper(title=f"p{i}", abstract="a", pmcid=f"PMC{i}", is_open_access=True)
+              for i in range(1, 5)]
+    article = {"title": "t", "abstract": "x", "keywords": [], "sections": [],
+               "key_points": [], "glossary": [], "references": [1]}
+    curation = {"relevance": {1: "direct", 2: "tangential", 3: "related", 4: "direct"},
+                "most_relevant_index": 1,
+                "counts": {"direct": 2, "related": 1, "tangential": 1}}
+
+    saved_pipeline = (
+        pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
+        pipeline.write_article, pipeline.write_briefing, pipeline.fetch_full_text,
+        pipeline.enforce_style,
+    )
+    try:
+        pipeline.plan_queries = lambda topic, **kw: (captured_plan_kw.update(kw) or (["q"], "core"))
+        def fake_gather(queries, **kw):
+            kw.get("outcomes", []).append(
+                {"source": "europe_pmc", "query": "q", "count": 4, "error": "", "cached": False})
+            return papers
+        pipeline.gather_evidence = fake_gather
+        def fake_curate(topic, p, **kw):
+            captured_curate_kw.update(kw)
+            return curation
+        pipeline.curate_sources = fake_curate
+        pipeline.write_article = lambda topic, p, **kw: dict(article)
+        pipeline.write_briefing = pipeline.write_article
+        pipeline.fetch_full_text = lambda p, use_cache=True: "body text"
+        pipeline.enforce_style = lambda a, **kw: (a, {"issues": [], "stats": {}})
+
+        pipeline.generate_draft("topic", pico={"population": "adults", "junk": "x"})
+        check("pipeline passes cleaned pico to curate_sources",
+              captured_curate_kw.get("pico") == {"population": "adults"})
+        check("pipeline passes the same cleaned pico to plan_queries",
+              captured_plan_kw.get("pico") == {"population": "adults"})
+
+        captured_curate_kw.clear()
+        pipeline.generate_draft("topic")
+        check("draft with no card keeps working: curator called with pico absent or empty",
+              not captured_curate_kw.get("pico"))
+    finally:
+        (
+            pipeline.plan_queries, pipeline.gather_evidence, pipeline.curate_sources,
+            pipeline.write_article, pipeline.write_briefing, pipeline.fetch_full_text,
+            pipeline.enforce_style,
+        ) = saved_pipeline
+
+    # 14. web
+    web_src = inspect.getsource(web.ArticleGenHandler._handle_draft)
+    check("web handler reads pico from payload", 'payload.get("pico")' in web_src)
+    check("web handler forwards pico to generate_draft", "pico=pico" in web_src)
+
+    # 15-17. front end
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    index_html = open(os.path.join(root, "index.html"), encoding="utf-8").read()
+    check("index.html sends pico in /api/draft body", "pico: pico" in index_html)
+    check("index.html passes pico from renderDraftCards to selectDraft",
+          "selectDraft(idea.title, terms, pico)" in index_html)
+    check("index.html renders the PICO labels on the card",
+          "Population" in index_html and "draft-pico" in index_html)
+
+    # 18-20. ideas
+    item_props = ideas._IDEAS_SCHEMA["properties"]["ideas"]["items"]["properties"]
+    item_required = ideas._IDEAS_SCHEMA["properties"]["ideas"]["items"]["required"]
+    for field in ("population", "intervention", "comparator", "outcome"):
+        check(f"_IDEAS_SCHEMA declares {field}", field in item_props)
+        check(f"_IDEAS_SCHEMA requires {field} (strict-schema trap)", field in item_required)
+
+    full_card = {
+        "title": "t", "angle": "a", "search_terms": ["x"],
+        "population": "adults", "intervention": "drug", "comparator": "",
+        "outcome": "seclusion episodes",
+    }
+    md = ideas.ideas_to_markdown("theme", [full_card])
+    check("ideas_to_markdown renders a named PICO field",
+          "*Population:* adults" in md and "seclusion episodes" in md)
+    check("ideas_to_markdown omits an empty PICO field",
+          "*Comparator:*" not in md)
+
+    bare_card = {"title": "t", "angle": "a", "search_terms": ["x"]}
+    md_bare = ideas.ideas_to_markdown("theme", [bare_card])
+    check("ideas_to_markdown with no PICO keys does not raise and adds no PICO text",
+          "Population" not in md_bare)
 
 
 def test_paraphrase_terms_buy_a_distinct_query() -> None:
@@ -9849,6 +10005,7 @@ def main(argv: list[str] | None = None) -> int:
         test_refusal_fallbacks,
         test_pipeline_is_shared,
         test_idea_search_terms_reach_the_draft,
+        test_idea_pico_reaches_the_curator,
         test_paraphrase_terms_buy_a_distinct_query,
         test_dead_sources_fail_before_the_caller_is_billed,
         test_draft_summary, test_run_manifest_round_trips, test_rate_limit,

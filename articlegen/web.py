@@ -51,7 +51,7 @@ from .render import (
 )
 from .sources import DEFAULT_MAX_PAPERS, gather_evidence, probe_unpaywall
 from .style import errors as style_errors
-from .writer import clean_search_terms
+from .writer import clean_pico, clean_search_terms
 
 DRAFTS_DIR = "drafts"
 
@@ -663,6 +663,13 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
             return
         search_terms = clean_search_terms(raw_terms)
 
+        raw_pico = payload.get("pico")
+        if raw_pico is not None and not isinstance(raw_pico, dict):
+            self._note_run(error="bad_pico")
+            self._send_json({"error": "pico must be an object of strings."}, status=400)
+            return
+        pico = clean_pico(raw_pico)
+
         if self._missing_key(api_key) or self._over_rate_limit():
             return
 
@@ -671,6 +678,7 @@ class ArticleGenHandler(SimpleHTTPRequestHandler):
                 topic, style_note=style[:500], max_papers=DEFAULT_MAX_PAPERS, api_key=api_key,
                 model=model, log=self._log_stage,
                 search_terms=search_terms,
+                pico=pico,
             )
         except NoPapersFound as exc:
             self._note_run(error=type(exc).__name__)

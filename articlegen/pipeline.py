@@ -35,7 +35,7 @@ from .style import (SUBSTANCE_RULES, check_style, errors as style_errors,
                     format_report as format_style, revision_brief)
 from .verify import check_statistics, revision_brief as statistics_brief
 from .render import _au_date
-from .writer import (cite_target, clean_search_terms, curate_sources,
+from .writer import (cite_target, clean_pico, clean_search_terms, curate_sources,
                      is_briefing, plan_queries, revise_prose,
                      revise_statistics, write_article, write_briefing)
 
@@ -589,6 +589,7 @@ def _referenced_source_pass(
     api_key: str | None = None,
     log: Logger = _silent,
     core_entity: str = "",
+    pico: dict | None = None,
 ) -> dict:
     """One-hop citation follow-up (issue #243).
 
@@ -685,7 +686,7 @@ def _referenced_source_pass(
         f"{len(new_papers)} new after dedupe")
 
     if new_papers:
-        new_curation = curate_sources(topic, new_papers, model=model, api_key=api_key)
+        new_curation = curate_sources(topic, new_papers, model=model, api_key=api_key, pico=pico)
         new_rel = new_curation.get("relevance") or {}
         if new_rel:
             for local_idx, label in new_rel.items():
@@ -718,6 +719,7 @@ def _named_source_pass(
     log: Logger = _silent,
     outcomes: list[dict] | None = None,
     core_entity: str = "",
+    pico: dict | None = None,
 ) -> dict:
     """Follow up papers and trials named in the top curated abstracts.
 
@@ -781,7 +783,7 @@ def _named_source_pass(
             + "; ".join(f"{q!r}" for q in dropped))
 
     if new_papers:
-        new_curation = curate_sources(topic, new_papers, model=model, api_key=api_key)
+        new_curation = curate_sources(topic, new_papers, model=model, api_key=api_key, pico=pico)
         new_rel = new_curation.get("relevance") or {}
         if new_rel:
             for local_idx, label in new_rel.items():
@@ -814,6 +816,7 @@ def generate_draft(
     log: Logger = _silent,
     long: bool = False,
     search_terms: list[str] | None = None,
+    pico: dict | None = None,
 ) -> Draft:
     """Research and write one briefing (or a `--long` Review). Raises NoPapersFound
     if the search comes back empty.
@@ -831,9 +834,13 @@ def generate_draft(
     if supplied:
         log(f"Using {len(supplied)} search term(s) from the idea card: "
             + "; ".join(supplied) + " (the planner may add one more)")
+    card_pico = clean_pico(pico)
+    if card_pico:
+        log("Idea card names: " + ", ".join(card_pico))
     log(f"Planning search queries for: {topic}")
     queries, core_entity = plan_queries(
-        topic, model=model, api_key=api_key, search_terms=supplied, log=log
+        topic, model=model, api_key=api_key, search_terms=supplied,
+        pico=card_pico, log=log,
     )
     log("Queries: " + "; ".join(queries) + (f"  (core: {core_entity})" if core_entity else ""))
 
@@ -869,7 +876,7 @@ def generate_draft(
     _note_sources_answered()
 
     log("Assessing source relevance...")
-    curation = curate_sources(topic, papers, model=model, api_key=api_key)
+    curation = curate_sources(topic, papers, model=model, api_key=api_key, pico=card_pico)
     counts = curation.get("counts") or {}
     if counts:
         log(f"  relevance: {counts.get('direct', 0)} direct / "
@@ -903,7 +910,7 @@ def generate_draft(
     # before the full-text loop so it can be deep-read.
     referenced = _referenced_source_pass(
         topic, papers, curation, exhausted, model=model, api_key=api_key,
-        log=log, core_entity=core_entity,
+        log=log, core_entity=core_entity, pico=card_pico,
     )
 
     # Named-source pass (issue #165): look up landmark papers/trials named in
@@ -912,7 +919,7 @@ def generate_draft(
     # deep-read.
     named = _named_source_pass(
         topic, papers, curation, exhausted, model=model, api_key=api_key, log=log,
-        outcomes=outcomes, core_entity=core_entity,
+        outcomes=outcomes, core_entity=core_entity, pico=card_pico,
     )
 
     # Full-text grounding used to run *before* the writer chose citations, so
