@@ -34,3 +34,6 @@ jobs:
 
       - name: Journal format conformance
         run: python tests/test_journal_conformance.py
+
+      - name: Manifest replays
+        run: python tests/test_replays.py

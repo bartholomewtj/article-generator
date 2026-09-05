@@ -387,6 +387,8 @@ tests/
   test_offline.py             pure-logic tests (no keys, no network)
   test_journal_conformance.py the journal conventions, as assertions over
                               rendered fixtures — run both before shipping
+  test_replays.py             real run manifests, replayed through the
+                              writer-free stages (tests/replays/)
 ```
 
 ## Tests
@@ -394,7 +396,20 @@ tests/
 ```bash
 python tests/test_offline.py             # provider, citations, render blocks
 python tests/test_journal_conformance.py # journal conventions over 5 fixtures
+python tests/test_replays.py             # real run manifests replayed offline
 ```
+
+`tests/replays/` holds run manifests copied verbatim from `drafts/` — a
+manifest is the JSON `articlegen draft` also writes: the whole pool of papers
+it screened, the relevance labels, the full-text excerpts the writer was
+shown, and the article it wrote. `test_replays.py` reruns the deterministic
+stages (`verify.check_statistics`, `style.check_style`, `sources.full_text_order`,
+`writer.cite_target`, both renderers) against a real manifest and pins the
+counts the run had when it was accepted. That catches what a hand-built
+fixture cannot: a fixture only ever proves the code agrees with data someone
+wrote to make it pass, while a real manifest is data nobody adjusted to be
+convenient. Files in `tests/replays/` are the record of a real run — do not
+edit, reformat or regenerate them.
 
 Run them as scripts, the way CI does. Both print one `OK`/`FAIL` line per
 check, collect every failure, and exit non-zero — so one broken check does not
