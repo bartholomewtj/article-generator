@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .llm import generate_json
+from .writer import PICO_FIELDS, PICO_LABELS
 
 _IDEAS_SCHEMA = {
     "type": "object",
@@ -30,8 +31,31 @@ _IDEAS_SCHEMA = {
                         "items": {"type": "string"},
                         "description": "2-3 scholarly search terms this question would draw on",
                     },
+                    "population": {
+                        "type": "string",
+                        "description": "Who the question is about — the population or setting. "
+                                       "Empty string if the question does not specify one.",
+                    },
+                    "intervention": {
+                        "type": "string",
+                        "description": "The intervention or exposure being asked about. Empty "
+                                       "string if the question does not specify one.",
+                    },
+                    "comparator": {
+                        "type": "string",
+                        "description": "What it is compared against (usual care, placebo, another "
+                                       "intervention). Empty string when there is no comparison.",
+                    },
+                    "outcome": {
+                        "type": "string",
+                        "description": "The outcome the question turns on. Empty string if the "
+                                       "question does not specify one.",
+                    },
                 },
-                "required": ["title", "angle", "search_terms"],
+                "required": [
+                    "title", "angle", "search_terms",
+                    "population", "intervention", "comparator", "outcome",
+                ],
                 "additionalProperties": False,
             },
         }
@@ -54,6 +78,9 @@ than you think".
 honest case that the evidence is thin.
 - Titled descriptively, in sentence case: names the question, does not claim \
 the result.
+- Broken out: name the population, the intervention or exposure, the comparator \
+and the outcome as separate fields where the question has them, and leave a \
+field empty rather than inventing one.
 
 Do not write popular-science pitches, tension-for-its-own-sake, or clickbait.
 """
@@ -85,6 +112,10 @@ def ideas_to_markdown(theme: str, ideas: list[dict]) -> str:
         lines.append(idea["angle"])
         lines.append("")
         lines.append(f"*Search terms:* {', '.join(idea['search_terms'])}")
+        for field in PICO_FIELDS:
+            value = (idea.get(field) or "").strip()
+            if value:
+                lines.append(f"*{PICO_LABELS[field]}:* {value}")
         lines.append("")
     lines.append("---")
     lines.append("")

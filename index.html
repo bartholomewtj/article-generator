@@ -352,6 +352,13 @@
     border-radius: 99px;
     border: 1px solid var(--line);
   }
+  .draft-pico {
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin: 0 0 0.8rem;
+    line-height: 1.5;
+  }
+  .draft-pico b { font-weight: 650; color: var(--ink); }
 
   .btn-select {
     width: 100%;
@@ -1373,6 +1380,13 @@
     }
   }
 
+  const PICO_LABELS = {
+    population: 'Population',
+    intervention: 'Intervention',
+    comparator: 'Comparator',
+    outcome: 'Outcome'
+  };
+
   function renderDraftCards(theme, ideas) {
     document.getElementById('themeLabel').innerText = 'Theme: ' + theme;
     const container = document.getElementById('draftsList');
@@ -1384,24 +1398,38 @@
       const terms = (idea.search_terms || []).filter(t => typeof t === 'string');
       const termsHtml = terms.map(t => `<span class="draft-term">${escapeHtml(t)}</span>`).join(' ');
 
+      const pico = {};
+      Object.keys(PICO_LABELS).forEach(function (k) {
+        const v = (typeof idea[k] === 'string' ? idea[k] : '').trim();
+        if (v) pico[k] = v;
+      });
+      const picoHtml = Object.keys(pico).length
+        ? '<p class="draft-pico">' + Object.keys(PICO_LABELS)
+            .filter(k => pico[k])
+            .map(k => `<b>${PICO_LABELS[k]}:</b> ${escapeHtml(pico[k])}`)
+            .join('<br>') + '</p>'
+        : '';
+
       card.innerHTML = `
         <span class="draft-num">Idea #${idx + 1}</span>
         <h3 class="draft-title">${escapeHtml(idea.title)}</h3>
         <p class="draft-angle">${escapeHtml(idea.angle)}</p>
+        ${picoHtml}
         <div class="draft-terms">${termsHtml}</div>
         <button class="btn-select">Generate Full Article →</button>
       `;
       card.querySelector('.btn-select').onclick = function () {
-        selectDraft(idea.title, terms);
+        selectDraft(idea.title, terms, pico);
       };
       container.appendChild(card);
     });
   }
 
-  async function selectDraft(title, searchTerms) {
+  async function selectDraft(title, searchTerms, cardPico) {
     const terms = Array.isArray(searchTerms) ? searchTerms : [];
+    const pico = (cardPico && typeof cardPico === 'object') ? cardPico : {};
     currentTitle = title;
-    lastAction = function () { selectDraft(title, terms); };
+    lastAction = function () { selectDraft(title, terms, pico); };
     hideProgressError();
     document.getElementById('progressTitle').innerText = title;
     showView('progressView');
@@ -1457,7 +1485,8 @@
           body: JSON.stringify({
             topic: title,
             style: styleGuidance(style),
-            search_terms: terms
+            search_terms: terms,
+            pico: pico
           })
         });
       } catch (netErr) {
