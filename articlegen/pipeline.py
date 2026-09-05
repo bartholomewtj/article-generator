@@ -170,6 +170,7 @@ def _retrieve_full_texts(
     papers: list[Paper],
     order: list[int],
     log: Logger,
+    use_cache: bool = True,
 ) -> tuple[list[int], int, int, int, int, str]:
     """Fetch open-access full text for papers in `order`.
 
@@ -218,7 +219,7 @@ def _retrieve_full_texts(
             continue
         requests_spent += 1
         try:
-            text = fetch_full_text(paper, log=log)
+            text = fetch_full_text(paper, log=log, use_cache=use_cache)
         except TypeError:
             text = fetch_full_text(paper)
         if text:
@@ -330,6 +331,15 @@ class Draft:
             r for r in self.article.get("references", [])
             if isinstance(r, int) and 1 <= r <= len(self.papers)
         }
+
+    def paywalled_cited(self) -> list[Paper]:
+        """Cited papers `papers` confirmed have no open-access copy."""
+        return [
+            self.papers[i - 1]
+            for i in sorted(self.cited_refs)
+            if self.papers[i - 1].full_text_not_oa
+            and _normalize_doi(self.papers[i - 1].doi)
+        ]
 
     def summary(self) -> str:
         """One greppable line: what was cited, and what to distrust.
@@ -800,6 +810,7 @@ def generate_draft(
             f"MAX_FULLTEXT_REQUESTS would find more, at more requests against "
             "the shared Europe PMC quota.")
     log("  " + _read_subset_skew(papers, fetched))
+    _log_paywalled_cited(papers, cited_set, log)
 
     if fetched:
         log("Rewriting with cited full text...")
@@ -857,6 +868,117 @@ def generate_draft(
     }
     if named.get("queries"):
         provenance["named_sources"] = {"queries": named["queries"], "added": named["added"]}
+
+    return Draft(
+        topic=topic,
+        article=article,
+        papers=papers,
+        curation=curation,
+        verification=verification,
+        provenance=provenance,
+        style_report=style_report,
+        excerpts=excerpts,
+    )
+
+
+def _log_paywalled_cited(papers: list[Paper], cited: set[int], log: Logger) -> None:
+    """One heading, then each paywalled cited DOI. Zero cost; always logged."""
+    rows = [
+        papers[i - 1]
+        for i in sorted(cited)
+        if papers[i - 1].full_text_not_oa and _normalize_doi(papers[i - 1].doi)
+    ]
+    if not rows:
+        return
+    log("Paywalled cited sources (one CKN download away):")
+    for paper in rows:
+        log(f"  {_normalize_doi(paper.doi)}  {paper.title}")
+
+
+def _clear_fetched_text(papers: list[Paper]) -> None:
+    for paper in papers:
+        paper.full_text = ""
+        paper.full_text_via = ""
+        paper.full_text_not_oa = False
+
+
+def rerun_draft(
+    draft: Draft,
+    *,
+    model: str | None = None,
+    api_key: str | None = None,
+    log: Logger = _silent,
+    long: bool = False,
+) -> Draft:
+    """Reuse a run's pool and labels; fetch full text again; rewrite.
+
+    Search and curation are skipped. The cited set is the first run's.
+    `use_cache=False` so an ingest since that run is visible, not the
+    articlegen failure cache from the first pass.
+    """
+    papers = draft.papers
+    curation = draft.curation
+    topic = draft.topic
+    _clear_fetched_text(papers)
+
+    cited_set = set(_cited_indices(draft.article, len(papers)))
+    relevance = curation.get("relevance") or {}
+    order = [i for i in full_text_order(papers, relevance) if i in cited_set]
+
+    compose = write_article if long else write_briefing
+    log("Fetching open-access full texts of cited sources...")
+    fetched, eligible, no_open_access, fetch_failed, requests_spent, stopped = (
+        _retrieve_full_texts(papers, order, log, use_cache=False))
+
+    n_papers_via = sum(1 for i in fetched if papers[i - 1].full_text_via == "papers")
+    n_epmc_via = sum(1 for i in fetched if papers[i - 1].full_text_via == "europe_pmc")
+    breakdown = ""
+    if n_papers_via > 0 and n_epmc_via > 0:
+        breakdown = f" ({n_papers_via} via papers, {n_epmc_via} via Europe PMC)"
+    elif n_papers_via > 0:
+        breakdown = f" ({n_papers_via} via papers)"
+
+    log(f"  full text retrieved for {len(fetched)} cited source(s)"
+        + (f": {fetched}" if fetched else " (none)")
+        + f" in {requests_spent} request(s){breakdown}")
+    log(f"  stopped because: {stopped}. Of {eligible} eligible cited source(s), "
+        f"{no_open_access} had no open-access copy and {fetch_failed} were "
+        "open access but returned no text.")
+    log("  " + _read_subset_skew(papers, fetched))
+    _log_paywalled_cited(papers, cited_set, log)
+
+    article = draft.article
+    if fetched:
+        log("Rewriting with cited full text...")
+        try:
+            article = compose(
+                topic, papers, model=model, style_note="",
+                curation=curation, api_key=api_key,
+            )
+        except Exception as exc:
+            log(f"  rewrite failed ({exc}); keeping the first-run draft")
+            for paper in papers:
+                paper.full_text = ""
+                paper.full_text_via = ""
+            fetched = []
+            n_papers_via = n_epmc_via = 0
+
+    excerpts = full_text_excerpts(papers)
+    article, style_report = enforce_style(
+        article, model=model, api_key=api_key, log=log, papers=papers, curation=curation
+    )
+    article, verification, style_report = enforce_statistics(
+        article, papers, model=model, api_key=api_key, log=log,
+        style_report=style_report,
+        direct_sources=((curation or {}).get("counts") or {}).get("direct"),
+    )
+
+    provenance = dict(draft.provenance)
+    provenance["date"] = _au_date()
+    provenance["full_text_sources"] = sorted(fetched)
+    provenance["full_text_via"] = {"papers": n_papers_via, "europe_pmc": n_epmc_via}
+    if model is not None or api_key is not None:
+        provenance["model"] = resolve_provider(model, api_key)[1]
 
     return Draft(
         topic=topic,

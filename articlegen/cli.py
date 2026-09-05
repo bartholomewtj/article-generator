@@ -22,7 +22,8 @@ import webbrowser
 from . import demo
 from .ideas import format_ideas_console, generate_ideas, ideas_to_markdown
 from .llm import resolve_provider
-from .pipeline import Draft, NoPapersFound, generate_draft
+from . import paperfetch
+from .pipeline import Draft, NoPapersFound, generate_draft, rerun_draft
 from .render import build_index, render_article, render_markdown
 from .sources import DEFAULT_MAX_PAPERS
 
@@ -107,32 +108,54 @@ def cmd_draft(args) -> int:
     os.makedirs(DRAFTS_DIR, exist_ok=True)
     date = datetime.date.today().isoformat()
     stem = args.name or f"{date}-{_slugify(args.topic)}"
-    html_path = os.path.join(DRAFTS_DIR, f"{stem}.html")
-    md_path = os.path.join(DRAFTS_DIR, f"{stem}.md")
-    manifest_path = os.path.join(DRAFTS_DIR, f"{stem}.json")
+    return _write_draft_files(
+        draft, DRAFTS_DIR, stem,
+        open_html=args.open,
+        queue_ckn=getattr(args, "queue_ckn", False),
+    )
 
+
+def _maybe_queue_ckn(draft: Draft, queue_ckn: bool) -> None:
+    if not queue_ckn:
+        return
+    paywalled = draft.paywalled_cited()
+    if not paywalled:
+        _log("  --queue-ckn: no paywalled cited sources")
+        return
+    n = paperfetch.queue_paywalled(paywalled, log=_log)
+    _log(f"  queued {n} DOI(s) for CKN")
+
+
+def _write_draft_files(
+    draft: Draft,
+    out_dir: str,
+    stem: str,
+    *,
+    open_html: bool,
+    queue_ckn: bool,
+    refresh_index: bool = True,
+) -> int:
+    html_path = os.path.join(out_dir, f"{stem}.html")
+    md_path = os.path.join(out_dir, f"{stem}.md")
+    manifest_path = os.path.join(out_dir, f"{stem}.json")
     render_args = (
         draft.article, draft.papers, draft.topic,
         draft.curation, draft.verification, draft.provenance,
         draft.style_report,
     )
     _write_rendered(render_args, html_path, md_path)
-    # The run manifest: everything the run knew, so the briefing can be
-    # rendered again (`articlegen render`) or reused without another search.
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(draft.to_dict(), f, ensure_ascii=False, indent=2)
-
-    index_path = build_index(DRAFTS_DIR)
-    _log(f"Draft ready ({len(draft.article['references'])} sources cited):")
+    _log(f"Draft ready ({len(draft.article.get('references') or [])} sources cited):")
     _log(f"  HTML:     {html_path}")
     _log(f"  Markdown: {md_path}")
     _log(f"  Manifest: {manifest_path}")
-    _log(f"  Queue:    {index_path}")
-
-    # One-line, greppable summary for the GitHub workflow to surface in its comment.
+    if refresh_index and os.path.isdir(DRAFTS_DIR):
+        index_path = build_index(DRAFTS_DIR)
+        _log(f"  Queue:    {index_path}")
     print(f"EVIDENCE_SUMMARY: {draft.summary()}")
-
-    if args.open:
+    _maybe_queue_ckn(draft, queue_ckn)
+    if open_html:
         _open_in_browser(html_path)
     return 0
 
@@ -169,6 +192,36 @@ def cmd_render(args) -> int:
     if args.open:
         _open_in_browser(html_path)
     return 0
+
+
+def cmd_rerun(args) -> int:
+    """Reuse a run's pool and labels; fetch full text again; write a new draft."""
+    manifest_path = args.manifest
+    try:
+        with open(manifest_path, encoding="utf-8") as f:
+            draft = Draft.from_dict(json.load(f))
+    except (OSError, ValueError, KeyError) as exc:
+        _log(f"Could not read the manifest {manifest_path}: {exc}")
+        return 1
+    try:
+        draft = rerun_draft(
+            draft,
+            model=args.model,
+            log=_log,
+            long=getattr(args, "long", False),
+        )
+    except Exception as exc:
+        return _api_error(exc, args.model)
+
+    out_dir = os.path.dirname(os.path.abspath(manifest_path)) or DRAFTS_DIR
+    stem, _ = os.path.splitext(os.path.basename(manifest_path))
+    if not stem.endswith("-rerun"):
+        stem = f"{stem}-rerun"
+    return _write_draft_files(
+        draft, out_dir, stem,
+        open_html=args.open,
+        queue_ckn=getattr(args, "queue_ckn", False),
+    )
 
 
 def cmd_queue(args) -> int:
@@ -252,6 +305,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write the journal-style Review instead of the default briefing",
     )
     p_draft.add_argument("--open", action="store_true", help="Open the draft in your browser when done")
+    p_draft.add_argument(
+        "--queue-ckn", action="store_true",
+        help="Add paywalled cited DOIs to the CKN pickup list (papers queue). Off by default.",
+    )
     p_draft.set_defaults(func=cmd_draft)
 
     p_render = sub.add_parser(
@@ -261,6 +318,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_render.add_argument("manifest", help="Path to the .json manifest a draft run wrote")
     p_render.add_argument("--open", action="store_true", help="Open the rendered HTML in your browser")
     p_render.set_defaults(func=cmd_render)
+
+    p_rerun = sub.add_parser(
+        "rerun",
+        help="Reuse a run's pool and labels, fetch full text again, write a new briefing",
+    )
+    p_rerun.add_argument("manifest", help="Path to the .json manifest a draft run wrote")
+    p_rerun.add_argument(
+        "--long", action="store_true",
+        help="Write the journal-style Review instead of the default briefing",
+    )
+    p_rerun.add_argument("--open", action="store_true", help="Open the new draft in your browser")
+    p_rerun.add_argument(
+        "--queue-ckn", action="store_true",
+        help="Add remaining paywalled cited DOIs to the CKN pickup list",
+    )
+    p_rerun.set_defaults(func=cmd_rerun)
 
     p_queue = sub.add_parser("queue", help="(Re)build and optionally open the drafts review index")
     p_queue.add_argument("--open", action="store_true", help="Open the queue in your browser")
