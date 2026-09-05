@@ -274,12 +274,15 @@ The hosted app has no queue flag.
 | Command | Key options |
 |---------|-------------|
 | `ideas <theme>` | `-n` (how many, default 6), `-o` (output .md path) |
-| `draft <title>` | `--open`, `--style "<audience/tone>"`, `--max-papers N` (default 40), `--name <stem>` |
+| `draft <title>` | `--open`, `--style "<audience/tone>"`, `--max-papers N` (default 40), `--name <stem>`, `--queue-ckn`, `--long` |
 | `render <manifest.json>` | `--open` |
+| `rerun <manifest.json>` | `--open`, `--queue-ckn`, `--long` |
 | `queue` | `--open` |
 | `demo` | `--open`, `-o` |
 
-`--model` (default `claude-fable-5`) is global: `articlegen --model … draft "…"`.
+`--model` is global: `articlegen --model … draft "…"`. Default is auto —
+OpenRouter Opus (`anthropic/claude-opus-5`), or `claude-fable-5` when only
+an Anthropic key is set.
 
 ## Notes & limitations
 
