@@ -1,0 +1,117 @@
+{
+  "manifest": "C:\\claudeOS\\Projects\\articlegenerator\\tests\\replays\\2026-09-05-night-shift-health-risk.json",
+  "manifest_stem": "2026-09-05-night-shift-health-risk",
+  "read_by": "builder agent, by hand against the excerpts",
+  "read_on": "2026-09-05",
+  "note": "This is a reading done by hand against the excerpt `--show all` prints for each pair, before the model ever ran. The operator may overwrite any `human` label and re-run `--score`; the excerpt itself is not stored here, it is rebuilt from the manifest.",
+  "entries": [
+    {
+      "id": 1,
+      "sentence": "A meta-analysis of 22 cross-sectional studies (21,677 participants, eight countries) reported shift work associated with higher odds of sleep disturbance (OR 1.42, 95% CI 1.24\u20131.62), with rotating schedules (OR 1.48) and healthcare professionals (OR 1.56) showing the largest estimates; the cross-sectional design leaves the direction of the association uncertain [6].",
+      "cited": [
+        6
+      ],
+      "human": "supported",
+      "reason": "Numbers, subgroup estimates and the cross-sectional caveat all match the excerpt."
+    },
+    {
+      "id": 2,
+      "sentence": "Life's Essential 8 lifestyle score was estimated to mediate about 39% of the cardiovascular association, a figure that depends on the modelling assumptions used [9].",
+      "cited": [
+        9
+      ],
+      "human": "supported",
+      "reason": "39.2% CVD mediation figure matches; the hedge about assumptions underclaims rather than overreaches."
+    },
+    {
+      "id": 3,
+      "sentence": "A separate large UK Biobank analysis reported a graded increase in atrial fibrillation risk across night shift categories (usual/permanent nights HR 1.16, 95% CI 1.02\u20131.32) and higher coronary heart disease risk with \u226510 years of night work (HR 1.37), which appeared unmodified by genetic predisposition [27].",
+      "cited": [
+        27
+      ],
+      "human": "overreach",
+      "reason": "Excerpt tests genetic modification only for AF, not for the CHD estimate the sentence also attaches it to."
+    },
+    {
+      "id": 4,
+      "sentence": "Among 143,410 female nurses followed 22\u201324 years, each five-year increment of rotating night shift work carried a type 2 diabetes hazard ratio of 1.31 (95% CI 1.19\u20131.44), with a significant additive interaction with unhealthy lifestyle [37].",
+      "cited": [
+        37
+      ],
+      "human": "supported",
+      "reason": "N, follow-up, hazard ratio and interaction all match the excerpt exactly."
+    },
+    {
+      "id": 5,
+      "sentence": "UK Biobank cross-sectional data suggested higher diabetes odds with more night shifts per month (>8/month OR 1.36), though temporal ordering cannot be established from that design [48].",
+      "cited": [
+        48
+      ],
+      "human": "supported",
+      "reason": "OR 1.36 for >8/month matches; the design/temporal hedge reflects the study's own cross-sectional scope."
+    },
+    {
+      "id": 6,
+      "sentence": "By contrast, an updated meta-analysis of 57 studies pooling several million participants found no association of ever night shift work with breast, prostate, ovarian, colorectal or stomach cancer [38].",
+      "cited": [
+        38
+      ],
+      "human": "supported",
+      "reason": "All five named cancers are among the excerpt's null findings for ever exposure."
+    },
+    {
+      "id": 7,
+      "sentence": "A meta-analysis restricted to healthcare workers (12 studies, 12,132 breast cancer cases) found no excess for ever exposure (RR 1.05) and a modest excess at \u226520 years (RR 1.25, 95% CI 1.01\u20131.55) [8].",
+      "cited": [
+        8
+      ],
+      "human": "supported",
+      "reason": "12 studies, 12,132 cases, RR 1.05 ever and RR 1.25 at ≥20 years match exactly."
+    },
+    {
+      "id": 8,
+      "sentence": "That longer-duration estimate lost significance in influence analysis and approached unity after correction for publication bias, and 60% of studies were rated high risk of bias for exposure assessment, so it may be fragile [8].",
+      "cited": [
+        8
+      ],
+      "human": "supported",
+      "reason": "Loss of significance, approach to unity after correction, and the 60% high-RoB figure all appear."
+    },
+    {
+      "id": 9,
+      "sentence": "A meta-analysis of seven longitudinal studies reported shift work associated with adverse mental health outcomes (effect size 1.28, 95% CI 1.02\u20131.62) and depressive symptoms (1.33), with female shift workers apparently at higher odds of depressive symptoms (OR 1.73, 95% CI 1.39\u20132.14) [30].",
+      "cited": [
+        30
+      ],
+      "human": "supported",
+      "reason": "Effect sizes 1.28/1.33 and the female OR 1.73 vs female non-shift workers match exactly."
+    },
+    {
+      "id": 10,
+      "sentence": "A consensus discussion paper by 15 shift work researchers judged the evidence sufficient to propose schedule limits \u2014 no more than three consecutive night shifts, shift intervals of at least 11 hours, and night shifts no longer than nine hours \u2014 while conceding that the underlying literature is limited [3].",
+      "cited": [
+        3
+      ],
+      "human": "supported",
+      "reason": "15 researchers, the three named limits, and the 'limited literature' caveat all match the excerpt."
+    },
+    {
+      "id": 11,
+      "sentence": "No randomised or controlled intervention appears to have tested whether changing shift schedules alters incidence of cardiovascular disease, diabetes or cancer; scheduling recommendations seem to rest largely on short-term physiological and observational evidence [3].",
+      "cited": [
+        3
+      ],
+      "human": "overreach",
+      "reason": "The excerpt never mentions RCTs at all; the sentence asserts their absence as if the source said so."
+    },
+    {
+      "id": 12,
+      "sentence": "How much of the excess risk might be modifiable through lifestyle rather than intrinsic to circadian misalignment has been estimated only by mediation and counterfactual modelling within a single cohort, and does not appear to have been tested prospectively [9].",
+      "cited": [
+        9
+      ],
+      "human": "supported",
+      "reason": "Matches the paper's own mediation/counterfactual design and its call for further prospective study."
+    }
+  ]
+}

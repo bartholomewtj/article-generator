@@ -44,6 +44,12 @@ from articlegen.style import check_style  # noqa: E402
 from articlegen.style import errors as style_errors  # noqa: E402
 from articlegen.writer import cite_target  # noqa: E402
 
+# tools/ is not a package under articlegen/ — add it to sys.path the same way
+# the repo root is added above, so `tools/claim_probe.py` can be imported by
+# these offline checks without turning tools/ into an installed package.
+TOOLS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools")
+sys.path.insert(0, TOOLS_DIR)
+
 REPLAY_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "replays")
 
 # Pins for each manifest in tests/replays/, keyed by file stem. A manifest with
@@ -56,6 +62,7 @@ EXPECTED = {
         "daggers": 0, "double_daggers": 0,
         "style_errors": 0, "style_warnings": 1,
         "summary": "13 of 48 screened sources cited; 13 directly on-topic; prose style clean",
+        "probe_pairs": 12,
     },
 }
 
@@ -247,6 +254,140 @@ def _figure_re_guard(stem: str, draft: Draft, manifest: dict) -> None:
           restored["total"] == recorded["total"])
 
 
+def _claim_probe_checks(stem: str, draft: Draft, manifest: dict) -> None:
+    """Offline checks for `tools/claim_probe.py` (issue #246).
+
+    No network and no model call: this only exercises the deterministic pair
+    building, the `run_probe`/`score` seams with stubs, and the "not wired
+    in" guard that is the whole point of the issue. Everything routes
+    through `check()`, same as the rest of this file, so a missing
+    `tools/claim_probe.py` is a failed check rather than an import crash.
+    """
+    if stem not in EXPECTED or "probe_pairs" not in EXPECTED[stem]:
+        check(f"{stem}: has a probe_pairs pin in EXPECTED", False)
+        return
+    expected_pairs = EXPECTED[stem]["probe_pairs"]
+
+    try:
+        import claim_probe
+    except Exception as exc:
+        check(f"{stem}: tools/claim_probe.py imports without a model key or network",
+              False)
+        print(f"  import error: {type(exc).__name__}: {exc}")
+        return
+
+    recs = claim_probe.pairs(draft)
+    check(f"{stem}: claim_probe.pairs() returns the pinned pair count",
+          len(recs) == expected_pairs)
+    ids = [r["id"] for r in recs]
+    check(f"{stem}: pair ids run 1..n and are unique",
+          ids == list(range(1, len(recs) + 1)))
+
+    n_papers = len(draft.papers)
+    check(f"{stem}: every pair cites at least one index within 1..len(papers)",
+          all(r["cited"] and all(1 <= i <= n_papers for i in r["cited"]) for r in recs))
+    check(f"{stem}: every pair's sentence is non-empty and carries a [N] marker",
+          all(r["sentence"].strip() and re.search(r"\[\d+\]", r["sentence"]) for r in recs))
+
+    shown = full_text_excerpts(draft.papers)
+    titles_ok = True
+    for r in recs:
+        for i in r["cited"]:
+            paper = draft.papers[i - 1]
+            if (paper.title or "") not in r["excerpt"]:
+                titles_ok = False
+    check(f"{stem}: every pair's excerpt contains the title of each source it cites",
+          titles_ok)
+
+    # Untruncated pairs (a huge --max-chars) to check the excerpt shows the
+    # writer's own haystack rather than the raw paper. A default-size pair
+    # can be truncated below a full-text excerpt's own length, which is a
+    # truncation property, not a "wrong haystack" bug.
+    untruncated = claim_probe.pairs(draft, max_chars=10_000_000)
+    full_text_ok = all(
+        shown[i] in r["excerpt"]
+        for r in untruncated for i in r["cited"] if i in shown
+    )
+    check(f"{stem}: a cited source with full text has its excerpt show the writer's haystack",
+          full_text_ok)
+
+    check(f"{stem}: claim_probe.pairs() is deterministic",
+          claim_probe.pairs(draft) == claim_probe.pairs(draft))
+
+    small = claim_probe.pairs(draft, max_chars=50)
+    check(f"{stem}: a small --max-chars truncates the excerpt",
+          all(len(r["excerpt"]) <= 50 for r in small))
+    check(f"{stem}: a small --max-chars sets the truncated flag",
+          any(r["truncated"] for r in small))
+
+    def _stub_ok(prompt, schema, *, system=None, model=None):
+        return {"verdict": "supported", "quote": "", "note": "stub"}
+
+    results = claim_probe.run_probe(recs[:3], "stub/model", generate=_stub_ok)
+    check(f"{stem}: run_probe with a working stub returns one record per pair",
+          len(results) == 3 and all(r["verdict"] == "supported" for r in results))
+
+    calls = {"n": 0}
+
+    def _stub_flaky(prompt, schema, *, system=None, model=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("boom")
+        return {"verdict": "overreach", "quote": "", "note": "stub"}
+
+    flaky_results = claim_probe.run_probe(recs[:2], "stub/model", generate=_stub_flaky)
+    check(f"{stem}: a failing call records an error without losing the other pairs",
+          flaky_results[0]["verdict"] == "error" and flaky_results[1]["verdict"] == "overreach")
+
+    hand_labels = [
+        {"id": 1, "sentence": "a", "human": "supported", "reason": ""},
+        {"id": 2, "sentence": "b", "human": "overreach", "reason": ""},
+        {"id": 3, "sentence": "c", "human": "unclear", "reason": ""},
+        {"id": 4, "sentence": "d", "human": None, "reason": ""},
+    ]
+    model_results = [
+        {"id": 1, "verdict": "supported", "quote": "", "note": ""},
+        {"id": 2, "verdict": "supported", "quote": "", "note": ""},
+        {"id": 3, "verdict": "unclear", "quote": "", "note": ""},
+        {"id": 4, "verdict": "error", "error": "boom"},
+    ]
+    report = claim_probe.score(hand_labels, model_results)
+    check(f"{stem}: score() drops the pair with no human label from the denominator",
+          report["n"] == 3 and report["dropped_no_human"] == [4])
+    check(f"{stem}: score() counts exact agreement correctly",
+          report["exact"] == 2)
+    check(f"{stem}: score() counts collapsed agreement correctly",
+          report["collapsed"] == 2)
+    check(f"{stem}: score() lists exactly the one disagreement",
+          [d["id"] for d in report["disagreements"]] == [2])
+
+    # The point of the issue: a probe, never a gate. Read the source rather
+    # than trust a promise.
+    pipeline_src = _read_source("articlegen", "pipeline.py")
+    verify_src = _read_source("articlegen", "verify.py")
+    render_src = _read_source("articlegen", "render.py")
+    web_src = _read_source("articlegen", "web.py")
+    probe_src = _read_source("tools", "claim_probe.py")
+    check("articlegen/pipeline.py never mentions claim_probe",
+          "claim_probe" not in pipeline_src)
+    check("articlegen/verify.py never mentions claim_probe",
+          "claim_probe" not in verify_src)
+    check("articlegen/render.py never mentions claim_probe",
+          "claim_probe" not in render_src)
+    check("articlegen/web.py never mentions claim_probe",
+          "claim_probe" not in web_src)
+    check("tools/claim_probe.py never mentions generate_draft, rerun_draft, "
+          "enforce_style or enforce_statistics",
+          not any(name in probe_src for name in
+                  ("generate_draft", "rerun_draft", "enforce_style", "enforce_statistics")))
+
+
+def _read_source(*parts: str) -> str:
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), *parts)
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
 def main() -> int:
     FAILURES.clear()
     found = replays()
@@ -255,6 +396,7 @@ def main() -> int:
         print(f"\n# {stem}")
         _run_replay_checks(stem, draft, manifest)
         _figure_re_guard(stem, draft, manifest)
+        _claim_probe_checks(stem, draft, manifest)
 
     print(f"\n{'FAILED: ' + ', '.join(FAILURES) if FAILURES else 'ALL PASS'}")
     return 1 if FAILURES else 0
