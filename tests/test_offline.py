@@ -8313,6 +8313,142 @@ def test_ckn_loop() -> None:
         reset()
 
 
+def test_refresh_reports_new_direct() -> None:
+    """`refresh` re-runs a manifest's queries, labels only what's new, and
+    prints the new direct records without writing anything unless --rewrite."""
+    import inspect
+    import io
+    import contextlib
+    import tempfile
+    from articlegen import cli, pipeline, sources
+    from articlegen.pipeline import Draft
+    from articlegen.sources import Paper
+
+    check("refresh_draft never plans queries",
+          "plan_queries(" not in inspect.getsource(pipeline.refresh_draft))
+    check("refresh_draft never writes a file",
+          "open(" not in inspect.getsource(pipeline.refresh_draft))
+
+    known = Paper(title="Known study", abstract="a", doi="10.1111/known",
+                  venue="JAMA", year=2020)
+    article = {"title": "t", "abstract": "x", "keywords": [], "sections": [],
+               "key_points": [], "glossary": [], "references": [1],
+               "findings": ["a finding [1]"]}
+    original = Draft(
+        topic="topic",
+        article=article,
+        papers=[known],
+        curation={"relevance": {1: "direct"}, "counts": {"direct": 1}},
+        provenance={"queries": ["seclusion reduction"], "databases": ["OpenAlex"],
+                    "full_text_sources": [], "date": "1 September 2026"},
+    )
+
+    dup = Paper(title="Known study", abstract="a", doi="10.1111/known",
+                venue="JAMA", year=2020)
+    new = Paper(title="Brand new trial", abstract="b", doi="10.2222/new",
+                venue="BMJ", year=2026)
+
+    saved_gather = pipeline.gather_evidence
+    saved_curate = pipeline.curate_sources
+    saved_compose = (pipeline.write_briefing, pipeline.write_article)
+    saved_enforce = (pipeline.enforce_style, pipeline.enforce_statistics)
+
+    gather_calls = []
+    curate_calls = []
+    compose_calls = []
+
+    def fake_gather(queries, **kw):
+        gather_calls.append(list(queries))
+        return [dup, new]
+
+    def fake_curate(topic, papers, **kw):
+        curate_calls.append(list(papers))
+        return {"relevance": {1: "direct"}, "counts": {"direct": 1}}
+
+    def fake_compose(topic, papers, **kw):
+        compose_calls.append(topic)
+        out = dict(article)
+        out["references"] = [1, 2]
+        out["findings"] = ["a finding [1]", "a new finding [2]"]
+        return out
+
+    pipeline.gather_evidence = fake_gather
+    pipeline.curate_sources = fake_curate
+    pipeline.write_briefing = fake_compose
+    pipeline.write_article = fake_compose
+    pipeline.enforce_style = lambda a, **kw: (a, {"issues": [], "stats": {}})
+    pipeline.enforce_statistics = lambda a, papers, **kw: (a, {"unverified": []}, kw.get("style_report") or {})
+
+    try:
+        sources.clear_search_cache()
+        with tempfile.TemporaryDirectory() as d:
+            saved_cwd = os.getcwd()
+            os.chdir(d)
+            try:
+                os.makedirs("drafts")
+                man = os.path.join("drafts", "first.json")
+                with open(man, "w", encoding="utf-8") as f:
+                    json.dump(original.to_dict(), f)
+                with open(man, "rb") as f:
+                    before = f.read()
+                before_listing = sorted(os.listdir("drafts"))
+
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    check("refresh exits 0", cli.main(["refresh", man]) == 0)
+                out = buf.getvalue()
+
+                check("refresh re-ran the manifest's queries",
+                      gather_calls and gather_calls[0] == ["seclusion reduction"])
+                check("only the new record was labelled",
+                      len(curate_calls) == 1 and len(curate_calls[0]) == 1
+                      and curate_calls[0][0].doi == "10.2222/new")
+                check("stdout names the new record", "Brand new trial" in out)
+                check("stdout shows the manifest's date", "1 September 2026" in out)
+                check("stdout carries the refresh summary",
+                      "REFRESH_SUMMARY: 1 new direct record" in out)
+                check("stdout does not report the already-screened record as new",
+                      "Known study" not in out)
+
+                with open(man, "rb") as f:
+                    after = f.read()
+                check("the manifest is untouched", before == after)
+                check("no refresh files were written",
+                      not os.path.isfile(os.path.join("drafts", "first-refresh.json"))
+                      and not os.path.isfile(os.path.join("drafts", "first-refresh.html"))
+                      and not os.path.isfile(os.path.join("drafts", "first-refresh.md"))
+                      and not os.path.isfile(os.path.join("drafts", "index.html")))
+                check("drafts/ directory listing is unchanged",
+                      sorted(os.listdir("drafts")) == before_listing)
+                check("no compose call happened without --rewrite", compose_calls == [])
+
+                compose_calls.clear()
+                buf2 = io.StringIO()
+                with contextlib.redirect_stdout(buf2):
+                    check("refresh --rewrite exits 0",
+                          cli.main(["refresh", man, "--rewrite"]) == 0)
+                refresh_path = os.path.join("drafts", "first-refresh.json")
+                check("--rewrite wrote a new manifest", os.path.isfile(refresh_path))
+                with open(refresh_path, encoding="utf-8") as f:
+                    rewritten = Draft.from_dict(json.load(f))
+                check("the rewritten draft has both papers", len(rewritten.papers) == 2)
+                check("the second paper is the new record",
+                      rewritten.papers[1].doi == "10.2222/new")
+                check("the new record is labelled direct",
+                      rewritten.curation.get("relevance", {}).get(2) == "direct")
+                check("provenance records what it was refreshed from",
+                      rewritten.provenance.get("refreshed_from", {}).get("date")
+                      == "1 September 2026")
+            finally:
+                os.chdir(saved_cwd)
+    finally:
+        pipeline.gather_evidence = saved_gather
+        pipeline.curate_sources = saved_curate
+        pipeline.write_briefing, pipeline.write_article = saved_compose
+        pipeline.enforce_style, pipeline.enforce_statistics = saved_enforce
+        sources.clear_search_cache()
+
+
 def test_one_papers_process_per_run() -> None:
     """18 eligible DOIs make one `papers get` process, and a missing mailto
     is named once before that get.
@@ -10188,6 +10324,7 @@ def main(argv: list[str] | None = None) -> int:
         test_full_text_comes_from_the_papers_cli_when_it_is_there,
         test_queued_ckn_counts_as_no_open_access,
         test_ckn_loop,
+        test_refresh_reports_new_direct,
         test_one_papers_process_per_run,
         test_hosted_fulltext_prefetch_is_the_target,
         test_papers_batch_keeps_partial_results_on_timeout,

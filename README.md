@@ -269,6 +269,23 @@ python -m articlegen rerun drafts/2026-09-05-seclusion.json
 
 The hosted app has no queue flag.
 
+### Checking for new evidence (`refresh`)
+
+For a topic you send more than once. `refresh` re-runs a manifest's search
+queries, checks the results against the pool that manifest already screened,
+and labels only the records that are new. It prints the new `direct` ones and
+writes nothing:
+
+```bash
+python -m articlegen refresh drafts/2026-09-05-seclusion.json
+```
+
+Add `--rewrite` to actually rewrite the briefing with the new records — it
+writes `<stem>-refresh.json` (plus HTML/Markdown) next to the manifest, and
+only when at least one new record was labelled `direct`. Cost is one labelling
+call and the searches; there is no writing call unless `--rewrite` found
+something worth it.
+
 ### Commands & options
 
 | Command | Key options |
@@ -277,6 +294,7 @@ The hosted app has no queue flag.
 | `draft <title>` | `--open`, `--style "<audience/tone>"`, `--max-papers N` (default 40), `--name <stem>`, `--queue-ckn`, `--long` |
 | `render <manifest.json>` | `--open` |
 | `rerun <manifest.json>` | `--open`, `--queue-ckn`, `--long` |
+| `refresh <manifest.json>` | `--rewrite`, `--open`, `--long`, `--queue-ckn` |
 | `queue` | `--open` |
 | `demo` | `--open`, `-o` |
 
